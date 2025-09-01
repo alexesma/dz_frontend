@@ -89,7 +89,7 @@ const RestockOffers = () => {
             const response = await axios.get('http://0.0.0.0:8000/order/generate_restock_offers');
             setOffers(response.data.offers);
         } catch (error) {
-            message.error('Ошибка загрузки предложений.');
+            console.error('Ошибка загрузки предложений:', error);
         } finally {
             setLoading(false);
         }

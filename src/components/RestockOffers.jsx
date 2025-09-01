@@ -2,6 +2,13 @@ import React, { useState } from 'react';
 import { Table, InputNumber, Checkbox, Button, message, Spin, Tag, Form } from 'antd';
 import axios from 'axios';
 
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://0.0.0.0:8000';
+
+const http = axios.create({
+    baseURL: API_URL,
+    timeout: 30000,
+});
+
 const DEFAULT_PARAMS = {
     budget_limit: 50000,
     months_back: 6,
@@ -21,19 +28,19 @@ const RestockOffers = () => {
         try {
             // Получаем значения из формы
             const params = values || DEFAULT_PARAMS;
-            const resp = await axios.get('http://0.0.0.0:8000/order/generate_restock_offers', {
-                params: params,
-            });
+            const resp = await http.get('/order/generate_restock_offers', { params });
+
             // supplier_offers или offers
-            if (resp.data.supplier_offers) {
+            if (resp.data?.supplier_offers) {
                 setOffers(Object.values(resp.data.supplier_offers));
-            } else if (Array.isArray(resp.data.offers)) {
+            } else if (Array.isArray(resp.data?.offers)) {
                 setOffers(resp.data.offers);
             } else {
                 setOffers([]);
                 message.warning('Нет данных для отображения.');
             }
-        } catch (err) {
+        } catch (error) {
+            console.error('fetchOffers error:', error);
             message.error('Ошибка загрузки предложений.');
         } finally {
             setLoading(false);

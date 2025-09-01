@@ -222,7 +222,7 @@
 //
 // export default OrdersList;
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 
 // --- API КЛИЕНТ ---
 const api = {
@@ -376,21 +376,13 @@ const OrdersList = () => {
     });
     const [message, setMessage] = useState({ text: '', type: '' });
 
-    useEffect(() => {
-        if (activeTab === 'confirmed') {
-            fetchConfirmedPositions();
-        } else {
-            fetchCreatedOrders();
-        }
-    }, [activeTab]);
-
-    const showMessage = (text, type = 'info') => {
+    const showMessage = useCallback((text, type = 'info') => {
         setMessage({ text, type });
         setTimeout(() => setMessage({ text: '', type: '' }), 5000);
-    };
+    }, []);
 
-    // Получение подтвержденных позиций
-    const fetchConfirmedPositions = async () => {
+// Получение подтвержденных позиций
+    const fetchConfirmedPositions = useCallback(async () => {
         setLoading(true);
         try {
             const { data } = await api.get('http://localhost:8000/order/confirmed');
@@ -404,10 +396,10 @@ const OrdersList = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [showMessage]); // showMessage в зависимостях
 
-    // Получение созданных заказов
-    const fetchCreatedOrders = async () => {
+// Получение созданных заказов
+    const fetchCreatedOrders = useCallback(async () => {
         setLoading(true);
         try {
             const { data } = await api.get('http://localhost:8000/order');
@@ -421,12 +413,21 @@ const OrdersList = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [showMessage]); // showMessage в зависимостях
+
+// Теперь useEffect с правильными зависимостями
+    useEffect(() => {
+        if (activeTab === 'confirmed') {
+            fetchConfirmedPositions();
+        } else {
+            fetchCreatedOrders();
+        }
+    }, [activeTab, fetchConfirmedPositions, fetchCreatedOrders]);
 
     // Создание заказа из подтвержденных позиций
     const createOrderFromPositions = async (e) => {
         e.preventDefault();
-        const { comment, supplier_id } = formData;
+        const { COMMENT, supplier_id } = formData;
         if (!supplier_id) {
             showMessage('Не выбран поставщик', 'error');
             return;
@@ -441,7 +442,7 @@ const OrdersList = () => {
         try {
             const response = await api.post('http://localhost:8000/order/send_api', supplierPositions.positions, );
 
-            const { order_id, order_number, successful_items, failed_items, total_items } = response.data;
+            const { ORDER_ID, order_number, successful_items, failed_items, total_items } = response.data;
 
             if (successful_items > 0) {
                 showMessage(
@@ -461,7 +462,7 @@ const OrdersList = () => {
                 showMessage(`Не удалось отправить ${failed_items} позиций`, 'warning');
             }
         } catch (error) {
-            showMessage('Ошибка при создании заказа', 'error');
+            console.error('Ошибка при создании заказа:', error);
         }
     };
 
@@ -480,7 +481,7 @@ const OrdersList = () => {
 
             showMessage('Статус заказа обновлен', 'success');
         } catch (error) {
-            showMessage('Ошибка при обновлении статуса заказа', 'error');
+            console.error('Ошибка при обновлении статуса заказа:', error);
         }
     };
 
@@ -519,7 +520,7 @@ const OrdersList = () => {
             showMessage(`Обновлено ${updatedItems.length} позиций`, 'success');
             setSelectedRowsByOrder(prev => ({ ...prev, [supplier_id]: [] }));
         } catch (error) {
-            showMessage('Ошибка обновления статусов', 'error');
+            console.error('Ошибка обновления статусов:', error);
         }
     };
 
@@ -895,7 +896,7 @@ const OrdersList = () => {
                     ) : (
                         createdOrders.map((order) => {
                             const isExpanded = expandedOrders[order.id];
-                            const orderStatus = orderStatusOptions.find(option => option.value === order.status);
+                            const ORDER_STATUS = orderStatusOptions.find(option => option.value === order.status);
 
                             return (
                                 <div key={order.id} style={styles.card}>
