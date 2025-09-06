@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Card, Descriptions, Spin, message, Button } from 'antd';
-import axios from 'axios';
+import api from "../api.js";
 
 const ProviderConfigDetail = () => {
     const { id } = useParams();
@@ -13,8 +13,7 @@ const ProviderConfigDetail = () => {
         const fetchCfg = async () => {
             setLoading(true);
             try {
-                // 🔧 ПОПРАВЬ путь на свой реальный эндпойнт
-                const { data } = await axios.get(`${import.meta.env.VITE_API_URL}/provider_configs/${id}`);
+                const { data } = await api.get(`/provider_configs/${id}`);
                 setCfg(data);
             } catch (e) {
                 console.error(e);

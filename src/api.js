@@ -2,11 +2,14 @@ export const API_URL = import.meta.env.VITE_API_URL ?? 'http://90.156.158.19:800
 
 import axios from 'axios';
 
-export const api = axios.create({
-    baseURL: API_URL
+const api = axios.create({
+    baseURL: API_URL,
+    timeout: 30000,
 });
 
-export const fetchRestockOffers = () => api.get('/generate_restock_offers');
+export default api;
+
+export const fetchRestockOffers = () => api.get('/order/generate_restock_offers');
 
 export const confirmOrders = (offers) => api.post('/order/confirm', { offers });
 

@@ -1,78 +1,7 @@
-// import React, { useState } from 'react';
-// import { Card, Input, Button } from 'antd';
-// import axios from 'axios';
-//
-// function OffersAutopart() {
-//     const [offers, setOffers] = useState([]);
-//     const [loading, setLoading] = useState(false);
-//     const [oem, setOem] = useState('1003100ED01');
-//     const [make, setMake] = useState('GREAT WALL');
-//
-//     const fetchOffers = () => {
-//         setLoading(true);
-//         axios
-//             .get('${import.meta.env.VITE_API_URL}/order/get_offers_by_oem_and_make_name', {
-//                 params: {
-//                     oem: oem,
-//                     make_name: make,
-//                     without_cross: true,
-//                 },
-//             })
-//             .then((res) => {
-//                 setOffers(res.data);
-//             })
-//             .catch((e) => {
-//                 alert('Ошибка запроса');
-//             })
-//             .finally(() => setLoading(false));
-//     };
-//
-//     return (
-//         <div>
-//             <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-//                 <Input value={oem} onChange={e => setOem(e.target.value)} placeholder='OEM' />
-//                 <Input value={make} onChange={e => setMake(e.target.value)} placeholder='Марка' />
-//                 <Button onClick={fetchOffers} loading={loading} type='primary'>
-//                     Поиск
-//                 </Button>
-//             </div>
-//             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-//                 {offers.map((offer) => (
-//                     <Card
-//                         key={offer.hash_key || offer.price_name + offer.detail_name}
-//                         title={offer.price_name || 'Оффер'}
-//                         style={{ width: '100%', marginBottom: 20 }}
-//                         extra={<span style={{ color: '#888' }}>{offer.oem}</span>}
-//                     >
-//                         <div style={{ fontWeight: 500, marginBottom: 8 }}>{offer.detail_name}</div>
-//                         <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
-//                             <span>Цена: <b>{offer.cost}</b></span>
-//                             <span>Производитель: {offer.make_name}</span>
-//                             <span>Логотип: {offer.sup_logo}</span>
-//                         </div>
-//                         <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
-//                             <span>Остаток: {offer.qnt}</span>
-//                             <span>Мин. заказ: {offer.min_qnt}</span>
-//                         </div>
-//                         <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
-//                             <span>Доставка: {offer.min_delivery_day}-{offer.max_delivery_day} дней</span>
-//                         </div>
-//                         <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
-//                             <span>Вес: {offer.weight}</span>
-//                             <span>Объем: {offer.volume}</span>
-//                         </div>
-//                     </Card>
-//                 ))}
-//             </div>
-//         </div>
-//     );
-// }
-//
-// export default OffersAutopart;
 
 import React, { useEffect, useState } from 'react';
 import { Table, InputNumber, Checkbox, Button, message, Spin, Tag } from 'antd';
-import axios from 'axios';
+import api from '../api';
 
 const RestockOffers = () => {
     const [offers, setOffers] = useState([]);
@@ -86,7 +15,7 @@ const RestockOffers = () => {
     const fetchOffers = async () => {
         setLoading(true);
         try {
-            const response = await axios.get('${import.meta.env.VITE_API_URL}/order/generate_restock_offers');
+            const response = await api.get('/order/generate_restock_offers');
             setOffers(response.data.offers);
         } catch (error) {
             console.error('Ошибка загрузки предложений:', error);
@@ -119,7 +48,7 @@ const RestockOffers = () => {
 
     const handleSubmit = () => {
         const payload = Object.values(selectedOffers);
-        axios.post('/api/order/confirm', { offers: payload })
+        api.post('/api/order/confirm', { offers: payload })
             .then(() => message.success('Заказ успешно отправлен!'))
             .catch(() => message.error('Ошибка при отправке заказа.'));
     };

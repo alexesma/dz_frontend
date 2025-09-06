@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Table, Input, Button, message, Spin, Tag, Space, Card } from 'antd';
 import { SearchOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
-import axios from 'axios';
+import api from "../api.js";
 import { useNavigate } from 'react-router-dom';
 
 const { Search } = Input;
@@ -38,7 +38,7 @@ const ProvidersList = () => {
                 params.search = search;
             }
 
-            const response = await axios.get('${import.meta.env.VITE_API_URL}/providers/', { params });
+            const response = await api.get('/providers/', { params });
 
             setProviders(response.data.items);
             setPagination(prev => ({

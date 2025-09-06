@@ -1,323 +1,100 @@
-// import React, { useEffect, useState } from 'react';
-// import { Collapse, Table, Tag, Button, message, Badge, Select, Space } from 'antd';
-// import { MailOutlined, ApiOutlined } from '@ant-design/icons';
-// import axios from 'axios';
-//
-// const statusOptions = [
-//     { value: 'New', label: 'Новый', color: 'blue' },
-//     { value: 'Send', label: 'Отправлен', color: 'orange' },
-//     { value: 'Confirmed', label: 'Подтвержден', color: 'green' },
-//     { value: 'Rejected', label: 'Отклонен', color: 'red' },
-//     { value: 'Fulfilled', label: 'Выполнен', color: 'purple' },
-//     { value: 'Error', label: 'Ошибка', color: 'volcano' }
-// ];
-//
-// const OrdersList = () => {
-//     const [orders, setOrders] = useState([]);
-//     const [loading, setLoading] = useState(false);
-//     // Храним выбранные позиции для каждого supplier_id: { [supplier_id]: [tracking_uuid, ...] }
-//     const [selectedRowsByOrder, setSelectedRowsByOrder] = useState({});
-//
-//     useEffect(() => {
-//         fetchOrders();
-//     }, []);
-//
-//     const fetchOrders = async () => {
-//         setLoading(true);
-//         try {
-//             const { data } = await axios.get('${import.meta.env.VITE_API_URL}/order/confirmed');
-//             setOrders(data);
-//         } catch (error) {
-//             console.error('Ошибка при загрузке заказов:', error);
-//             message.error('Ошибка загрузки заказов.');
-//         } finally {
-//             setLoading(false);
-//         }
-//     };
-//
-//     // Массовое обновление статусов для одного заказа (supplier)
-//     const updateSelectedStatuses = async (supplier_id, newStatus) => {
-//         const selected = selectedRowsByOrder[supplier_id] || [];
-//         if (selected.length === 0) {
-//             message.warning('Выберите позиции для обновления');
-//             return;
-//         }
-//
-//         try {
-//             const response = await axios.patch('${import.meta.env.VITE_API_URL}/order/update_position_status', {
-//                 tracking_uuids: selected,
-//                 status: newStatus
-//             });
-//
-//             // Обновляем только выбранный заказ, остальные не трогаем
-//             const updatedItems = response.data.updated_items || [];
-//             setOrders(prevOrders =>
-//                 prevOrders.map(order =>
-//                     order.supplier_id === supplier_id
-//                         ? {
-//                             ...order,
-//                             positions: order.positions.map(position => {
-//                                 const updatedItem = updatedItems.find(
-//                                     item => item.tracking_uuid === position.tracking_uuid
-//                                 );
-//                                 return updatedItem
-//                                     ? { ...position, status: updatedItem.new_status }
-//                                     : position;
-//                             })
-//                         }
-//                         : order
-//                 )
-//             );
-//             message.success(`Обновлено ${updatedItems.length} позиций`);
-//             setSelectedRowsByOrder(prev => ({ ...prev, [supplier_id]: [] }));
-//         } catch (error) {
-//             console.error('Ошибка при обновлении статусов:', error);
-//             message.error('Ошибка обновления статусов');
-//         }
-//     };
-//
-//     // Массовое "отправить поставщику" — отправляет все позиции заказа
-//     // const sendToSupplier = async (order) => {
-//     //     try {
-//     //         const trackingUuids = order.positions.map(pos => pos.tracking_uuid);
-//     //         setSelectedRowsByOrder(prev => ({ ...prev, [order.supplier_id]: trackingUuids }));
-//     //         await updateSelectedStatuses(order.supplier_id, 'Send');
-//     //         message.success(`Заказ для ${order.supplier_name} отправлен!`);
-//     //     } catch (error) {
-//     //         message.error('Ошибка при отправке заказа');
-//     //     }
-//     // };
-//
-//     const sendOrdersToAPI = async (orderPositions) => {
-//         try {
-//             const response = await axios.post('${import.meta.env.VITE_API_URL}/send_api', orderPositions);
-//
-//             const { total_items, successful_items, failed_items, results } = response.data;
-//
-//             if (successful_items > 0) {
-//                 message.success(`Успешно отправлено ${successful_items} из ${total_items} позиций`);
-//             }
-//
-//             if (failed_items > 0) {
-//                 message.warning(`Не удалось отправить ${failed_items} позиций`);
-//                 console.log('Детали ошибок:', results.filter(r => r.status === 'error'));
-//             }
-//
-//             return response.data;
-//         } catch (error) {
-//             message.error('Ошибка при отправке заказов');
-//             throw error;
-//         }
-//     };
-//
-//     // Общие колонки для таблицы позиций
-//     const columns = [
-//         { title: 'OEM', dataIndex: 'oem_number', key: 'oem_number' },
-//         { title: 'Название детали', dataIndex: 'autopart_name', key: 'autopart_name' },
-//         { title: 'Количество', dataIndex: 'quantity', key: 'quantity' },
-//         { title: 'Цена за штуку', dataIndex: 'confirmed_price', key: 'confirmed_price' },
-//         {
-//             title: 'Статус',
-//             dataIndex: 'status',
-//             key: 'status',
-//             render: (status) => {
-//                 const statusOption = statusOptions.find(option => option.value === status);
-//                 return (
-//                     <Tag color={statusOption?.color || 'default'}>
-//                         {statusOption?.label || status}
-//                     </Tag>
-//                 );
-//             }
-//         },
-//         { title: 'Бренд', dataIndex: 'brand_name', key: 'brand_name', render: (brand_name) => brand_name || '-' },
-//     ];
-//
-//     return (
-//         <div>
-//             <Collapse accordion loading={loading}>
-//                 {orders.map((order) => {
-//                     const selectedRows = selectedRowsByOrder[order.supplier_id] || [];
-//
-//                     // rowSelection только для текущего заказа
-//                     const rowSelection = {
-//                         selectedRowKeys: selectedRows,
-//                         onChange: (selectedRowKeys) => {
-//                             setSelectedRowsByOrder(prev => ({
-//                                 ...prev,
-//                                 [order.supplier_id]: selectedRowKeys
-//                             }));
-//                         },
-//                         getCheckboxProps: (record) => ({
-//                             name: record.tracking_uuid,
-//                         }),
-//                     };
-//
-//                     return (
-//                         <Collapse.Panel
-//                             key={order.supplier_id}
-//                             header={
-//                                 <span>
-//                                     <Badge status="processing" />
-//                                     <strong>{order.supplier_name}</strong>
-//                                     &nbsp;| Сумма: <strong>{order.total_sum} ₽</strong>
-//                                     &nbsp;| Срок доставки: {order.min_delivery_day}-{order.max_delivery_day} дней
-//                                     &nbsp;| Способ отправки: {order.send_method === 'API' ? <ApiOutlined /> : <MailOutlined />}
-//                                     &nbsp;| Позиций: {order.positions.length}
-//                                 </span>
-//                             }
-//                         >
-//                             {/* Панель массовых действий для этого заказа */}
-//                             {selectedRows.length > 0 && (
-//                                 <div style={{ marginBottom: 16, padding: 16, background: '#f0f2f5', borderRadius: 6 }}>
-//                                     <Space>
-//                                         <span>Выбрано позиций: {selectedRows.length}</span>
-//                                         <Button
-//                                             onClick={() => updateSelectedStatuses(order.supplier_id, 'Send')}
-//                                         >
-//                                             Отметить как отправленные
-//                                         </Button>
-//                                         <Button
-//                                             onClick={() => updateSelectedStatuses(order.supplier_id, 'Confirmed')}
-//                                         >
-//                                             Отметить как подтвержденные
-//                                         </Button>
-//                                         <Select
-//                                             style={{ width: 150 }}
-//                                             placeholder="Выберите статус"
-//                                             onChange={(value) => updateSelectedStatuses(order.supplier_id, value)}
-//                                         >
-//                                             {statusOptions.map(option => (
-//                                                 <Select.Option key={option.value} value={option.value}>
-//                                                     <Tag color={option.color}>{option.label}</Tag>
-//                                                 </Select.Option>
-//                                             ))}
-//                                         </Select>
-//                                     </Space>
-//                                 </div>
-//                             )}
-//
-//                             <Table
-//                                 columns={columns}
-//                                 dataSource={order.positions}
-//                                 pagination={false}
-//                                 rowKey="tracking_uuid"
-//                                 rowSelection={rowSelection}
-//                                 size="small"
-//                                 scroll={{ x: true }}
-//                             />
-//                             <Button
-//                                 type="primary"
-//                                 style={{ marginTop: 16 }}
-//                                 onClick={() => sendOrdersToAPI(order.positions)}
-//                             >
-//                                 Отправить заказ поставщику
-//                             </Button>
-//                         </Collapse.Panel>
-//                     );
-//                 })}
-//             </Collapse>
-//         </div>
-//     );
-// };
-//
-// export default OrdersList;
-
+import api from "../api.js";
 import React, { useEffect, useCallback, useState } from 'react';
 
 // --- API КЛИЕНТ ---
-const api = {
-    get: async (url) => {
-        console.log('GET запрос к:', url);
-        try {
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                mode: 'cors'
-            });
-
-            console.log('Ответ статус:', response.status);
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('Ошибка ответа:', errorText);
-                throw new Error(`HTTP ${response.status}: ${errorText}`);
-            }
-
-            const data = await response.json();
-            console.log('Полученные данные:', data);
-            return { data };
-        } catch (error) {
-            console.error('Ошибка API GET:', error);
-            throw error;
-        }
-    },
-
-    post: async (url, data, config = {}) => {
-        console.log('POST запрос к:', url, 'с данными:', data);
-        try {
-            const queryParams = config.params ? '?' + new URLSearchParams(config.params).toString() : '';
-            const fullUrl = url + queryParams;
-
-            const response = await fetch(fullUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify(data),
-                mode: 'cors'
-            });
-
-            console.log('POST ответ статус:', response.status);
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('POST ошибка ответа:', errorText);
-                throw new Error(`HTTP ${response.status}: ${errorText}`);
-            }
-
-            const responseData = await response.json();
-            console.log('POST полученные данные:', responseData);
-            return { data: responseData };
-        } catch (error) {
-            console.error('Ошибка API POST:', error);
-            throw error;
-        }
-    },
-
-    patch: async (url, data) => {
-        console.log('PATCH запрос к:', url, 'с данными:', data);
-        try {
-            const response = await fetch(url, {
-                method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify(data),
-                mode: 'cors'
-            });
-
-            console.log('PATCH ответ статус:', response.status);
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('PATCH ошибка ответа:', errorText);
-                throw new Error(`HTTP ${response.status}: ${errorText}`);
-            }
-
-            const responseData = await response.json();
-            console.log('PATCH полученные данные:', responseData);
-            return { data: responseData };
-        } catch (error) {
-            console.error('Ошибка API PATCH:', error);
-            throw error;
-        }
-    }
-};
+// const api = {
+//     get: async (url) => {
+//         console.log('GET запрос к:', url);
+//         try {
+//             const response = await fetch(url, {
+//                 method: 'GET',
+//                 headers: {
+//                     'Content-Type': 'application/json',
+//                     'Accept': 'application/json'
+//                 },
+//                 mode: 'cors'
+//             });
+//
+//             console.log('Ответ статус:', response.status);
+//
+//             if (!response.ok) {
+//                 const errorText = await response.text();
+//                 console.error('Ошибка ответа:', errorText);
+//                 throw new Error(`HTTP ${response.status}: ${errorText}`);
+//             }
+//
+//             const data = await response.json();
+//             console.log('Полученные данные:', data);
+//             return { data };
+//         } catch (error) {
+//             console.error('Ошибка API GET:', error);
+//             throw error;
+//         }
+//     },
+//
+//     post: async (url, data, config = {}) => {
+//         console.log('POST запрос к:', url, 'с данными:', data);
+//         try {
+//             const queryParams = config.params ? '?' + new URLSearchParams(config.params).toString() : '';
+//             const fullUrl = url + queryParams;
+//
+//             const response = await fetch(fullUrl, {
+//                 method: 'POST',
+//                 headers: {
+//                     'Content-Type': 'application/json',
+//                     'Accept': 'application/json'
+//                 },
+//                 body: JSON.stringify(data),
+//                 mode: 'cors'
+//             });
+//
+//             console.log('POST ответ статус:', response.status);
+//
+//             if (!response.ok) {
+//                 const errorText = await response.text();
+//                 console.error('POST ошибка ответа:', errorText);
+//                 throw new Error(`HTTP ${response.status}: ${errorText}`);
+//             }
+//
+//             const responseData = await response.json();
+//             console.log('POST полученные данные:', responseData);
+//             return { data: responseData };
+//         } catch (error) {
+//             console.error('Ошибка API POST:', error);
+//             throw error;
+//         }
+//     },
+//
+//     patch: async (url, data) => {
+//         console.log('PATCH запрос к:', url, 'с данными:', data);
+//         try {
+//             const response = await fetch(url, {
+//                 method: 'PATCH',
+//                 headers: {
+//                     'Content-Type': 'application/json',
+//                     'Accept': 'application/json'
+//                 },
+//                 body: JSON.stringify(data),
+//                 mode: 'cors'
+//             });
+//
+//             console.log('PATCH ответ статус:', response.status);
+//
+//             if (!response.ok) {
+//                 const errorText = await response.text();
+//                 console.error('PATCH ошибка ответа:', errorText);
+//                 throw new Error(`HTTP ${response.status}: ${errorText}`);
+//             }
+//
+//             const responseData = await response.json();
+//             console.log('PATCH полученные данные:', responseData);
+//             return { data: responseData };
+//         } catch (error) {
+//             console.error('Ошибка API PATCH:', error);
+//             throw error;
+//         }
+//     }
+// };
 
 const statusOptions = [
     { value: 'New', label: 'Новый', color: '#1890ff' },
@@ -385,7 +162,7 @@ const OrdersList = () => {
     const fetchConfirmedPositions = useCallback(async () => {
         setLoading(true);
         try {
-            const { data } = await api.get('${import.meta.env.VITE_API_URL}/order/confirmed');
+            const { data } = await api.get('/order/confirmed');
             setConfirmedPositions(data || []);
             if (!data || data.length === 0) {
                 showMessage('Подтвержденные позиции не найдены', 'info');
@@ -402,7 +179,7 @@ const OrdersList = () => {
     const fetchCreatedOrders = useCallback(async () => {
         setLoading(true);
         try {
-            const { data } = await api.get('${import.meta.env.VITE_API_URL}/order');
+            const { data } = await api.get('/order');
             setCreatedOrders(data || []);
             if (!data || data.length === 0) {
                 showMessage('Созданные заказы не найдены', 'info');
@@ -440,7 +217,7 @@ const OrdersList = () => {
         }
 
         try {
-            const response = await api.post('${import.meta.env.VITE_API_URL}/order/send_api', supplierPositions.positions, );
+            const response = await api.post('/order/send_api', supplierPositions.positions, );
 
             const { ORDER_ID, order_number, successful_items, failed_items, total_items } = response.data;
 
@@ -469,7 +246,7 @@ const OrdersList = () => {
     // Обновление статуса заказа
     const updateOrderStatus = async (orderId, newStatus) => {
         try {
-            await api.patch(`${import.meta.env.VITE_API_URL}/order/${orderId}/status?status=${encodeURIComponent(newStatus)}`);
+            await api.patch(`/order/${orderId}/status?status=${encodeURIComponent(newStatus)}`);
 
             setCreatedOrders(prev =>
                 prev.map(order =>
@@ -494,7 +271,7 @@ const OrdersList = () => {
         }
 
         try {
-            const response = await api.patch('${import.meta.env.VITE_API_URL}/order/update_position_status', {
+            const response = await api.patch('/order/update_position_status', {
                 tracking_uuids: selected,
                 status: newStatus
             });

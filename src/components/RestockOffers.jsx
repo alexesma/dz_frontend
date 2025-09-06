@@ -1,13 +1,7 @@
 import React, { useState } from 'react';
 import { Table, InputNumber, Checkbox, Button, message, Spin, Tag, Form } from 'antd';
-import axios from 'axios';
+import api from '../api.js';
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://0.0.0.0:8000';
-
-const http = axios.create({
-    baseURL: API_URL,
-    timeout: 30000,
-});
 
 const DEFAULT_PARAMS = {
     budget_limit: 50000,
@@ -28,7 +22,7 @@ const RestockOffers = () => {
         try {
             // Получаем значения из формы
             const params = values || DEFAULT_PARAMS;
-            const resp = await http.get('/order/generate_restock_offers', { params });
+            const resp = await api.get('/order/generate_restock_offers', { params });
 
             // supplier_offers или offers
             if (resp.data?.supplier_offers) {
@@ -73,7 +67,7 @@ const RestockOffers = () => {
         const payload = { offers: Object.values(selectedOffers) };
         // console.log('Отправка:', payload);
 
-        axios.post('${import.meta.env.VITE_API_URL}/order/confirm', payload)
+        api.post('/order/confirm', payload)
             .then(res => {
                 // console.log('Ответ:', res.data);
                 message.success('Заказ успешно отправлен!');
