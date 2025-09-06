@@ -73,7 +73,7 @@ const RestockOffers = () => {
         const payload = { offers: Object.values(selectedOffers) };
         // console.log('Отправка:', payload);
 
-        axios.post('http://0.0.0.0:8000/order/confirm', payload)
+        axios.post('${import.meta.env.VITE_API_URL}/order/confirm', payload)
             .then(res => {
                 // console.log('Ответ:', res.data);
                 message.success('Заказ успешно отправлен!');

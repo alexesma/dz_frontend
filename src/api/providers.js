@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_BASE_URL = "http://0.0.0.0:8000"; // твой FastAPI backend
+const API_BASE_URL = "${import.meta.env.VITE_API_URL}";
 
 export const getProviderFullById = async (providerId) => {
     return axios.get(`${API_BASE_URL}/providers/${providerId}/full`);

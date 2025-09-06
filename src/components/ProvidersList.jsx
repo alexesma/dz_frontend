@@ -38,7 +38,7 @@ const ProvidersList = () => {
                 params.search = search;
             }
 
-            const response = await axios.get('http://0.0.0.0:8000/providers/', { params });
+            const response = await axios.get('${import.meta.env.VITE_API_URL}/providers/', { params });
 
             setProviders(response.data.items);
             setPagination(prev => ({

@@ -11,7 +11,7 @@
 //     const fetchOffers = () => {
 //         setLoading(true);
 //         axios
-//             .get('http://0.0.0.0:8000/order/get_offers_by_oem_and_make_name', {
+//             .get('${import.meta.env.VITE_API_URL}/order/get_offers_by_oem_and_make_name', {
 //                 params: {
 //                     oem: oem,
 //                     make_name: make,
@@ -86,7 +86,7 @@ const RestockOffers = () => {
     const fetchOffers = async () => {
         setLoading(true);
         try {
-            const response = await axios.get('http://0.0.0.0:8000/order/generate_restock_offers');
+            const response = await axios.get('${import.meta.env.VITE_API_URL}/order/generate_restock_offers');
             setOffers(response.data.offers);
         } catch (error) {
             console.error('Ошибка загрузки предложений:', error);

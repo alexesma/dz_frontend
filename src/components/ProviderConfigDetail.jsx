@@ -14,7 +14,7 @@ const ProviderConfigDetail = () => {
             setLoading(true);
             try {
                 // 🔧 ПОПРАВЬ путь на свой реальный эндпойнт
-                const { data } = await axios.get(`http://0.0.0.0:8000/provider_configs/${id}`);
+                const { data } = await axios.get(`${import.meta.env.VITE_API_URL}/provider_configs/${id}`);
                 setCfg(data);
             } catch (e) {
                 console.error(e);
