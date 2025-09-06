@@ -25,7 +25,7 @@
 //     const fetchOrders = async () => {
 //         setLoading(true);
 //         try {
-//             const { data } = await axios.get('http://localhost:8000/order/confirmed');
+//             const { data } = await axios.get('${import.meta.env.VITE_API_URL}/order/confirmed');
 //             setOrders(data);
 //         } catch (error) {
 //             console.error('Ошибка при загрузке заказов:', error);
@@ -44,7 +44,7 @@
 //         }
 //
 //         try {
-//             const response = await axios.patch('http://localhost:8000/order/update_position_status', {
+//             const response = await axios.patch('${import.meta.env.VITE_API_URL}/order/update_position_status', {
 //                 tracking_uuids: selected,
 //                 status: newStatus
 //             });
@@ -90,7 +90,7 @@
 //
 //     const sendOrdersToAPI = async (orderPositions) => {
 //         try {
-//             const response = await axios.post('http://localhost:8000/send_api', orderPositions);
+//             const response = await axios.post('${import.meta.env.VITE_API_URL}/send_api', orderPositions);
 //
 //             const { total_items, successful_items, failed_items, results } = response.data;
 //
@@ -385,7 +385,7 @@ const OrdersList = () => {
     const fetchConfirmedPositions = useCallback(async () => {
         setLoading(true);
         try {
-            const { data } = await api.get('http://localhost:8000/order/confirmed');
+            const { data } = await api.get('${import.meta.env.VITE_API_URL}/order/confirmed');
             setConfirmedPositions(data || []);
             if (!data || data.length === 0) {
                 showMessage('Подтвержденные позиции не найдены', 'info');
@@ -402,7 +402,7 @@ const OrdersList = () => {
     const fetchCreatedOrders = useCallback(async () => {
         setLoading(true);
         try {
-            const { data } = await api.get('http://localhost:8000/order');
+            const { data } = await api.get('${import.meta.env.VITE_API_URL}/order');
             setCreatedOrders(data || []);
             if (!data || data.length === 0) {
                 showMessage('Созданные заказы не найдены', 'info');
@@ -440,7 +440,7 @@ const OrdersList = () => {
         }
 
         try {
-            const response = await api.post('http://localhost:8000/order/send_api', supplierPositions.positions, );
+            const response = await api.post('${import.meta.env.VITE_API_URL}/order/send_api', supplierPositions.positions, );
 
             const { ORDER_ID, order_number, successful_items, failed_items, total_items } = response.data;
 
@@ -469,7 +469,7 @@ const OrdersList = () => {
     // Обновление статуса заказа
     const updateOrderStatus = async (orderId, newStatus) => {
         try {
-            await api.patch(`http://localhost:8000/order/${orderId}/status?status=${encodeURIComponent(newStatus)}`);
+            await api.patch(`${import.meta.env.VITE_API_URL}/order/${orderId}/status?status=${encodeURIComponent(newStatus)}`);
 
             setCreatedOrders(prev =>
                 prev.map(order =>
@@ -494,7 +494,7 @@ const OrdersList = () => {
         }
 
         try {
-            const response = await api.patch('http://localhost:8000/order/update_position_status', {
+            const response = await api.patch('${import.meta.env.VITE_API_URL}/order/update_position_status', {
                 tracking_uuids: selected,
                 status: newStatus
             });
