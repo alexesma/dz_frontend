@@ -1,47 +1,45 @@
-import axios from "axios";
-
-const API_BASE_URL = "${import.meta.env.VITE_API_URL}";
+import api from "../api.js";
 
 export const getProviderFullById = async (providerId) => {
-    return axios.get(`${API_BASE_URL}/providers/${providerId}/full`);
+    return api.get(`/providers/${providerId}/full`);
 };
 
 export const createProvider = async (data) => {
-    return axios.post(`${API_BASE_URL}/providers/`, data);
+    return api.post(`/providers/`, data);
 };
 
 export const updateProvider = async (providerId, data) => {
-    return axios.patch(`${API_BASE_URL}/providers/${providerId}/`, data);
+    return api.patch(`/providers/${providerId}/`, data);
 };
 
 export const deleteProviderApi = async (providerId) => {
-    return axios.delete(`${API_BASE_URL}/providers/${providerId}/`);
+    return api.delete(`/providers/${providerId}/`);
 };
 
 // Конфиги
 export const createProviderConfig = async (providerId, data) => {
-    return axios.post(`${API_BASE_URL}/providers/${providerId}/pricelist-config/`, data);
+    return api.post(`/providers/${providerId}/pricelist-config/`, data);
 };
 
 export const updateProviderConfig = async (providerId, configId, data) => {
-    return axios.patch(`${API_BASE_URL}/providers/${providerId}/pricelist-config/${configId}/`, data);
+    return api.patch(`/providers/${providerId}/pricelist-config/${configId}/`, data);
 };
 
 export const deleteProviderConfig = async (providerId, configId) => {
-    return axios.delete(`${API_BASE_URL}/providers/${providerId}/pricelist-config/${configId}/`);
+    return api.delete(`/providers/${providerId}/pricelist-config/${configId}/`);
 };
 
 // Аббревиатуры
 export const createAbbreviation = async (providerId, abbreviation) => {
-    return axios.post(`${API_BASE_URL}/providers/${providerId}/abbreviations`, { abbreviation_name: abbreviation });
+    return api.post(`/providers/${providerId}/abbreviations`, { abbreviation_name: abbreviation });
 };
 
 export const updateAbbreviation = async (providerId, abbrId, abbreviation) => {
-    return axios.patch(`${API_BASE_URL}/providers/${providerId}/abbreviations/${abbrId}`, { new_abbreviation: abbreviation });
+    return api.patch(`/providers/${providerId}/abbreviations/${abbrId}`, { new_abbreviation: abbreviation });
 };
 
 export const deleteAbbreviation = async (providerId, abbrId) => {
-    return axios.delete(`${API_BASE_URL}/providers/${providerId}/abbreviations/${abbrId}`);
+    return api.delete(`/providers/${providerId}/abbreviations/${abbrId}`);
 };
 
 export const uploadProviderPricelist = async (
@@ -68,8 +66,8 @@ export const uploadProviderPricelist = async (
     if (qty_col !== undefined && qty_col !== null) form.append("qty_col", String(qty_col));
     if (price_col !== undefined && price_col !== null) form.append("price_col", String(price_col));
 
-    return axios.post(
-        `${API_BASE_URL}/providers/${providerId}/pricelists/${configId}/upload/`,
+    return api.post(
+        `/providers/${providerId}/pricelists/${configId}/upload/`,
         form,
         {
             headers: { /* 'Content-Type': 'multipart/form-data' */ },
@@ -79,7 +77,7 @@ export const uploadProviderPricelist = async (
 
 // Загрузка прайс-листа из email
 export const downloadProviderPricelist = async (providerId, configId) => {
-    return axios.post(`${API_BASE_URL}/providers/${providerId}/download`, null, {
+    return api.post(`/providers/${providerId}/download`, null, {
         params: {
             provider_price_config_id: configId
         }
