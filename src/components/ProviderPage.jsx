@@ -490,7 +490,19 @@ const ProviderPage = () => {
                     <Form.Item
                         name="name"
                         label="Название"
-                        rules={[{ required: true, message: "Введите название поставщика" }]}
+                        rules={[
+                            { required: true, whitespace: true, message: 'Введите название поставщика' },
+                            { validator: (_, v) => {
+                                    const val = (v ?? '').trim();
+                                    if (!val) return Promise.reject('Название не может быть пустым');
+                                    if (!/^[A-Za-z0-9 .,_&()\\-]+$/.test(val)) {
+                                      return Promise.reject('Разрешены только латинские буквы, цифры и - _ . , & ( )');
+                                    }
+                                    return Promise.resolve();
+                                }
+                            }
+                        ]}
+                        normalize={(v) => (v ?? '').trim()}
                     >
                         <Input placeholder="Название поставщика" />
                     </Form.Item>
