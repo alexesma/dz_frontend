@@ -105,6 +105,7 @@ const ProviderPage = () => {
                     description: data.provider.description,
                     comment: data.provider.comment,
                     is_virtual: data.provider.is_virtual,
+                    is_own_price: data.provider.is_own_price,
                 });
             } catch (err) {
                 message.error(err?.message || "Ошибка загрузки поставщика");
@@ -265,12 +266,22 @@ const ProviderPage = () => {
         setDownloading(prev => ({ ...prev, [configId]: true }));
 
         try {
-            await downloadProviderPricelist(providerId, configId);
-            message.success("Прайс-лист успешно загружен из email и обработан");
+            const { data: downloadData } = await downloadProviderPricelist(providerId, configId);
+            if (downloadData?.stats) {
+                const stats = downloadData.stats;
+                message.success(
+                    `Прайс-лист загружен из email. ` +
+                    `Строк: ${stats.rows_total}, ` +
+                    `после очистки: ${stats.rows_clean}, ` +
+                    `после дедупликации: ${stats.rows_deduplicated}`
+                );
+            } else {
+                message.success("Прайс-лист успешно загружен из email и обработан");
+            }
 
             // обновляем данные после загрузки
-            const { data } = await getProviderFullById(providerId);
-            setProviderData(data);
+            const { data: providerDataResp } = await getProviderFullById(providerId);
+            setProviderData(providerDataResp);
         } catch (err) {
             console.error(err);
             message.error(err?.response?.data?.detail || "Ошибка загрузки прайс-листа из email");
@@ -312,7 +323,7 @@ const ProviderPage = () => {
             const fileObj = fileList[0].originFileObj;
 
             setUploading(true);
-            await uploadProviderPricelist(providerId, uploadingForConfigId, {
+            const { data: uploadData } = await uploadProviderPricelist(providerId, uploadingForConfigId, {
                 file: fileObj,
                 use_stored_params: values.use_stored_params ?? true,
                 start_row: values.start_row,
@@ -323,14 +334,24 @@ const ProviderPage = () => {
                 price_col: values.price_col,
             });
 
-            message.success("Прайс-лист успешно загружен и обработан");
+            if (uploadData?.stats) {
+                const stats = uploadData.stats;
+                message.success(
+                    `Прайс-лист загружен. ` +
+                    `Строк: ${stats.rows_total}, ` +
+                    `после очистки: ${stats.rows_clean}, ` +
+                    `после дедупликации: ${stats.rows_deduplicated}`
+                );
+            } else {
+                message.success("Прайс-лист успешно загружен и обработан");
+            }
             setUploadModalVisible(false);
             setUploadingForConfigId(null);
             uploadForm.resetFields();
 
             // обновляем данные после загрузки
-            const { data } = await getProviderFullById(providerId);
-            setProviderData(data);
+            const { data: providerDataResp } = await getProviderFullById(providerId);
+            setProviderData(providerDataResp);
         } catch (err) {
             console.error(err);
             message.error(err?.response?.data?.detail || "Ошибка загрузки прайс-листа");
@@ -438,7 +459,7 @@ const ProviderPage = () => {
                     />
                     <Popconfirm
                         title="Удалить конфигурацию?"
-                        description="Это действие необратимо"
+                        description="Удалить конфигурацию и связанные прайс-листы? Действие необратимо"
                         onConfirm={() => handleDeleteConfig(record.id)}
                         okText="Да"
                         cancelText="Нет"
@@ -543,6 +564,14 @@ const ProviderPage = () => {
 
                     <Form.Item name="comment" label="Комментарий">
                         <Input.TextArea rows={2} placeholder="Дополнительные комментарии" />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="is_own_price"
+                        label="Наш прайс"
+                        valuePropName="checked"
+                    >
+                        <Switch />
                     </Form.Item>
 
                     <Form.Item>

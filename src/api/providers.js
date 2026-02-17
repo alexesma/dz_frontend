@@ -83,3 +83,7 @@ export const downloadProviderPricelist = async (providerId, configId) => {
         }
     });
 };
+
+export const getProviderConfigOptions = async () => {
+    return api.get('/provider-configs/');
+};
