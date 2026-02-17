@@ -20,23 +20,23 @@ const SubstitutionPage = () => {
     const [form] = Form.useForm();
 
     useEffect(() => {
-        if (!isNew) {
-            fetchSubstitution();
-        }
-    }, [isNew, substitutionId]);
-
-    const fetchSubstitution = async () => {
-        setLoading(true);
-        try {
-            const { data } = await getSubstitutionById(substitutionId);
-            form.setFieldsValue(data);
-        } catch (error) {
-            message.error('Ошибка загрузки подмены');
-            navigate('/substitutions');
-        } finally {
-            setLoading(false);
-        }
-    };
+        const fetchSubstitution = async () => {
+            if (isNew) {
+                return;
+            }
+            setLoading(true);
+            try {
+                const { data } = await getSubstitutionById(substitutionId);
+                form.setFieldsValue(data);
+            } catch (error) {
+                message.error('Ошибка загрузки подмены');
+                navigate('/substitutions');
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchSubstitution();
+    }, [isNew, substitutionId, form, navigate]);
 
     const handleSubmit = async (values) => {
         setSaving(true);
@@ -50,6 +50,7 @@ const SubstitutionPage = () => {
             }
             navigate('/substitutions');
         } catch (error) {
+            console.error('Save substitution error:', error);
             message.error('Ошибка сохранения подмены');
         } finally {
             setSaving(false);

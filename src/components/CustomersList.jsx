@@ -56,6 +56,7 @@ const CustomersList = () => {
             message.success('Клиент удалён');
             fetchCustomers();
         } catch (error) {
+            console.error('Delete customer error:', error);
             message.error('Ошибка удаления клиента');
         }
     };

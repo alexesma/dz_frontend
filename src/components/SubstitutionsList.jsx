@@ -43,6 +43,7 @@ const SubstitutionsList = () => {
             message.success('Подмена удалена');
             fetchSubstitutions();
         } catch (error) {
+            console.error('Delete substitution error:', error);
             message.error('Ошибка удаления подмены');
         }
     };
@@ -79,6 +80,7 @@ const SubstitutionsList = () => {
             setFileList([]);
             fetchSubstitutions();
         } catch (error) {
+            console.error('Upload substitutions error:', error);
             message.error('Ошибка загрузки файла');
         } finally {
             setUploading(false);

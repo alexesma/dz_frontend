@@ -225,6 +225,7 @@ const CustomerPage = () => {
             setSources(sourcesResp.data || []);
             setProviderOptions(providerResp.data || []);
         } catch (err) {
+            console.error(err);
             message.error('Ошибка загрузки источников');
         } finally {
             setSourcesLoading(false);
@@ -330,6 +331,7 @@ const CustomerPage = () => {
             );
             setSources(data || []);
         } catch (err) {
+            console.error(err);
             message.error('Ошибка удаления источника');
         }
     };
