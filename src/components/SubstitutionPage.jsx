@@ -29,6 +29,7 @@ const SubstitutionPage = () => {
                 const { data } = await getSubstitutionById(substitutionId);
                 form.setFieldsValue(data);
             } catch (error) {
+                console.error('Fetch substitution error:', error);
                 message.error('Ошибка загрузки подмены');
                 navigate('/substitutions');
             } finally {
