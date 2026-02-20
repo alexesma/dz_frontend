@@ -1,6 +1,6 @@
 import React from 'react';
 import { Layout } from 'antd';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import RestockOffers from './components/RestockOffers';
 import OrdersList from './components/OrdersList';
@@ -14,45 +14,86 @@ import CustomersList from './components/CustomersList';
 import CustomerPage from './components/CustomerPage';
 import AutopartOffers from './components/AutopartOffers';
 import PriceHistoryPlot from './components/PriceHistoryPlot';
+import LoginPage from './components/LoginPage';
+import RegisterPage from './components/RegisterPage';
+import AdminUsers from './components/AdminUsers';
+import { AuthProvider, useAuth } from './context/AuthContext';
 
 
 const { Content } = Layout;
 
+const RequireAuth = ({ children }) => {
+    const { user, loading } = useAuth();
+    if (loading) {
+        return null;
+    }
+    if (!user) {
+        return <Navigate to="/login" replace />;
+    }
+    return children;
+};
+
+const RequireAdmin = ({ children }) => {
+    const { user, loading } = useAuth();
+    if (loading) {
+        return null;
+    }
+    if (!user) {
+        return <Navigate to="/login" replace />;
+    }
+    if (user.role !== 'admin') {
+        return <Navigate to="/" replace />;
+    }
+    return children;
+};
+
+const AppRoutes = () => (
+    <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+
+        <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
+        <Route path="/restock" element={<RequireAuth><RestockOffers /></RequireAuth>} />
+        <Route path="/orders" element={<RequireAuth><OrdersList /></RequireAuth>} />
+
+        {/* Providers */}
+        <Route path="/providers" element={<RequireAuth><ProvidersList /></RequireAuth>} />
+        <Route path="/providers/create" element={<RequireAuth><ProviderPage /></RequireAuth>} />
+        <Route path="/providers/:providerId/edit" element={<RequireAuth><ProviderPage /></RequireAuth>} />
+        <Route path="/provider-configs/:id" element={<RequireAuth><ProviderConfigDetail /></RequireAuth>} />
+
+        {/* Customers */}
+        <Route path="/customers" element={<RequireAuth><CustomersList /></RequireAuth>} />
+        <Route path="/customers/create" element={<RequireAuth><CustomerPage /></RequireAuth>} />
+        <Route path="/customers/:customerId/edit" element={<RequireAuth><CustomerPage /></RequireAuth>} />
+
+        {/* Substitutions */}
+        <Route path="/substitutions" element={<RequireAuth><SubstitutionsList /></RequireAuth>} />
+        <Route path="/substitutions/create" element={<RequireAuth><SubstitutionPage /></RequireAuth>} />
+        <Route path="/substitutions/:substitutionId/edit" element={<RequireAuth><SubstitutionPage /></RequireAuth>} />
+
+        {/* Autoparts offers */}
+        <Route path="/autoparts/offers" element={<RequireAuth><AutopartOffers /></RequireAuth>} />
+
+        {/* Autopart price history */}
+        <Route path="/autoparts/price-history" element={<RequireAuth><PriceHistoryPlot /></RequireAuth>} />
+
+        {/* Admin */}
+        <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
+    </Routes>
+);
+
 const App = () => (
-    <Router>
-        <Layout style={{ height: '100vh' }}>
-            <Sidebar />
-            <Content style={{ padding: '20px' }}>
-                <Routes>
-                    <Route path="/" element={<Dashboard />} />
-                    <Route path="/restock" element={<RestockOffers />} />
-                    <Route path="/orders" element={<OrdersList />} />
-
-                    {/* Providers */}
-                    <Route path="/providers" element={<ProvidersList />} />
-                    <Route path="/providers/create" element={<ProviderPage />} />
-                    <Route path="/providers/:providerId/edit" element={<ProviderPage />} />
-                    <Route path="/provider-configs/:id" element={<ProviderConfigDetail />} />
-
-                    {/* Customers */}
-                    <Route path="/customers" element={<CustomersList />} />
-                    <Route path="/customers/create" element={<CustomerPage />} />
-                    <Route path="/customers/:customerId/edit" element={<CustomerPage />} />
-
-                    {/* Substitutions */}
-                    <Route path="/substitutions" element={<SubstitutionsList />} />
-                    <Route path="/substitutions/create" element={<SubstitutionPage />} />
-                    <Route path="/substitutions/:substitutionId/edit" element={<SubstitutionPage />} />
-
-                    {/* Autoparts offers */}
-                    <Route path="/autoparts/offers" element={<AutopartOffers />} />
-
-                    {/* Autopart price history */}
-                    <Route path="/autoparts/price-history" element={<PriceHistoryPlot />} />
-                </Routes>
-            </Content>
-        </Layout>
-    </Router>
+    <AuthProvider>
+        <Router>
+            <Layout style={{ height: '100vh' }}>
+                <Sidebar />
+                <Content style={{ padding: '20px' }}>
+                    <AppRoutes />
+                </Content>
+            </Layout>
+        </Router>
+    </AuthProvider>
 );
 
 export default App;
