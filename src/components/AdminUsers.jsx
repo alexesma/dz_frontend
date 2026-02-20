@@ -14,6 +14,7 @@ const AdminUsers = () => {
             });
             setUsers(data);
         } catch (err) {
+            console.error('Failed to load users', err);
             message.error('Не удалось загрузить пользователей');
         } finally {
             setLoading(false);
@@ -30,6 +31,7 @@ const AdminUsers = () => {
             message.success('Пользователь подтвержден');
             loadUsers();
         } catch (err) {
+            console.error('Failed to approve user', err);
             message.error('Ошибка подтверждения');
         }
     };

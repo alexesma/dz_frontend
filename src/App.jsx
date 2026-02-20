@@ -17,7 +17,8 @@ import PriceHistoryPlot from './components/PriceHistoryPlot';
 import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
 import AdminUsers from './components/AdminUsers';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider } from './context/AuthContext';
+import useAuth from './context/useAuth';
 
 
 const { Content } = Layout;

@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useEffect, useMemo, useState } from 'react';
 import api from '../api';
 
 const AuthContext = createContext({
@@ -18,6 +18,7 @@ export const AuthProvider = ({ children }) => {
             const { data } = await api.get('/auth/me');
             setUser(data);
         } catch (err) {
+            console.error('Failed to refresh user', err);
             setUser(null);
         }
     }, []);
@@ -31,6 +32,7 @@ export const AuthProvider = ({ children }) => {
                     setUser(data);
                 }
             } catch (err) {
+                console.error('Failed to load current user', err);
                 if (mounted) {
                     setUser(null);
                 }
@@ -71,4 +73,4 @@ export const AuthProvider = ({ children }) => {
     );
 };
 
-export const useAuth = () => useContext(AuthContext);
+export { AuthContext };
