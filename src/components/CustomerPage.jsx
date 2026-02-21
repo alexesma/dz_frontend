@@ -22,6 +22,9 @@ import {
     updateCustomerPricelistSource,
     deleteCustomerPricelistSource,
     sendCustomerPricelistNow,
+    getCustomerOrderConfig,
+    createCustomerOrderConfig,
+    updateCustomerOrderConfig,
 } from '../api/customers';
 import { getProviderConfigOptions } from '../api/providers';
 
@@ -44,10 +47,13 @@ const CustomerPage = () => {
     const [sourcesLoading, setSourcesLoading] = useState(false);
     const [providerOptions, setProviderOptions] = useState([]);
     const [editingSource, setEditingSource] = useState(null);
+    const [orderConfig, setOrderConfig] = useState(null);
+    const [orderConfigLoading, setOrderConfigLoading] = useState(false);
 
     const [customerForm] = Form.useForm();
     const [configForm] = Form.useForm();
     const [sourceForm] = Form.useForm();
+    const [orderConfigForm] = Form.useForm();
 
     const dayOptions = [
         { label: 'Пн', value: 'mon' },
@@ -98,11 +104,26 @@ const CustomerPage = () => {
             try {
                 const { data: customer } = await getCustomerById(customerId);
                 const { data: configs } = await getCustomerPricelistConfigs(customerId);
+                let orderCfg = null;
+                try {
+                    const orderResp = await getCustomerOrderConfig(customerId);
+                    orderCfg = orderResp.data;
+                } catch (err) {
+                    // ignore 404
+                }
 
                 setCustomerData({
                     customer,
                     pricelist_configs: configs,
                 });
+                setOrderConfig(orderCfg);
+                if (orderCfg) {
+                    orderConfigForm.setFieldsValue({
+                        ...orderCfg,
+                        order_emails: (orderCfg.order_emails || []).join(', '),
+                        order_reply_emails: (orderCfg.order_reply_emails || []).join(', '),
+                    });
+                }
 
                 customerForm.setFieldsValue({
                     name: customer.name,
@@ -160,11 +181,57 @@ const CustomerPage = () => {
         }
     };
 
+    const handleOrderConfigSubmit = async (values) => {
+        if (!customerId) return;
+        setOrderConfigLoading(true);
+        try {
+            const payload = {
+                ...values,
+                customer_id: customerId,
+                order_emails: (values.order_emails || '')
+                    .split(',')
+                    .map((v) => v.trim())
+                    .filter((v) => v),
+                order_reply_emails: (values.order_reply_emails || '')
+                    .split(',')
+                    .map((v) => v.trim())
+                    .filter((v) => v),
+            };
+            if (orderConfig) {
+                await updateCustomerOrderConfig(customerId, payload);
+                message.success('Конфигурация заказов обновлена');
+            } else {
+                await createCustomerOrderConfig(payload);
+                message.success('Конфигурация заказов создана');
+            }
+            const orderResp = await getCustomerOrderConfig(customerId);
+            setOrderConfig(orderResp.data);
+        } catch (err) {
+            message.error('Ошибка сохранения конфигурации заказов');
+        } finally {
+            setOrderConfigLoading(false);
+        }
+    };
+
     // Работа с конфигурациями
     const openConfigModal = (config = null) => {
         setEditingConfig(config);
         if (config) {
-            configForm.setFieldsValue(config);
+            configForm.setFieldsValue({
+                ...config,
+                default_filters: config.default_filters
+                    ? JSON.stringify(config.default_filters, null, 2)
+                    : '',
+                own_filters: config.own_filters
+                    ? JSON.stringify(config.own_filters, null, 2)
+                    : '',
+                other_filters: config.other_filters
+                    ? JSON.stringify(config.other_filters, null, 2)
+                    : '',
+                supplier_filters: config.supplier_filters
+                    ? JSON.stringify(config.supplier_filters, null, 2)
+                    : '',
+            });
         } else {
             configForm.resetFields();
         }
@@ -175,11 +242,33 @@ const CustomerPage = () => {
         if (!customerId) return;
 
         try {
+            const parseJsonField = (value) => {
+                if (!value) return {};
+                if (typeof value === 'object') return value;
+                try {
+                    return JSON.parse(value);
+                } catch (err) {
+                    throw new Error('Некорректный JSON в настройках фильтров');
+                }
+            };
+
+            const payload = {
+                ...values,
+                default_filters: parseJsonField(values.default_filters),
+                own_filters: parseJsonField(values.own_filters),
+                other_filters: parseJsonField(values.other_filters),
+                supplier_filters: parseJsonField(values.supplier_filters),
+            };
+
             if (editingConfig) {
-                await updateCustomerPricelistConfig(customerId, editingConfig.id, values);
+                await updateCustomerPricelistConfig(
+                    customerId,
+                    editingConfig.id,
+                    payload,
+                );
                 message.success('Конфигурация обновлена');
             } else {
-                await createCustomerPricelistConfig(customerId, values);
+                await createCustomerPricelistConfig(customerId, payload);
                 message.success('Конфигурация создана');
             }
 
@@ -192,7 +281,11 @@ const CustomerPage = () => {
             setCustomerData(prev => ({ ...prev, pricelist_configs: configs }));
         } catch (err) {
             console.error(err);
-            message.error('Ошибка сохранения конфигурации');
+            const msg =
+                err?.message === 'Некорректный JSON в настройках фильтров'
+                    ? err.message
+                    : 'Ошибка сохранения конфигурации';
+            message.error(msg);
         }
     };
 
@@ -554,6 +647,118 @@ const CustomerPage = () => {
                 </Card>
             )}
 
+            {!isNew && customerData && (
+                <Card title="Конфигурация заказов клиента" style={{ marginTop: 16 }}>
+                    <Form
+                        form={orderConfigForm}
+                        layout="vertical"
+                        onFinish={handleOrderConfigSubmit}
+                        initialValues={{
+                            ship_mode: 'REPLACE_QTY',
+                            price_tolerance_pct: 2,
+                            price_warning_pct: 5,
+                            is_active: true,
+                        }}
+                    >
+                        <Space direction="vertical" style={{ width: '100%' }} size="large">
+                            <Form.Item name="order_emails" label="Почты для заказов (через запятую)">
+                                <Input placeholder="order1@example.com, order2@example.com" />
+                            </Form.Item>
+                            <Form.Item name="order_email" label="Почта для заказов (одна)">
+                                <Input />
+                            </Form.Item>
+                            <Form.Item name="order_reply_emails" label="Почты для ответов (через запятую)">
+                                <Input placeholder="reply1@example.com, reply2@example.com" />
+                            </Form.Item>
+                            <Form.Item name="order_subject_pattern" label="Шаблон темы письма">
+                                <Input />
+                            </Form.Item>
+                            <Form.Item name="order_filename_pattern" label="Шаблон имени файла">
+                                <Input />
+                            </Form.Item>
+                            <Form.Item name="pricelist_config_id" label="Привязка к конфигурации прайса">
+                                <Select
+                                    allowClear
+                                    options={(customerData?.pricelist_configs || []).map((cfg) => ({
+                                        label: cfg.name,
+                                        value: cfg.id,
+                                    }))}
+                                />
+                            </Form.Item>
+                            <Divider />
+                            <Form.Item name="order_number_column" label="Колонка номера заказа">
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item name="order_number_regex_subject" label="Regex номера (тема)">
+                                <Input />
+                            </Form.Item>
+                            <Form.Item name="order_number_regex_body" label="Regex номера (тело письма)">
+                                <Input />
+                            </Form.Item>
+                            <Form.Item name="order_number_regex_filename" label="Regex номера (имя файла)">
+                                <Input />
+                            </Form.Item>
+                            <Form.Item name="order_number_prefix" label="Префикс номера">
+                                <Input />
+                            </Form.Item>
+                            <Form.Item name="order_number_suffix" label="Суффикс номера">
+                                <Input />
+                            </Form.Item>
+                            <Form.Item name="order_number_source" label="Источник номера (subject/body/filename)">
+                                <Input />
+                            </Form.Item>
+                            <Form.Item name="order_date_column" label="Колонка даты заказа">
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Divider />
+                            <Form.Item name="oem_col" label="Колонка OEM" rules={[{ required: true }]}>
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item name="brand_col" label="Колонка бренда" rules={[{ required: true }]}>
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item name="name_col" label="Колонка наименования">
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item name="qty_col" label="Колонка количества" rules={[{ required: true }]}>
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item name="price_col" label="Колонка цены">
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item name="ship_qty_col" label="Колонка отгрузки">
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item name="reject_qty_col" label="Колонка отказа">
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item name="ship_mode" label="Режим записи количества">
+                                <Select
+                                    options={[
+                                        { label: 'Заменить количество', value: 'REPLACE_QTY' },
+                                        { label: 'Записать отгрузку', value: 'WRITE_SHIP_QTY' },
+                                        { label: 'Записать отказ', value: 'WRITE_REJECT_QTY' },
+                                    ]}
+                                />
+                            </Form.Item>
+                            <Form.Item name="price_tolerance_pct" label="Допустимое отклонение цены (%)">
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item name="price_warning_pct" label="Порог предупреждения (%)">
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item name="is_active" label="Активно" valuePropName="checked">
+                                <Switch />
+                            </Form.Item>
+                        </Space>
+                        <Divider />
+                        <Button type="primary" htmlType="submit" loading={orderConfigLoading}>
+                            Сохранить конфигурацию заказов
+                        </Button>
+                    </Form>
+                </Card>
+            )}
+
             {/* Модалка конфигурации */}
             <Modal
                 title={editingConfig ? 'Редактирование конфигурации' : 'Создание конфигурации'}
@@ -629,6 +834,54 @@ const CustomerPage = () => {
                             />
                         </Form.Item>
                     </div>
+
+                    <Divider>Фильтры прайс-листа (JSON)</Divider>
+
+                    <Form.Item
+                        name="default_filters"
+                        label="Фильтры по умолчанию (fallback)"
+                        tooltip="JSON-объект фильтров для всех поставщиков, если нет более специфичных"
+                    >
+                        <Input.TextArea
+                            rows={4}
+                            placeholder='{"brand_filters":{"type":"exclude","brands":[1,2]},"min_price":100,"min_quantity":1}'
+                        />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="own_filters"
+                        label="Фильтры для нашего прайса"
+                        tooltip="Применяются только к нашим позициям"
+                    >
+                        <Input.TextArea
+                            rows={4}
+                            placeholder='{"max_price":50000,"min_quantity":1}'
+                        />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="other_filters"
+                        label="Фильтры для остальных поставщиков"
+                        tooltip="Применяются к сторонним поставщикам, если нет индивидуальных"
+                    >
+                        <Input.TextArea
+                            rows={4}
+                            placeholder='{"min_price":50,"brand_filters":{"type":"include","brands":[10,20]}}'
+                        />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="supplier_filters"
+                        label="Индивидуальные фильтры поставщиков"
+                        tooltip={
+                            'JSON: provider_id -> filters. Например {"12": {"min_quantity": 2}}'
+                        }
+                    >
+                        <Input.TextArea
+                            rows={5}
+                            placeholder='{"12":{"min_quantity":2},"34":{"brand_filters":{"type":"exclude","brands":[5]}}}'
+                        />
+                    </Form.Item>
 
                     <Divider>Расписание отправки</Divider>
 

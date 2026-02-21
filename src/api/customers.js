@@ -54,3 +54,13 @@ export const createCustomerPricelist = (customerId, data) =>
 
 export const deleteCustomerPricelist = (customerId, pricelistId) =>
     api.delete(`/customers/${customerId}/pricelists/${pricelistId}`);
+
+// ===== Customer Order Config =====
+export const getCustomerOrderConfig = (customerId) =>
+    api.get(`/customer-orders/config/${customerId}`);
+
+export const createCustomerOrderConfig = (data) =>
+    api.post('/customer-orders/config', data);
+
+export const updateCustomerOrderConfig = (customerId, data) =>
+    api.put(`/customer-orders/config/${customerId}`, data);

@@ -14,6 +14,9 @@ import CustomersList from './components/CustomersList';
 import CustomerPage from './components/CustomerPage';
 import AutopartOffers from './components/AutopartOffers';
 import PriceHistoryPlot from './components/PriceHistoryPlot';
+import StockOrdersPage from './components/StockOrdersPage';
+import CustomerSupplierOrdersPage from './components/CustomerSupplierOrdersPage';
+import EmailAccountsPage from './components/EmailAccountsPage';
 import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
 import AdminUsers from './components/AdminUsers';
@@ -56,6 +59,8 @@ const AppRoutes = () => (
         <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
         <Route path="/restock" element={<RequireAuth><RestockOffers /></RequireAuth>} />
         <Route path="/orders" element={<RequireAuth><OrdersList /></RequireAuth>} />
+        <Route path="/customer-orders/stock" element={<RequireAuth><StockOrdersPage /></RequireAuth>} />
+        <Route path="/customer-orders/suppliers" element={<RequireAuth><CustomerSupplierOrdersPage /></RequireAuth>} />
 
         {/* Providers */}
         <Route path="/providers" element={<RequireAuth><ProvidersList /></RequireAuth>} />
@@ -81,6 +86,7 @@ const AppRoutes = () => (
 
         {/* Admin */}
         <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
+        <Route path="/admin/email-accounts" element={<RequireAdmin><EmailAccountsPage /></RequireAdmin>} />
     </Routes>
 );
 

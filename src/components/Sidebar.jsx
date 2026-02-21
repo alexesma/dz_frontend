@@ -1,7 +1,7 @@
 import React from 'react';
 import { Layout, Menu } from 'antd';
 import { Link, useNavigate } from 'react-router-dom';
-import { TeamOutlined, SwapOutlined, SearchOutlined, LineChartOutlined, UserOutlined } from '@ant-design/icons';
+import { TeamOutlined, SwapOutlined, SearchOutlined, LineChartOutlined, UserOutlined, InboxOutlined, SendOutlined } from '@ant-design/icons';
 import useAuth from '../context/useAuth';
 
 const { Sider } = Layout;
@@ -31,6 +31,12 @@ const Sidebar = () => {
                 <Menu.Item key="3">
                     <Link to="/orders">Заказы поставщикам</Link>
                 </Menu.Item>
+                <Menu.Item key="customer-supplier-orders" icon={<SendOutlined />}>
+                    <Link to="/customer-orders/suppliers">Клиентские заказы → поставщики</Link>
+                </Menu.Item>
+                <Menu.Item key="stock-orders" icon={<InboxOutlined />}>
+                    <Link to="/customer-orders/stock">Наш склад: заказы</Link>
+                </Menu.Item>
                 <Menu.Item key="4">
                     <Link to="/providers">Поставщики</Link>
                 </Menu.Item>
@@ -47,9 +53,14 @@ const Sidebar = () => {
                     <Link to="/autoparts/price-history">График цен</Link>
                 </Menu.Item>
                 {user.role === 'admin' && (
-                    <Menu.Item key="admin-users" icon={<UserOutlined />}>
-                        <Link to="/admin/users">Админ: пользователи</Link>
-                    </Menu.Item>
+                    <>
+                        <Menu.Item key="admin-users" icon={<UserOutlined />}>
+                            <Link to="/admin/users">Админ: пользователи</Link>
+                        </Menu.Item>
+                        <Menu.Item key="admin-emails" icon={<UserOutlined />}>
+                            <Link to="/admin/email-accounts">Админ: почты</Link>
+                        </Menu.Item>
+                    </>
                 )}
                 <Menu.Item key="logout" onClick={handleLogout}>
                     Выйти

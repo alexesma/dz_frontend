@@ -4,6 +4,10 @@ export const getProviderFullById = async (providerId) => {
     return api.get(`/providers/${providerId}/full`);
 };
 
+export const getProviders = async (params = {}) => {
+    return api.get('/providers/', { params });
+};
+
 export const createProvider = async (data) => {
     return api.post(`/providers/`, data);
 };

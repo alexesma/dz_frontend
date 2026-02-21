@@ -75,6 +75,20 @@ const ProviderPage = () => {
     const [configForm] = Form.useForm();
     const [abbrForm] = Form.useForm();
 
+    const dayOptions = [
+        { label: 'Пн', value: 'mon' },
+        { label: 'Вт', value: 'tue' },
+        { label: 'Ср', value: 'wed' },
+        { label: 'Чт', value: 'thu' },
+        { label: 'Пт', value: 'fri' },
+        { label: 'Сб', value: 'sat' },
+        { label: 'Вс', value: 'sun' },
+    ];
+    const timeOptions = Array.from({ length: 24 }, (_, i) => {
+        const hour = String(i).padStart(2, '0');
+        return { label: `${hour}:00`, value: `${hour}:00` };
+    });
+
     // --- загрузка данных при редактировании ---
     useEffect(() => {
         if (isNew) {
@@ -106,6 +120,9 @@ const ProviderPage = () => {
                     comment: data.provider.comment,
                     is_virtual: data.provider.is_virtual,
                     is_own_price: data.provider.is_own_price,
+                    order_schedule_days: data.provider.order_schedule_days || [],
+                    order_schedule_times: data.provider.order_schedule_times || [],
+                    order_schedule_enabled: data.provider.order_schedule_enabled || false,
                 });
             } catch (err) {
                 message.error(err?.message || "Ошибка загрузки поставщика");
@@ -572,6 +589,29 @@ const ProviderPage = () => {
                         valuePropName="checked"
                     >
                         <Switch />
+                    </Form.Item>
+
+                    <Divider>Расписание отправки заказов</Divider>
+                    <Form.Item
+                        name="order_schedule_enabled"
+                        label="Автоматическая отправка заказов"
+                        valuePropName="checked"
+                    >
+                        <Switch />
+                    </Form.Item>
+                    <Form.Item name="order_schedule_days" label="Дни недели">
+                        <Select
+                            mode="multiple"
+                            options={dayOptions}
+                            placeholder="Выберите дни"
+                        />
+                    </Form.Item>
+                    <Form.Item name="order_schedule_times" label="Время (HH:MM)">
+                        <Select
+                            mode="multiple"
+                            options={timeOptions}
+                            placeholder="Выберите время"
+                        />
                     </Form.Item>
 
                     <Form.Item>
