@@ -28,7 +28,7 @@ const CustomerSupplierOrdersPage = () => {
             ]);
             setOrders(ordersResp.data || []);
             setProviders(providersResp.data?.providers || []);
-        } catch (err) {
+        } catch {
             message.error('Не удалось загрузить заказы поставщикам');
         } finally {
             setLoading(false);
@@ -82,7 +82,7 @@ const CustomerSupplierOrdersPage = () => {
             message.success('Заказы отправлены');
             setSelectedRowKeys([]);
             fetchOrders();
-        } catch (err) {
+        } catch {
             message.error('Ошибка отправки заказов');
         }
     };
@@ -92,7 +92,7 @@ const CustomerSupplierOrdersPage = () => {
             await sendScheduledSupplierOrders();
             message.success('Запланированные заказы отправлены');
             fetchOrders();
-        } catch (err) {
+        } catch {
             message.error('Ошибка отправки запланированных заказов');
         }
     };

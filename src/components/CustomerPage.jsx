@@ -108,7 +108,7 @@ const CustomerPage = () => {
                 try {
                     const orderResp = await getCustomerOrderConfig(customerId);
                     orderCfg = orderResp.data;
-                } catch (err) {
+                } catch {
                     // ignore 404
                 }
 
@@ -140,7 +140,7 @@ const CustomerPage = () => {
                 setLoading(false);
             }
         })();
-    }, [isNew, customerId, customerForm, navigate]);
+    }, [isNew, customerId, customerForm, navigate, orderConfigForm]);
 
     // Сохранение клиента
     const handleCustomerSubmit = async (values) => {
@@ -206,7 +206,7 @@ const CustomerPage = () => {
             }
             const orderResp = await getCustomerOrderConfig(customerId);
             setOrderConfig(orderResp.data);
-        } catch (err) {
+        } catch {
             message.error('Ошибка сохранения конфигурации заказов');
         } finally {
             setOrderConfigLoading(false);
@@ -247,7 +247,7 @@ const CustomerPage = () => {
                 if (typeof value === 'object') return value;
                 try {
                     return JSON.parse(value);
-                } catch (err) {
+                } catch {
                     throw new Error('Некорректный JSON в настройках фильтров');
                 }
             };

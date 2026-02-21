@@ -22,7 +22,7 @@ const EmailAccountsPage = () => {
         try {
             const { data } = await getEmailAccounts();
             setAccounts(data || []);
-        } catch (err) {
+        } catch {
             message.error('Не удалось загрузить почтовые аккаунты');
         } finally {
             setLoading(false);
@@ -56,7 +56,7 @@ const EmailAccountsPage = () => {
             setEditing(null);
             form.resetFields();
             fetchAccounts();
-        } catch (err) {
+        } catch {
             message.error('Ошибка сохранения аккаунта');
         }
     };
@@ -66,7 +66,7 @@ const EmailAccountsPage = () => {
             await deleteEmailAccount(record.id);
             message.success('Аккаунт удален');
             fetchAccounts();
-        } catch (err) {
+        } catch {
             message.error('Ошибка удаления аккаунта');
         }
     };
