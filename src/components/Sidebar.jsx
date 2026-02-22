@@ -1,7 +1,7 @@
 import React from 'react';
 import { Layout, Menu } from 'antd';
 import { Link, useNavigate } from 'react-router-dom';
-import { TeamOutlined, SwapOutlined, SearchOutlined, LineChartOutlined, UserOutlined, InboxOutlined, SendOutlined } from '@ant-design/icons';
+import { TeamOutlined, SwapOutlined, SearchOutlined, LineChartOutlined, UserOutlined, InboxOutlined, SendOutlined, SettingOutlined, EyeOutlined } from '@ant-design/icons';
 import useAuth from '../context/useAuth';
 
 const { Sider } = Layout;
@@ -49,6 +49,9 @@ const Sidebar = () => {
                 <Menu.Item key="autopart-offers" icon={<SearchOutlined />}>
                     <Link to="/autoparts/offers">Прайсы по артикулу</Link>
                 </Menu.Item>
+                <Menu.Item key="watchlist" icon={<EyeOutlined />}>
+                    <Link to="/watchlist">Отслеживание позиций</Link>
+                </Menu.Item>
                 <Menu.Item key="autopart-price-history" icon={<LineChartOutlined />}>
                     <Link to="/autoparts/price-history">График цен</Link>
                 </Menu.Item>
@@ -59,6 +62,9 @@ const Sidebar = () => {
                         </Menu.Item>
                         <Menu.Item key="admin-emails" icon={<UserOutlined />}>
                             <Link to="/admin/email-accounts">Админ: почты</Link>
+                        </Menu.Item>
+                        <Menu.Item key="admin-settings" icon={<SettingOutlined />}>
+                            <Link to="/admin/settings">Админ: настройки</Link>
                         </Menu.Item>
                     </>
                 )}

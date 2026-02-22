@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Card, message, Table, Typography } from 'antd';
+import { Button, Card, message, Modal, Table, Typography } from 'antd';
 import { getSupplierOrders, sendSupplierOrders, sendScheduledSupplierOrders } from '../api/customerOrders';
 import { getProviders } from '../api/providers';
 
@@ -77,24 +77,40 @@ const CustomerSupplierOrdersPage = () => {
             return;
         }
         const orderIds = Array.from(new Set(selectedRowKeys.map((key) => Number(String(key).split('-')[0]))));
-        try {
-            await sendSupplierOrders(orderIds);
-            message.success('Заказы отправлены');
-            setSelectedRowKeys([]);
-            fetchOrders();
-        } catch {
-            message.error('Ошибка отправки заказов');
-        }
+        Modal.confirm({
+            title: 'Отправить выбранные заказы?',
+            content: 'Проверьте список перед отправкой.',
+            okText: 'Отправить',
+            cancelText: 'Отмена',
+            onOk: async () => {
+                try {
+                    await sendSupplierOrders(orderIds);
+                    message.success('Заказы отправлены');
+                    setSelectedRowKeys([]);
+                    fetchOrders();
+                } catch {
+                    message.error('Ошибка отправки заказов');
+                }
+            },
+        });
     };
 
     const handleSendScheduled = async () => {
-        try {
-            await sendScheduledSupplierOrders();
-            message.success('Запланированные заказы отправлены');
-            fetchOrders();
-        } catch {
-            message.error('Ошибка отправки запланированных заказов');
-        }
+        Modal.confirm({
+            title: 'Отправить заказы по расписанию?',
+            content: 'Будут отправлены все заказы, готовые к отправке.',
+            okText: 'Отправить',
+            cancelText: 'Отмена',
+            onOk: async () => {
+                try {
+                    await sendScheduledSupplierOrders();
+                    message.success('Запланированные заказы отправлены');
+                    fetchOrders();
+                } catch {
+                    message.error('Ошибка отправки запланированных заказов');
+                }
+            },
+        });
     };
 
     return (

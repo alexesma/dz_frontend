@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Card, Form, Input, InputNumber, Modal, Select, Switch, Table, message } from 'antd';
+import { Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Switch, Table, message } from 'antd';
 import { createEmailAccount, deleteEmailAccount, getEmailAccounts, updateEmailAccount } from '../api/emailAccounts';
 
 const purposeOptions = [
@@ -16,6 +16,18 @@ const EmailAccountsPage = () => {
     const [modalOpen, setModalOpen] = useState(false);
     const [editing, setEditing] = useState(null);
     const [form] = Form.useForm();
+
+    const confirmChange = (title) =>
+        new Promise((resolve, reject) => {
+            Modal.confirm({
+                title,
+                content: 'Проверьте данные перед сохранением.',
+                okText: 'Сохранить',
+                cancelText: 'Отмена',
+                onOk: resolve,
+                onCancel: () => reject(new Error('cancel')),
+            });
+        });
 
     const fetchAccounts = async () => {
         setLoading(true);
@@ -46,6 +58,7 @@ const EmailAccountsPage = () => {
     const handleSubmit = async (values) => {
         try {
             if (editing) {
+                await confirmChange('Сохранить изменения аккаунта?');
                 await updateEmailAccount(editing.id, values);
                 message.success('Аккаунт обновлен');
             } else {
@@ -56,10 +69,12 @@ const EmailAccountsPage = () => {
             setEditing(null);
             form.resetFields();
             fetchAccounts();
-        } catch {
+        } catch (err) {
+            if (err?.message === 'cancel') return;
             message.error('Ошибка сохранения аккаунта');
         }
     };
+
 
     const handleDelete = async (record) => {
         try {
@@ -94,7 +109,15 @@ const EmailAccountsPage = () => {
             render: (_, record) => (
                 <div style={{ display: 'flex', gap: 8 }}>
                     <Button size="small" onClick={() => openModal(record)}>Редактировать</Button>
-                    <Button size="small" danger onClick={() => handleDelete(record)}>Удалить</Button>
+                    <Popconfirm
+                        title="Удалить аккаунт?"
+                        description="Это действие необратимо"
+                        onConfirm={() => handleDelete(record)}
+                        okText="Да"
+                        cancelText="Нет"
+                    >
+                        <Button size="small" danger>Удалить</Button>
+                    </Popconfirm>
                 </div>
             ),
         },

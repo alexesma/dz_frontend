@@ -43,7 +43,9 @@ import {
     deleteAbbreviation,
     downloadProviderPricelist,
     uploadProviderPricelist,
+    parseProviderExcludePositions,
 } from "../api/providers";
+import { getPriceStaleAlerts } from "../api/settings";
 
 const { Title, Text } = Typography;
 
@@ -59,6 +61,8 @@ const ProviderPage = () => {
 
     const [saving, setSaving] = useState(false);
     const [providerData, setProviderData] = useState(null);
+    const [alertsLoading, setAlertsLoading] = useState(false);
+    const [staleAlerts, setStaleAlerts] = useState([]);
 
     const [configModalVisible, setConfigModalVisible] = useState(false);
     const [editingConfig, setEditingConfig] = useState(null);
@@ -70,6 +74,9 @@ const ProviderPage = () => {
     const [uploadingForConfigId, setUploadingForConfigId] = useState(null);
     const [uploading, setUploading] = useState(false);
     const [uploadForm] = Form.useForm();
+    const [configNumberingFromOne, setConfigNumberingFromOne] = useState(true);
+    const [uploadNumberingFromOne, setUploadNumberingFromOne] = useState(true);
+    const [excludeUploading, setExcludeUploading] = useState(false);
 
     const [providerForm] = Form.useForm();
     const [configForm] = Form.useForm();
@@ -88,6 +95,67 @@ const ProviderPage = () => {
         const hour = String(i).padStart(2, '0');
         return { label: `${hour}:00`, value: `${hour}:00` };
     });
+
+    const confirmChange = (title) =>
+        new Promise((resolve, reject) => {
+            Modal.confirm({
+                title,
+                content: "Проверьте данные перед сохранением.",
+                okText: "Сохранить",
+                cancelText: "Отмена",
+                onOk: resolve,
+                onCancel: () => reject(new Error("cancel")),
+            });
+        });
+
+    const adjustForDisplay = (value, useFromOne) => {
+        if (value === null || value === undefined || value === "") return value;
+        const num = Number(value);
+        if (Number.isNaN(num)) return value;
+        return useFromOne ? num + 1 : num;
+    };
+
+    const adjustForPayload = (value, useFromOne) => {
+        if (value === null || value === undefined || value === "") return value;
+        const num = Number(value);
+        if (Number.isNaN(num)) return value;
+        return useFromOne ? Math.max(num - 1, 0) : num;
+    };
+
+    const normalizeExcludeItem = (item) => {
+        const brand = String(item?.brand ?? "").trim();
+        const oem = String(item?.oem ?? "").trim();
+        return { brand, oem };
+    };
+
+    const mergeExcludeItems = (currentItems, newItems) => {
+        const map = new Map();
+        [...currentItems, ...newItems].forEach((item) => {
+            const normalized = normalizeExcludeItem(item);
+            if (!normalized.brand || !normalized.oem) return;
+            const key = `${normalized.brand.toUpperCase()}|${normalized.oem.toUpperCase()}`;
+            if (!map.has(key)) {
+                map.set(key, normalized);
+            }
+        });
+        return Array.from(map.values());
+    };
+
+    const handleExcludeUpload = async (file) => {
+        if (!file) return;
+        setExcludeUploading(true);
+        try {
+            const { data } = await parseProviderExcludePositions(file);
+            const existing = configForm.getFieldValue("exclude_positions") || [];
+            const merged = mergeExcludeItems(existing, data?.items || []);
+            configForm.setFieldsValue({ exclude_positions: merged });
+            message.success("Список исключений обновлен");
+        } catch (err) {
+            message.error(err?.response?.data?.detail || "Ошибка загрузки файла исключений");
+        } finally {
+            setExcludeUploading(false);
+        }
+    };
 
     // --- загрузка данных при редактировании ---
     useEffect(() => {
@@ -133,6 +201,24 @@ const ProviderPage = () => {
         })();
     }, [isNew, providerId, providerForm, navigate]);
 
+    useEffect(() => {
+        if (!providerId || isNew) return;
+        (async () => {
+            setAlertsLoading(true);
+            try {
+                const { data } = await getPriceStaleAlerts({
+                    provider_id: providerId,
+                    limit: 50,
+                });
+                setStaleAlerts(data || []);
+            } catch {
+                setStaleAlerts([]);
+            } finally {
+                setAlertsLoading(false);
+            }
+        })();
+    }, [providerId, isNew]);
+
 
     const handleProviderSubmit = async (values) => {
         setSaving(true);
@@ -143,6 +229,7 @@ const ProviderPage = () => {
                 // после создания переходим на страницу редактирования созданного поставщика
                 navigate(`/providers/${data.id}/edit`);
             } else {
+                await confirmChange("Сохранить изменения поставщика?");
                 await updateProvider(providerId, values);
                 message.success("Данные поставщика обновлены");
                 // обновляем данные на странице
@@ -150,6 +237,7 @@ const ProviderPage = () => {
                 setProviderData(data);
             }
         } catch (err) {
+            if (err?.message === "cancel") return;
             console.error(err);
             message.error("Ошибка сохранения поставщика");
         } finally {
@@ -174,9 +262,25 @@ const ProviderPage = () => {
     const openConfigModal = (config = null) => {
         setEditingConfig(config);
         if (config) {
-            configForm.setFieldsValue(config);
+            setConfigNumberingFromOne(true);
+            configForm.setFieldsValue({
+                ...config,
+                exclude_positions: config.exclude_positions || [],
+                max_days_without_update: config.max_days_without_update ?? 3,
+                start_row: adjustForDisplay(config.start_row, true),
+                oem_col: adjustForDisplay(config.oem_col, true),
+                brand_col: adjustForDisplay(config.brand_col, true),
+                name_col: adjustForDisplay(config.name_col, true),
+                qty_col: adjustForDisplay(config.qty_col, true),
+                price_col: adjustForDisplay(config.price_col, true),
+            });
         } else {
             configForm.resetFields();
+            setConfigNumberingFromOne(true);
+            configForm.setFieldsValue({
+                exclude_positions: [],
+                max_days_without_update: 3,
+            });
         }
         setConfigModalVisible(true);
     };
@@ -185,11 +289,25 @@ const ProviderPage = () => {
         if (!providerId) return;
 
         try {
+            const cleanedExcludePositions = (values.exclude_positions || [])
+                .map(normalizeExcludeItem)
+                .filter((item) => item.brand && item.oem);
+            const payload = {
+                ...values,
+                exclude_positions: cleanedExcludePositions,
+                start_row: adjustForPayload(values.start_row, configNumberingFromOne),
+                oem_col: adjustForPayload(values.oem_col, configNumberingFromOne),
+                brand_col: adjustForPayload(values.brand_col, configNumberingFromOne),
+                name_col: adjustForPayload(values.name_col, configNumberingFromOne),
+                qty_col: adjustForPayload(values.qty_col, configNumberingFromOne),
+                price_col: adjustForPayload(values.price_col, configNumberingFromOne),
+            };
             if (editingConfig) {
-                await updateProviderConfig(providerId, editingConfig.id, values);
+                await confirmChange("Сохранить изменения конфигурации?");
+                await updateProviderConfig(providerId, editingConfig.id, payload);
                 message.success("Конфигурация обновлена");
             } else {
-                await createProviderConfig(providerId, values);
+                await createProviderConfig(providerId, payload);
                 message.success("Конфигурация создана");
             }
             setConfigModalVisible(false);
@@ -200,6 +318,7 @@ const ProviderPage = () => {
             const { data } = await getProviderFullById(providerId);
             setProviderData(data);
         } catch (err) {
+            if (err?.message === "cancel") return;
             console.error(err);
             message.error("Ошибка сохранения конфигурации");
         }
@@ -237,6 +356,7 @@ const ProviderPage = () => {
 
         try {
             if (editingAbbr) {
+                await confirmChange("Сохранить изменения аббревиатуры?");
                 await updateAbbreviation(
                     providerId,
                     editingAbbr.id,
@@ -255,6 +375,7 @@ const ProviderPage = () => {
             const { data } = await getProviderFullById(providerId);
             setProviderData(data);
         } catch (err) {
+            if (err?.message === "cancel") return;
             console.error(err);
             message.error("Ошибка сохранения аббревиатуры");
         }
@@ -264,6 +385,16 @@ const ProviderPage = () => {
         if (!providerId) return;
 
         try {
+            await new Promise((resolve, reject) => {
+                Modal.confirm({
+                    title: "Удалить аббревиатуру?",
+                    content: "Это действие необратимо.",
+                    okText: "Удалить",
+                    cancelText: "Отмена",
+                    onOk: resolve,
+                    onCancel: () => reject(new Error("cancel")),
+                });
+            });
             await deleteAbbreviation(providerId, abbrId);
             message.success("Аббревиатура удалена");
 
@@ -271,6 +402,7 @@ const ProviderPage = () => {
             const { data } = await getProviderFullById(providerId);
             setProviderData(data);
         } catch (err) {
+            if (err?.message === "cancel") return;
             console.error(err);
             message.error("Ошибка удаления аббревиатуры");
         }
@@ -311,16 +443,17 @@ const ProviderPage = () => {
     const openUploadModal = (configId) => {
         const config = providerData.pricelist_configs.find(c => c.id === configId);
         setUploadingForConfigId(configId);
+        setUploadNumberingFromOne(true);
 
         // Предзаполняем форму данными из конфигурации
         uploadForm.setFieldsValue({
             use_stored_params: true,
-            start_row: config?.start_row || 1,
-            oem_col: config?.oem_col || 0,
-            brand_col: config?.brand_col || null,
-            name_col: config?.name_col || null,
-            qty_col: config?.qty_col || 1,
-            price_col: config?.price_col || 2,
+            start_row: adjustForDisplay(config?.start_row ?? 0, true),
+            oem_col: adjustForDisplay(config?.oem_col ?? 0, true),
+            brand_col: adjustForDisplay(config?.brand_col, true),
+            name_col: adjustForDisplay(config?.name_col, true),
+            qty_col: adjustForDisplay(config?.qty_col ?? 0, true),
+            price_col: adjustForDisplay(config?.price_col ?? 0, true),
         });
 
         setUploadModalVisible(true);
@@ -343,12 +476,12 @@ const ProviderPage = () => {
             const { data: uploadData } = await uploadProviderPricelist(providerId, uploadingForConfigId, {
                 file: fileObj,
                 use_stored_params: values.use_stored_params ?? true,
-                start_row: values.start_row,
-                oem_col: values.oem_col,
-                brand_col: values.brand_col,
-                name_col: values.name_col,
-                qty_col: values.qty_col,
-                price_col: values.price_col,
+                start_row: adjustForPayload(values.start_row, uploadNumberingFromOne),
+                oem_col: adjustForPayload(values.oem_col, uploadNumberingFromOne),
+                brand_col: adjustForPayload(values.brand_col, uploadNumberingFromOne),
+                name_col: adjustForPayload(values.name_col, uploadNumberingFromOne),
+                qty_col: adjustForPayload(values.qty_col, uploadNumberingFromOne),
+                price_col: adjustForPayload(values.price_col, uploadNumberingFromOne),
             });
 
             if (uploadData?.stats) {
@@ -691,6 +824,44 @@ const ProviderPage = () => {
                         />
                     </Card>
 
+                    <Card title="История оповещений о просрочке" style={{ marginTop: 16 }}>
+                        <Table
+                            rowKey="id"
+                            loading={alertsLoading}
+                            dataSource={staleAlerts}
+                            pagination={{ pageSize: 10 }}
+                            columns={[
+                                {
+                                    title: "Дата",
+                                    dataIndex: "created_at",
+                                    key: "created_at",
+                                    render: (value) => new Date(value).toLocaleString(),
+                                },
+                                {
+                                    title: "Прайс",
+                                    dataIndex: "provider_config_id",
+                                    key: "provider_config_id",
+                                    render: (value) => {
+                                        const cfg = providerData?.pricelist_configs?.find(
+                                            (c) => c.id === value
+                                        );
+                                        return cfg?.name_price || `#${value}`;
+                                    },
+                                },
+                                {
+                                    title: "Дней без обновления",
+                                    dataIndex: "days_diff",
+                                    key: "days_diff",
+                                },
+                                {
+                                    title: "Последний прайс",
+                                    dataIndex: "last_price_date",
+                                    key: "last_price_date",
+                                },
+                            ]}
+                        />
+                    </Card>
+
                     {/* Информация о последнем письме */}
                     {providerData.provider?.last_email_uid && (
                         <Card title="Последний Email UID" style={{ marginTop: 20 }}>
@@ -727,11 +898,19 @@ const ProviderPage = () => {
                 destroyOnClose
             >
                 <Form form={configForm} layout="vertical" onFinish={handleConfigSubmit}>
-                    <Form.Item name="name_price" label="Название прайса">
+                    <Form.Item
+                        name="name_price"
+                        label="Название прайса"
+                        extra="Можно оставить пустым"
+                    >
                         <Input placeholder="Например: Основной прайс" />
                     </Form.Item>
 
-                    <Form.Item name="name_mail" label="Название письма">
+                    <Form.Item
+                        name="name_mail"
+                        label="Название письма"
+                        extra="Можно оставить пустым"
+                    >
                         <Input placeholder="Шаблон темы письма для поиска" />
                     </Form.Item>
 
@@ -741,12 +920,26 @@ const ProviderPage = () => {
 
                     <Divider>Настройки парсинга</Divider>
 
+                    <Form.Item label="Нумерация колонок и строк">
+                        <Switch
+                            checked={configNumberingFromOne}
+                            onChange={setConfigNumberingFromOne}
+                        />
+                        <span style={{ marginLeft: 8 }}>
+                            С 1 (1 = первая колонка)
+                        </span>
+                    </Form.Item>
+
                     <Form.Item
                         name="start_row"
                         label="Строка начала данных"
                         rules={[{ required: true, message: "Укажите строку начала" }]}
                     >
-                        <InputNumber min={1} placeholder="Номер строки" style={{ width: "100%" }} />
+                        <InputNumber
+                            min={configNumberingFromOne ? 1 : 0}
+                            placeholder="Номер строки"
+                            style={{ width: "100%" }}
+                        />
                     </Form.Item>
 
                     <div
@@ -757,15 +950,27 @@ const ProviderPage = () => {
                             label="Колонка OEM номера"
                             rules={[{ required: true, message: "Укажите колонку OEM" }]}
                         >
-                            <InputNumber min={0} placeholder="Номер колонки" style={{ width: "100%" }} />
+                            <InputNumber
+                                min={configNumberingFromOne ? 1 : 0}
+                                placeholder="Номер колонки"
+                                style={{ width: "100%" }}
+                            />
                         </Form.Item>
 
                         <Form.Item name="name_col" label="Колонка названия">
-                            <InputNumber min={0} placeholder="Номер колонки" style={{ width: "100%" }} />
+                            <InputNumber
+                                min={configNumberingFromOne ? 1 : 0}
+                                placeholder="Номер колонки"
+                                style={{ width: "100%" }}
+                            />
                         </Form.Item>
 
                         <Form.Item name="brand_col" label="Колонка бренда">
-                            <InputNumber min={0} placeholder="Номер колонки" style={{ width: "100%" }} />
+                            <InputNumber
+                                min={configNumberingFromOne ? 1 : 0}
+                                placeholder="Номер колонки"
+                                style={{ width: "100%" }}
+                            />
                         </Form.Item>
 
                         <Form.Item
@@ -773,7 +978,11 @@ const ProviderPage = () => {
                             label="Колонка количества"
                             rules={[{ required: true, message: "Укажите колонку количества" }]}
                         >
-                            <InputNumber min={0} placeholder="Номер колонки" style={{ width: "100%" }} />
+                            <InputNumber
+                                min={configNumberingFromOne ? 1 : 0}
+                                placeholder="Номер колонки"
+                                style={{ width: "100%" }}
+                            />
                         </Form.Item>
 
                         <Form.Item
@@ -781,9 +990,94 @@ const ProviderPage = () => {
                             label="Колонка цены"
                             rules={[{ required: true, message: "Укажите колонку цены" }]}
                         >
-                            <InputNumber min={0} placeholder="Номер колонки" style={{ width: "100%" }} />
+                            <InputNumber
+                                min={configNumberingFromOne ? 1 : 0}
+                                placeholder="Номер колонки"
+                                style={{ width: "100%" }}
+                            />
                         </Form.Item>
                     </div>
+
+                    <Divider>Фильтры прайс-листа</Divider>
+
+                    <div
+                        style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}
+                    >
+                        <Form.Item name="min_price" label="Минимальная цена">
+                            <InputNumber min={0} style={{ width: "100%" }} />
+                        </Form.Item>
+                        <Form.Item name="max_price" label="Максимальная цена">
+                            <InputNumber min={0} style={{ width: "100%" }} />
+                        </Form.Item>
+                        <Form.Item name="min_quantity" label="Минимальный остаток">
+                            <InputNumber min={0} style={{ width: "100%" }} />
+                        </Form.Item>
+                        <Form.Item name="max_quantity" label="Максимальный остаток">
+                            <InputNumber min={0} style={{ width: "100%" }} />
+                        </Form.Item>
+                        <Form.Item
+                            name="max_days_without_update"
+                            label="Дней без обновления"
+                            extra="Если превышено — уведомление в Telegram"
+                            initialValue={3}
+                        >
+                            <InputNumber min={0} style={{ width: "100%" }} />
+                        </Form.Item>
+                    </div>
+
+                    <Form.Item
+                        label="Загрузить список исключений"
+                        extra="Excel: столбец 1 — бренд, столбец 2 — артикул"
+                    >
+                        <Upload
+                            beforeUpload={() => false}
+                            maxCount={1}
+                            showUploadList={false}
+                            onChange={({ file }) =>
+                                handleExcludeUpload(file?.originFileObj || file)
+                            }
+                        >
+                            <Button icon={<UploadOutlined />} loading={excludeUploading}>
+                                Загрузить файл
+                            </Button>
+                        </Upload>
+                    </Form.Item>
+
+                    <Form.List name="exclude_positions">
+                        {(fields, { add, remove }) => (
+                            <>
+                                {fields.map((field) => (
+                                    <Space
+                                        key={field.key}
+                                        style={{ display: "flex", marginBottom: 8 }}
+                                        align="baseline"
+                                    >
+                                        <Form.Item
+                                            {...field}
+                                            name={[field.name, "brand"]}
+                                            rules={[{ required: true, message: "Бренд" }]}
+                                        >
+                                            <Input placeholder="Бренд" />
+                                        </Form.Item>
+                                        <Form.Item
+                                            {...field}
+                                            name={[field.name, "oem"]}
+                                            rules={[{ required: true, message: "Артикул" }]}
+                                        >
+                                            <Input placeholder="Артикул" />
+                                        </Form.Item>
+                                        <Button
+                                            icon={<DeleteOutlined />}
+                                            onClick={() => remove(field.name)}
+                                        />
+                                    </Space>
+                                ))}
+                                <Button type="dashed" onClick={() => add()} icon={<PlusOutlined />}>
+                                    Добавить исключение
+                                </Button>
+                            </>
+                        )}
+                    </Form.List>
 
                     <Divider>Настройки доставки</Divider>
 
@@ -898,6 +1192,16 @@ const ProviderPage = () => {
                         <span style={{ marginLeft: 8 }}>Использовать сохраненные параметры парсинга</span>
                     </Form.Item>
 
+                    <Form.Item label="Нумерация колонок и строк">
+                        <Switch
+                            checked={uploadNumberingFromOne}
+                            onChange={setUploadNumberingFromOne}
+                        />
+                        <span style={{ marginLeft: 8 }}>
+                            С 1 (1 = первая колонка)
+                        </span>
+                    </Form.Item>
+
                     <Form.Item noStyle shouldUpdate>
                         {({ getFieldValue }) => {
                             const useStoredParams = getFieldValue('use_stored_params');
@@ -912,7 +1216,10 @@ const ProviderPage = () => {
                                         label="Строка начала данных"
                                         rules={[{ required: true, message: "Укажите строку начала" }]}
                                     >
-                                        <InputNumber min={1} style={{ width: "100%" }} />
+                                        <InputNumber
+                                            min={uploadNumberingFromOne ? 1 : 0}
+                                            style={{ width: "100%" }}
+                                        />
                                     </Form.Item>
 
                                     <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}>
@@ -921,15 +1228,24 @@ const ProviderPage = () => {
                                             label="Колонка OEM"
                                             rules={[{ required: true, message: "Укажите колонку OEM" }]}
                                         >
-                                            <InputNumber min={0} style={{ width: "100%" }} />
+                                            <InputNumber
+                                                min={uploadNumberingFromOne ? 1 : 0}
+                                                style={{ width: "100%" }}
+                                            />
                                         </Form.Item>
 
                                         <Form.Item name="name_col" label="Колонка названия">
-                                            <InputNumber min={0} style={{ width: "100%" }} />
+                                            <InputNumber
+                                                min={uploadNumberingFromOne ? 1 : 0}
+                                                style={{ width: "100%" }}
+                                            />
                                         </Form.Item>
 
                                         <Form.Item name="brand_col" label="Колонка бренда">
-                                            <InputNumber min={0} style={{ width: "100%" }} />
+                                            <InputNumber
+                                                min={uploadNumberingFromOne ? 1 : 0}
+                                                style={{ width: "100%" }}
+                                            />
                                         </Form.Item>
 
                                         <Form.Item
@@ -937,7 +1253,10 @@ const ProviderPage = () => {
                                             label="Колонка количества"
                                             rules={[{ required: true, message: "Укажите колонку количества" }]}
                                         >
-                                            <InputNumber min={0} style={{ width: "100%" }} />
+                                            <InputNumber
+                                                min={uploadNumberingFromOne ? 1 : 0}
+                                                style={{ width: "100%" }}
+                                            />
                                         </Form.Item>
 
                                         <Form.Item
@@ -945,7 +1264,10 @@ const ProviderPage = () => {
                                             label="Колонка цены"
                                             rules={[{ required: true, message: "Укажите колонку цены" }]}
                                         >
-                                            <InputNumber min={0} style={{ width: "100%" }} />
+                                            <InputNumber
+                                                min={uploadNumberingFromOne ? 1 : 0}
+                                                style={{ width: "100%" }}
+                                            />
                                         </Form.Item>
                                     </div>
                                 </>

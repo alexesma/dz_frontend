@@ -17,9 +17,11 @@ import PriceHistoryPlot from './components/PriceHistoryPlot';
 import StockOrdersPage from './components/StockOrdersPage';
 import CustomerSupplierOrdersPage from './components/CustomerSupplierOrdersPage';
 import EmailAccountsPage from './components/EmailAccountsPage';
+import SettingsPage from './components/SettingsPage';
 import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
 import AdminUsers from './components/AdminUsers';
+import WatchlistPage from './components/WatchlistPage';
 import { AuthProvider } from './context/AuthContext';
 import useAuth from './context/useAuth';
 
@@ -87,6 +89,8 @@ const AppRoutes = () => (
         {/* Admin */}
         <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
         <Route path="/admin/email-accounts" element={<RequireAdmin><EmailAccountsPage /></RequireAdmin>} />
+        <Route path="/admin/settings" element={<RequireAdmin><SettingsPage /></RequireAdmin>} />
+        <Route path="/watchlist" element={<RequireAuth><WatchlistPage /></RequireAuth>} />
     </Routes>
 );
 

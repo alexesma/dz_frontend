@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-    Card, Form, Input, Button, message, Spin, InputNumber, Switch, Select
+    Card, Form, Input, Button, message, Spin, InputNumber, Switch, Select, Modal
 } from 'antd';
 import { SaveOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import {
@@ -18,6 +18,18 @@ const SubstitutionPage = () => {
     const [loading, setLoading] = useState(!isNew);
     const [saving, setSaving] = useState(false);
     const [form] = Form.useForm();
+
+    const confirmChange = (title) =>
+        new Promise((resolve, reject) => {
+            Modal.confirm({
+                title,
+                content: 'Проверьте данные перед сохранением.',
+                okText: 'Сохранить',
+                cancelText: 'Отмена',
+                onOk: resolve,
+                onCancel: () => reject(new Error('cancel')),
+            });
+        });
 
     useEffect(() => {
         const fetchSubstitution = async () => {
@@ -46,11 +58,13 @@ const SubstitutionPage = () => {
                 await createSubstitution(values);
                 message.success('Подмена создана');
             } else {
+                await confirmChange('Сохранить изменения подмены?');
                 await updateSubstitution(substitutionId, values);
                 message.success('Подмена обновлена');
             }
             navigate('/substitutions');
         } catch (error) {
+            if (error?.message === 'cancel') return;
             console.error('Save substitution error:', error);
             message.error('Ошибка сохранения подмены');
         } finally {

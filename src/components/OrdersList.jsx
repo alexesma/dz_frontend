@@ -153,6 +153,8 @@ const OrdersList = () => {
     });
     const [message, setMessage] = useState({ text: '', type: '' });
 
+    const confirmAction = (text) => window.confirm(text);
+
     const showMessage = useCallback((text, type = 'info') => {
         setMessage({ text, type });
         setTimeout(() => setMessage({ text: '', type: '' }), 5000);
@@ -216,6 +218,10 @@ const OrdersList = () => {
             return;
         }
 
+        if (!confirmAction('Отправить выбранные позиции поставщику?')) {
+            return;
+        }
+
         try {
             const response = await api.post('/order/send_api', supplierPositions.positions, );
 
@@ -245,6 +251,9 @@ const OrdersList = () => {
 
     // Обновление статуса заказа
     const updateOrderStatus = async (orderId, newStatus) => {
+        if (!confirmAction(`Изменить статус заказа на "${newStatus}"?`)) {
+            return;
+        }
         try {
             await api.patch(`/order/${orderId}/status?status=${encodeURIComponent(newStatus)}`);
 
@@ -267,6 +276,10 @@ const OrdersList = () => {
         const selected = selectedRowsByOrder[supplier_id] || [];
         if (selected.length === 0) {
             showMessage('Выберите позиции для обновления', 'warning');
+            return;
+        }
+
+        if (!confirmAction(`Обновить выбранные позиции на статус "${newStatus}"?`)) {
             return;
         }
 

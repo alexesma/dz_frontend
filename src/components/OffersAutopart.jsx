@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { Table, InputNumber, Checkbox, Button, message, Spin, Tag } from 'antd';
+import { Table, InputNumber, Checkbox, Button, message, Spin, Tag, Modal } from 'antd';
 import api from '../api';
 
 const RestockOffers = () => {
@@ -48,9 +48,21 @@ const RestockOffers = () => {
 
     const handleSubmit = () => {
         const payload = Object.values(selectedOffers);
-        api.post('/api/order/confirm', { offers: payload })
-            .then(() => message.success('Заказ успешно отправлен!'))
-            .catch(() => message.error('Ошибка при отправке заказа.'));
+        if (!payload.length) {
+            message.warning('Выберите позиции для заказа');
+            return;
+        }
+        Modal.confirm({
+            title: 'Отправить заказ поставщикам?',
+            content: 'Проверьте выбранные позиции перед отправкой.',
+            okText: 'Отправить',
+            cancelText: 'Отмена',
+            onOk: () => {
+                api.post('/api/order/confirm', { offers: payload })
+                    .then(() => message.success('Заказ успешно отправлен!'))
+                    .catch(() => message.error('Ошибка при отправке заказа.'));
+            },
+        });
     };
 
     const columns = [

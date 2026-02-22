@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Card, Table, message, Tag } from 'antd';
+import { Button, Card, Modal, Table, message, Tag } from 'antd';
 import api from '../api';
 
 const AdminUsers = () => {
@@ -26,14 +26,22 @@ const AdminUsers = () => {
     }, []);
 
     const approveUser = async (id) => {
-        try {
-            await api.post(`/admin/users/${id}/approve`);
-            message.success('Пользователь подтвержден');
-            loadUsers();
-        } catch (err) {
-            console.error('Failed to approve user', err);
-            message.error('Ошибка подтверждения');
-        }
+        Modal.confirm({
+            title: 'Подтвердить пользователя?',
+            content: 'После подтверждения пользователь сможет войти.',
+            okText: 'Подтвердить',
+            cancelText: 'Отмена',
+            onOk: async () => {
+                try {
+                    await api.post(`/admin/users/${id}/approve`);
+                    message.success('Пользователь подтвержден');
+                    loadUsers();
+                } catch (err) {
+                    console.error('Failed to approve user', err);
+                    message.error('Ошибка подтверждения');
+                }
+            },
+        });
     };
 
     const columns = [

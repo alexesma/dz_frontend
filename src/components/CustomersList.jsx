@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Input, Button, message, Spin, Tag, Space, Card } from 'antd';
+import { Table, Input, Button, message, Spin, Tag, Space, Card, Popconfirm } from 'antd';
 import {
     SearchOutlined, ReloadOutlined, EditOutlined,
     DeleteOutlined, PlusOutlined
@@ -142,13 +142,20 @@ const CustomersList = () => {
                         icon={<EditOutlined />}
                         onClick={() => handleEdit(record.id)}
                     />
-                    <Button
-                        type="primary"
-                        danger
-                        size="small"
-                        icon={<DeleteOutlined />}
-                        onClick={() => handleDelete(record.id)}
-                    />
+                    <Popconfirm
+                        title="Удалить клиента?"
+                        description="Это действие необратимо"
+                        onConfirm={() => handleDelete(record.id)}
+                        okText="Да"
+                        cancelText="Нет"
+                    >
+                        <Button
+                            type="primary"
+                            danger
+                            size="small"
+                            icon={<DeleteOutlined />}
+                        />
+                    </Popconfirm>
                 </Space>
             ),
         },

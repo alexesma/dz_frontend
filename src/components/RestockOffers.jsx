@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Table, InputNumber, Checkbox, Button, message, Spin, Tag, Form } from 'antd';
+import { Table, InputNumber, Checkbox, Button, message, Spin, Tag, Form, Modal } from 'antd';
 import api from '../api.js';
 
 
@@ -65,19 +65,28 @@ const RestockOffers = () => {
 
     const handleSubmitOrder = () => {
         const payload = { offers: Object.values(selectedOffers) };
-        // console.log('Отправка:', payload);
-
-        api.post('/order/confirm', payload)
-            .then(res => {
-                // console.log('Ответ:', res.data);
-                message.success('Заказ успешно отправлен!');
-                setConfirmedOffers(res.data.confirmed_offers);
-                setOffers([]);
-            })
-            .catch(error => {
-                console.error('Ошибка:', error.response ? error.response.data : error);
-                message.error('Ошибка при отправке заказа.');
-            });
+        if (!payload.offers.length) {
+            message.warning('Выберите позиции для заказа');
+            return;
+        }
+        Modal.confirm({
+            title: 'Отправить заказ поставщикам?',
+            content: 'Проверьте выбранные позиции перед отправкой.',
+            okText: 'Отправить',
+            cancelText: 'Отмена',
+            onOk: () => {
+                api.post('/order/confirm', payload)
+                    .then(res => {
+                        message.success('Заказ успешно отправлен!');
+                        setConfirmedOffers(res.data.confirmed_offers);
+                        setOffers([]);
+                    })
+                    .catch(error => {
+                        console.error('Ошибка:', error.response ? error.response.data : error);
+                        message.error('Ошибка при отправке заказа.');
+                    });
+            },
+        });
     };
 
     const columns = [

@@ -1,13 +1,29 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-    Card, Form, Input, Button, message, Spin, Space, Select,
-    Table, Modal, InputNumber, Popconfirm, Divider, Tag, Switch
+    Card,
+    Form,
+    Input,
+    Button,
+    message,
+    Spin,
+    Space,
+    Select,
+    Table,
+    Modal,
+    InputNumber,
+    Popconfirm,
+    Divider,
+    Tag,
+    Switch,
+    Typography,
 } from 'antd';
 import {
     SaveOutlined, ArrowLeftOutlined, PlusOutlined,
     EditOutlined, DeleteOutlined, SendOutlined, SettingOutlined
 } from '@ant-design/icons';
+
+const { Text } = Typography;
 import {
     getCustomerById,
     createCustomer,
@@ -46,6 +62,7 @@ const CustomerPage = () => {
     const [sources, setSources] = useState([]);
     const [sourcesLoading, setSourcesLoading] = useState(false);
     const [providerOptions, setProviderOptions] = useState([]);
+    const [supplierFilterProviders, setSupplierFilterProviders] = useState([]);
     const [editingSource, setEditingSource] = useState(null);
     const [orderConfig, setOrderConfig] = useState(null);
     const [orderConfigLoading, setOrderConfigLoading] = useState(false);
@@ -77,6 +94,238 @@ const CustomerPage = () => {
         if (!days && !times) return '—';
         if (days && times) return `${days} • ${times}`;
         return days || times;
+    };
+
+    const confirmChange = (title) =>
+        new Promise((resolve, reject) => {
+            Modal.confirm({
+                title,
+                content: 'Проверьте данные перед сохранением.',
+                okText: 'Сохранить',
+                cancelText: 'Отмена',
+                onOk: resolve,
+                onCancel: () => reject(new Error('cancel')),
+            });
+        });
+
+    const buildFilterPayload = (group = {}) => {
+        const payload = {};
+        const minPrice = group.min_price;
+        const maxPrice = group.max_price;
+        const minQty = group.min_quantity;
+        const maxQty = group.max_quantity;
+
+        if (minPrice !== undefined && minPrice !== null && minPrice !== '') {
+            payload.min_price = Number(minPrice);
+        }
+        if (maxPrice !== undefined && maxPrice !== null && maxPrice !== '') {
+            payload.max_price = Number(maxPrice);
+        }
+        if (minQty !== undefined && minQty !== null && minQty !== '') {
+            payload.min_quantity = Number(minQty);
+        }
+        if (maxQty !== undefined && maxQty !== null && maxQty !== '') {
+            payload.max_quantity = Number(maxQty);
+        }
+
+        if (group.brand_filter_type && (group.brand_ids || []).length) {
+            payload.brand_filters = {
+                type: group.brand_filter_type,
+                brands: toIntList(group.brand_ids),
+            };
+        }
+        if (group.position_filter_type && (group.position_ids || []).length) {
+            payload.position_filters = {
+                type: group.position_filter_type,
+                autoparts: toIntList(group.position_ids),
+            };
+        }
+
+        if (group.price_intervals && group.price_intervals.length) {
+            payload.price_intervals = group.price_intervals
+                .filter(
+                    (item) =>
+                        item &&
+                        item.min_price !== undefined &&
+                        item.max_price !== undefined &&
+                        item.coefficient !== undefined
+                )
+                .map((item) => ({
+                    min_price: Number(item.min_price),
+                    max_price: Number(item.max_price),
+                    coefficient: Number(item.coefficient),
+                }));
+        }
+
+        if (group.supplier_quantity_filters && group.supplier_quantity_filters.length) {
+            payload.supplier_quantity_filters = group.supplier_quantity_filters
+                .filter(
+                    (item) =>
+                        item &&
+                        item.provider_id &&
+                        item.min_quantity !== undefined &&
+                        item.max_quantity !== undefined
+                )
+                .map((item) => ({
+                    provider_id: Number(item.provider_id),
+                    min_quantity: Number(item.min_quantity),
+                    max_quantity: Number(item.max_quantity),
+                }));
+        }
+
+        return payload;
+    };
+
+    const mapFilterToForm = (filters = {}) => {
+        const brandFilters = filters.brand_filters || {};
+        const positionFilters = filters.position_filters || {};
+        return {
+            min_price: filters.min_price ?? null,
+            max_price: filters.max_price ?? null,
+            min_quantity: filters.min_quantity ?? null,
+            max_quantity: filters.max_quantity ?? null,
+            brand_filter_type: brandFilters.type,
+            brand_ids: (brandFilters.brands || []).map((v) => String(v)),
+            position_filter_type: positionFilters.type,
+            position_ids: (positionFilters.autoparts || []).map((v) => String(v)),
+            price_intervals: filters.price_intervals || [],
+            supplier_quantity_filters: filters.supplier_quantity_filters || [],
+        };
+    };
+
+    const buildSupplierFilters = (list = []) => {
+        const mapping = {};
+        (list || []).forEach((item) => {
+            if (!item?.provider_id) return;
+            const { provider_id, ...rest } = item;
+            mapping[String(provider_id)] = buildFilterPayload(rest);
+        });
+        return mapping;
+    };
+
+    const renderFilterFields = (namePrefix, options = {}) => {
+        const showSupplierQty = options.showSupplierQty ?? true;
+        return (
+            <>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+                    <Form.Item name={[...namePrefix, 'min_price']} label="Мин. цена">
+                        <InputNumber min={0} step={1} style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item name={[...namePrefix, 'max_price']} label="Макс. цена">
+                        <InputNumber min={0} step={1} style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item name={[...namePrefix, 'min_quantity']} label="Мин. количество">
+                        <InputNumber min={0} step={1} style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item name={[...namePrefix, 'max_quantity']} label="Макс. количество">
+                        <InputNumber min={0} step={1} style={{ width: '100%' }} />
+                    </Form.Item>
+                </div>
+
+                <Divider>Фильтры по брендам</Divider>
+                <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 16 }}>
+                    <Form.Item name={[...namePrefix, 'brand_filter_type']} label="Тип">
+                        <Select
+                            allowClear
+                            options={[
+                                { value: 'include', label: 'Только' },
+                                { value: 'exclude', label: 'Исключить' },
+                            ]}
+                        />
+                    </Form.Item>
+                    <Form.Item name={[...namePrefix, 'brand_ids']} label="ID брендов">
+                        <Select mode="tags" placeholder="1, 2, 3" />
+                    </Form.Item>
+                </div>
+
+                <Divider>Фильтры по позициям</Divider>
+                <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 16 }}>
+                    <Form.Item name={[...namePrefix, 'position_filter_type']} label="Тип">
+                        <Select
+                            allowClear
+                            options={[
+                                { value: 'include', label: 'Только' },
+                                { value: 'exclude', label: 'Исключить' },
+                            ]}
+                        />
+                    </Form.Item>
+                    <Form.Item name={[...namePrefix, 'position_ids']} label="ID позиций">
+                        <Select mode="tags" placeholder="1001, 1002" />
+                    </Form.Item>
+                </div>
+
+                <Divider>Интервалы цен</Divider>
+                <Form.List name={[...namePrefix, 'price_intervals']}>
+                    {(fields, { add, remove }) => (
+                        <>
+                            {fields.map((field) => (
+                                <div
+                                    key={field.key}
+                                    style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 12, marginBottom: 12 }}
+                                >
+                                    <Form.Item name={[field.name, 'min_price']} label="От">
+                                        <InputNumber min={0} step={1} style={{ width: '100%' }} />
+                                    </Form.Item>
+                                    <Form.Item name={[field.name, 'max_price']} label="До">
+                                        <InputNumber min={0} step={1} style={{ width: '100%' }} />
+                                    </Form.Item>
+                                    <Form.Item name={[field.name, 'coefficient']} label="Коэф.">
+                                        <InputNumber min={0} step={0.1} style={{ width: '100%' }} />
+                                    </Form.Item>
+                                    <Button danger onClick={() => remove(field.name)}>
+                                        Удалить
+                                    </Button>
+                                </div>
+                            ))}
+                            <Button onClick={() => add()} type="dashed">
+                                Добавить интервал
+                            </Button>
+                        </>
+                    )}
+                </Form.List>
+
+                {showSupplierQty && (
+                    <>
+                        <Divider>Фильтры по количеству у поставщиков</Divider>
+                        <Form.List name={[...namePrefix, 'supplier_quantity_filters']}>
+                            {(fields, { add, remove }) => (
+                                <>
+                                    {fields.map((field) => (
+                                        <div
+                                            key={field.key}
+                                            style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 12, marginBottom: 12 }}
+                                        >
+                                            <Form.Item name={[field.name, 'provider_id']} label="Поставщик">
+                                                <Select
+                                                    showSearch
+                                                    optionFilterProp="label"
+                                                    options={supplierFilterProviders.map((provider) => ({
+                                                        value: provider.id,
+                                                        label: provider.name,
+                                                    }))}
+                                                />
+                                            </Form.Item>
+                                            <Form.Item name={[field.name, 'min_quantity']} label="Мин. кол-во">
+                                                <InputNumber min={0} step={1} style={{ width: '100%' }} />
+                                            </Form.Item>
+                                            <Form.Item name={[field.name, 'max_quantity']} label="Макс. кол-во">
+                                                <InputNumber min={0} step={1} style={{ width: '100%' }} />
+                                            </Form.Item>
+                                            <Button danger onClick={() => remove(field.name)}>
+                                                Удалить
+                                            </Button>
+                                        </div>
+                                    ))}
+                                    <Button onClick={() => add()} type="dashed">
+                                        Добавить фильтр поставщика
+                                    </Button>
+                                </>
+                            )}
+                        </Form.List>
+                    </>
+                )}
+            </>
+        );
     };
 
     const toIntList = (values) =>
@@ -151,6 +400,7 @@ const CustomerPage = () => {
                 message.success('Клиент успешно создан');
                 navigate(`/customers/${data.id}/edit`);
             } else {
+                await confirmChange('Сохранить изменения клиента?');
                 await updateCustomer(customerId, values);
                 message.success('Данные клиента обновлены');
 
@@ -160,6 +410,7 @@ const CustomerPage = () => {
                 setCustomerData({ customer, pricelist_configs: configs });
             }
         } catch (err) {
+            if (err?.message === 'cancel') return;
             console.error(err);
             const detail = err?.response?.data?.detail;
             message.error(detail || 'Ошибка сохранения клиента');
@@ -198,6 +449,7 @@ const CustomerPage = () => {
                     .filter((v) => v),
             };
             if (orderConfig) {
+                await confirmChange('Сохранить изменения конфигурации заказов?');
                 await updateCustomerOrderConfig(customerId, payload);
                 message.success('Конфигурация заказов обновлена');
             } else {
@@ -206,7 +458,8 @@ const CustomerPage = () => {
             }
             const orderResp = await getCustomerOrderConfig(customerId);
             setOrderConfig(orderResp.data);
-        } catch {
+        } catch (err) {
+            if (err?.message === 'cancel') return;
             message.error('Ошибка сохранения конфигурации заказов');
         } finally {
             setOrderConfigLoading(false);
@@ -214,23 +467,47 @@ const CustomerPage = () => {
     };
 
     // Работа с конфигурациями
-    const openConfigModal = (config = null) => {
+    const openConfigModal = async (config = null) => {
         setEditingConfig(config);
+        setSupplierFilterProviders([]);
         if (config) {
+            try {
+                const { data } = await getCustomerPricelistSources(
+                    customerId,
+                    config.id
+                );
+                const providerMap = new Map();
+                (data || []).forEach((item) => {
+                    if (item.provider_id) {
+                        providerMap.set(
+                            item.provider_id,
+                            item.provider_name || `Поставщик ${item.provider_id}`
+                        );
+                    }
+                });
+                setSupplierFilterProviders(
+                    Array.from(providerMap.entries()).map(([id, name]) => ({
+                        id,
+                        name,
+                    }))
+                );
+            } catch {
+                setSupplierFilterProviders([]);
+            }
+
+            const supplierFilters = config.supplier_filters || {};
+            const supplierList = Object.entries(supplierFilters).map(
+                ([providerId, filters]) => ({
+                    provider_id: Number(providerId),
+                    ...mapFilterToForm(filters || {}),
+                })
+            );
             configForm.setFieldsValue({
                 ...config,
-                default_filters: config.default_filters
-                    ? JSON.stringify(config.default_filters, null, 2)
-                    : '',
-                own_filters: config.own_filters
-                    ? JSON.stringify(config.own_filters, null, 2)
-                    : '',
-                other_filters: config.other_filters
-                    ? JSON.stringify(config.other_filters, null, 2)
-                    : '',
-                supplier_filters: config.supplier_filters
-                    ? JSON.stringify(config.supplier_filters, null, 2)
-                    : '',
+                default_filters: mapFilterToForm(config.default_filters || {}),
+                own_filters: mapFilterToForm(config.own_filters || {}),
+                other_filters: mapFilterToForm(config.other_filters || {}),
+                supplier_filters: supplierList,
             });
         } else {
             configForm.resetFields();
@@ -242,25 +519,16 @@ const CustomerPage = () => {
         if (!customerId) return;
 
         try {
-            const parseJsonField = (value) => {
-                if (!value) return {};
-                if (typeof value === 'object') return value;
-                try {
-                    return JSON.parse(value);
-                } catch {
-                    throw new Error('Некорректный JSON в настройках фильтров');
-                }
-            };
-
             const payload = {
                 ...values,
-                default_filters: parseJsonField(values.default_filters),
-                own_filters: parseJsonField(values.own_filters),
-                other_filters: parseJsonField(values.other_filters),
-                supplier_filters: parseJsonField(values.supplier_filters),
+                default_filters: buildFilterPayload(values.default_filters),
+                own_filters: buildFilterPayload(values.own_filters),
+                other_filters: buildFilterPayload(values.other_filters),
+                supplier_filters: buildSupplierFilters(values.supplier_filters),
             };
 
             if (editingConfig) {
+                await confirmChange('Сохранить изменения конфигурации?');
                 await updateCustomerPricelistConfig(
                     customerId,
                     editingConfig.id,
@@ -280,12 +548,9 @@ const CustomerPage = () => {
             const { data: configs } = await getCustomerPricelistConfigs(customerId);
             setCustomerData(prev => ({ ...prev, pricelist_configs: configs }));
         } catch (err) {
+            if (err?.message === 'cancel') return;
             console.error(err);
-            const msg =
-                err?.message === 'Некорректный JSON в настройках фильтров'
-                    ? err.message
-                    : 'Ошибка сохранения конфигурации';
-            message.error(msg);
+            message.error('Ошибка сохранения конфигурации');
         }
     };
 
@@ -360,6 +625,7 @@ const CustomerPage = () => {
 
         try {
             if (editingSource) {
+                await confirmChange('Сохранить изменения источника?');
                 await updateCustomerPricelistSource(
                     customerId,
                     activeConfig.id,
@@ -383,6 +649,7 @@ const CustomerPage = () => {
             setEditingSource(null);
             sourceForm.resetFields();
         } catch (err) {
+            if (err?.message === 'cancel') return;
             console.error(err);
             message.error('Ошибка сохранения источника');
         }
@@ -835,53 +1102,97 @@ const CustomerPage = () => {
                         </Form.Item>
                     </div>
 
-                    <Divider>Фильтры прайс-листа (JSON)</Divider>
+                    <Divider>Фильтры прайс-листа</Divider>
 
-                    <Form.Item
-                        name="default_filters"
-                        label="Фильтры по умолчанию (fallback)"
-                        tooltip="JSON-объект фильтров для всех поставщиков, если нет более специфичных"
+                    <Card
+                        size="small"
+                        style={{
+                            marginBottom: 16,
+                            backgroundColor: '#f9fafb',
+                            borderColor: '#e8e8e8',
+                        }}
+                        title="Общие настройки (на все прайсы)"
                     >
-                        <Input.TextArea
-                            rows={4}
-                            placeholder='{"brand_filters":{"type":"exclude","brands":[1,2]},"min_price":100,"min_quantity":1}'
-                        />
-                    </Form.Item>
+                        {renderFilterFields(['default_filters'])}
+                    </Card>
 
-                    <Form.Item
-                        name="own_filters"
-                        label="Фильтры для нашего прайса"
-                        tooltip="Применяются только к нашим позициям"
+                    <Card
+                        size="small"
+                        style={{
+                            marginBottom: 16,
+                            backgroundColor: '#f7fbff',
+                            borderColor: '#e3eefc',
+                        }}
+                        title="Настройки для нашего прайс-листа"
                     >
-                        <Input.TextArea
-                            rows={4}
-                            placeholder='{"max_price":50000,"min_quantity":1}'
-                        />
-                    </Form.Item>
+                        {renderFilterFields(['own_filters'])}
+                    </Card>
 
-                    <Form.Item
-                        name="other_filters"
-                        label="Фильтры для остальных поставщиков"
-                        tooltip="Применяются к сторонним поставщикам, если нет индивидуальных"
+                    <Card
+                        size="small"
+                        style={{
+                            marginBottom: 16,
+                            backgroundColor: '#f8fbf7',
+                            borderColor: '#e4f1e1',
+                        }}
+                        title="Настройки для остальных прайсов"
                     >
-                        <Input.TextArea
-                            rows={4}
-                            placeholder='{"min_price":50,"brand_filters":{"type":"include","brands":[10,20]}}'
-                        />
-                    </Form.Item>
+                        {renderFilterFields(['other_filters'])}
+                    </Card>
 
-                    <Form.Item
-                        name="supplier_filters"
-                        label="Индивидуальные фильтры поставщиков"
-                        tooltip={
-                            'JSON: provider_id -> filters. Например {"12": {"min_quantity": 2}}'
-                        }
+                    <Card
+                        size="small"
+                        style={{
+                            marginBottom: 16,
+                            backgroundColor: '#fffaf5',
+                            borderColor: '#f2e6db',
+                        }}
+                        title="Индивидуальные настройки прайсов поставщиков"
                     >
-                        <Input.TextArea
-                            rows={5}
-                            placeholder='{"12":{"min_quantity":2},"34":{"brand_filters":{"type":"exclude","brands":[5]}}}'
-                        />
-                    </Form.Item>
+                        {supplierFilterProviders.length === 0 && (
+                            <Text type="secondary">
+                                Добавьте источники в конфигурации, чтобы появились доступные поставщики.
+                            </Text>
+                        )}
+                        <Form.List name="supplier_filters">
+                            {(fields, { add, remove }) => (
+                                <>
+                                    {fields.map((field) => (
+                                        <Card
+                                            key={field.key}
+                                            size="small"
+                                            style={{ marginBottom: 16 }}
+                                            title={`Поставщик #${field.name + 1}`}
+                                            extra={(
+                                                <Button danger onClick={() => remove(field.name)}>
+                                                    Удалить
+                                                </Button>
+                                            )}
+                                        >
+                                            <Form.Item
+                                                name={[field.name, 'provider_id']}
+                                                label="Поставщик"
+                                                rules={[{ required: true, message: 'Выберите поставщика' }]}
+                                            >
+                                                <Select
+                                                    showSearch
+                                                    optionFilterProp="label"
+                                                    options={supplierFilterProviders.map((provider) => ({
+                                                        value: provider.id,
+                                                        label: provider.name,
+                                                    }))}
+                                                />
+                                            </Form.Item>
+                                            {renderFilterFields([field.name])}
+                                        </Card>
+                                    ))}
+                                    <Button type="dashed" onClick={() => add()}>
+                                        Добавить поставщика
+                                    </Button>
+                                </>
+                            )}
+                        </Form.List>
+                    </Card>
 
                     <Divider>Расписание отправки</Divider>
 

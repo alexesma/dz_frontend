@@ -91,3 +91,12 @@ export const downloadProviderPricelist = async (providerId, configId) => {
 export const getProviderConfigOptions = async () => {
     return api.get('/provider-configs/');
 };
+
+export const parseProviderExcludePositions = async (file) => {
+    const form = new FormData();
+    form.append("file", file);
+    return api.post(
+        "/providers/pricelist-config/exclude-positions/parse",
+        form
+    );
+};
