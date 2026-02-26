@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Input, Button, message, Spin, Tag, Space, Card, Popconfirm } from 'antd';
+import { Table, Input, Button, message, Spin, Tag, Space, Card, Popconfirm, Select } from 'antd';
 import {
     SearchOutlined, ReloadOutlined, EditOutlined,
     DeleteOutlined, PlusOutlined
@@ -13,6 +13,15 @@ const CustomersList = () => {
     const [customers, setCustomers] = useState([]);
     const [loading, setLoading] = useState(false);
     const [searchText, setSearchText] = useState('');
+    const [filters, setFilters] = useState({
+        typePrices: 'all',
+        hasPriceLists: 'all',
+        hasPricelistConfigs: 'all',
+    });
+    const [sortState, setSortState] = useState({
+        sortBy: 'name',
+        sortDir: 'asc',
+    });
     const [pagination, setPagination] = useState({
         current: 1,
         pageSize: 20,
@@ -32,7 +41,9 @@ const CustomersList = () => {
     const fetchCustomers = async (
         page = pagination.current,
         pageSize = pagination.pageSize,
-        nextSearch = searchText
+        nextSearch = searchText,
+        filtersState = filters,
+        sortStateValue = sortState
     ) => {
         setLoading(true);
         try {
@@ -42,6 +53,21 @@ const CustomersList = () => {
             }
             params.page = page;
             params.page_size = pageSize;
+            if (filtersState.typePrices !== 'all') {
+                params.type_prices = filtersState.typePrices;
+            }
+            if (filtersState.hasPriceLists !== 'all') {
+                params.has_price_lists =
+                    filtersState.hasPriceLists === 'yes';
+            }
+            if (filtersState.hasPricelistConfigs !== 'all') {
+                params.has_pricelist_configs =
+                    filtersState.hasPricelistConfigs === 'yes';
+            }
+            if (sortStateValue.sortBy) {
+                params.sort_by = sortStateValue.sortBy;
+                params.sort_dir = sortStateValue.sortDir;
+            }
 
             const { data } = await getCustomersSummary(params);
             const list = Array.isArray(data) ? data : data?.items || [];
@@ -70,15 +96,21 @@ const CustomersList = () => {
     const handleSearch = (value) => {
         setSearchText(value);
         setPagination((prev) => ({ ...prev, current: 1 }));
-        fetchCustomers(1, pagination.pageSize, value);
+        fetchCustomers(1, pagination.pageSize, value, filters, sortState);
     };
 
-    const handleTableChange = (paginationConfig) => {
+    const handleTableChange = (paginationConfig, tableFilters, sorter) => {
         setPagination(paginationConfig);
+        const sortBy = sorter?.field || sortState.sortBy;
+        const sortDir = sorter?.order === 'descend' ? 'desc' : 'asc';
+        const nextSort = { sortBy, sortDir };
+        setSortState(nextSort);
         fetchCustomers(
             paginationConfig.current,
             paginationConfig.pageSize,
-            searchText
+            searchText,
+            filters,
+            nextSort
         );
     };
 
@@ -97,17 +129,28 @@ const CustomersList = () => {
         }
     };
 
+    const handleFilterChange = (key, value) => {
+        const nextFilters = { ...filters, [key]: value };
+        setFilters(nextFilters);
+        setPagination((prev) => ({ ...prev, current: 1 }));
+        fetchCustomers(1, pagination.pageSize, searchText, nextFilters, sortState);
+    };
+
     const columns = [
         {
             title: 'ID',
             dataIndex: 'id',
             key: 'id',
             width: 70,
+            sorter: true,
+            sortOrder: sortState.sortBy === 'id' ? (sortState.sortDir === 'asc' ? 'ascend' : 'descend') : null,
         },
         {
             title: 'Название',
             dataIndex: 'name',
             key: 'name',
+            sorter: true,
+            sortOrder: sortState.sortBy === 'name' ? (sortState.sortDir === 'asc' ? 'ascend' : 'descend') : null,
             render: (text) => <div style={{ fontWeight: 'bold' }}>{text}</div>,
         },
         {
@@ -135,6 +178,9 @@ const CustomersList = () => {
         {
             title: 'Прайс-листы',
             key: 'customer_price_lists',
+            dataIndex: 'price_lists_count',
+            sorter: true,
+            sortOrder: sortState.sortBy === 'price_lists_count' ? (sortState.sortDir === 'asc' ? 'ascend' : 'descend') : null,
             render: (_, record) => {
                 const count = record.price_lists_count ?? 0;
 
@@ -148,6 +194,9 @@ const CustomersList = () => {
         {
             title: 'Конфигурации',
             key: 'pricelist_configs',
+            dataIndex: 'pricelist_configs_count',
+            sorter: true,
+            sortOrder: sortState.sortBy === 'pricelist_configs_count' ? (sortState.sortDir === 'asc' ? 'ascend' : 'descend') : null,
             render: (_, record) => {
                 const configsCount = record.pricelist_configs_count ?? 0;
                 const sourcesCount = record.pricelist_sources_count ?? 0;
@@ -210,11 +259,47 @@ const CustomersList = () => {
                         />
                         <Button
                             icon={<ReloadOutlined />}
-                            onClick={fetchCustomers}
+                            onClick={() => fetchCustomers()}
                             loading={loading}
                         >
                             Обновить
                         </Button>
+                        <Select
+                            value={filters.typePrices}
+                            onChange={(value) =>
+                                handleFilterChange('typePrices', value)
+                            }
+                            style={{ width: 190 }}
+                            options={[
+                                { value: 'all', label: 'Все типы цен' },
+                                { value: 'Wholesale', label: 'Оптовые' },
+                                { value: 'Retail', label: 'Розничные' },
+                            ]}
+                        />
+                        <Select
+                            value={filters.hasPriceLists}
+                            onChange={(value) =>
+                                handleFilterChange('hasPriceLists', value)
+                            }
+                            style={{ width: 190 }}
+                            options={[
+                                { value: 'all', label: 'Все прайсы' },
+                                { value: 'yes', label: 'Есть прайсы' },
+                                { value: 'no', label: 'Нет прайсов' },
+                            ]}
+                        />
+                        <Select
+                            value={filters.hasPricelistConfigs}
+                            onChange={(value) =>
+                                handleFilterChange('hasPricelistConfigs', value)
+                            }
+                            style={{ width: 210 }}
+                            options={[
+                                { value: 'all', label: 'Все конфиги' },
+                                { value: 'yes', label: 'Есть конфиги' },
+                                { value: 'no', label: 'Без конфигов' },
+                            ]}
+                        />
                     </Space>
                     <Button
                         type="primary"

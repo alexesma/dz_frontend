@@ -10,3 +10,17 @@ export const getPriceStaleAlerts = (params = {}) =>
 
 export const getPriceCheckLogs = (params = {}) =>
     api.get("/alerts/price-check-logs", { params });
+
+export const getSchedulerSettings = () => api.get("/settings/scheduler");
+
+export const updateSchedulerSetting = (key, data) =>
+    api.put(`/settings/scheduler/${key}`, data);
+
+export const getMonitorSummary = () =>
+    api.get("/settings/monitor/summary");
+
+export const createMonitorSnapshot = () =>
+    api.post("/settings/monitor/snapshot");
+
+export const getMonitorSnapshots = (params = {}) =>
+    api.get("/settings/monitor/snapshots", { params });

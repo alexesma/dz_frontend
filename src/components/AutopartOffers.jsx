@@ -4,6 +4,7 @@ import {
     Card,
     Form,
     Input,
+    InputNumber,
     Button,
     Table,
     Space,
@@ -40,10 +41,19 @@ const AutopartOffers = () => {
     const [loading, setLoading] = useState(false);
     const [remoteOffers, setRemoteOffers] = useState([]);
     const [remoteLoading, setRemoteLoading] = useState(false);
+    const [remoteMeta, setRemoteMeta] = useState({ total: 0 });
     const [showCrosses, setShowCrosses] = useState(false);
     const [currentOem, setCurrentOem] = useState('');
     const [selectedBrand, setSelectedBrand] = useState('');
     const [oemHistory, setOemHistory] = useState([]);
+    const [localFilters, setLocalFilters] = useState({
+        brand: '',
+        provider: '',
+        minPrice: null,
+        maxPrice: null,
+        minQty: null,
+        maxDelivery: null,
+    });
     const navigate = useNavigate();
 
     const brandOptions = useMemo(() => {
@@ -88,6 +98,9 @@ const AutopartOffers = () => {
             if (Array.isArray(storedState.remoteOffers)) {
                 setRemoteOffers(storedState.remoteOffers);
             }
+            if (storedState.remoteMeta) {
+                setRemoteMeta(storedState.remoteMeta);
+            }
             setShowCrosses(Boolean(storedState.showCrosses));
             setCurrentOem(storedState.currentOem || '');
             setSelectedBrand(storedState.selectedBrand || '');
@@ -104,9 +117,10 @@ const AutopartOffers = () => {
             showCrosses,
             offers,
             remoteOffers,
+            remoteMeta,
         };
         localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(payload));
-    }, [currentOem, selectedBrand, showCrosses, offers, remoteOffers]);
+    }, [currentOem, selectedBrand, showCrosses, offers, remoteOffers, remoteMeta]);
 
     const pushOemHistory = (value) => {
         const normalized = String(value || '').trim();
@@ -131,13 +145,19 @@ const AutopartOffers = () => {
         }
         setLoading(true);
         setRemoteOffers([]);
+        setRemoteMeta({ total: 0 });
         try {
             const { data } = await getAutopartOffers(oemValue);
             const list = Array.isArray(data?.offers) ? data.offers : [];
             const filtered = list.filter(
                 (item) => (item.quantity ?? 0) > 0
             );
-            setOffers(filtered);
+            const sortedByPrice = [...filtered].sort((a, b) => {
+                const aPrice = Number(a.price ?? Number.POSITIVE_INFINITY);
+                const bPrice = Number(b.price ?? Number.POSITIVE_INFINITY);
+                return aPrice - bPrice;
+            });
+            setOffers(sortedByPrice);
             setCurrentOem(oemValue);
             pushOemHistory(oemValue);
             const fallbackBrand = list.find((item) => item.brand_name)?.brand_name;
@@ -247,8 +267,14 @@ const AutopartOffers = () => {
                 return true;
             });
 
-            setRemoteOffers(filtered);
-            if (!filtered.length) {
+            const sortedByPrice = [...filtered].sort((a, b) => {
+                const aPrice = Number(a.price ?? Number.POSITIVE_INFINITY);
+                const bPrice = Number(b.price ?? Number.POSITIVE_INFINITY);
+                return aPrice - bPrice;
+            });
+            setRemoteOffers(sortedByPrice);
+            setRemoteMeta({ total: filtered.length });
+            if (!sortedByPrice.length) {
                 message.info('Dragonzap не вернул данные');
             }
         } catch (error) {
@@ -257,6 +283,64 @@ const AutopartOffers = () => {
         } finally {
             setRemoteLoading(false);
         }
+    };
+
+    const filteredOffers = useMemo(() => {
+        const brandNeedle = localFilters.brand.trim().toLowerCase();
+        const providerNeedle = localFilters.provider.trim().toLowerCase();
+        const minPrice = localFilters.minPrice;
+        const maxPrice = localFilters.maxPrice;
+        const minQty = localFilters.minQty;
+        const maxDelivery = localFilters.maxDelivery;
+
+        return offers.filter((item) => {
+            const brandValue = (item.brand_name || '').toLowerCase();
+            const providerValue = (item.provider_name || '').toLowerCase();
+            const priceValue = Number(item.price ?? Number.NaN);
+            const qtyValue = Number(item.quantity ?? Number.NaN);
+            const deliveryValue = Number(
+                item.min_delivery_day ?? item.max_delivery_day ?? Number.NaN
+            );
+
+            if (brandNeedle && !brandValue.includes(brandNeedle)) {
+                return false;
+            }
+            if (providerNeedle && !providerValue.includes(providerNeedle)) {
+                return false;
+            }
+            if (minPrice != null) {
+                if (Number.isNaN(priceValue) || priceValue < minPrice) {
+                    return false;
+                }
+            }
+            if (maxPrice != null) {
+                if (Number.isNaN(priceValue) || priceValue > maxPrice) {
+                    return false;
+                }
+            }
+            if (minQty != null) {
+                if (Number.isNaN(qtyValue) || qtyValue < minQty) {
+                    return false;
+                }
+            }
+            if (maxDelivery != null) {
+                if (Number.isNaN(deliveryValue) || deliveryValue > maxDelivery) {
+                    return false;
+                }
+            }
+            return true;
+        });
+    }, [offers, localFilters]);
+
+    const resetLocalFilters = () => {
+        setLocalFilters({
+            brand: '',
+            provider: '',
+            minPrice: null,
+            maxPrice: null,
+            minQty: null,
+            maxDelivery: null,
+        });
     };
 
     const localColumns = [
@@ -296,6 +380,12 @@ const AutopartOffers = () => {
             dataIndex: 'price',
             key: 'price',
             width: 100,
+            sorter: (a, b) => {
+                const aPrice = Number(a.price ?? Number.POSITIVE_INFINITY);
+                const bPrice = Number(b.price ?? Number.POSITIVE_INFINITY);
+                return aPrice - bPrice;
+            },
+            defaultSortOrder: 'ascend',
             render: (value) =>
                 value === null || value === undefined ? '—' : Number(value).toFixed(2),
         },
@@ -304,11 +394,21 @@ const AutopartOffers = () => {
             dataIndex: 'quantity',
             key: 'quantity',
             width: 90,
+            sorter: (a, b) => {
+                const aQty = Number(a.quantity ?? Number.NEGATIVE_INFINITY);
+                const bQty = Number(b.quantity ?? Number.NEGATIVE_INFINITY);
+                return aQty - bQty;
+            },
         },
         {
             title: 'Срок',
             key: 'delivery',
             width: 140,
+            sorter: (a, b) => {
+                const aVal = Number(a.min_delivery_day ?? a.max_delivery_day ?? Number.POSITIVE_INFINITY);
+                const bVal = Number(b.min_delivery_day ?? b.max_delivery_day ?? Number.POSITIVE_INFINITY);
+                return aVal - bVal;
+            },
             render: (_, record) => {
                 const min = record.min_delivery_day;
                 const max = record.max_delivery_day;
@@ -358,6 +458,11 @@ const AutopartOffers = () => {
             dataIndex: 'price',
             key: 'price',
             width: 100,
+            sorter: (a, b) => {
+                const aPrice = Number(a.price ?? Number.POSITIVE_INFINITY);
+                const bPrice = Number(b.price ?? Number.POSITIVE_INFINITY);
+                return aPrice - bPrice;
+            },
             render: (value) =>
                 value === null || value === undefined ? '—' : Number(value).toFixed(2),
         },
@@ -372,6 +477,11 @@ const AutopartOffers = () => {
             title: 'Срок',
             key: 'delivery',
             width: 140,
+            sorter: (a, b) => {
+                const aVal = Number(a.min_delivery_day ?? a.max_delivery_day ?? Number.POSITIVE_INFINITY);
+                const bVal = Number(b.min_delivery_day ?? b.max_delivery_day ?? Number.POSITIVE_INFINITY);
+                return aVal - bVal;
+            },
             render: (_, record) => {
                 const min = record.min_delivery_day;
                 const max = record.max_delivery_day;
@@ -454,13 +564,75 @@ const AutopartOffers = () => {
                 </div>
             ) : null}
 
+            <Space wrap style={{ marginBottom: 12 }}>
+                <AutoComplete
+                    options={brandOptions}
+                    value={localFilters.brand}
+                    style={{ width: 220 }}
+                    placeholder="Фильтр по бренду"
+                    onChange={(value) =>
+                        setLocalFilters((prev) => ({ ...prev, brand: value || '' }))
+                    }
+                    filterOption={(inputValue, option) =>
+                        option?.label
+                            ?.toLowerCase()
+                            .includes(inputValue.toLowerCase())
+                    }
+                />
+                <Input
+                    value={localFilters.provider}
+                    onChange={(e) =>
+                        setLocalFilters((prev) => ({ ...prev, provider: e.target.value }))
+                    }
+                    style={{ width: 200 }}
+                    placeholder="Фильтр по поставщику"
+                />
+                <InputNumber
+                    value={localFilters.minPrice}
+                    onChange={(value) =>
+                        setLocalFilters((prev) => ({ ...prev, minPrice: value }))
+                    }
+                    style={{ width: 140 }}
+                    min={0}
+                    placeholder="Цена от"
+                />
+                <InputNumber
+                    value={localFilters.maxPrice}
+                    onChange={(value) =>
+                        setLocalFilters((prev) => ({ ...prev, maxPrice: value }))
+                    }
+                    style={{ width: 140 }}
+                    min={0}
+                    placeholder="Цена до"
+                />
+                <InputNumber
+                    value={localFilters.minQty}
+                    onChange={(value) =>
+                        setLocalFilters((prev) => ({ ...prev, minQty: value }))
+                    }
+                    style={{ width: 140 }}
+                    min={0}
+                    placeholder="Мин. кол-во"
+                />
+                <InputNumber
+                    value={localFilters.maxDelivery}
+                    onChange={(value) =>
+                        setLocalFilters((prev) => ({ ...prev, maxDelivery: value }))
+                    }
+                    style={{ width: 140 }}
+                    min={0}
+                    placeholder="Срок до (дней)"
+                />
+                <Button onClick={resetLocalFilters}>Сбросить фильтры</Button>
+            </Space>
+
             <Spin spinning={loading}>
                 <Table
                     rowKey={(record) =>
                         `${record.autopart_id}-${record.provider_id}-${record.provider_config_id || 'base'}`
                     }
                     columns={localColumns}
-                    dataSource={offers}
+                    dataSource={filteredOffers}
                     pagination={{ pageSize: 12 }}
                     scroll={{ x: 1200 }}
                 />
@@ -501,6 +673,11 @@ const AutopartOffers = () => {
                 </Space>
 
                 <Spin spinning={remoteLoading}>
+                    {remoteMeta.total > 0 ? (
+                        <div style={{ marginBottom: 8, color: '#6b7280' }}>
+                            Найдено {remoteMeta.total}. Показаны все предложения.
+                        </div>
+                    ) : null}
                     <Table
                         rowKey={(record, index) => record.api_hash || `${record.oem}-${index}`}
                         columns={remoteColumns}

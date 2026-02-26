@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Input, Button, message, Spin, Tag, Space, Card, Popconfirm } from 'antd';
+import { Table, Input, Button, message, Spin, Tag, Space, Card, Popconfirm, Select } from 'antd';
 import { SearchOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
 import api from "../api.js";
@@ -11,6 +11,12 @@ const { Search } = Input;
 const ProvidersList = () => {
     const [providers, setProviders] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [filters, setFilters] = useState({
+        hasActivePricelists: 'all',
+        hasPricelistConfig: 'all',
+        isVirtual: 'all',
+    });
+    const [sortState, setSortState] = useState({ sortBy: 'name', sortDir: 'asc' });
     const [pagination, setPagination] = useState({
         current: 1,
         pageSize: 10,
@@ -27,7 +33,13 @@ const ProvidersList = () => {
         fetchProviders();
     }, []);
 
-    const fetchProviders = async (page = 1, pageSize = 10, search = '') => {
+    const fetchProviders = async (
+        page = 1,
+        pageSize = 10,
+        search = '',
+        filtersState = filters,
+        sortStateValue = sortState
+    ) => {
         setLoading(true);
         try {
             const params = {
@@ -37,6 +49,21 @@ const ProvidersList = () => {
 
             if (search) {
                 params.search = search;
+            }
+            if (filtersState.hasActivePricelists !== 'all') {
+                params.has_active_pricelists =
+                    filtersState.hasActivePricelists === 'yes';
+            }
+            if (filtersState.hasPricelistConfig !== 'all') {
+                params.has_pricelist_config =
+                    filtersState.hasPricelistConfig === 'yes';
+            }
+            if (filtersState.isVirtual !== 'all') {
+                params.is_virtual = filtersState.isVirtual === 'yes';
+            }
+            if (sortStateValue.sortBy) {
+                params.sort_by = sortStateValue.sortBy;
+                params.sort_dir = sortStateValue.sortDir;
             }
 
             const response = await api.get('/providers/', { params });
@@ -59,16 +86,42 @@ const ProvidersList = () => {
     const handleSearch = (value) => {
         setSearchText(value);
         setPagination(prev => ({ ...prev, current: 1 }));
-        fetchProviders(1, pagination.pageSize, value);
+        fetchProviders(1, pagination.pageSize, value, filters, sortState);
     };
 
-    const handleTableChange = (paginationConfig) => {
+    const handleTableChange = (paginationConfig, tableFilters, sorter) => {
         setPagination(paginationConfig);
-        fetchProviders(paginationConfig.current, paginationConfig.pageSize, searchText);
+        const sortBy = sorter?.field || sortState.sortBy;
+        const sortDir = sorter?.order === 'descend' ? 'desc' : 'asc';
+        const nextSort = {
+            sortBy,
+            sortDir,
+        };
+        setSortState(nextSort);
+        fetchProviders(
+            paginationConfig.current,
+            paginationConfig.pageSize,
+            searchText,
+            filters,
+            nextSort
+        );
     };
 
     const handleRefresh = () => {
-        fetchProviders(pagination.current, pagination.pageSize, searchText);
+        fetchProviders(
+            pagination.current,
+            pagination.pageSize,
+            searchText,
+            filters,
+            sortState
+        );
+    };
+
+    const handleFilterChange = (key, value) => {
+        const nextFilters = { ...filters, [key]: value };
+        setFilters(nextFilters);
+        setPagination(prev => ({ ...prev, current: 1 }));
+        fetchProviders(1, pagination.pageSize, searchText, nextFilters, sortState);
     };
 
     const handleEdit = (id) => {
@@ -91,11 +144,14 @@ const ProvidersList = () => {
             key: 'id',
             width: 70,
             sorter: true,
+            sortOrder: sortState.sortBy === 'id' ? (sortState.sortDir === 'asc' ? 'ascend' : 'descend') : null,
         },
         {
             title: 'Название',
             dataIndex: 'name',
             key: 'name',
+            sorter: true,
+            sortOrder: sortState.sortBy === 'name' ? (sortState.sortDir === 'asc' ? 'ascend' : 'descend') : null,
             render: (text, record) => (
                 <div>
                     <div style={{ fontWeight: 'bold' }}>{text}</div>
@@ -230,6 +286,42 @@ const ProvidersList = () => {
                         >
                             Обновить
                         </Button>
+                        <Select
+                            value={filters.hasActivePricelists}
+                            onChange={(value) =>
+                                handleFilterChange('hasActivePricelists', value)
+                            }
+                            style={{ width: 220 }}
+                            options={[
+                                { value: 'all', label: 'Все прайсы' },
+                                { value: 'yes', label: 'Есть активные прайсы' },
+                                { value: 'no', label: 'Нет активных прайсов' },
+                            ]}
+                        />
+                        <Select
+                            value={filters.hasPricelistConfig}
+                            onChange={(value) =>
+                                handleFilterChange('hasPricelistConfig', value)
+                            }
+                            style={{ width: 210 }}
+                            options={[
+                                { value: 'all', label: 'Все конфиги' },
+                                { value: 'yes', label: 'Есть конфиг' },
+                                { value: 'no', label: 'Без конфига' },
+                            ]}
+                        />
+                        <Select
+                            value={filters.isVirtual}
+                            onChange={(value) =>
+                                handleFilterChange('isVirtual', value)
+                            }
+                            style={{ width: 190 }}
+                            options={[
+                                { value: 'all', label: 'Все поставщики' },
+                                { value: 'yes', label: 'Виртуальные' },
+                                { value: 'no', label: 'Обычные' },
+                            ]}
+                        />
                     </Space>
                     <Button
                         type="primary"

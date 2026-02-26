@@ -232,7 +232,6 @@ const ProviderPage = () => {
                 // после создания переходим на страницу редактирования созданного поставщика
                 navigate(`/providers/${data.id}/edit`);
             } else {
-                await confirmChange("Сохранить изменения поставщика?");
                 await updateProvider(providerId, values);
                 message.success("Данные поставщика обновлены");
                 // обновляем данные на странице
@@ -777,14 +776,32 @@ const ProviderPage = () => {
                     </Form.Item>
 
                     <Form.Item>
-                        <Button
-                            type="primary"
-                            htmlType="submit"
-                            loading={saving}
-                            icon={<SaveOutlined />}
-                        >
-                            {isNew ? "Создать поставщика" : "Сохранить изменения"}
-                        </Button>
+                        {isNew ? (
+                            <Button
+                                type="primary"
+                                htmlType="submit"
+                                loading={saving}
+                                icon={<SaveOutlined />}
+                            >
+                                Создать поставщика
+                            </Button>
+                        ) : (
+                            <Popconfirm
+                                title="Сохранить изменения поставщика?"
+                                description="Проверьте данные перед сохранением."
+                                okText="Сохранить"
+                                cancelText="Отмена"
+                                onConfirm={() => providerForm.submit()}
+                            >
+                                <Button
+                                    type="primary"
+                                    loading={saving}
+                                    icon={<SaveOutlined />}
+                                >
+                                    Сохранить изменения
+                                </Button>
+                            </Popconfirm>
+                        )}
                     </Form.Item>
                 </Form>
             </Card>

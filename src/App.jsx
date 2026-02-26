@@ -18,6 +18,7 @@ import StockOrdersPage from './components/StockOrdersPage';
 import CustomerSupplierOrdersPage from './components/CustomerSupplierOrdersPage';
 import EmailAccountsPage from './components/EmailAccountsPage';
 import SettingsPage from './components/SettingsPage';
+import AdminMonitoringPage from './components/AdminMonitoringPage';
 import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
 import AdminUsers from './components/AdminUsers';
@@ -90,6 +91,7 @@ const AppRoutes = () => (
         <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
         <Route path="/admin/email-accounts" element={<RequireAdmin><EmailAccountsPage /></RequireAdmin>} />
         <Route path="/admin/settings" element={<RequireAdmin><SettingsPage /></RequireAdmin>} />
+        <Route path="/admin/monitor" element={<RequireAdmin><AdminMonitoringPage /></RequireAdmin>} />
         <Route path="/watchlist" element={<RequireAuth><WatchlistPage /></RequireAuth>} />
     </Routes>
 );
