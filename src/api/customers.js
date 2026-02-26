@@ -4,6 +4,9 @@ import api from '../api.js';
 export const getCustomers = (params) =>
     api.get('/customers/', { params });
 
+export const getCustomersSummary = (params) =>
+    api.get('/customers/summary/', { params });
+
 export const getCustomerById = (customerId) =>
     api.get(`/customers/${customerId}/`);
 

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Table, InputNumber, Checkbox, Button, message, Spin, Tag, Form, Modal } from 'antd';
+import { Table, InputNumber, Checkbox, Button, message, Spin, Tag, Form, Modal, Card, Space } from 'antd';
+import { ReloadOutlined } from '@ant-design/icons';
 import api from '../api.js';
 
 
@@ -89,6 +90,13 @@ const RestockOffers = () => {
         });
     };
 
+    const handleReset = () => {
+        setOffers([]);
+        setSelectedOffers({});
+        setConfirmedOffers(null);
+        form.setFieldsValue(DEFAULT_PARAMS);
+    };
+
     const columns = [
         { title: 'OEM', dataIndex: 'oem_number', key: 'oem' },
         { title: 'Деталь', dataIndex: 'detail_name', key: 'detail_name' }, // detail_name!
@@ -132,36 +140,43 @@ const RestockOffers = () => {
         form.setFieldsValue(DEFAULT_PARAMS);
     }, [form]);
 
-    // --- Отдельный рендер для подтверждённых заказов ---
-    if (confirmedOffers) {
-        return (
-            <div style={{ maxWidth: 800, margin: '0 auto', padding: 24 }}>
-                <h2>Заказ отправлен</h2>
-                <Table
-                    rowKey="autopart_id"
-                    columns={[
-                        { title: 'ID', dataIndex: 'autopart_id', key: 'autopart_id' },
-                        { title: 'Поставщик', dataIndex: 'supplier_id', key: 'supplier_id' },
-                        { title: 'Количество', dataIndex: 'quantity', key: 'quantity' },
-                        { title: 'Цена', dataIndex: 'confirmed_price', key: 'confirmed_price' },
-                        { title: 'Статус', dataIndex: 'status', key: 'status' },
-                        { title: 'Отправка', dataIndex: 'send_method', key: 'send_method' },
-                    ]}
-                    dataSource={confirmedOffers}
-                    pagination={false}
-                />
-                <Button style={{ marginTop: 20 }} onClick={() => {
+    const headerActions = (
+        <Space>
+            <Button icon={<ReloadOutlined />} onClick={handleReset} disabled={loading}>
+                Сбросить
+            </Button>
+        </Space>
+    );
+
+    const content = confirmedOffers ? (
+        <div>
+            <h2>Заказ отправлен</h2>
+            <Table
+                rowKey="autopart_id"
+                columns={[
+                    { title: 'ID', dataIndex: 'autopart_id', key: 'autopart_id' },
+                    { title: 'Поставщик', dataIndex: 'supplier_id', key: 'supplier_id' },
+                    { title: 'Количество', dataIndex: 'quantity', key: 'quantity' },
+                    { title: 'Цена', dataIndex: 'confirmed_price', key: 'confirmed_price' },
+                    { title: 'Статус', dataIndex: 'status', key: 'status' },
+                    { title: 'Отправка', dataIndex: 'send_method', key: 'send_method' },
+                ]}
+                dataSource={confirmedOffers}
+                pagination={false}
+            />
+            <Button
+                style={{ marginTop: 20 }}
+                onClick={() => {
                     setConfirmedOffers(null);
                     setOffers([]);
                     setSelectedOffers({});
-                }}>Новый заказ</Button>
-            </div>
-        );
-    }
-
-    // --- Обычный рендер ---
-    return (
-        <div style={{ maxWidth: 800, margin: '0 auto', padding: 24 }}>
+                }}
+            >
+                Новый заказ
+            </Button>
+        </div>
+    ) : (
+        <div>
             {!offers.length ? (
                 <Form
                     form={form}
@@ -215,13 +230,26 @@ const RestockOffers = () => {
                     </Button>
                     <Button
                         style={{ marginTop: 20, marginLeft: 12 }}
-                        onClick={() => { setOffers([]); setSelectedOffers({}); }}
+                        onClick={() => {
+                            setOffers([]);
+                            setSelectedOffers({});
+                        }}
                     >
                         Назад
                     </Button>
                 </Spin>
             )}
         </div>
+    );
+
+    return (
+        <Card
+            title="Формирование заказов"
+            extra={headerActions}
+            style={{ margin: '20px auto', maxWidth: 900 }}
+        >
+            {content}
+        </Card>
     );
 };
 

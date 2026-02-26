@@ -46,6 +46,7 @@ import {
     parseProviderExcludePositions,
 } from "../api/providers";
 import { getPriceStaleAlerts } from "../api/settings";
+import { formatMoscow } from '../utils/time';
 
 const { Title, Text } = Typography;
 
@@ -73,6 +74,7 @@ const ProviderPage = () => {
     const [uploadModalVisible, setUploadModalVisible] = useState(false);
     const [uploadingForConfigId, setUploadingForConfigId] = useState(null);
     const [uploading, setUploading] = useState(false);
+    const [configSaving, setConfigSaving] = useState(false);
     const [uploadForm] = Form.useForm();
     const [configNumberingFromOne, setConfigNumberingFromOne] = useState(true);
     const [uploadNumberingFromOne, setUploadNumberingFromOne] = useState(true);
@@ -103,6 +105,7 @@ const ProviderPage = () => {
                 content: "Проверьте данные перед сохранением.",
                 okText: "Сохранить",
                 cancelText: "Отмена",
+                zIndex: 2000,
                 onOk: resolve,
                 onCancel: () => reject(new Error("cancel")),
             });
@@ -288,6 +291,7 @@ const ProviderPage = () => {
     const handleConfigSubmit = async (values) => {
         if (!providerId) return;
 
+        setConfigSaving(true);
         try {
             const cleanedExcludePositions = (values.exclude_positions || [])
                 .map(normalizeExcludeItem)
@@ -303,7 +307,6 @@ const ProviderPage = () => {
                 price_col: adjustForPayload(values.price_col, configNumberingFromOne),
             };
             if (editingConfig) {
-                await confirmChange("Сохранить изменения конфигурации?");
                 await updateProviderConfig(providerId, editingConfig.id, payload);
                 message.success("Конфигурация обновлена");
             } else {
@@ -320,7 +323,10 @@ const ProviderPage = () => {
         } catch (err) {
             if (err?.message === "cancel") return;
             console.error(err);
-            message.error("Ошибка сохранения конфигурации");
+            const detail = err?.response?.data?.detail;
+            message.error(detail || "Ошибка сохранения конфигурации");
+        } finally {
+            setConfigSaving(false);
         }
     };
 
@@ -657,7 +663,30 @@ const ProviderPage = () => {
 
             {/* Форма поставщика */}
             <Card title="Основная информация" style={{ marginBottom: 20 }}>
-                <Form form={providerForm} layout="vertical" onFinish={handleProviderSubmit}>
+                <Form
+                    form={providerForm}
+                    layout="vertical"
+                    onFinish={handleProviderSubmit}
+                    onFinishFailed={({ errorFields }) => {
+                        message.error('Не отправлено: проверьте обязательные поля');
+                        if (errorFields?.length) {
+                            Modal.error({
+                                title: 'Ошибки формы',
+                                content: (
+                                    <ul style={{ paddingLeft: 18, margin: 0 }}>
+                                        {errorFields.map((field) => (
+                                            <li key={field.name.join('.')}>
+                                                {field.errors?.[0] || field.name.join('.')}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ),
+                            });
+                            providerForm.scrollToField(errorFields[0].name);
+                        }
+                    }}
+                    scrollToFirstError
+                >
                     <Form.Item
                         name="name"
                         label="Название"
@@ -835,7 +864,7 @@ const ProviderPage = () => {
                                     title: "Дата",
                                     dataIndex: "created_at",
                                     key: "created_at",
-                                    render: (value) => new Date(value).toLocaleString(),
+                                    render: (value) => formatMoscow(value),
                                 },
                                 {
                                     title: "Прайс",
@@ -873,9 +902,9 @@ const ProviderPage = () => {
                                 <div>
                                     <Text strong>Обновлен: </Text>
                                     <Text>
-                                        {new Date(
+                                        {formatMoscow(
                                             providerData.provider.last_email_uid.updated_at
-                                        ).toLocaleString()}
+                                        )}
                                     </Text>
                                 </div>
                             )}
@@ -897,7 +926,14 @@ const ProviderPage = () => {
                 width={800}
                 destroyOnClose
             >
-                <Form form={configForm} layout="vertical" onFinish={handleConfigSubmit}>
+                <Form
+                    form={configForm}
+                    layout="vertical"
+                    onFinish={handleConfigSubmit}
+                    onFinishFailed={() =>
+                        message.error("Не отправлено: проверьте обязательные поля")
+                    }
+                >
                     <Form.Item
                         name="name_price"
                         label="Название прайса"
@@ -1095,7 +1131,12 @@ const ProviderPage = () => {
 
                     <Form.Item>
                         <Space>
-                            <Button type="primary" htmlType="submit" icon={<SaveOutlined />}>
+                            <Button
+                                type="primary"
+                                htmlType="submit"
+                                icon={<SaveOutlined />}
+                                loading={configSaving}
+                            >
                                 {editingConfig ? "Обновить" : "Создать"}
                             </Button>
                             <Button
@@ -1124,7 +1165,30 @@ const ProviderPage = () => {
                 footer={null}
                 destroyOnClose
             >
-                <Form form={abbrForm} layout="vertical" onFinish={handleAbbrSubmit}>
+                <Form
+                    form={abbrForm}
+                    layout="vertical"
+                    onFinish={handleAbbrSubmit}
+                    onFinishFailed={({ errorFields }) => {
+                        message.error('Не отправлено: проверьте обязательные поля');
+                        if (errorFields?.length) {
+                            Modal.error({
+                                title: 'Ошибки формы',
+                                content: (
+                                    <ul style={{ paddingLeft: 18, margin: 0 }}>
+                                        {errorFields.map((field) => (
+                                            <li key={field.name.join('.')}>
+                                                {field.errors?.[0] || field.name.join('.')}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ),
+                            });
+                            abbrForm.scrollToField(errorFields[0].name);
+                        }
+                    }}
+                    scrollToFirstError
+                >
                     <Form.Item
                         name="abbreviation"
                         label="Аббревиатура"
@@ -1167,7 +1231,30 @@ const ProviderPage = () => {
                 width={600}
                 destroyOnClose
             >
-                <Form form={uploadForm} layout="vertical" onFinish={handleUploadPricelist}>
+                <Form
+                    form={uploadForm}
+                    layout="vertical"
+                    onFinish={handleUploadPricelist}
+                    onFinishFailed={({ errorFields }) => {
+                        message.error('Не отправлено: проверьте обязательные поля');
+                        if (errorFields?.length) {
+                            Modal.error({
+                                title: 'Ошибки формы',
+                                content: (
+                                    <ul style={{ paddingLeft: 18, margin: 0 }}>
+                                        {errorFields.map((field) => (
+                                            <li key={field.name.join('.')}>
+                                                {field.errors?.[0] || field.name.join('.')}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ),
+                            });
+                            uploadForm.scrollToField(errorFields[0].name);
+                        }
+                    }}
+                    scrollToFirstError
+                >
                     <Form.Item
                         name="file"
                         label="Файл прайс-листа"

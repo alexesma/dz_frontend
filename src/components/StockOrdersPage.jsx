@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, DatePicker, Select, Table, Typography, Row, Col, Spin } from 'antd';
-import { getCustomers } from '../api/customers';
+import { getCustomersSummary } from '../api/customers';
 import api from '../api';
 import { getStockOrders } from '../api/customerOrders';
 
@@ -24,11 +24,12 @@ const StockOrdersPage = () => {
         const fetchMeta = async () => {
             try {
                 const [customersResp, brandsResp, storagesResp] = await Promise.all([
-                    getCustomers(),
+                    getCustomersSummary({ page: 1, page_size: 200 }),
                     api.get('/brand/'),
                     api.get('/storage/'),
                 ]);
-                setCustomers(customersResp.data || []);
+                const customersData = customersResp.data?.items || customersResp.data || [];
+                setCustomers(customersData);
                 setBrands(brandsResp.data || []);
                 setStorages(storagesResp.data || []);
             } catch (err) {

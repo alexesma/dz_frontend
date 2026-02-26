@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Button, Card, Form, Input, message, Typography } from 'antd';
+import { Button, Card, Form, Input, Modal, message, Typography } from 'antd';
 import { useNavigate, Link } from 'react-router-dom';
 import useAuth from '../context/useAuth';
 
@@ -9,6 +9,8 @@ const LoginPage = () => {
     const { login } = useAuth();
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
+
+    const [form] = Form.useForm();
 
     const onFinish = async (values) => {
         setLoading(true);
@@ -28,7 +30,30 @@ const LoginPage = () => {
         <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 80 }}>
             <Card style={{ width: 380 }}>
                 <Title level={3}>Вход</Title>
-                <Form layout="vertical" onFinish={onFinish}>
+                <Form
+                    form={form}
+                    layout="vertical"
+                    onFinish={onFinish}
+                    onFinishFailed={({ errorFields }) => {
+                        message.error('Не отправлено: проверьте обязательные поля');
+                        if (errorFields?.length) {
+                            Modal.error({
+                                title: 'Ошибки формы',
+                                content: (
+                                    <ul style={{ paddingLeft: 18, margin: 0 }}>
+                                        {errorFields.map((field) => (
+                                            <li key={field.name.join('.')}>
+                                                {field.errors?.[0] || field.name.join('.')}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ),
+                            });
+                            form.scrollToField(errorFields[0].name);
+                        }
+                    }}
+                    scrollToFirstError
+                >
                     <Form.Item
                         label="Email"
                         name="email"

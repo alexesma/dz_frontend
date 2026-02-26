@@ -61,6 +61,7 @@ const CustomerPage = () => {
     const [activeConfig, setActiveConfig] = useState(null);
     const [sources, setSources] = useState([]);
     const [sourcesLoading, setSourcesLoading] = useState(false);
+    const [configSaving, setConfigSaving] = useState(false);
     const [providerOptions, setProviderOptions] = useState([]);
     const [supplierFilterProviders, setSupplierFilterProviders] = useState([]);
     const [editingSource, setEditingSource] = useState(null);
@@ -103,6 +104,7 @@ const CustomerPage = () => {
                 content: 'Проверьте данные перед сохранением.',
                 okText: 'Сохранить',
                 cancelText: 'Отмена',
+                zIndex: 2000,
                 onOk: resolve,
                 onCancel: () => reject(new Error('cancel')),
             });
@@ -518,6 +520,7 @@ const CustomerPage = () => {
     const handleConfigSubmit = async (values) => {
         if (!customerId) return;
 
+        setConfigSaving(true);
         try {
             const payload = {
                 ...values,
@@ -550,7 +553,10 @@ const CustomerPage = () => {
         } catch (err) {
             if (err?.message === 'cancel') return;
             console.error(err);
-            message.error('Ошибка сохранения конфигурации');
+            const detail = err?.response?.data?.detail;
+            message.error(detail || 'Ошибка сохранения конфигурации');
+        } finally {
+            setConfigSaving(false);
         }
     };
 
@@ -826,6 +832,25 @@ const CustomerPage = () => {
                     form={customerForm}
                     layout="vertical"
                     onFinish={handleCustomerSubmit}
+                    onFinishFailed={({ errorFields }) => {
+                        message.error('Не отправлено: проверьте обязательные поля');
+                        if (errorFields?.length) {
+                            Modal.error({
+                                title: 'Ошибки формы',
+                                content: (
+                                    <ul style={{ paddingLeft: 18, margin: 0 }}>
+                                        {errorFields.map((field) => (
+                                            <li key={field.name.join('.')}>
+                                                {field.errors?.[0] || field.name.join('.')}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ),
+                            });
+                            customerForm.scrollToField(errorFields[0].name);
+                        }
+                    }}
+                    scrollToFirstError
                 >
                     <Form.Item
                         name="name"
@@ -920,6 +945,25 @@ const CustomerPage = () => {
                         form={orderConfigForm}
                         layout="vertical"
                         onFinish={handleOrderConfigSubmit}
+                        onFinishFailed={({ errorFields }) => {
+                            message.error('Не отправлено: проверьте обязательные поля');
+                            if (errorFields?.length) {
+                                Modal.error({
+                                    title: 'Ошибки формы',
+                                    content: (
+                                        <ul style={{ paddingLeft: 18, margin: 0 }}>
+                                            {errorFields.map((field) => (
+                                                <li key={field.name.join('.')}>
+                                                    {field.errors?.[0] || field.name.join('.')}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    ),
+                                });
+                                orderConfigForm.scrollToField(errorFields[0].name);
+                            }
+                        }}
+                        scrollToFirstError
                         initialValues={{
                             ship_mode: 'REPLACE_QTY',
                             price_tolerance_pct: 2,
@@ -1043,6 +1087,25 @@ const CustomerPage = () => {
                     form={configForm}
                     layout="vertical"
                     onFinish={handleConfigSubmit}
+                    onFinishFailed={({ errorFields }) => {
+                        message.error('Не отправлено: проверьте обязательные поля');
+                        if (errorFields?.length) {
+                            Modal.error({
+                                title: 'Ошибки формы',
+                                content: (
+                                    <ul style={{ paddingLeft: 18, margin: 0 }}>
+                                        {errorFields.map((field) => (
+                                            <li key={field.name.join('.')}>
+                                                {field.errors?.[0] || field.name.join('.')}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ),
+                            });
+                            configForm.scrollToField(errorFields[0].name);
+                        }
+                    }}
+                    scrollToFirstError
                     initialValues={{
                         general_markup: 1.0,
                         own_price_list_markup: 1.0,
@@ -1246,6 +1309,7 @@ const CustomerPage = () => {
                                 type="primary"
                                 htmlType="submit"
                                 icon={<SaveOutlined />}
+                                loading={configSaving}
                             >
                                 {editingConfig ? 'Обновить' : 'Создать'}
                             </Button>
@@ -1345,6 +1409,25 @@ const CustomerPage = () => {
                         form={sourceForm}
                         layout="vertical"
                         onFinish={handleSourceSubmit}
+                        onFinishFailed={({ errorFields }) => {
+                            message.error('Не отправлено: проверьте обязательные поля');
+                            if (errorFields?.length) {
+                                Modal.error({
+                                    title: 'Ошибки формы',
+                                    content: (
+                                        <ul style={{ paddingLeft: 18, margin: 0 }}>
+                                            {errorFields.map((field) => (
+                                                <li key={field.name.join('.')}>
+                                                    {field.errors?.[0] || field.name.join('.')}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    ),
+                                });
+                                sourceForm.scrollToField(errorFields[0].name);
+                            }
+                        }}
+                        scrollToFirstError
                         initialValues={{ enabled: true, markup: 1.0 }}
                     >
                         <Form.Item

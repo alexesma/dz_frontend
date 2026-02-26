@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Card, Descriptions, Spin, message, Button } from 'antd';
 import api from "../api.js";
+import { formatMoscow } from '../utils/time';
 
 const ProviderConfigDetail = () => {
     const { id } = useParams();
@@ -60,7 +61,9 @@ const ProviderConfigDetail = () => {
                             <Descriptions.Item label="Фильтр по теме письма">{cfg.subject_filter}</Descriptions.Item>
                         )}
                         {'updated_at' in cfg && (
-                            <Descriptions.Item label="Обновлено">{new Date(cfg.updated_at).toLocaleString()}</Descriptions.Item>
+                            <Descriptions.Item label="Обновлено">
+                                {formatMoscow(cfg.updated_at)}
+                            </Descriptions.Item>
                         )}
                     </Descriptions>
                 )}

@@ -5,7 +5,7 @@ import {
     DeleteOutlined, PlusOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { getCustomers, deleteCustomer } from '../api/customers';
+import { getCustomersSummary, deleteCustomer } from '../api/customers';
 
 const { Search } = Input;
 
@@ -13,24 +13,51 @@ const CustomersList = () => {
     const [customers, setCustomers] = useState([]);
     const [loading, setLoading] = useState(false);
     const [searchText, setSearchText] = useState('');
+    const [pagination, setPagination] = useState({
+        current: 1,
+        pageSize: 20,
+        total: 0,
+        showSizeChanger: true,
+        showQuickJumper: true,
+        pageSizeOptions: ['10', '20', '50', '100', '200'],
+        showTotal: (total, range) =>
+            `${range[0]}-${range[1]} из ${total} клиентов`,
+    });
     const navigate = useNavigate();
 
     useEffect(() => {
         fetchCustomers();
     }, []);
 
-    const fetchCustomers = async () => {
+    const fetchCustomers = async (
+        page = pagination.current,
+        pageSize = pagination.pageSize,
+        nextSearch = searchText
+    ) => {
         setLoading(true);
         try {
-            const { data } = await getCustomers();
-            const list = Array.isArray(data)
-                ? data
-                : data?.items || data?.results || data?.data || data?.customers || [];
+            const params = {};
+            if (nextSearch && nextSearch.trim()) {
+                params.search = nextSearch.trim();
+            }
+            params.page = page;
+            params.page_size = pageSize;
+
+            const { data } = await getCustomersSummary(params);
+            const list = Array.isArray(data) ? data : data?.items || [];
             if (!Array.isArray(list)) {
                 console.warn('Unexpected customers payload shape:', data);
                 setCustomers([]);
             } else {
                 setCustomers(list);
+            }
+            if (data?.page && data?.page_size) {
+                setPagination((prev) => ({
+                    ...prev,
+                    current: data.page,
+                    pageSize: data.page_size,
+                    total: data.total ?? prev.total,
+                }));
             }
         } catch (error) {
             message.error('Ошибка загрузки клиентов');
@@ -42,8 +69,17 @@ const CustomersList = () => {
 
     const handleSearch = (value) => {
         setSearchText(value);
-        // TODO: реализовать поиск на бэкенде если нужно
-        fetchCustomers();
+        setPagination((prev) => ({ ...prev, current: 1 }));
+        fetchCustomers(1, pagination.pageSize, value);
+    };
+
+    const handleTableChange = (paginationConfig) => {
+        setPagination(paginationConfig);
+        fetchCustomers(
+            paginationConfig.current,
+            paginationConfig.pageSize,
+            searchText
+        );
     };
 
     const handleEdit = (id) => {
@@ -100,8 +136,7 @@ const CustomersList = () => {
             title: 'Прайс-листы',
             key: 'customer_price_lists',
             render: (_, record) => {
-                const priceLists = record.customer_price_lists || [];
-                const count = priceLists.length;
+                const count = record.price_lists_count ?? 0;
 
                 if (count === 0) {
                     return <Tag color="default">Нет прайсов</Tag>;
@@ -114,17 +149,14 @@ const CustomersList = () => {
             title: 'Конфигурации',
             key: 'pricelist_configs',
             render: (_, record) => {
-                const configs = record.pricelist_configs || [];
-                if (!configs.length) {
+                const configsCount = record.pricelist_configs_count ?? 0;
+                const sourcesCount = record.pricelist_sources_count ?? 0;
+                if (!configsCount) {
                     return <Tag color="default">Нет</Tag>;
                 }
-                const sourcesCount = configs.reduce(
-                    (sum, cfg) => sum + (cfg.sources_count || 0),
-                    0
-                );
                 return (
                     <Space direction="vertical" size={2}>
-                        <Tag color="green">Конфигов: {configs.length}</Tag>
+                        <Tag color="green">Конфигов: {configsCount}</Tag>
                         <Tag color="blue">Источников: {sourcesCount}</Tag>
                     </Space>
                 );
@@ -200,7 +232,8 @@ const CustomersList = () => {
                     rowKey="id"
                     columns={columns}
                     dataSource={customers}
-                    pagination={{ pageSize: 20 }}
+                    pagination={pagination}
+                    onChange={handleTableChange}
                     scroll={{ x: 1200 }}
                     size="middle"
                 />

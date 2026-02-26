@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Button, Card, Form, Input, InputNumber, Popconfirm, Table, message } from 'antd';
 import { createWatchItem, deleteWatchItem, getWatchItems } from '../api/watchlist';
+import { formatMoscow } from '../utils/time';
 
 const WatchlistPage = () => {
     const [form] = Form.useForm();
@@ -63,7 +64,7 @@ const WatchlistPage = () => {
             render: (_, record) => (
                 <>
                     <div>Цена: {record.last_seen_provider_price ?? '-'}</div>
-                    <div>Когда: {record.last_seen_provider_at ? new Date(record.last_seen_provider_at).toLocaleString() : '-'}</div>
+                    <div>Когда: {formatMoscow(record.last_seen_provider_at)}</div>
                 </>
             ),
         },
@@ -73,7 +74,7 @@ const WatchlistPage = () => {
             render: (_, record) => (
                 <>
                     <div>Цена: {record.last_seen_site_price ?? '-'}</div>
-                    <div>Когда: {record.last_seen_site_at ? new Date(record.last_seen_site_at).toLocaleString() : '-'}</div>
+                    <div>Когда: {formatMoscow(record.last_seen_site_at)}</div>
                 </>
             ),
         },

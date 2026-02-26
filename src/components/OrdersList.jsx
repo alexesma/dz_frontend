@@ -1,5 +1,8 @@
 import api from "../api.js";
 import React, { useEffect, useCallback, useState } from 'react';
+import { Button, Card, Space } from 'antd';
+import { ReloadOutlined } from '@ant-design/icons';
+import { formatMoscow } from '../utils/time';
 
 // --- API КЛИЕНТ ---
 // const api = {
@@ -202,6 +205,14 @@ const OrdersList = () => {
             fetchCreatedOrders();
         }
     }, [activeTab, fetchConfirmedPositions, fetchCreatedOrders]);
+
+    const handleRefresh = () => {
+        if (activeTab === 'confirmed') {
+            fetchConfirmedPositions();
+        } else {
+            fetchCreatedOrders();
+        }
+    };
 
     // Создание заказа из подтвержденных позиций
     const createOrderFromPositions = async (e) => {
@@ -483,8 +494,26 @@ const OrdersList = () => {
         ...(message.type === 'warning' && styles.warningMessage)
     };
 
+    const headerActions = (
+        <Space>
+            <Button
+                icon={<ReloadOutlined />}
+                onClick={handleRefresh}
+                loading={loading}
+            >
+                Обновить
+            </Button>
+        </Space>
+    );
+
     return (
-        <div style={styles.container}>
+        <Card
+            title="Заказы поставщикам"
+            extra={headerActions}
+            style={{ margin: '20px' }}
+            bodyStyle={{ padding: 0 }}
+        >
+            <div style={styles.container}>
             <div style={messageStyle}>
                 {message.text}
             </div>
@@ -700,7 +729,7 @@ const OrdersList = () => {
                                             {' | Клиент ID: '}{order.customer_id}
                                             {' | Статус: '}<StatusBadge status={order.status} options={orderStatusOptions} />
                                             {' | Позиций: '}{order.order_items?.length || 0}
-                                            {' | Создан: '}{new Date(order.created_at).toLocaleString()}
+                                            {' | Создан: '}{formatMoscow(order.created_at)}
                                         </span>
                                         <span>{isExpanded ? '▲' : '▼'}</span>
                                     </div>
@@ -805,7 +834,8 @@ const OrdersList = () => {
                     </div>
                 </div>
             )}
-        </div>
+            </div>
+        </Card>
     );
 };
 

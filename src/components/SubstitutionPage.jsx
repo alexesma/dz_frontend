@@ -95,6 +95,25 @@ const SubstitutionPage = () => {
                     form={form}
                     layout="vertical"
                     onFinish={handleSubmit}
+                    onFinishFailed={({ errorFields }) => {
+                        message.error('Не отправлено: проверьте обязательные поля');
+                        if (errorFields?.length) {
+                            Modal.error({
+                                title: 'Ошибки формы',
+                                content: (
+                                    <ul style={{ paddingLeft: 18, margin: 0 }}>
+                                        {errorFields.map((field) => (
+                                            <li key={field.name.join('.')}>
+                                                {field.errors?.[0] || field.name.join('.')}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ),
+                            });
+                            form.scrollToField(errorFields[0].name);
+                        }
+                    }}
+                    scrollToFirstError
                     initialValues={{
                         priority: 1,
                         min_source_quantity: 4,

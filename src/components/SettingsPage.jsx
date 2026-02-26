@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Button, Card, Form, Modal, Select, Switch, Typography, message } from 'antd';
 import { getPriceCheckLogs, getPriceCheckSchedule, updatePriceCheckSchedule } from '../api/settings';
+import { formatMoscow } from '../utils/time';
 
 const { Paragraph, Text } = Typography;
 
@@ -88,7 +89,30 @@ const SettingsPage = () => {
                 заданы, проверка выполняется каждый час. В противном случае —
                 только в выбранные дни и часы.
             </Paragraph>
-            <Form form={form} layout="vertical" onFinish={handleSave}>
+            <Form
+                form={form}
+                layout="vertical"
+                onFinish={handleSave}
+                onFinishFailed={({ errorFields }) => {
+                    message.error('Не отправлено: проверьте обязательные поля');
+                    if (errorFields?.length) {
+                        Modal.error({
+                            title: 'Ошибки формы',
+                            content: (
+                                <ul style={{ paddingLeft: 18, margin: 0 }}>
+                                    {errorFields.map((field) => (
+                                        <li key={field.name.join('.')}>
+                                            {field.errors?.[0] || field.name.join('.')}
+                                        </li>
+                                    ))}
+                                </ul>
+                            ),
+                        });
+                        form.scrollToField(errorFields[0].name);
+                    }
+                }}
+                scrollToFirstError
+            >
                 <Form.Item name="enabled" label="Включить расписание" valuePropName="checked">
                     <Switch loading={loading} />
                 </Form.Item>
@@ -114,9 +138,7 @@ const SettingsPage = () => {
             <div style={{ marginTop: 24 }}>
                 <Text type="secondary">
                     Последняя проверка почты:{' '}
-                    {lastCheckedAt
-                        ? new Date(lastCheckedAt).toLocaleString()
-                        : 'нет данных'}
+                    {lastCheckedAt ? formatMoscow(lastCheckedAt) : 'нет данных'}
                 </Text>
             </div>
 
@@ -147,7 +169,7 @@ const SettingsPage = () => {
                         {logs.map((row) => (
                             <tr key={row.id}>
                                 <td style={{ padding: '8px', borderBottom: '1px solid #f3f3f3' }}>
-                                    {new Date(row.checked_at).toLocaleString()}
+                                    {formatMoscow(row.checked_at)}
                                 </td>
                                 <td style={{ padding: '8px', borderBottom: '1px solid #f3f3f3' }}>
                                     {row.status}

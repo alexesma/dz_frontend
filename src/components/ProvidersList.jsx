@@ -3,6 +3,7 @@ import { Table, Input, Button, message, Spin, Tag, Space, Card, Popconfirm } fro
 import { SearchOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
 import api from "../api.js";
+import { formatMoscow } from '../utils/time';
 import { useNavigate } from 'react-router-dom';
 
 const { Search } = Input;
@@ -128,7 +129,7 @@ const ProvidersList = () => {
                         <div>UID: {record.last_email_uid.uid}</div>
                         {record.last_email_uid.updated_at && (
                             <div style={{ fontSize: '12px', color: '#666' }}>
-                                {new Date(record.last_email_uid.updated_at).toLocaleString()}
+                                {formatMoscow(record.last_email_uid.updated_at)}
                             </div>
                         )}
                     </div>

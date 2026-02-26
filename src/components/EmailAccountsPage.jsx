@@ -141,7 +141,30 @@ const EmailAccountsPage = () => {
                 footer={null}
                 destroyOnClose
             >
-                <Form form={form} layout="vertical" onFinish={handleSubmit}>
+                <Form
+                    form={form}
+                    layout="vertical"
+                    onFinish={handleSubmit}
+                    onFinishFailed={({ errorFields }) => {
+                        message.error('Не отправлено: проверьте обязательные поля');
+                        if (errorFields?.length) {
+                            Modal.error({
+                                title: 'Ошибки формы',
+                                content: (
+                                    <ul style={{ paddingLeft: 18, margin: 0 }}>
+                                        {errorFields.map((field) => (
+                                            <li key={field.name.join('.')}>
+                                                {field.errors?.[0] || field.name.join('.')}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ),
+                            });
+                            form.scrollToField(errorFields[0].name);
+                        }
+                    }}
+                    scrollToFirstError
+                >
                     <Form.Item name="name" label="Название" rules={[{ required: true }]}> 
                         <Input />
                     </Form.Item>

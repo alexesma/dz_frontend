@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
     AutoComplete,
     Card,
@@ -20,6 +20,20 @@ import {
     getDragonzapOffers,
 } from '../api/autoparts';
 
+const OEM_HISTORY_KEY = 'autopart_oem_history_v1';
+const STATE_STORAGE_KEY = 'autopart_offers_state_v1';
+
+const safeJsonParse = (value, fallback) => {
+    if (!value) {
+        return fallback;
+    }
+    try {
+        return JSON.parse(value);
+    } catch {
+        return fallback;
+    }
+};
+
 const AutopartOffers = () => {
     const [form] = Form.useForm();
     const [offers, setOffers] = useState([]);
@@ -29,6 +43,7 @@ const AutopartOffers = () => {
     const [showCrosses, setShowCrosses] = useState(false);
     const [currentOem, setCurrentOem] = useState('');
     const [selectedBrand, setSelectedBrand] = useState('');
+    const [oemHistory, setOemHistory] = useState([]);
     const navigate = useNavigate();
 
     const brandOptions = useMemo(() => {
@@ -42,6 +57,71 @@ const AutopartOffers = () => {
             value: brand,
         }));
     }, [offers]);
+
+    const oemOptions = useMemo(
+        () => oemHistory.map((item) => ({ value: item })),
+        [oemHistory]
+    );
+
+    useEffect(() => {
+        const storedHistory = safeJsonParse(
+            localStorage.getItem(OEM_HISTORY_KEY),
+            []
+        );
+        if (Array.isArray(storedHistory)) {
+            setOemHistory(
+                storedHistory
+                    .map((item) => String(item || '').trim())
+                    .filter((item) => item)
+                    .slice(0, 10)
+            );
+        }
+
+        const storedState = safeJsonParse(
+            localStorage.getItem(STATE_STORAGE_KEY),
+            null
+        );
+        if (storedState && typeof storedState === 'object') {
+            if (Array.isArray(storedState.offers)) {
+                setOffers(storedState.offers);
+            }
+            if (Array.isArray(storedState.remoteOffers)) {
+                setRemoteOffers(storedState.remoteOffers);
+            }
+            setShowCrosses(Boolean(storedState.showCrosses));
+            setCurrentOem(storedState.currentOem || '');
+            setSelectedBrand(storedState.selectedBrand || '');
+            if (storedState.currentOem) {
+                form.setFieldsValue({ oem: storedState.currentOem });
+            }
+        }
+    }, [form]);
+
+    useEffect(() => {
+        const payload = {
+            currentOem,
+            selectedBrand,
+            showCrosses,
+            offers,
+            remoteOffers,
+        };
+        localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(payload));
+    }, [currentOem, selectedBrand, showCrosses, offers, remoteOffers]);
+
+    const pushOemHistory = (value) => {
+        const normalized = String(value || '').trim();
+        if (!normalized) {
+            return;
+        }
+        setOemHistory((prev) => {
+            const deduped = prev.filter(
+                (item) => item.toLowerCase() !== normalized.toLowerCase()
+            );
+            const next = [normalized, ...deduped].slice(0, 10);
+            localStorage.setItem(OEM_HISTORY_KEY, JSON.stringify(next));
+            return next;
+        });
+    };
 
     const handleSearch = async (values) => {
         const oemValue = (values.oem || '').trim();
@@ -59,6 +139,7 @@ const AutopartOffers = () => {
             );
             setOffers(filtered);
             setCurrentOem(oemValue);
+            pushOemHistory(oemValue);
             const fallbackBrand = list.find((item) => item.brand_name)?.brand_name;
             setSelectedBrand(fallbackBrand || '');
             if (!filtered.length) {
@@ -342,7 +423,18 @@ const AutopartOffers = () => {
                     name="oem"
                     rules={[{ required: true, message: 'Введите OEM' }]}
                 >
-                    <Input placeholder="OEM номер" style={{ width: 220 }} />
+                    <AutoComplete
+                        options={oemOptions}
+                        style={{ width: 220 }}
+                        placeholder="OEM номер"
+                        filterOption={(inputValue, option) =>
+                            option?.value
+                                ?.toLowerCase()
+                                .includes(inputValue.toLowerCase())
+                        }
+                    >
+                        <Input />
+                    </AutoComplete>
                 </Form.Item>
                 <Form.Item>
                     <Button
