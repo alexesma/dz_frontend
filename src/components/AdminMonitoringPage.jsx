@@ -75,7 +75,8 @@ const AdminMonitoringPage = () => {
             if (withSnapshot) {
                 try {
                     await createMonitorSnapshot();
-                } catch (err) {
+                } catch (error) {
+                    console.error('Snapshot save failed:', error);
                     message.error('Не удалось сохранить снимок');
                 }
             }
@@ -85,7 +86,8 @@ const AdminMonitoringPage = () => {
             ]);
             setSummary(summaryResp.data);
             setSnapshots(snapshotsResp.data || []);
-        } catch (err) {
+        } catch (error) {
+            console.error('Monitoring load failed:', error);
             message.error('Не удалось загрузить мониторинг');
         } finally {
             setLoading(false);
@@ -99,7 +101,8 @@ const AdminMonitoringPage = () => {
             const snapshotsResp = await getMonitorSnapshots({ limit: 200 });
             setSnapshots(snapshotsResp.data || []);
             message.success('Снимок сохранён');
-        } catch (err) {
+        } catch (error) {
+            console.error('Snapshot save failed:', error);
             message.error('Не удалось сохранить снимок');
         } finally {
             setSnapLoading(false);

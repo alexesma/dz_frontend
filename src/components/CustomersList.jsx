@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Table, Input, Button, message, Spin, Tag, Space, Card, Popconfirm, Select } from 'antd';
 import {
     SearchOutlined, ReloadOutlined, EditOutlined,
@@ -9,22 +9,27 @@ import { getCustomersSummary, deleteCustomer } from '../api/customers';
 
 const { Search } = Input;
 
+const DEFAULT_PAGE = 1;
+const DEFAULT_PAGE_SIZE = 20;
+const DEFAULT_FILTERS = {
+    typePrices: 'all',
+    hasPriceLists: 'all',
+    hasPricelistConfigs: 'all',
+};
+const DEFAULT_SORT = {
+    sortBy: 'name',
+    sortDir: 'asc',
+};
+
 const CustomersList = () => {
     const [customers, setCustomers] = useState([]);
     const [loading, setLoading] = useState(false);
     const [searchText, setSearchText] = useState('');
-    const [filters, setFilters] = useState({
-        typePrices: 'all',
-        hasPriceLists: 'all',
-        hasPricelistConfigs: 'all',
-    });
-    const [sortState, setSortState] = useState({
-        sortBy: 'name',
-        sortDir: 'asc',
-    });
+    const [filters, setFilters] = useState(DEFAULT_FILTERS);
+    const [sortState, setSortState] = useState(DEFAULT_SORT);
     const [pagination, setPagination] = useState({
-        current: 1,
-        pageSize: 20,
+        current: DEFAULT_PAGE,
+        pageSize: DEFAULT_PAGE_SIZE,
         total: 0,
         showSizeChanger: true,
         showQuickJumper: true,
@@ -34,39 +39,40 @@ const CustomersList = () => {
     });
     const navigate = useNavigate();
 
-    useEffect(() => {
-        fetchCustomers();
-    }, []);
-
-    const fetchCustomers = async (
-        page = pagination.current,
-        pageSize = pagination.pageSize,
-        nextSearch = searchText,
-        filtersState = filters,
-        sortStateValue = sortState
+    const fetchCustomers = useCallback(async (
+        page,
+        pageSize,
+        nextSearch,
+        filtersState,
+        sortStateValue
     ) => {
+        const effectivePage = page ?? DEFAULT_PAGE;
+        const effectivePageSize = pageSize ?? DEFAULT_PAGE_SIZE;
+        const effectiveSearch = nextSearch ?? '';
+        const effectiveFilters = filtersState || DEFAULT_FILTERS;
+        const effectiveSort = sortStateValue || DEFAULT_SORT;
         setLoading(true);
         try {
             const params = {};
-            if (nextSearch && nextSearch.trim()) {
-                params.search = nextSearch.trim();
+            if (effectiveSearch && effectiveSearch.trim()) {
+                params.search = effectiveSearch.trim();
             }
-            params.page = page;
-            params.page_size = pageSize;
-            if (filtersState.typePrices !== 'all') {
-                params.type_prices = filtersState.typePrices;
+            params.page = effectivePage;
+            params.page_size = effectivePageSize;
+            if (effectiveFilters.typePrices !== 'all') {
+                params.type_prices = effectiveFilters.typePrices;
             }
-            if (filtersState.hasPriceLists !== 'all') {
+            if (effectiveFilters.hasPriceLists !== 'all') {
                 params.has_price_lists =
-                    filtersState.hasPriceLists === 'yes';
+                    effectiveFilters.hasPriceLists === 'yes';
             }
-            if (filtersState.hasPricelistConfigs !== 'all') {
+            if (effectiveFilters.hasPricelistConfigs !== 'all') {
                 params.has_pricelist_configs =
-                    filtersState.hasPricelistConfigs === 'yes';
+                    effectiveFilters.hasPricelistConfigs === 'yes';
             }
-            if (sortStateValue.sortBy) {
-                params.sort_by = sortStateValue.sortBy;
-                params.sort_dir = sortStateValue.sortDir;
+            if (effectiveSort.sortBy) {
+                params.sort_by = effectiveSort.sortBy;
+                params.sort_dir = effectiveSort.sortDir;
             }
 
             const { data } = await getCustomersSummary(params);
@@ -91,7 +97,17 @@ const CustomersList = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
+
+    useEffect(() => {
+        fetchCustomers(
+            DEFAULT_PAGE,
+            DEFAULT_PAGE_SIZE,
+            '',
+            DEFAULT_FILTERS,
+            DEFAULT_SORT
+        );
+    }, [fetchCustomers]);
 
     const handleSearch = (value) => {
         setSearchText(value);
@@ -122,7 +138,13 @@ const CustomersList = () => {
         try {
             await deleteCustomer(customerId);
             message.success('Клиент удалён');
-            fetchCustomers();
+            fetchCustomers(
+                pagination.current,
+                pagination.pageSize,
+                searchText,
+                filters,
+                sortState
+            );
         } catch (error) {
             console.error('Delete customer error:', error);
             message.error('Ошибка удаления клиента');
@@ -259,7 +281,15 @@ const CustomersList = () => {
                         />
                         <Button
                             icon={<ReloadOutlined />}
-                            onClick={() => fetchCustomers()}
+                            onClick={() =>
+                                fetchCustomers(
+                                    pagination.current,
+                                    pagination.pageSize,
+                                    searchText,
+                                    filters,
+                                    sortState
+                                )
+                            }
                             loading={loading}
                         >
                             Обновить

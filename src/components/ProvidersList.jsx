@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Table, Input, Button, message, Spin, Tag, Space, Card, Popconfirm, Select } from 'antd';
 import { SearchOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
@@ -8,18 +8,23 @@ import { useNavigate } from 'react-router-dom';
 
 const { Search } = Input;
 
+const DEFAULT_PAGE = 1;
+const DEFAULT_PAGE_SIZE = 10;
+const DEFAULT_FILTERS = {
+    hasActivePricelists: 'all',
+    hasPricelistConfig: 'all',
+    isVirtual: 'all',
+};
+const DEFAULT_SORT = { sortBy: 'name', sortDir: 'asc' };
+
 const ProvidersList = () => {
     const [providers, setProviders] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [filters, setFilters] = useState({
-        hasActivePricelists: 'all',
-        hasPricelistConfig: 'all',
-        isVirtual: 'all',
-    });
-    const [sortState, setSortState] = useState({ sortBy: 'name', sortDir: 'asc' });
+    const [filters, setFilters] = useState(DEFAULT_FILTERS);
+    const [sortState, setSortState] = useState(DEFAULT_SORT);
     const [pagination, setPagination] = useState({
-        current: 1,
-        pageSize: 10,
+        current: DEFAULT_PAGE,
+        pageSize: DEFAULT_PAGE_SIZE,
         total: 0,
         showSizeChanger: true,
         showQuickJumper: true,
@@ -29,41 +34,42 @@ const ProvidersList = () => {
     const [searchText, setSearchText] = useState('');
     const navigate = useNavigate();
 
-    useEffect(() => {
-        fetchProviders();
-    }, []);
-
-    const fetchProviders = async (
-        page = 1,
-        pageSize = 10,
-        search = '',
-        filtersState = filters,
-        sortStateValue = sortState
+    const fetchProviders = useCallback(async (
+        page,
+        pageSize,
+        search,
+        filtersState,
+        sortStateValue
     ) => {
+        const effectivePage = page ?? DEFAULT_PAGE;
+        const effectivePageSize = pageSize ?? DEFAULT_PAGE_SIZE;
+        const effectiveSearch = search ?? '';
+        const effectiveFilters = filtersState || DEFAULT_FILTERS;
+        const effectiveSort = sortStateValue || DEFAULT_SORT;
         setLoading(true);
         try {
             const params = {
-                page,
-                page_size: pageSize,
+                page: effectivePage,
+                page_size: effectivePageSize,
             };
 
-            if (search) {
-                params.search = search;
+            if (effectiveSearch) {
+                params.search = effectiveSearch;
             }
-            if (filtersState.hasActivePricelists !== 'all') {
+            if (effectiveFilters.hasActivePricelists !== 'all') {
                 params.has_active_pricelists =
-                    filtersState.hasActivePricelists === 'yes';
+                    effectiveFilters.hasActivePricelists === 'yes';
             }
-            if (filtersState.hasPricelistConfig !== 'all') {
+            if (effectiveFilters.hasPricelistConfig !== 'all') {
                 params.has_pricelist_config =
-                    filtersState.hasPricelistConfig === 'yes';
+                    effectiveFilters.hasPricelistConfig === 'yes';
             }
-            if (filtersState.isVirtual !== 'all') {
-                params.is_virtual = filtersState.isVirtual === 'yes';
+            if (effectiveFilters.isVirtual !== 'all') {
+                params.is_virtual = effectiveFilters.isVirtual === 'yes';
             }
-            if (sortStateValue.sortBy) {
-                params.sort_by = sortStateValue.sortBy;
-                params.sort_dir = sortStateValue.sortDir;
+            if (effectiveSort.sortBy) {
+                params.sort_by = effectiveSort.sortBy;
+                params.sort_dir = effectiveSort.sortDir;
             }
 
             const response = await api.get('/providers/', { params });
@@ -81,7 +87,17 @@ const ProvidersList = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
+
+    useEffect(() => {
+        fetchProviders(
+            DEFAULT_PAGE,
+            DEFAULT_PAGE_SIZE,
+            '',
+            DEFAULT_FILTERS,
+            DEFAULT_SORT
+        );
+    }, [fetchProviders]);
 
     const handleSearch = (value) => {
         setSearchText(value);

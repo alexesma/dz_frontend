@@ -1,24 +1,31 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Button, Card, Form, Input, InputNumber, Popconfirm, Table, message } from 'antd';
 import { createWatchItem, deleteWatchItem, getWatchItems } from '../api/watchlist';
 import { formatMoscow } from '../utils/time';
+
+const DEFAULT_PAGE = 1;
+const DEFAULT_PAGE_SIZE = 10;
+const DEFAULT_SEARCH = '';
 
 const WatchlistPage = () => {
     const [form] = Form.useForm();
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [page, setPage] = useState(1);
-    const [pageSize, setPageSize] = useState(10);
+    const [page, setPage] = useState(DEFAULT_PAGE);
+    const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
     const [total, setTotal] = useState(0);
-    const [search, setSearch] = useState('');
+    const [search, setSearch] = useState(DEFAULT_SEARCH);
 
-    const fetchItems = async (nextPage = page, nextSize = pageSize, nextSearch = search) => {
+    const fetchItems = useCallback(async (nextPage, nextSize, nextSearch) => {
+        const effectivePage = nextPage ?? DEFAULT_PAGE;
+        const effectiveSize = nextSize ?? DEFAULT_PAGE_SIZE;
+        const effectiveSearch = nextSearch ?? DEFAULT_SEARCH;
         setLoading(true);
         try {
             const { data } = await getWatchItems({
-                page: nextPage,
-                page_size: nextSize,
-                search: nextSearch || undefined,
+                page: effectivePage,
+                page_size: effectiveSize,
+                search: effectiveSearch || undefined,
             });
             setItems(data.items || []);
             setTotal(data.total || 0);
@@ -27,11 +34,11 @@ const WatchlistPage = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
     useEffect(() => {
-        fetchItems();
-    }, []);
+        fetchItems(DEFAULT_PAGE, DEFAULT_PAGE_SIZE, DEFAULT_SEARCH);
+    }, [fetchItems]);
 
     const handleCreate = async (values) => {
         try {
