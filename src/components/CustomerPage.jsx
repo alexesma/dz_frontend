@@ -444,7 +444,8 @@ const CustomerPage = () => {
             }
             const orderResp = await getCustomerOrderConfig(customerId);
             setOrderConfig(orderResp.data);
-        } catch (err) {
+        } catch (error) {
+            console.error(error);
             message.error('Ошибка сохранения конфигурации заказов');
         } finally {
             setOrderConfigLoading(false);

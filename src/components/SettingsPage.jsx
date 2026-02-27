@@ -114,7 +114,8 @@ const SettingsPage = () => {
         try {
             await updatePriceCheckSchedule(values);
             message.success('Расписание обновлено');
-        } catch (err) {
+        } catch (error) {
+            console.error('Schedule save failed:', error);
             message.error('Ошибка сохранения расписания');
         }
     };

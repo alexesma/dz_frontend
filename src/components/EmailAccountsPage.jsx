@@ -57,7 +57,8 @@ const EmailAccountsPage = () => {
             setEditing(null);
             form.resetFields();
             fetchAccounts();
-        } catch (err) {
+        } catch (error) {
+            console.error('Save email account failed:', error);
             message.error('Ошибка сохранения аккаунта');
         }
     };
