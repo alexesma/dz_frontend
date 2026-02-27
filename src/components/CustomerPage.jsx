@@ -97,19 +97,6 @@ const CustomerPage = () => {
         return days || times;
     };
 
-    const confirmChange = (title) =>
-        new Promise((resolve, reject) => {
-            Modal.confirm({
-                title,
-                content: 'Проверьте данные перед сохранением.',
-                okText: 'Сохранить',
-                cancelText: 'Отмена',
-                zIndex: 2000,
-                onOk: resolve,
-                onCancel: () => reject(new Error('cancel')),
-            });
-        });
-
     const buildFilterPayload = (group = {}) => {
         const payload = {};
         const minPrice = group.min_price;
@@ -402,7 +389,6 @@ const CustomerPage = () => {
                 message.success('Клиент успешно создан');
                 navigate(`/customers/${data.id}/edit`);
             } else {
-                await confirmChange('Сохранить изменения клиента?');
                 await updateCustomer(customerId, values);
                 message.success('Данные клиента обновлены');
 
@@ -412,7 +398,6 @@ const CustomerPage = () => {
                 setCustomerData({ customer, pricelist_configs: configs });
             }
         } catch (err) {
-            if (err?.message === 'cancel') return;
             console.error(err);
             const detail = err?.response?.data?.detail;
             message.error(detail || 'Ошибка сохранения клиента');
@@ -451,7 +436,6 @@ const CustomerPage = () => {
                     .filter((v) => v),
             };
             if (orderConfig) {
-                await confirmChange('Сохранить изменения конфигурации заказов?');
                 await updateCustomerOrderConfig(customerId, payload);
                 message.success('Конфигурация заказов обновлена');
             } else {
@@ -461,7 +445,6 @@ const CustomerPage = () => {
             const orderResp = await getCustomerOrderConfig(customerId);
             setOrderConfig(orderResp.data);
         } catch (err) {
-            if (err?.message === 'cancel') return;
             message.error('Ошибка сохранения конфигурации заказов');
         } finally {
             setOrderConfigLoading(false);
@@ -531,7 +514,6 @@ const CustomerPage = () => {
             };
 
             if (editingConfig) {
-                await confirmChange('Сохранить изменения конфигурации?');
                 await updateCustomerPricelistConfig(
                     customerId,
                     editingConfig.id,
@@ -551,7 +533,6 @@ const CustomerPage = () => {
             const { data: configs } = await getCustomerPricelistConfigs(customerId);
             setCustomerData(prev => ({ ...prev, pricelist_configs: configs }));
         } catch (err) {
-            if (err?.message === 'cancel') return;
             console.error(err);
             const detail = err?.response?.data?.detail;
             message.error(detail || 'Ошибка сохранения конфигурации');
@@ -631,7 +612,6 @@ const CustomerPage = () => {
 
         try {
             if (editingSource) {
-                await confirmChange('Сохранить изменения источника?');
                 await updateCustomerPricelistSource(
                     customerId,
                     activeConfig.id,
@@ -655,7 +635,6 @@ const CustomerPage = () => {
             setEditingSource(null);
             sourceForm.resetFields();
         } catch (err) {
-            if (err?.message === 'cancel') return;
             console.error(err);
             message.error('Ошибка сохранения источника');
         }
@@ -1015,8 +994,19 @@ const CustomerPage = () => {
                             <Form.Item name="order_number_suffix" label="Суффикс номера">
                                 <Input />
                             </Form.Item>
-                            <Form.Item name="order_number_source" label="Источник номера (subject/body/filename)">
-                                <Input />
+                            <Form.Item
+                                name="order_number_source"
+                                label="Источник номера"
+                            >
+                                <Select
+                                    allowClear
+                                    placeholder="Выберите источник"
+                                    options={[
+                                        { value: 'subject', label: 'Тема письма' },
+                                        { value: 'body', label: 'Тело письма' },
+                                        { value: 'filename', label: 'Имя файла' },
+                                    ]}
+                                />
                             </Form.Item>
                             <Form.Item name="order_date_column" label="Колонка даты заказа">
                                 <InputNumber min={0} style={{ width: '100%' }} />

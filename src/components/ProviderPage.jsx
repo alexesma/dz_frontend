@@ -98,19 +98,6 @@ const ProviderPage = () => {
         return { label: `${hour}:00`, value: `${hour}:00` };
     });
 
-    const confirmChange = (title) =>
-        new Promise((resolve, reject) => {
-            Modal.confirm({
-                title,
-                content: "Проверьте данные перед сохранением.",
-                okText: "Сохранить",
-                cancelText: "Отмена",
-                zIndex: 2000,
-                onOk: resolve,
-                onCancel: () => reject(new Error("cancel")),
-            });
-        });
-
     const adjustForDisplay = (value, useFromOne) => {
         if (value === null || value === undefined || value === "") return value;
         const num = Number(value);
@@ -239,7 +226,6 @@ const ProviderPage = () => {
                 setProviderData(data);
             }
         } catch (err) {
-            if (err?.message === "cancel") return;
             console.error(err);
             message.error("Ошибка сохранения поставщика");
         } finally {
@@ -320,7 +306,6 @@ const ProviderPage = () => {
             const { data } = await getProviderFullById(providerId);
             setProviderData(data);
         } catch (err) {
-            if (err?.message === "cancel") return;
             console.error(err);
             const detail = err?.response?.data?.detail;
             message.error(detail || "Ошибка сохранения конфигурации");
@@ -361,7 +346,6 @@ const ProviderPage = () => {
 
         try {
             if (editingAbbr) {
-                await confirmChange("Сохранить изменения аббревиатуры?");
                 await updateAbbreviation(
                     providerId,
                     editingAbbr.id,
@@ -380,7 +364,6 @@ const ProviderPage = () => {
             const { data } = await getProviderFullById(providerId);
             setProviderData(data);
         } catch (err) {
-            if (err?.message === "cancel") return;
             console.error(err);
             message.error("Ошибка сохранения аббревиатуры");
         }

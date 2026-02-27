@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Switch, Table, message } from 'antd';
-import { createEmailAccount, deleteEmailAccount, getEmailAccounts, updateEmailAccount } from '../api/emailAccounts';
+import { createEmailAccount, deleteEmailAccount, getEmailAccounts, testEmailAccount, updateEmailAccount } from '../api/emailAccounts';
 
 const purposeOptions = [
     { label: 'Прием заказов (IMAP)', value: 'orders_in' },
@@ -15,19 +15,8 @@ const EmailAccountsPage = () => {
     const [loading, setLoading] = useState(false);
     const [modalOpen, setModalOpen] = useState(false);
     const [editing, setEditing] = useState(null);
+    const [testLoading, setTestLoading] = useState(false);
     const [form] = Form.useForm();
-
-    const confirmChange = (title) =>
-        new Promise((resolve, reject) => {
-            Modal.confirm({
-                title,
-                content: 'Проверьте данные перед сохранением.',
-                okText: 'Сохранить',
-                cancelText: 'Отмена',
-                onOk: resolve,
-                onCancel: () => reject(new Error('cancel')),
-            });
-        });
 
     const fetchAccounts = async () => {
         setLoading(true);
@@ -58,7 +47,6 @@ const EmailAccountsPage = () => {
     const handleSubmit = async (values) => {
         try {
             if (editing) {
-                await confirmChange('Сохранить изменения аккаунта?');
                 await updateEmailAccount(editing.id, values);
                 message.success('Аккаунт обновлен');
             } else {
@@ -70,11 +58,50 @@ const EmailAccountsPage = () => {
             form.resetFields();
             fetchAccounts();
         } catch (err) {
-            if (err?.message === 'cancel') return;
             message.error('Ошибка сохранения аккаунта');
         }
     };
 
+    const handleTest = async () => {
+        if (!editing) return;
+        setTestLoading(true);
+        try {
+            const { data } = await testEmailAccount(editing.id, {
+                imap: true,
+                smtp: true,
+            });
+            const lines = [];
+            if (data.imap_ok) {
+                lines.push('IMAP: OK');
+            } else if (data.imap_ok === false) {
+                lines.push(`IMAP: Ошибка: ${data.imap_error || 'неизвестно'}`);
+            }
+            if (data.smtp_ok) {
+                lines.push('SMTP: OK');
+            } else if (data.smtp_ok === false) {
+                lines.push(`SMTP: Ошибка: ${data.smtp_error || 'неизвестно'}`);
+            }
+            if (data.imap_ok && data.smtp_ok) {
+                message.success('IMAP и SMTP успешно проверены');
+            } else {
+                Modal.info({
+                    title: 'Результат проверки',
+                    content: (
+                        <div>
+                            {lines.map((line) => (
+                                <div key={line}>{line}</div>
+                            ))}
+                        </div>
+                    ),
+                });
+            }
+        } catch (error) {
+            console.error('Test email account failed:', error);
+            message.error('Не удалось проверить почту');
+        } finally {
+            setTestLoading(false);
+        }
+    };
 
     const handleDelete = async (record) => {
         try {
@@ -90,6 +117,12 @@ const EmailAccountsPage = () => {
         { title: 'Название', dataIndex: 'name', key: 'name' },
         { title: 'Email', dataIndex: 'email', key: 'email' },
         { title: 'IMAP host', dataIndex: 'imap_host', key: 'imap_host' },
+        {
+            title: 'IMAP папка',
+            dataIndex: 'imap_folder',
+            key: 'imap_folder',
+            render: (value) => value || 'INBOX',
+        },
         { title: 'SMTP host', dataIndex: 'smtp_host', key: 'smtp_host' },
         {
             title: 'Назначения',
@@ -180,6 +213,9 @@ const EmailAccountsPage = () => {
                     <Form.Item name="imap_port" label="IMAP port" initialValue={993}> 
                         <InputNumber style={{ width: '100%' }} />
                     </Form.Item>
+                    <Form.Item name="imap_folder" label="IMAP папка">
+                        <Input placeholder="INBOX" />
+                    </Form.Item>
                     <Form.Item name="smtp_host" label="SMTP host"> 
                         <Input />
                     </Form.Item>
@@ -195,7 +231,16 @@ const EmailAccountsPage = () => {
                     <Form.Item name="is_active" label="Активен" valuePropName="checked" initialValue>
                         <Switch />
                     </Form.Item>
-                    <Button type="primary" htmlType="submit">Сохранить</Button>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {editing ? (
+                            <Button onClick={handleTest} loading={testLoading}>
+                                Проверить IMAP + SMTP
+                            </Button>
+                        ) : null}
+                        <Button type="primary" htmlType="submit">
+                            Сохранить
+                        </Button>
+                    </div>
                 </Form>
             </Modal>
         </Card>

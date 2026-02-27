@@ -110,25 +110,11 @@ const SettingsPage = () => {
         })();
     }, []);
 
-    const confirmChange = (title) =>
-        new Promise((resolve, reject) => {
-            Modal.confirm({
-                title,
-                content: 'Проверьте данные перед сохранением.',
-                okText: 'Сохранить',
-                cancelText: 'Отмена',
-                onOk: resolve,
-                onCancel: () => reject(new Error('cancel')),
-            });
-        });
-
     const handleSave = async (values) => {
         try {
-            await confirmChange('Сохранить расписание проверки прайсов?');
             await updatePriceCheckSchedule(values);
             message.success('Расписание обновлено');
         } catch (err) {
-            if (err?.message === 'cancel') return;
             message.error('Ошибка сохранения расписания');
         }
     };
