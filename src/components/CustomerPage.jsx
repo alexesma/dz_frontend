@@ -44,6 +44,7 @@ import {
 } from '../api/customers';
 import { getProviderConfigOptions } from '../api/providers';
 import { getEmailAccounts } from '../api/emailAccounts';
+import { testEmailAccount } from '../api/emailAccounts';
 
 const CustomerPage = () => {
     const { customerId: customerIdParam } = useParams();
@@ -70,6 +71,7 @@ const CustomerPage = () => {
     const [orderConfigLoading, setOrderConfigLoading] = useState(false);
     const [orderInboxAccounts, setOrderInboxAccounts] = useState([]);
     const [orderInboxLoading, setOrderInboxLoading] = useState(false);
+    const [orderInboxTestLoading, setOrderInboxTestLoading] = useState(false);
 
     const [customerForm] = Form.useForm();
     const [configForm] = Form.useForm();
@@ -479,6 +481,34 @@ const CustomerPage = () => {
             message.error('Ошибка сохранения конфигурации заказов');
         } finally {
             setOrderConfigLoading(false);
+        }
+    };
+
+    const handleOrderInboxTest = async () => {
+        const accountId = orderConfigForm.getFieldValue('email_account_id');
+        if (!accountId) {
+            message.warning('Выберите почтовый ящик для проверки');
+            return;
+        }
+        setOrderInboxTestLoading(true);
+        try {
+            const { data } = await testEmailAccount(accountId, {
+                imap: true,
+                smtp: false,
+            });
+            if (data.imap_ok) {
+                message.success('IMAP доступ подтверждён');
+            } else {
+                Modal.error({
+                    title: 'IMAP проверка не пройдена',
+                    content: data.imap_error || 'Неизвестная ошибка',
+                });
+            }
+        } catch (err) {
+            console.error('IMAP test failed:', err);
+            message.error('Не удалось проверить IMAP доступ');
+        } finally {
+            setOrderInboxTestLoading(false);
         }
     };
 
@@ -975,6 +1005,7 @@ const CustomerPage = () => {
                         }}
                         scrollToFirstError
                         initialValues={{
+                            order_start_row: 1,
                             ship_mode: 'REPLACE_QTY',
                             price_tolerance_pct: 2,
                             price_warning_pct: 5,
@@ -996,21 +1027,29 @@ const CustomerPage = () => {
                                 label="Почтовый ящик для заказов"
                                 extra="Если не выбрано — ищем письма во всех активных ящиках с назначением «orders_in»."
                             >
-                                <Select
-                                    allowClear
-                                    loading={orderInboxLoading}
-                                    placeholder="Любая входящая почта"
-                                    options={orderInboxAccounts.map((account) => {
-                                        const name = account.name || account.email;
-                                        const label = name === account.email
-                                            ? account.email
-                                            : `${name} • ${account.email}`;
-                                        return {
-                                            value: account.id,
-                                            label,
-                                        };
-                                    })}
-                                />
+                                <Space direction="vertical" style={{ width: '100%' }}>
+                                    <Select
+                                        allowClear
+                                        loading={orderInboxLoading}
+                                        placeholder="Любая входящая почта"
+                                        options={orderInboxAccounts.map((account) => {
+                                            const name = account.name || account.email;
+                                            const label = name === account.email
+                                                ? account.email
+                                                : `${name} • ${account.email}`;
+                                            return {
+                                                value: account.id,
+                                                label,
+                                            };
+                                        })}
+                                    />
+                                    <Button
+                                        onClick={handleOrderInboxTest}
+                                        loading={orderInboxTestLoading}
+                                    >
+                                        Проверить доступ IMAP
+                                    </Button>
+                                </Space>
                             </Form.Item>
                             <Form.Item name="order_subject_pattern" label="Шаблон темы письма">
                                 <Input />
@@ -1062,6 +1101,12 @@ const CustomerPage = () => {
                             </Form.Item>
                             <Form.Item name="order_date_column" label="Колонка даты заказа">
                                 <InputNumber min={0} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item
+                                name="order_start_row"
+                                label="Строка начала (с 1)"
+                            >
+                                <InputNumber min={1} style={{ width: '100%' }} />
                             </Form.Item>
                             <Divider />
                             <Form.Item name="oem_col" label="Колонка OEM" rules={[{ required: true }]}>

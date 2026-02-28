@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Card, Form, Modal, Select, Switch, Typography, message } from 'antd';
+import { Button, Card, Form, InputNumber, Modal, Select, Switch, Typography, message } from 'antd';
 import {
     getPriceCheckLogs,
     getPriceCheckSchedule,
+    getCustomerOrderInboxSettings,
     getSchedulerSettings,
+    updateCustomerOrderInboxSettings,
     updatePriceCheckSchedule,
     updateSchedulerSetting,
 } from '../api/settings';
@@ -20,6 +22,9 @@ const SettingsPage = () => {
     const [schedulerSettings, setSchedulerSettings] = useState([]);
     const [schedulerLoading, setSchedulerLoading] = useState(false);
     const [schedulerSaving, setSchedulerSaving] = useState({});
+    const [orderInboxSettings, setOrderInboxSettings] = useState(null);
+    const [orderInboxLoading, setOrderInboxLoading] = useState(false);
+    const [orderInboxSaving, setOrderInboxSaving] = useState(false);
 
     const dayOptions = [
         { label: 'Пн', value: 'mon' },
@@ -53,6 +58,10 @@ const SettingsPage = () => {
             title: 'Проблемы с обновлением прайсов',
             description: 'Сводка прайсов, которые давно не обновлялись.',
         },
+        pricelist_stale_cleanup: {
+            title: 'Очистка истории проблем',
+            description: 'Удаляет записи о проблемах с прайсами старше недели.',
+        },
         cleanup_old_pricelists: {
             title: 'Очистка старых прайсов',
             description: 'Удаляет старые прайсы, оставляя последние.',
@@ -60,6 +69,10 @@ const SettingsPage = () => {
         metrics_snapshot: {
             title: 'Снимки мониторинга',
             description: 'Сохраняет снимок состояния БД и системы для графиков.',
+        },
+        customer_orders_check: {
+            title: 'Проверка заказов клиентов',
+            description: 'Проверяет входящую почту с заказами клиентов.',
         },
     };
 
@@ -109,6 +122,40 @@ const SettingsPage = () => {
             }
         })();
     }, []);
+
+    useEffect(() => {
+        (async () => {
+            setOrderInboxLoading(true);
+            try {
+                const { data } = await getCustomerOrderInboxSettings();
+                setOrderInboxSettings(data || null);
+            } catch (err) {
+                console.error('Load order inbox settings failed:', err);
+                message.error('Не удалось загрузить настройки почты заказов');
+            } finally {
+                setOrderInboxLoading(false);
+            }
+        })();
+    }, []);
+
+    const handleOrderInboxSave = async () => {
+        if (!orderInboxSettings) return;
+        setOrderInboxSaving(true);
+        try {
+            const payload = {
+                lookback_days: orderInboxSettings.lookback_days,
+                mark_seen: orderInboxSettings.mark_seen,
+            };
+            const { data } = await updateCustomerOrderInboxSettings(payload);
+            setOrderInboxSettings(data);
+            message.success('Настройки почты заказов обновлены');
+        } catch (err) {
+            const detail = err?.response?.data?.detail;
+            message.error(detail || 'Ошибка сохранения настроек');
+        } finally {
+            setOrderInboxSaving(false);
+        }
+    };
 
     const handleSave = async (values) => {
         try {
@@ -250,6 +297,54 @@ const SettingsPage = () => {
                         </tbody>
                     </table>
                 </Card>
+            </Card>
+
+            <Card title="Почта заказов клиентов" style={{ marginTop: 16 }}>
+                <Paragraph style={{ marginBottom: 16 }}>
+                    Глубина проверки определяет, за сколько последних дней
+                    искать письма с заказами (по дате письма).
+                </Paragraph>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    <div>
+                        <Text strong>Глубина проверки (дней)</Text>
+                        <div style={{ marginTop: 8 }}>
+                            <InputNumber
+                                min={1}
+                                max={30}
+                                value={orderInboxSettings?.lookback_days ?? 1}
+                                onChange={(value) =>
+                                    setOrderInboxSettings((prev) => ({
+                                        ...(prev || {}),
+                                        lookback_days: value ?? 1,
+                                    }))
+                                }
+                                disabled={orderInboxLoading}
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <Text strong>Отмечать письма прочитанными</Text>
+                        <div style={{ marginTop: 8 }}>
+                            <Switch
+                                checked={orderInboxSettings?.mark_seen ?? false}
+                                onChange={(checked) =>
+                                    setOrderInboxSettings((prev) => ({
+                                        ...(prev || {}),
+                                        mark_seen: checked,
+                                    }))
+                                }
+                                disabled={orderInboxLoading}
+                            />
+                        </div>
+                    </div>
+                    <Button
+                        type="primary"
+                        loading={orderInboxSaving}
+                        onClick={handleOrderInboxSave}
+                    >
+                        Сохранить
+                    </Button>
+                </div>
             </Card>
 
             <Card title="Расписание уведомлений" style={{ marginTop: 16 }}>

@@ -16,6 +16,12 @@ export const getSchedulerSettings = () => api.get("/settings/scheduler");
 export const updateSchedulerSetting = (key, data) =>
     api.put(`/settings/scheduler/${key}`, data);
 
+export const getCustomerOrderInboxSettings = () =>
+    api.get("/settings/orders-inbox");
+
+export const updateCustomerOrderInboxSettings = (data) =>
+    api.put("/settings/orders-inbox", data);
+
 export const getMonitorSummary = () =>
     api.get("/settings/monitor/summary");
 

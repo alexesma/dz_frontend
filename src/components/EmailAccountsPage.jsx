@@ -1,6 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Switch, Table, message } from 'antd';
-import { createEmailAccount, deleteEmailAccount, getEmailAccounts, testEmailAccount, updateEmailAccount } from '../api/emailAccounts';
+import {
+    createEmailAccount,
+    deleteEmailAccount,
+    getEmailAccounts,
+    testEmailAccount,
+    updateEmailAccount,
+    initGoogleOAuth,
+    disconnectGoogleOAuth,
+} from '../api/emailAccounts';
 
 const purposeOptions = [
     { label: 'Прием заказов (IMAP)', value: 'orders_in' },
@@ -104,6 +112,33 @@ const EmailAccountsPage = () => {
         }
     };
 
+    const handleGoogleOAuth = async (record) => {
+        try {
+            const { data } = await initGoogleOAuth(record.id);
+            const url = data?.auth_url;
+            if (!url) {
+                message.error('Не удалось получить ссылку авторизации');
+                return;
+            }
+            window.open(url, '_blank', 'width=600,height=700');
+            message.info('Откройте окно авторизации Google и завершите вход');
+        } catch (error) {
+            console.error('Init Google OAuth failed:', error);
+            message.error('Не удалось начать авторизацию Google');
+        }
+    };
+
+    const handleDisconnectOAuth = async (record) => {
+        try {
+            await disconnectGoogleOAuth(record.id);
+            message.success('Google OAuth отключён');
+            fetchAccounts();
+        } catch (error) {
+            console.error('Disconnect OAuth failed:', error);
+            message.error('Не удалось отключить OAuth');
+        }
+    };
+
     const handleDelete = async (record) => {
         try {
             await deleteEmailAccount(record.id);
@@ -126,6 +161,15 @@ const EmailAccountsPage = () => {
         },
         { title: 'SMTP host', dataIndex: 'smtp_host', key: 'smtp_host' },
         {
+            title: 'OAuth',
+            key: 'oauth',
+            render: (_, record) => (
+                record.oauth_provider === 'google'
+                    ? 'Google'
+                    : (record.oauth_provider || '—')
+            ),
+        },
+        {
             title: 'Назначения',
             dataIndex: 'purposes',
             key: 'purposes',
@@ -143,6 +187,15 @@ const EmailAccountsPage = () => {
             render: (_, record) => (
                 <div style={{ display: 'flex', gap: 8 }}>
                     <Button size="small" onClick={() => openModal(record)}>Редактировать</Button>
+                    {record.oauth_provider ? (
+                        <Button size="small" onClick={() => handleDisconnectOAuth(record)}>
+                            Отвязать Google
+                        </Button>
+                    ) : (
+                        <Button size="small" onClick={() => handleGoogleOAuth(record)}>
+                            Google OAuth
+                        </Button>
+                    )}
                     <Popconfirm
                         title="Удалить аккаунт?"
                         description="Это действие необратимо"
