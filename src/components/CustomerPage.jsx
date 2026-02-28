@@ -43,6 +43,7 @@ import {
     updateCustomerOrderConfig,
 } from '../api/customers';
 import { getProviderConfigOptions } from '../api/providers';
+import { getEmailAccounts } from '../api/emailAccounts';
 
 const CustomerPage = () => {
     const { customerId: customerIdParam } = useParams();
@@ -67,6 +68,8 @@ const CustomerPage = () => {
     const [editingSource, setEditingSource] = useState(null);
     const [orderConfig, setOrderConfig] = useState(null);
     const [orderConfigLoading, setOrderConfigLoading] = useState(false);
+    const [orderInboxAccounts, setOrderInboxAccounts] = useState([]);
+    const [orderInboxLoading, setOrderInboxLoading] = useState(false);
 
     const [customerForm] = Form.useForm();
     const [configForm] = Form.useForm();
@@ -86,6 +89,33 @@ const CustomerPage = () => {
         const hour = String(i).padStart(2, '0');
         return { label: `${hour}:00`, value: `${hour}:00` };
     });
+
+    useEffect(() => {
+        let mounted = true;
+        const loadAccounts = async () => {
+            setOrderInboxLoading(true);
+            try {
+                const { data } = await getEmailAccounts();
+                const filtered = (data || []).filter((account) => {
+                    if (!account?.is_active) return false;
+                    return (account.purposes || []).includes('orders_in');
+                });
+                if (mounted) {
+                    setOrderInboxAccounts(filtered);
+                }
+            } catch (err) {
+                console.error('Load email accounts failed:', err);
+            } finally {
+                if (mounted) {
+                    setOrderInboxLoading(false);
+                }
+            }
+        };
+        loadAccounts();
+        return () => {
+            mounted = false;
+        };
+    }, []);
 
     const formatSchedule = (cfg) => {
         const days = (cfg.schedule_days || [])
@@ -960,6 +990,27 @@ const CustomerPage = () => {
                             </Form.Item>
                             <Form.Item name="order_reply_emails" label="Почты для ответов (через запятую)">
                                 <Input placeholder="reply1@example.com, reply2@example.com" />
+                            </Form.Item>
+                            <Form.Item
+                                name="email_account_id"
+                                label="Почтовый ящик для заказов"
+                                extra="Если не выбрано — ищем письма во всех активных ящиках с назначением «orders_in»."
+                            >
+                                <Select
+                                    allowClear
+                                    loading={orderInboxLoading}
+                                    placeholder="Любая входящая почта"
+                                    options={orderInboxAccounts.map((account) => {
+                                        const name = account.name || account.email;
+                                        const label = name === account.email
+                                            ? account.email
+                                            : `${name} • ${account.email}`;
+                                        return {
+                                            value: account.id,
+                                            label,
+                                        };
+                                    })}
+                                />
                             </Form.Item>
                             <Form.Item name="order_subject_pattern" label="Шаблон темы письма">
                                 <Input />
