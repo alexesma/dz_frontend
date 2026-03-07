@@ -194,8 +194,8 @@ const CustomerOrderDetailPage = () => {
         return num.toFixed(2);
     };
 
-    const orderItems = order?.items || [];
     const summary = useMemo(() => {
+        const orderItems = order?.items ?? [];
         let stockSum = 0;
         let supplierSum = 0;
         let rejectedSum = 0;
@@ -221,7 +221,7 @@ const CustomerOrderDetailPage = () => {
             rejectedSum,
             rejectedPct,
         };
-    }, [orderItems]);
+    }, [order?.items]);
 
     const columns = [
         {

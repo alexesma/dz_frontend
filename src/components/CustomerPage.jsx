@@ -1504,7 +1504,7 @@ const CustomerPage = () => {
                                         setOrderConfigs(configs);
                                         setOrderConfig(null);
                                         applyOrderConfigToForm(null);
-                                    } catch (err) {
+                                    } catch {
                                         message.error('Не удалось удалить конфигурацию');
                                     }
                                 }}
