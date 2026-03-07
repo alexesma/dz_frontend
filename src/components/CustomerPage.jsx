@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     Card,
@@ -38,9 +38,10 @@ import {
     updateCustomerPricelistSource,
     deleteCustomerPricelistSource,
     sendCustomerPricelistNow,
-    getCustomerOrderConfig,
+    getCustomerOrderConfigs,
     createCustomerOrderConfig,
     updateCustomerOrderConfig,
+    deleteCustomerOrderConfig,
 } from '../api/customers';
 import { getProviderConfigOptions } from '../api/providers';
 import { getEmailAccounts } from '../api/emailAccounts';
@@ -68,6 +69,8 @@ const CustomerPage = () => {
     const [supplierFilterProviders, setSupplierFilterProviders] = useState([]);
     const [editingSource, setEditingSource] = useState(null);
     const [orderConfig, setOrderConfig] = useState(null);
+    const [orderConfigs, setOrderConfigs] = useState([]);
+    const [selectedPriceConfigId, setSelectedPriceConfigId] = useState(null);
     const [orderConfigLoading, setOrderConfigLoading] = useState(false);
     const [orderInboxAccounts, setOrderInboxAccounts] = useState([]);
     const [orderInboxLoading, setOrderInboxLoading] = useState(false);
@@ -77,6 +80,26 @@ const CustomerPage = () => {
     const [configForm] = Form.useForm();
     const [sourceForm] = Form.useForm();
     const [orderConfigForm] = Form.useForm();
+
+    const applyOrderConfigToForm = useCallback((config) => {
+        if (config) {
+            orderConfigForm.setFieldsValue({
+                ...config,
+                order_emails: (config.order_emails || []).join(', '),
+                order_reply_emails: (config.order_reply_emails || []).join(', '),
+            });
+        } else {
+            orderConfigForm.resetFields();
+            orderConfigForm.setFieldsValue({
+                order_start_row: 1,
+                ship_mode: 'REPLACE_QTY',
+                price_tolerance_pct: 2,
+                price_warning_pct: 5,
+                is_active: true,
+            });
+        }
+    }, [orderConfigForm]);
+
 
     const dayOptions = [
         { label: 'Пн', value: 'mon' },
@@ -374,26 +397,19 @@ const CustomerPage = () => {
             try {
                 const { data: customer } = await getCustomerById(customerId);
                 const { data: configs } = await getCustomerPricelistConfigs(customerId);
-                let orderCfg = null;
+                let orderCfgs = [];
                 try {
-                    const orderResp = await getCustomerOrderConfig(customerId);
-                    orderCfg = orderResp.data;
+                    const orderResp = await getCustomerOrderConfigs(customerId);
+                    orderCfgs = orderResp.data || [];
                 } catch {
-                    // ignore 404
+                    orderCfgs = [];
                 }
 
                 setCustomerData({
                     customer,
                     pricelist_configs: configs,
                 });
-                setOrderConfig(orderCfg);
-                if (orderCfg) {
-                    orderConfigForm.setFieldsValue({
-                        ...orderCfg,
-                        order_emails: (orderCfg.order_emails || []).join(', '),
-                        order_reply_emails: (orderCfg.order_reply_emails || []).join(', '),
-                    });
-                }
+                setOrderConfigs(orderCfgs);
 
                 customerForm.setFieldsValue({
                     name: customer.name,
@@ -403,14 +419,27 @@ const CustomerPage = () => {
                     description: customer.description,
                     comment: customer.comment,
                 });
-            } catch (err) {
-                message.error(err?.message || 'Ошибка загрузки клиента');
-                navigate('/customers');
-            } finally {
-                setLoading(false);
-            }
-        })();
-    }, [isNew, customerId, customerForm, navigate, orderConfigForm]);
+        } catch (err) {
+            message.error(err?.message || 'Ошибка загрузки клиента');
+            navigate('/customers');
+        } finally {
+            setLoading(false);
+        }
+    })();
+    }, [isNew, customerId, customerForm, navigate, orderConfigForm, applyOrderConfigToForm]);
+
+    useEffect(() => {
+        if (!selectedPriceConfigId) {
+            setOrderConfig(null);
+            applyOrderConfigToForm(null);
+            return;
+        }
+        const activeConfig = orderConfigs.find(
+            (cfg) => cfg.pricelist_config_id === selectedPriceConfigId
+        );
+        setOrderConfig(activeConfig || null);
+        applyOrderConfigToForm(activeConfig || null);
+    }, [selectedPriceConfigId, orderConfigs, applyOrderConfigToForm]);
 
     // Сохранение клиента
     const handleCustomerSubmit = async (values) => {
@@ -453,11 +482,16 @@ const CustomerPage = () => {
 
     const handleOrderConfigSubmit = async (values) => {
         if (!customerId) return;
+        if (!selectedPriceConfigId) {
+            message.warning('Выберите конфигурацию прайса');
+            return;
+        }
         setOrderConfigLoading(true);
         try {
             const payload = {
                 ...values,
                 customer_id: customerId,
+                pricelist_config_id: selectedPriceConfigId,
                 order_emails: (values.order_emails || '')
                     .split(',')
                     .map((v) => v.trim())
@@ -468,14 +502,20 @@ const CustomerPage = () => {
                     .filter((v) => v),
             };
             if (orderConfig) {
-                await updateCustomerOrderConfig(customerId, payload);
+                await updateCustomerOrderConfig(orderConfig.id, payload);
                 message.success('Конфигурация заказов обновлена');
             } else {
                 await createCustomerOrderConfig(payload);
                 message.success('Конфигурация заказов создана');
             }
-            const orderResp = await getCustomerOrderConfig(customerId);
-            setOrderConfig(orderResp.data);
+            const orderResp = await getCustomerOrderConfigs(customerId);
+            const configs = orderResp.data || [];
+            setOrderConfigs(configs);
+            const activeConfig = configs.find(
+                (cfg) => cfg.pricelist_config_id === selectedPriceConfigId
+            );
+            setOrderConfig(activeConfig || null);
+            applyOrderConfigToForm(activeConfig || null);
         } catch (error) {
             console.error(error);
             message.error('Ошибка сохранения конфигурации заказов');
@@ -515,6 +555,18 @@ const CustomerPage = () => {
     // Работа с конфигурациями
     const openConfigModal = async (config = null) => {
         setEditingConfig(config);
+        const configId = config?.id || null;
+        setSelectedPriceConfigId(configId);
+        if (configId) {
+            const linkedOrderConfig = orderConfigs.find(
+                (cfg) => cfg.pricelist_config_id === configId
+            );
+            setOrderConfig(linkedOrderConfig || null);
+            applyOrderConfigToForm(linkedOrderConfig || null);
+        } else {
+            setOrderConfig(null);
+            applyOrderConfigToForm(null);
+        }
         setSupplierFilterProviders([]);
         if (config) {
             try {
@@ -575,20 +627,37 @@ const CustomerPage = () => {
             };
 
             if (editingConfig) {
-                await updateCustomerPricelistConfig(
+                const { data: updatedConfig } = await updateCustomerPricelistConfig(
                     customerId,
                     editingConfig.id,
                     payload,
                 );
                 message.success('Конфигурация обновлена');
+                setEditingConfig(updatedConfig || editingConfig);
+                setSelectedPriceConfigId(updatedConfig?.id || editingConfig.id);
             } else {
-                await createCustomerPricelistConfig(customerId, payload);
-                message.success('Конфигурация создана');
+                const { data: createdConfig } = await createCustomerPricelistConfig(
+                    customerId,
+                    payload,
+                );
+                message.success('Конфигурация создана. Настройте обработку заказов ниже.');
+                setEditingConfig(createdConfig || null);
+                setSelectedPriceConfigId(createdConfig?.id || null);
+                if (createdConfig) {
+                    configForm.setFieldsValue({
+                        ...createdConfig,
+                        default_filters: mapFilterToForm(createdConfig.default_filters || {}),
+                        own_filters: mapFilterToForm(createdConfig.own_filters || {}),
+                        other_filters: mapFilterToForm(createdConfig.other_filters || {}),
+                        supplier_filters: Object.entries(createdConfig.supplier_filters || {}).map(
+                            ([providerId, filters]) => ({
+                                provider_id: Number(providerId),
+                                ...mapFilterToForm(filters || {}),
+                            })
+                        ),
+                    });
+                }
             }
-
-            setConfigModalVisible(false);
-            setEditingConfig(null);
-            configForm.resetFields();
 
             // Обновляем данные
             const { data: configs } = await getCustomerPricelistConfigs(customerId);
@@ -753,12 +822,27 @@ const CustomerPage = () => {
         }
     };
 
+
     // Колонки таблицы конфигураций
     const configColumns = [
         {
             title: 'Название',
             dataIndex: 'name',
             key: 'name',
+        },
+        {
+            title: 'Обработка заказов',
+            key: 'orders',
+            render: (_, record) => {
+                const exists = orderConfigs.some(
+                    (cfg) => cfg.pricelist_config_id === record.id
+                );
+                return (
+                    <Tag color={exists ? 'green' : 'default'}>
+                        {exists ? 'Настроена' : 'Нет'}
+                    </Tag>
+                );
+            },
         },
         {
             title: 'Источники',
@@ -979,183 +1063,7 @@ const CustomerPage = () => {
                 </Card>
             )}
 
-            {!isNew && customerData && (
-                <Card title="Конфигурация заказов клиента" style={{ marginTop: 16 }}>
-                    <Form
-                        form={orderConfigForm}
-                        layout="vertical"
-                        onFinish={handleOrderConfigSubmit}
-                        onFinishFailed={({ errorFields }) => {
-                            message.error('Не отправлено: проверьте обязательные поля');
-                            if (errorFields?.length) {
-                                Modal.error({
-                                    title: 'Ошибки формы',
-                                    content: (
-                                        <ul style={{ paddingLeft: 18, margin: 0 }}>
-                                            {errorFields.map((field) => (
-                                                <li key={field.name.join('.')}>
-                                                    {field.errors?.[0] || field.name.join('.')}
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    ),
-                                });
-                                orderConfigForm.scrollToField(errorFields[0].name);
-                            }
-                        }}
-                        scrollToFirstError
-                        initialValues={{
-                            order_start_row: 1,
-                            ship_mode: 'REPLACE_QTY',
-                            price_tolerance_pct: 2,
-                            price_warning_pct: 5,
-                            is_active: true,
-                        }}
-                    >
-                        <Space direction="vertical" style={{ width: '100%' }} size="large">
-                            <Form.Item name="order_emails" label="Почты для заказов (через запятую)">
-                                <Input placeholder="order1@example.com, order2@example.com" />
-                            </Form.Item>
-                            <Form.Item name="order_email" label="Почта для заказов (одна)">
-                                <Input />
-                            </Form.Item>
-                            <Form.Item name="order_reply_emails" label="Почты для ответов (через запятую)">
-                                <Input placeholder="reply1@example.com, reply2@example.com" />
-                            </Form.Item>
-                            <Form.Item
-                                name="email_account_id"
-                                label="Почтовый ящик для заказов"
-                                extra="Если не выбрано — ищем письма во всех активных ящиках с назначением «orders_in»."
-                            >
-                                <Space direction="vertical" style={{ width: '100%' }}>
-                                    <Select
-                                        allowClear
-                                        loading={orderInboxLoading}
-                                        placeholder="Любая входящая почта"
-                                        options={orderInboxAccounts.map((account) => {
-                                            const name = account.name || account.email;
-                                            const label = name === account.email
-                                                ? account.email
-                                                : `${name} • ${account.email}`;
-                                            return {
-                                                value: account.id,
-                                                label,
-                                            };
-                                        })}
-                                    />
-                                    <Button
-                                        onClick={handleOrderInboxTest}
-                                        loading={orderInboxTestLoading}
-                                    >
-                                        Проверить доступ IMAP
-                                    </Button>
-                                </Space>
-                            </Form.Item>
-                            <Form.Item name="order_subject_pattern" label="Шаблон темы письма">
-                                <Input />
-                            </Form.Item>
-                            <Form.Item name="order_filename_pattern" label="Шаблон имени файла">
-                                <Input />
-                            </Form.Item>
-                            <Form.Item name="pricelist_config_id" label="Привязка к конфигурации прайса">
-                                <Select
-                                    allowClear
-                                    options={(customerData?.pricelist_configs || []).map((cfg) => ({
-                                        label: cfg.name,
-                                        value: cfg.id,
-                                    }))}
-                                />
-                            </Form.Item>
-                            <Divider />
-                            <Form.Item name="order_number_column" label="Колонка номера заказа">
-                                <InputNumber min={0} style={{ width: '100%' }} />
-                            </Form.Item>
-                            <Form.Item name="order_number_regex_subject" label="Regex номера (тема)">
-                                <Input />
-                            </Form.Item>
-                            <Form.Item name="order_number_regex_body" label="Regex номера (тело письма)">
-                                <Input />
-                            </Form.Item>
-                            <Form.Item name="order_number_regex_filename" label="Regex номера (имя файла)">
-                                <Input />
-                            </Form.Item>
-                            <Form.Item name="order_number_prefix" label="Префикс номера">
-                                <Input />
-                            </Form.Item>
-                            <Form.Item name="order_number_suffix" label="Суффикс номера">
-                                <Input />
-                            </Form.Item>
-                            <Form.Item
-                                name="order_number_source"
-                                label="Источник номера"
-                            >
-                                <Select
-                                    allowClear
-                                    placeholder="Выберите источник"
-                                    options={[
-                                        { value: 'subject', label: 'Тема письма' },
-                                        { value: 'body', label: 'Тело письма' },
-                                        { value: 'filename', label: 'Имя файла' },
-                                    ]}
-                                />
-                            </Form.Item>
-                            <Form.Item name="order_date_column" label="Колонка даты заказа">
-                                <InputNumber min={0} style={{ width: '100%' }} />
-                            </Form.Item>
-                            <Form.Item
-                                name="order_start_row"
-                                label="Строка начала (с 1)"
-                            >
-                                <InputNumber min={1} style={{ width: '100%' }} />
-                            </Form.Item>
-                            <Divider />
-                            <Form.Item name="oem_col" label="Колонка OEM" rules={[{ required: true }]}>
-                                <InputNumber min={0} style={{ width: '100%' }} />
-                            </Form.Item>
-                            <Form.Item name="brand_col" label="Колонка бренда" rules={[{ required: true }]}>
-                                <InputNumber min={0} style={{ width: '100%' }} />
-                            </Form.Item>
-                            <Form.Item name="name_col" label="Колонка наименования">
-                                <InputNumber min={0} style={{ width: '100%' }} />
-                            </Form.Item>
-                            <Form.Item name="qty_col" label="Колонка количества" rules={[{ required: true }]}>
-                                <InputNumber min={0} style={{ width: '100%' }} />
-                            </Form.Item>
-                            <Form.Item name="price_col" label="Колонка цены">
-                                <InputNumber min={0} style={{ width: '100%' }} />
-                            </Form.Item>
-                            <Form.Item name="ship_qty_col" label="Колонка отгрузки">
-                                <InputNumber min={0} style={{ width: '100%' }} />
-                            </Form.Item>
-                            <Form.Item name="reject_qty_col" label="Колонка отказа">
-                                <InputNumber min={0} style={{ width: '100%' }} />
-                            </Form.Item>
-                            <Form.Item name="ship_mode" label="Режим записи количества">
-                                <Select
-                                    options={[
-                                        { label: 'Заменить количество', value: 'REPLACE_QTY' },
-                                        { label: 'Записать отгрузку', value: 'WRITE_SHIP_QTY' },
-                                        { label: 'Записать отказ', value: 'WRITE_REJECT_QTY' },
-                                    ]}
-                                />
-                            </Form.Item>
-                            <Form.Item name="price_tolerance_pct" label="Допустимое отклонение цены (%)">
-                                <InputNumber min={0} style={{ width: '100%' }} />
-                            </Form.Item>
-                            <Form.Item name="price_warning_pct" label="Порог предупреждения (%)">
-                                <InputNumber min={0} style={{ width: '100%' }} />
-                            </Form.Item>
-                            <Form.Item name="is_active" label="Активно" valuePropName="checked">
-                                <Switch />
-                            </Form.Item>
-                        </Space>
-                        <Divider />
-                        <Button type="primary" htmlType="submit" loading={orderConfigLoading}>
-                            Сохранить конфигурацию заказов
-                        </Button>
-                    </Form>
-                </Card>
-            )}
+            {/* Конфигурации заказов теперь редактируются внутри конфигурации прайса */}
 
             {/* Модалка конфигурации */}
             <Modal
@@ -1165,6 +1073,9 @@ const CustomerPage = () => {
                     setConfigModalVisible(false);
                     setEditingConfig(null);
                     configForm.resetFields();
+                    setSelectedPriceConfigId(null);
+                    setOrderConfig(null);
+                    applyOrderConfigToForm(null);
                 }}
                 footer={null}
                 width={700}
@@ -1405,6 +1316,9 @@ const CustomerPage = () => {
                                     setConfigModalVisible(false);
                                     setEditingConfig(null);
                                     configForm.resetFields();
+                                    setSelectedPriceConfigId(null);
+                                    setOrderConfig(null);
+                                    applyOrderConfigToForm(null);
                                 }}
                             >
                                 Отмена
@@ -1412,6 +1326,198 @@ const CustomerPage = () => {
                         </Space>
                     </Form.Item>
                 </Form>
+                <Divider>Обработка заказов</Divider>
+                {editingConfig ? (
+                    <Form
+                        form={orderConfigForm}
+                        layout="vertical"
+                        onFinish={handleOrderConfigSubmit}
+                        onFinishFailed={({ errorFields }) => {
+                            message.error('Не отправлено: проверьте обязательные поля');
+                            if (errorFields?.length) {
+                                Modal.error({
+                                    title: 'Ошибки формы',
+                                    content: (
+                                        <ul style={{ paddingLeft: 18, margin: 0 }}>
+                                            {errorFields.map((field) => (
+                                                <li key={field.name.join('.')}>
+                                                    {field.errors?.[0] || field.name.join('.')}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    ),
+                                });
+                                orderConfigForm.scrollToField(errorFields[0].name);
+                            }
+                        }}
+                        scrollToFirstError
+                        initialValues={{
+                            order_start_row: 1,
+                            ship_mode: 'REPLACE_QTY',
+                            price_tolerance_pct: 2,
+                            price_warning_pct: 5,
+                            is_active: true,
+                        }}
+                    >
+                        <Space direction="vertical" style={{ width: '100%' }} size="large">
+                            <Form.Item name="order_emails" label="Почты для заказов (через запятую)">
+                                <Input placeholder="order1@example.com, order2@example.com" />
+                            </Form.Item>
+                            <Form.Item name="order_email" label="Почта для заказов (одна)">
+                                <Input />
+                            </Form.Item>
+                            <Form.Item name="order_reply_emails" label="Почты для ответов (через запятую)">
+                                <Input placeholder="reply1@example.com, reply2@example.com" />
+                            </Form.Item>
+                            <Form.Item
+                                name="email_account_id"
+                                label="Почтовый ящик для заказов"
+                                extra="Если не выбрано — ищем письма во всех активных ящиках с назначением «orders_in»."
+                            >
+                                <Space direction="vertical" style={{ width: '100%' }}>
+                                    <Select
+                                        allowClear
+                                        loading={orderInboxLoading}
+                                        placeholder="Любая входящая почта"
+                                        options={orderInboxAccounts.map((account) => {
+                                            const name = account.name || account.email;
+                                            const label = name === account.email
+                                                ? account.email
+                                                : `${name} • ${account.email}`;
+                                            return {
+                                                value: account.id,
+                                                label,
+                                            };
+                                        })}
+                                    />
+                                    <Button
+                                        onClick={handleOrderInboxTest}
+                                        loading={orderInboxTestLoading}
+                                    >
+                                        Проверить доступ IMAP
+                                    </Button>
+                                </Space>
+                            </Form.Item>
+                            <Form.Item name="order_subject_pattern" label="Шаблон темы письма">
+                                <Input />
+                            </Form.Item>
+                            <Form.Item name="order_filename_pattern" label="Шаблон имени файла">
+                                <Input />
+                            </Form.Item>
+                            <Divider />
+                            <Form.Item name="order_number_column" label="Колонка номера заказа">
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item name="order_number_regex_subject" label="Regex номера (тема)">
+                                <Input />
+                            </Form.Item>
+                            <Form.Item name="order_number_regex_body" label="Regex номера (тело письма)">
+                                <Input />
+                            </Form.Item>
+                            <Form.Item name="order_number_regex_filename" label="Regex номера (имя файла)">
+                                <Input />
+                            </Form.Item>
+                            <Form.Item name="order_number_prefix" label="Префикс номера">
+                                <Input />
+                            </Form.Item>
+                            <Form.Item name="order_number_suffix" label="Суффикс номера">
+                                <Input />
+                            </Form.Item>
+                            <Form.Item
+                                name="order_number_source"
+                                label="Источник номера"
+                            >
+                                <Select
+                                    allowClear
+                                    placeholder="Выберите источник"
+                                    options={[
+                                        { value: 'subject', label: 'Тема письма' },
+                                        { value: 'body', label: 'Тело письма' },
+                                        { value: 'filename', label: 'Имя файла' },
+                                    ]}
+                                />
+                            </Form.Item>
+                            <Form.Item name="order_date_column" label="Колонка даты заказа">
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item
+                                name="order_start_row"
+                                label="Строка начала (с 1)"
+                            >
+                                <InputNumber min={1} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Divider />
+                            <Form.Item name="oem_col" label="Колонка OEM" rules={[{ required: true }]}>
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item name="brand_col" label="Колонка бренда" rules={[{ required: true }]}>
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item name="name_col" label="Колонка наименования">
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item name="qty_col" label="Колонка количества" rules={[{ required: true }]}>
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item name="price_col" label="Колонка цены">
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item name="ship_qty_col" label="Колонка отгрузки">
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item name="reject_qty_col" label="Колонка отказа">
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item name="ship_mode" label="Режим записи количества">
+                                <Select
+                                    options={[
+                                        { label: 'Заменить количество', value: 'REPLACE_QTY' },
+                                        { label: 'Записать отгрузку', value: 'WRITE_SHIP_QTY' },
+                                        { label: 'Записать отказ', value: 'WRITE_REJECT_QTY' },
+                                    ]}
+                                />
+                            </Form.Item>
+                            <Form.Item name="price_tolerance_pct" label="Допустимое отклонение цены (%)">
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item name="price_warning_pct" label="Порог предупреждения (%)">
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item name="is_active" label="Активно" valuePropName="checked">
+                                <Switch />
+                            </Form.Item>
+                        </Space>
+                        <Divider />
+                        <Button type="primary" htmlType="submit" loading={orderConfigLoading}>
+                            Сохранить обработку заказов
+                        </Button>
+                        {orderConfig && (
+                            <Button
+                                danger
+                                style={{ marginLeft: 8 }}
+                                onClick={async () => {
+                                    try {
+                                        await deleteCustomerOrderConfig(orderConfig.id);
+                                        message.success('Конфигурация удалена');
+                                        const orderResp = await getCustomerOrderConfigs(customerId);
+                                        const configs = orderResp.data || [];
+                                        setOrderConfigs(configs);
+                                        setOrderConfig(null);
+                                        applyOrderConfigToForm(null);
+                                    } catch (err) {
+                                        message.error('Не удалось удалить конфигурацию');
+                                    }
+                                }}
+                            >
+                                Удалить обработку
+                            </Button>
+                        )}
+                    </Form>
+                ) : (
+                    <Text type="secondary">
+                        Сначала сохраните конфигурацию прайса, затем настройте обработку заказов.
+                    </Text>
+                )}
             </Modal>
 
             {/* Модалка источников */}

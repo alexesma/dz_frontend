@@ -1,7 +1,25 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Card, DatePicker, InputNumber, message, Modal, Select, Table, Typography } from 'antd';
+import {
+    Button,
+    Card,
+    DatePicker,
+    Input,
+    InputNumber,
+    message,
+    Modal,
+    Select,
+    Table,
+    Typography,
+} from 'antd';
 import dayjs from 'dayjs';
-import { getSupplierOrders, sendSupplierOrders, sendScheduledSupplierOrders } from '../api/customerOrders';
+import { useNavigate } from 'react-router-dom';
+import {
+    createManualSupplierOrder,
+    getSupplierOrders,
+    sendSupplierOrders,
+    sendScheduledSupplierOrders,
+} from '../api/customerOrders';
+import { getAutopartLookupByOem } from '../api/autoparts';
 import { getProviders } from '../api/providers';
 import { getCustomersSummary } from '../api/customers';
 
@@ -18,12 +36,19 @@ const DEFAULT_FILTERS = {
 };
 
 const CustomerSupplierOrdersPage = () => {
+    const navigate = useNavigate();
     const [orders, setOrders] = useState([]);
     const [providers, setProviders] = useState([]);
     const [customers, setCustomers] = useState([]);
     const [loading, setLoading] = useState(false);
     const [selectedRowKeys, setSelectedRowKeys] = useState([]);
     const [filters, setFilters] = useState(DEFAULT_FILTERS);
+    const [createOpen, setCreateOpen] = useState(false);
+    const [creating, setCreating] = useState(false);
+    const [formState, setFormState] = useState({
+        providerId: null,
+        items: [{ oem: '', brand: '', name: '', quantity: 1, lookupResults: [] }],
+    });
 
     const providerMap = useMemo(() => {
         const map = {};
@@ -59,7 +84,7 @@ const CustomerSupplierOrdersPage = () => {
             }
             const [ordersResp, providersResp] = await Promise.all([
                 getSupplierOrders(params),
-                getProviders({ page: 1, page_size: 200 }),
+                getProviders({ page: 1, page_size: 100 }),
             ]);
             setOrders(ordersResp.data || []);
             setProviders(providersResp.data?.items || []);
@@ -100,9 +125,9 @@ const CustomerSupplierOrdersPage = () => {
 
     const columns = [
         {
-            title: 'Время заказа',
-            dataIndex: 'customer_received_at',
-            key: 'customer_received_at',
+            title: 'Дата формирования',
+            dataIndex: 'created_at',
+            key: 'created_at',
             width: 170,
             render: formatDateTime,
         },
@@ -111,13 +136,19 @@ const CustomerSupplierOrdersPage = () => {
             dataIndex: 'customer_order_number',
             key: 'customer_order_number',
             width: 140,
-            render: (value, record) => value || record.customer_order_id || '—',
+            render: (value, record) => value || record.customer_order_id || record.id || '—',
         },
         {
             title: 'Клиент',
             dataIndex: 'customer_name',
             key: 'customer_name',
             width: 180,
+        },
+        {
+            title: 'Кол-во заказов',
+            dataIndex: 'customer_orders_count',
+            key: 'customer_orders_count',
+            width: 130,
         },
         {
             title: 'Поставщик',
@@ -134,23 +165,9 @@ const CustomerSupplierOrdersPage = () => {
             render: formatMoney,
         },
         {
-            title: 'Склад (мы)',
-            dataIndex: 'stock_sum',
-            key: 'stock_sum',
-            width: 130,
-            render: formatMoney,
-        },
-        {
-            title: 'Склад поставщиков',
-            dataIndex: 'supplier_sum',
-            key: 'supplier_sum',
-            width: 160,
-            render: formatMoney,
-        },
-        {
             title: 'Статус',
-            dataIndex: 'customer_status',
-            key: 'customer_status',
+            dataIndex: 'status',
+            key: 'status',
             width: 120,
             render: (value) => value || '—',
         },
@@ -160,18 +177,6 @@ const CustomerSupplierOrdersPage = () => {
             key: 'rejected_sum',
             width: 140,
             render: formatMoney,
-        },
-        {
-            title: 'Отказ, %',
-            dataIndex: 'rejected_pct',
-            key: 'rejected_pct',
-            width: 110,
-            render: (value) => {
-                if (value === null || value === undefined) return '—';
-                const num = Number(value);
-                if (Number.isNaN(num)) return '—';
-                return `${num.toFixed(1)}%`;
-            },
         },
     ];
 
@@ -199,6 +204,147 @@ const CustomerSupplierOrdersPage = () => {
                 }
             },
         });
+    };
+
+    const setItemFields = (index, fields) => {
+        setFormState((prev) => {
+            const items = prev.items.map((item, idx) => (
+                idx === index ? { ...item, ...fields } : item
+            ));
+            return { ...prev, items };
+        });
+    };
+
+    const updateItem = (index, field, value) => {
+        if (field === 'oem') {
+            setItemFields(index, {
+                oem: value,
+                brand: '',
+                name: '',
+                lookupResults: [],
+            });
+            return;
+        }
+        setItemFields(index, { [field]: value });
+    };
+
+    const applyLookupResults = (index, oemValue, results) => {
+        setFormState((prev) => {
+            const items = prev.items.map((item, idx) => {
+                if (idx !== index) return item;
+                if (item.oem.trim() !== oemValue) return item;
+                if (!results.length) {
+                    return { ...item, lookupResults: [] };
+                }
+                if (results.length === 1) {
+                    const match = results[0];
+                    return {
+                        ...item,
+                        brand: match.brand || '',
+                        name: match.name || '',
+                        lookupResults: [],
+                    };
+                }
+                const existing =
+                    item.brand &&
+                    results.find((row) => row.brand === item.brand);
+                return {
+                    ...item,
+                    brand: existing ? item.brand : '',
+                    name: existing ? existing.name || '' : '',
+                    lookupResults: results,
+                };
+            });
+            return { ...prev, items };
+        });
+    };
+
+    const handleOemBlur = async (index, rawValue) => {
+        const normalized = rawValue?.trim();
+        if (!normalized) {
+            setItemFields(index, { lookupResults: [] });
+            return;
+        }
+        try {
+            const response = await getAutopartLookupByOem(normalized);
+            const results = response?.data || [];
+            applyLookupResults(index, normalized, results);
+        } catch {
+            message.error('Не удалось найти позиции по OEM');
+        }
+    };
+
+    const handleBrandSelect = (index, brandValue) => {
+        setFormState((prev) => {
+            const items = prev.items.map((item, idx) => {
+                if (idx !== index) return item;
+                const match = (item.lookupResults || []).find(
+                    (row) => row.brand === brandValue
+                );
+                return {
+                    ...item,
+                    brand: brandValue || '',
+                    name: match?.name || '',
+                };
+            });
+            return { ...prev, items };
+        });
+    };
+
+    const addItemRow = () => {
+        setFormState((prev) => ({
+            ...prev,
+            items: [
+                ...prev.items,
+                { oem: '', brand: '', name: '', quantity: 1, lookupResults: [] },
+            ],
+        }));
+    };
+
+    const removeItemRow = (index) => {
+        setFormState((prev) => ({
+            ...prev,
+            items: prev.items.filter((_, idx) => idx !== index),
+        }));
+    };
+
+    const handleCreateOrder = async () => {
+        if (!formState.providerId) {
+            message.warning('Выберите поставщика');
+            return;
+        }
+        const cleanedItems = formState.items
+            .map((item) => ({
+                oem: item.oem.trim(),
+                brand: item.brand.trim(),
+                quantity: Number(item.quantity),
+            }))
+            .filter((item) => item.oem && item.brand && item.quantity > 0);
+        if (!cleanedItems.length) {
+            message.warning('Добавьте позиции');
+            return;
+        }
+        setCreating(true);
+        try {
+            await createManualSupplierOrder({
+                provider_id: formState.providerId,
+                items: cleanedItems,
+            });
+            message.success('Заказ поставщику создан');
+            setCreateOpen(false);
+            setFormState({
+                providerId: null,
+                items: [{ oem: '', brand: '', name: '', quantity: 1, lookupResults: [] }],
+            });
+            fetchOrders(filters);
+        } catch (err) {
+            const detail =
+                err?.response?.data?.detail ||
+                'Не удалось создать заказ поставщику';
+            message.error(detail);
+        } finally {
+            setCreating(false);
+        }
     };
 
     const handleSendScheduled = async () => {
@@ -315,6 +461,9 @@ const CustomerSupplierOrdersPage = () => {
                 <Button onClick={handleSendScheduled}>
                     Отправить по расписанию
                 </Button>
+                <Button type="primary" onClick={() => setCreateOpen(true)}>
+                    Создать заказ поставщику
+                </Button>
             </div>
             <Table
                 loading={loading}
@@ -324,8 +473,103 @@ const CustomerSupplierOrdersPage = () => {
                     selectedRowKeys,
                     onChange: setSelectedRowKeys,
                 }}
+                onRow={(record) => ({
+                    onClick: (event) => {
+                        if (
+                            event.target.closest('button') ||
+                            event.target.closest('input') ||
+                            event.target.closest('.ant-select')
+                        ) {
+                            return;
+                        }
+                        navigate(`/customer-orders/suppliers/${record.id}`);
+                    },
+                })}
                 pagination={{ pageSize: 20 }}
             />
+            <Modal
+                title="Новый заказ поставщику"
+                open={createOpen}
+                onCancel={() => setCreateOpen(false)}
+                onOk={handleCreateOrder}
+                okText="Создать"
+                cancelText="Отмена"
+                confirmLoading={creating}
+                width={900}
+            >
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+                    <Select
+                        allowClear
+                        style={{ minWidth: 240 }}
+                        placeholder="Поставщик"
+                        value={formState.providerId}
+                        onChange={(value) =>
+                            setFormState((prev) => ({ ...prev, providerId: value || null }))
+                        }
+                        options={(providers || []).map((provider) => ({
+                            value: provider.id,
+                            label: provider.name,
+                        }))}
+                    />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {formState.items.map((item, index) => (
+                        <div key={index} style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            <Input
+                                placeholder="OEM"
+                                value={item.oem}
+                                onChange={(event) => updateItem(index, 'oem', event.target.value)}
+                                onBlur={(event) => handleOemBlur(index, event.target.value)}
+                                style={{ width: 160 }}
+                            />
+                            {item.lookupResults && item.lookupResults.length > 1 ? (
+                                <Select
+                                    allowClear
+                                    placeholder="Бренд"
+                                    value={item.brand || undefined}
+                                    onChange={(value) => handleBrandSelect(index, value)}
+                                    style={{ width: 220 }}
+                                    options={item.lookupResults.map((row) => ({
+                                        value: row.brand,
+                                        label: row.name
+                                            ? `${row.brand} — ${row.name}`
+                                            : row.brand,
+                                    }))}
+                                />
+                            ) : (
+                                <Input
+                                    placeholder="Бренд"
+                                    value={item.brand}
+                                    onChange={(event) => updateItem(index, 'brand', event.target.value)}
+                                    style={{ width: 160 }}
+                                />
+                            )}
+                            <Input
+                                placeholder="Название"
+                                value={item.name}
+                                onChange={(event) => updateItem(index, 'name', event.target.value)}
+                                style={{ width: 240 }}
+                            />
+                            <InputNumber
+                                min={1}
+                                placeholder="Кол-во"
+                                value={item.quantity}
+                                onChange={(value) => updateItem(index, 'quantity', value)}
+                            />
+                            <Button
+                                danger
+                                onClick={() => removeItemRow(index)}
+                                disabled={formState.items.length === 1}
+                            >
+                                Удалить
+                            </Button>
+                        </div>
+                    ))}
+                </div>
+                <div style={{ marginTop: 12 }}>
+                    <Button onClick={addItemRow}>Добавить позицию</Button>
+                </div>
+            </Modal>
         </Card>
     );
 };

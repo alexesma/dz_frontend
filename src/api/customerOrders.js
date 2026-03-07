@@ -3,8 +3,35 @@ import api from '../api.js';
 export const getStockOrders = (params) =>
     api.get('/customer-orders/stock/list', { params });
 
+export const getCustomerOrders = (params) =>
+    api.get('/customer-orders', { params });
+
+export const getCustomerOrder = (orderId) =>
+    api.get(`/customer-orders/${orderId}`);
+
+export const getCustomerOrderConfigs = (customerId) =>
+    api.get('/customer-orders/configs', { params: { customer_id: customerId } });
+
+export const getCustomerOrdersSummary = (params) =>
+    api.get('/customer-orders/summary', { params });
+
+export const getSupplierOrderDetail = (orderId) =>
+    api.get(`/customer-orders/supplier/${orderId}`);
+
 export const getSupplierOrders = (params) =>
     api.get('/customer-orders/supplier/list', { params });
+
+export const createManualCustomerOrder = (payload) =>
+    api.post('/customer-orders/manual', payload);
+
+export const processManualCustomerOrder = (orderId) =>
+    api.post(`/customer-orders/${orderId}/process-manual`);
+
+export const createManualSupplierOrder = (payload) =>
+    api.post('/customer-orders/supplier/manual', payload);
+
+export const updateCustomerOrderItem = (itemId, payload) =>
+    api.patch(`/customer-orders/items/${itemId}`, payload);
 
 export const sendSupplierOrders = (orderIds) =>
     api.post('/customer-orders/supplier/send', orderIds);

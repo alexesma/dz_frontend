@@ -15,10 +15,14 @@ import CustomerPage from './components/CustomerPage';
 import AutopartOffers from './components/AutopartOffers';
 import PriceHistoryPlot from './components/PriceHistoryPlot';
 import StockOrdersPage from './components/StockOrdersPage';
+import CustomerOrdersPage from './components/CustomerOrdersPage';
+import CustomerOrderDetailPage from './components/CustomerOrderDetailPage';
 import CustomerSupplierOrdersPage from './components/CustomerSupplierOrdersPage';
+import CustomerSupplierOrderDetailPage from './components/CustomerSupplierOrderDetailPage';
 import EmailAccountsPage from './components/EmailAccountsPage';
 import SettingsPage from './components/SettingsPage';
 import AdminMonitoringPage from './components/AdminMonitoringPage';
+import PriceControlPage from './components/PriceControlPage';
 import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
 import AdminUsers from './components/AdminUsers';
@@ -62,8 +66,11 @@ const AppRoutes = () => (
         <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
         <Route path="/restock" element={<RequireAuth><RestockOffers /></RequireAuth>} />
         <Route path="/orders" element={<RequireAuth><OrdersList /></RequireAuth>} />
+        <Route path="/customer-orders" element={<RequireAuth><CustomerOrdersPage /></RequireAuth>} />
+        <Route path="/customer-orders/:orderId" element={<RequireAuth><CustomerOrderDetailPage /></RequireAuth>} />
         <Route path="/customer-orders/stock" element={<RequireAuth><StockOrdersPage /></RequireAuth>} />
         <Route path="/customer-orders/suppliers" element={<RequireAuth><CustomerSupplierOrdersPage /></RequireAuth>} />
+        <Route path="/customer-orders/suppliers/:orderId" element={<RequireAuth><CustomerSupplierOrderDetailPage /></RequireAuth>} />
 
         {/* Providers */}
         <Route path="/providers" element={<RequireAuth><ProvidersList /></RequireAuth>} />
@@ -92,6 +99,7 @@ const AppRoutes = () => (
         <Route path="/admin/email-accounts" element={<RequireAdmin><EmailAccountsPage /></RequireAdmin>} />
         <Route path="/admin/settings" element={<RequireAdmin><SettingsPage /></RequireAdmin>} />
         <Route path="/admin/monitor" element={<RequireAdmin><AdminMonitoringPage /></RequireAdmin>} />
+        <Route path="/admin/price-control" element={<RequireAdmin><PriceControlPage /></RequireAdmin>} />
         <Route path="/watchlist" element={<RequireAuth><WatchlistPage /></RequireAuth>} />
     </Routes>
 );

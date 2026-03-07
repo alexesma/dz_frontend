@@ -1,7 +1,7 @@
 import React from 'react';
 import { Layout, Menu } from 'antd';
 import { Link, useNavigate } from 'react-router-dom';
-import { TeamOutlined, SwapOutlined, SearchOutlined, LineChartOutlined, UserOutlined, InboxOutlined, SendOutlined, SettingOutlined, EyeOutlined, BarChartOutlined } from '@ant-design/icons';
+import { TeamOutlined, SwapOutlined, SearchOutlined, LineChartOutlined, UserOutlined, InboxOutlined, SendOutlined, SettingOutlined, EyeOutlined, BarChartOutlined, DollarOutlined } from '@ant-design/icons';
 import useAuth from '../context/useAuth';
 
 const { Sider } = Layout;
@@ -30,6 +30,9 @@ const Sidebar = () => {
                 </Menu.Item>
                 <Menu.Item key="3">
                     <Link to="/orders">Заказы поставщикам</Link>
+                </Menu.Item>
+                <Menu.Item key="customer-orders" icon={<InboxOutlined />}>
+                    <Link to="/customer-orders">Заказы клиентов</Link>
                 </Menu.Item>
                 <Menu.Item key="customer-supplier-orders" icon={<SendOutlined />}>
                     <Link to="/customer-orders/suppliers">Клиентские заказы → поставщики</Link>
@@ -65,6 +68,9 @@ const Sidebar = () => {
                         </Menu.Item>
                         <Menu.Item key="admin-settings" icon={<SettingOutlined />}>
                             <Link to="/admin/settings">Админ: настройки</Link>
+                        </Menu.Item>
+                        <Menu.Item key="admin-price-control" icon={<DollarOutlined />}>
+                            <Link to="/admin/price-control">Админ: контроль цен</Link>
                         </Menu.Item>
                         <Menu.Item key="admin-monitor" icon={<BarChartOutlined />}>
                             <Link to="/admin/monitor">Админ: мониторинг</Link>

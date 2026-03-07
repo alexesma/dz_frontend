@@ -4,3 +4,15 @@
   line-height: 1.5;
   font-weight: 400;
 }
+
+.price-control-row-best td {
+  background: #f0fff4;
+}
+
+.price-control-row-below-min td {
+  background: #fff1f0;
+}
+
+.price-control-row-below-cost td {
+  background: #fff0f6;
+}

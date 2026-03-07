@@ -62,8 +62,14 @@ export const deleteCustomerPricelist = (customerId, pricelistId) =>
 export const getCustomerOrderConfig = (customerId) =>
     api.get(`/customer-orders/config/${customerId}`);
 
-export const createCustomerOrderConfig = (data) =>
-    api.post('/customer-orders/config', data);
+export const getCustomerOrderConfigs = (customerId) =>
+    api.get('/customer-orders/configs', { params: { customer_id: customerId } });
 
-export const updateCustomerOrderConfig = (customerId, data) =>
-    api.put(`/customer-orders/config/${customerId}`, data);
+export const createCustomerOrderConfig = (data) =>
+    api.post('/customer-orders/configs', data);
+
+export const updateCustomerOrderConfig = (configId, data) =>
+    api.patch(`/customer-orders/configs/${configId}`, data);
+
+export const deleteCustomerOrderConfig = (configId) =>
+    api.delete(`/customer-orders/configs/${configId}`);
