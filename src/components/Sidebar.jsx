@@ -1,7 +1,20 @@
 import React from 'react';
 import { Layout, Menu } from 'antd';
 import { Link, useNavigate } from 'react-router-dom';
-import { TeamOutlined, SwapOutlined, SearchOutlined, LineChartOutlined, UserOutlined, InboxOutlined, SendOutlined, SettingOutlined, EyeOutlined, BarChartOutlined, DollarOutlined } from '@ant-design/icons';
+import {
+    TeamOutlined,
+    SwapOutlined,
+    SearchOutlined,
+    LineChartOutlined,
+    UserOutlined,
+    InboxOutlined,
+    SendOutlined,
+    SettingOutlined,
+    EyeOutlined,
+    BarChartOutlined,
+    DollarOutlined,
+    TagsOutlined,
+} from '@ant-design/icons';
 import useAuth from '../context/useAuth';
 
 const { Sider } = Layout;
@@ -71,6 +84,9 @@ const Sidebar = () => {
                         </Menu.Item>
                         <Menu.Item key="admin-price-control" icon={<DollarOutlined />}>
                             <Link to="/admin/price-control">Админ: контроль цен</Link>
+                        </Menu.Item>
+                        <Menu.Item key="admin-brands" icon={<TagsOutlined />}>
+                            <Link to="/admin/brands">Админ: бренды</Link>
                         </Menu.Item>
                         <Menu.Item key="admin-monitor" icon={<BarChartOutlined />}>
                             <Link to="/admin/monitor">Админ: мониторинг</Link>

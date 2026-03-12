@@ -49,6 +49,17 @@ import { getPriceStaleAlerts } from "../api/settings";
 import { formatMoscow } from '../utils/time';
 
 const { Title, Text } = Typography;
+const providerPriceTypeOptions = [
+    { value: "Wholesale", label: "Цена с НДС" },
+    { value: "Retail", label: "Цена без НДС" },
+    { value: "Cash", label: "Цена за наличные" },
+];
+const deliveryMethodOptions = [
+    { value: "Delivered", label: "Привозят" },
+    { value: "Self pickup", label: "Дополнительно забираем сами" },
+    { value: "Courier foot", label: "Курьер пеший" },
+    { value: "Courier car", label: "Курьер авто" },
+];
 
 const ProviderPage = () => {
     const { providerId: providerIdParam } = useParams();
@@ -152,6 +163,14 @@ const ProviderPage = () => {
         if (isNew) {
             // режим создания — чистая форма
             providerForm.resetFields();
+            providerForm.setFieldsValue({
+                type_prices: "Wholesale",
+                default_delivery_method: "Delivered",
+                is_own_price: false,
+                order_schedule_enabled: false,
+                order_schedule_days: [],
+                order_schedule_times: [],
+            });
             setProviderData(null);
             setLoading(false);
             return;
@@ -178,6 +197,8 @@ const ProviderPage = () => {
                     comment: data.provider.comment,
                     is_virtual: data.provider.is_virtual,
                     is_own_price: data.provider.is_own_price,
+                    default_delivery_method:
+                        data.provider.default_delivery_method || "Delivered",
                     order_schedule_days: data.provider.order_schedule_days || [],
                     order_schedule_times: data.provider.order_schedule_times || [],
                     order_schedule_enabled: data.provider.order_schedule_enabled || false,
@@ -691,15 +712,27 @@ const ProviderPage = () => {
 
                     <Form.Item
                         name="type_prices"
-                        label="Тип цен"
+                        label="Тип цены поставщика"
                         rules={[{ required: true, message: "Выберите тип цен" }]}
                     >
                         <Select
-                            options={[
-                                { value: "Wholesale", label: "Оптовые" },
-                                { value: "Retail", label: "Розничные" },
-                            ]}
+                            options={providerPriceTypeOptions}
                             placeholder="Выберите тип цен"
+                        />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="default_delivery_method"
+                        label="Способ доставки по умолчанию"
+                        rules={[{
+                            required: true,
+                            message: "Выберите способ доставки",
+                        }]}
+                        extra="Используется как базовый вариант для этого поставщика."
+                    >
+                        <Select
+                            options={deliveryMethodOptions}
+                            placeholder="Выберите способ доставки"
                         />
                     </Form.Item>
 

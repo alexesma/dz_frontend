@@ -23,6 +23,7 @@ import EmailAccountsPage from './components/EmailAccountsPage';
 import SettingsPage from './components/SettingsPage';
 import AdminMonitoringPage from './components/AdminMonitoringPage';
 import PriceControlPage from './components/PriceControlPage';
+import BrandManagementPage from './components/BrandManagementPage';
 import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
 import AdminUsers from './components/AdminUsers';
@@ -100,6 +101,7 @@ const AppRoutes = () => (
         <Route path="/admin/settings" element={<RequireAdmin><SettingsPage /></RequireAdmin>} />
         <Route path="/admin/monitor" element={<RequireAdmin><AdminMonitoringPage /></RequireAdmin>} />
         <Route path="/admin/price-control" element={<RequireAdmin><PriceControlPage /></RequireAdmin>} />
+        <Route path="/admin/brands" element={<RequireAdmin><BrandManagementPage /></RequireAdmin>} />
         <Route path="/watchlist" element={<RequireAuth><WatchlistPage /></RequireAuth>} />
     </Routes>
 );

@@ -30,6 +30,9 @@ export const listPriceControlRecommendations = (runId) =>
 export const listPriceControlSourceRecommendations = (runId) =>
     api.get(`/price-control/runs/${runId}/source-recommendations`);
 
+export const getPriceControlSourceDiagnostics = (runId) =>
+    api.get(`/price-control/runs/${runId}/source-diagnostics`);
+
 export const applyPriceControlRecommendations = (runId, data) =>
     api.post(`/price-control/runs/${runId}/apply`, data);
 

@@ -17,6 +17,7 @@ import {
     applyPriceControlRecommendations,
     applyPriceControlSourceRecommendations,
     createPriceControlConfig,
+    getPriceControlSourceDiagnostics,
     listPriceControlConfigs,
     listPriceControlSiteApiKeys,
     listPriceControlRecommendations,
@@ -125,6 +126,7 @@ const PriceControlPage = () => {
     const [selectedRunId, setSelectedRunId] = useState(null);
     const [recommendations, setRecommendations] = useState([]);
     const [sourceRecommendations, setSourceRecommendations] = useState([]);
+    const [sourceDiagnostics, setSourceDiagnostics] = useState(null);
     const [selectedRecIds, setSelectedRecIds] = useState([]);
     const [selectedSourceRecIds, setSelectedSourceRecIds] = useState([]);
     const [loadingConfig, setLoadingConfig] = useState(false);
@@ -250,6 +252,8 @@ const PriceControlPage = () => {
                         target_cheapest_pct: config.target_cheapest_pct,
                         exclude_dragonzap_non_dz:
                             Boolean(config.exclude_dragonzap_non_dz),
+                        record_site_history_for_dz:
+                            Boolean(config.record_site_history_for_dz),
                         cooldown_days: hoursToDays(config.cooldown_hours),
                         our_offer_field: config.our_offer_field,
                         our_offer_match: config.our_offer_match,
@@ -285,6 +289,7 @@ const PriceControlPage = () => {
                         delta_pct: 0.2,
                         target_cheapest_pct: 60,
                         exclude_dragonzap_non_dz: false,
+                        record_site_history_for_dz: false,
                         cooldown_days: 0,
                         own_cost_markup_default: 20,
                         brand_markups: [],
@@ -330,20 +335,24 @@ const PriceControlPage = () => {
         if (!runId) {
             setRecommendations([]);
             setSourceRecommendations([]);
+            setSourceDiagnostics(null);
             return;
         }
         setLoadingRecs(true);
         try {
-            const [recRes, sourceRes] = await Promise.all([
+            const [recRes, sourceRes, diagRes] = await Promise.all([
                 listPriceControlRecommendations(runId),
                 listPriceControlSourceRecommendations(runId),
+                getPriceControlSourceDiagnostics(runId),
             ]);
             setRecommendations(recRes.data || []);
             setSourceRecommendations(sourceRes.data || []);
+            setSourceDiagnostics(diagRes.data || null);
             setSelectedRecIds([]);
             setSelectedSourceRecIds([]);
         } catch {
             message.error('Не удалось загрузить рекомендации');
+            setSourceDiagnostics(null);
         } finally {
             setLoadingRecs(false);
         }
@@ -384,6 +393,7 @@ const PriceControlPage = () => {
         setSelectedRunId(null);
         setRecommendations([]);
         setSourceRecommendations([]);
+        setSourceDiagnostics(null);
         setStateProfiles([]);
         setActiveStateProfileId(null);
     };
@@ -395,6 +405,7 @@ const PriceControlPage = () => {
         setSelectedRunId(null);
         setRecommendations([]);
         setSourceRecommendations([]);
+        setSourceDiagnostics(null);
         setStateProfiles([]);
         setActiveStateProfileId(null);
     };
@@ -442,6 +453,8 @@ const PriceControlPage = () => {
                 site_api_key_env: siteApiKeyEnv || null,
                 exclude_dragonzap_non_dz:
                     values.exclude_dragonzap_non_dz ?? false,
+                record_site_history_for_dz:
+                    values.record_site_history_for_dz ?? false,
                 cooldown_hours: daysToHours(values.cooldown_days),
                 our_offer_field: values.our_offer_field || null,
                 our_offer_match: values.our_offer_match || null,
@@ -745,6 +758,59 @@ const PriceControlPage = () => {
         { title: 'Комментарий', dataIndex: 'note', key: 'note' },
     ];
 
+    const diagnosticsColumns = [
+        { title: 'Поставщик', dataIndex: 'provider_name', key: 'provider_name' },
+        {
+            title: 'Конфиг',
+            dataIndex: 'provider_config_name',
+            key: 'provider_config_name',
+        },
+        {
+            title: 'План',
+            dataIndex: 'expected_count',
+            key: 'expected_count',
+        },
+        {
+            title: 'Проверено',
+            dataIndex: 'checked_count',
+            key: 'checked_count',
+        },
+        {
+            title: 'С конкурентом',
+            dataIndex: 'with_competitor_count',
+            key: 'with_competitor_count',
+        },
+        {
+            title: 'Покрытие %',
+            dataIndex: 'coverage_pct',
+            key: 'coverage_pct',
+            render: (value) => formatNumber(value),
+        },
+        {
+            title: 'Нет конкурента',
+            dataIndex: 'missing_competitor_count',
+            key: 'missing_competitor_count',
+        },
+        {
+            title: 'Ниже мин.наценки',
+            dataIndex: 'below_min_markup_count',
+            key: 'below_min_markup_count',
+        },
+        {
+            title: 'Действия',
+            key: 'actions',
+            render: (_, record) => (
+                `↓ ${record.lower_count || 0} / ↑ ${record.raise_count || 0}`
+            ),
+        },
+        {
+            title: 'Комментарий',
+            dataIndex: 'note',
+            key: 'note',
+            render: (value) => value || '-',
+        },
+    ];
+
     const stateProfileColumns = [
         {
             title: 'Активный',
@@ -869,6 +935,7 @@ const PriceControlPage = () => {
                         delta_pct: 0.2,
                         target_cheapest_pct: 60,
                         exclude_dragonzap_non_dz: false,
+                        record_site_history_for_dz: false,
                         cooldown_days: 0,
                         own_cost_markup_default: 20,
                         manual_items: [],
@@ -925,6 +992,15 @@ const PriceControlPage = () => {
                         >
                             <Checkbox>
                                 Исключать DRAGONZAP без DZ (пример: DZSMD188435 - учитывается, SMD188435 - нет)
+                            </Checkbox>
+                        </Form.Item>
+                        <Form.Item
+                            name="record_site_history_for_dz"
+                            valuePropName="checked"
+                            tooltip="Если включено, по позициям DRAGONZAP (которые ищутся на сайте по оригинальному бренду) будет сохраняться лучшая цена сайта в Историю цен под поставщиком «Сайт Dragonzap»."
+                        >
+                            <Checkbox>
+                                Фиксировать цену сайта в истории для DRAGONZAP
                             </Checkbox>
                         </Form.Item>
                     </div>
@@ -1236,6 +1312,20 @@ const PriceControlPage = () => {
                         selectedRowKeys: selectedSourceRecIds,
                         onChange: setSelectedSourceRecIds,
                     }}
+                    pagination={{ pageSize: 20 }}
+                />
+
+                <Divider>Диагностика по источникам</Divider>
+                <div style={{ marginBottom: 12, color: '#595959' }}>
+                    Всего в запуске: {sourceDiagnostics?.total_items ?? 0}
+                    {' '}| Ручные: {sourceDiagnostics?.manual_items ?? 0}
+                    {' '}| Авто: {sourceDiagnostics?.auto_items ?? 0}
+                </div>
+                <Table
+                    rowKey="provider_config_id"
+                    dataSource={sourceDiagnostics?.sources || []}
+                    columns={diagnosticsColumns}
+                    loading={loadingRecs}
                     pagination={{ pageSize: 20 }}
                 />
             </Card>

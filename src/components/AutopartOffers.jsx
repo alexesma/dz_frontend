@@ -190,6 +190,11 @@ const AutopartOffers = () => {
                 brandValue,
                 !showCrosses
             );
+            const queryBrands = Array.isArray(data?.query_brands)
+                ? data.query_brands
+                    .map((brand) => String(brand || '').toLowerCase())
+                    .filter((brand) => brand)
+                : [];
             const rawList = Array.isArray(data)
                 ? data
                 : Array.isArray(data?.data)
@@ -262,6 +267,17 @@ const AutopartOffers = () => {
                 }
                 if (!showCrosses && brandValue) {
                     const itemBrand = (item.make_name || '').toLowerCase();
+                    const requestedBrand = (
+                        item?.sys_info?.requested_make_name ||
+                        item?.query_brand ||
+                        ''
+                    ).toLowerCase();
+                    if (queryBrands.length) {
+                        return (
+                            queryBrands.includes(itemBrand) ||
+                            queryBrands.includes(requestedBrand)
+                        );
+                    }
                     return itemBrand === brandValue.toLowerCase();
                 }
                 return true;
