@@ -56,7 +56,7 @@ const providerPriceTypeOptions = [
 ];
 const deliveryMethodOptions = [
     { value: "Delivered", label: "Привозят" },
-    { value: "Self pickup", label: "Дополнительно забираем сами" },
+    { value: "Self pickup", label: "Забираем сами" },
     { value: "Courier foot", label: "Курьер пеший" },
     { value: "Courier car", label: "Курьер авто" },
 ];
@@ -276,6 +276,7 @@ const ProviderPage = () => {
                 ...config,
                 exclude_positions: config.exclude_positions || [],
                 max_days_without_update: config.max_days_without_update ?? 3,
+                is_active: config.is_active ?? true,
                 start_row: adjustForDisplay(config.start_row, true),
                 oem_col: adjustForDisplay(config.oem_col, true),
                 brand_col: adjustForDisplay(config.brand_col, true),
@@ -289,6 +290,7 @@ const ProviderPage = () => {
             configForm.setFieldsValue({
                 exclude_positions: [],
                 max_days_without_update: 3,
+                is_active: true,
             });
         }
         setConfigModalVisible(true);
@@ -348,6 +350,25 @@ const ProviderPage = () => {
         } catch (err) {
             console.error(err);
             message.error("Ошибка удаления конфигурации");
+        }
+    };
+
+    const handleToggleConfigActive = async (configId, checked) => {
+        if (!providerId) return;
+        try {
+            await updateProviderConfig(providerId, configId, {
+                is_active: checked,
+            });
+            message.success(
+                checked
+                    ? "Конфигурация включена"
+                    : "Конфигурация отключена"
+            );
+            const { data } = await getProviderFullById(providerId);
+            setProviderData(data);
+        } catch (err) {
+            console.error(err);
+            message.error("Не удалось обновить статус конфигурации");
         }
     };
 
@@ -568,6 +589,21 @@ const ProviderPage = () => {
                 <span>
                     {record.min_delivery_day ?? 1} - {record.max_delivery_day ?? 3}
                 </span>
+            ),
+        },
+        {
+            title: "Активна",
+            dataIndex: "is_active",
+            key: "is_active",
+            render: (isActive, record) => (
+                <Switch
+                    checked={Boolean(isActive)}
+                    onChange={(checked) =>
+                        handleToggleConfigActive(record.id, checked)
+                    }
+                    checkedChildren="Вкл"
+                    unCheckedChildren="Выкл"
+                />
             ),
         },
         {
@@ -985,6 +1021,19 @@ const ProviderPage = () => {
 
                     <Form.Item name="file_url" label="URL файла">
                         <Input placeholder="http://example.com/pricelist.xlsx" />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="is_active"
+                        label="Конфигурация активна"
+                        valuePropName="checked"
+                        initialValue={true}
+                        extra={
+                            "Если отключено: автообновление из email " +
+                            "и уведомления о просрочке не выполняются."
+                        }
+                    >
+                        <Switch checkedChildren="Вкл" unCheckedChildren="Выкл" />
                     </Form.Item>
 
                     <Divider>Настройки парсинга</Divider>
