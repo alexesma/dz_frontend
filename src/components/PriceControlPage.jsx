@@ -64,6 +64,20 @@ const formatNumber = (value, digits = 2) => {
     return num.toFixed(digits);
 };
 
+const coefToClientMarkupPct = (value) => {
+    const coef = Number(value);
+    if (!Number.isFinite(coef) || coef <= 0) return null;
+    return ((1 / coef) - 1) * 100;
+};
+
+const formatSignedPercent = (value, digits = 2) => {
+    if (value === null || value === undefined) return '-';
+    const num = Number(value);
+    if (!Number.isFinite(num)) return '-';
+    const sign = num > 0 ? '+' : '';
+    return `${sign}${num.toFixed(digits)}%`;
+};
+
 const rebalanceSources = (rows) => {
     const locked = rows.filter((row) => row.locked);
     const unlocked = rows.filter((row) => !row.locked);
@@ -755,10 +769,10 @@ const PriceControlPage = () => {
             ),
         },
         {
-            title: 'Коэфф.',
+            title: 'Наценка клиента, %',
             dataIndex: 'client_markup_coef',
             key: 'client_markup_coef',
-            render: (value) => formatNumber(value, 4),
+            render: (value) => formatSignedPercent(coefToClientMarkupPct(value)),
         },
         {
             title: 'Выборка',
@@ -822,12 +836,12 @@ const PriceControlPage = () => {
 
                 <Divider />
                 <div style={{ marginBottom: 12, color: '#595959' }}>
-                    Адаптивный коэффициент клиента: {formatNumber(clientMarkupCoef, 4)}
+                    Адаптивная наценка клиента: {formatSignedPercent(coefToClientMarkupPct(clientMarkupCoef))}
                     {' '}| Выборка: {clientMarkupSampleSize}
                     {' '}| Последние 10 наценок, %:{' '}
                     {clientMarkupRecentPct.length
                         ? clientMarkupRecentPct
-                            .map((value) => formatNumber(value))
+                            .map((value) => formatSignedPercent(value))
                             .join(', ')
                         : '-'}
                 </div>
