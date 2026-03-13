@@ -56,6 +56,7 @@ export const uploadProviderPricelist = async (
         oem_col,              // number | undefined
         brand_col,            // number | undefined
         name_col,             // number | undefined
+        multiplicity_col,     // number | undefined
         qty_col,              // number | undefined
         price_col,            // number | undefined
     } = {}
@@ -67,6 +68,9 @@ export const uploadProviderPricelist = async (
     if (oem_col !== undefined && oem_col !== null) form.append("oem_col", String(oem_col));
     if (brand_col !== undefined && brand_col !== null) form.append("brand_col", String(brand_col));
     if (name_col !== undefined && name_col !== null) form.append("name_col", String(name_col));
+    if (multiplicity_col !== undefined && multiplicity_col !== null) {
+        form.append("multiplicity_col", String(multiplicity_col));
+    }
     if (qty_col !== undefined && qty_col !== null) form.append("qty_col", String(qty_col));
     if (price_col !== undefined && price_col !== null) form.append("price_col", String(price_col));
 

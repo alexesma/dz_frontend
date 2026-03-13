@@ -48,6 +48,9 @@ const ProviderConfigDetail = () => {
                         {'name_col' in cfg && (
                             <Descriptions.Item label="Колонка Наименование">{cfg.name_col}</Descriptions.Item>
                         )}
+                        {'multiplicity_col' in cfg && (
+                            <Descriptions.Item label="Колонка Кратность">{cfg.multiplicity_col}</Descriptions.Item>
+                        )}
                         {'qty_col' in cfg && (
                             <Descriptions.Item label="Колонка Кол-во">{cfg.qty_col}</Descriptions.Item>
                         )}

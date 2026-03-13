@@ -281,6 +281,10 @@ const ProviderPage = () => {
                 oem_col: adjustForDisplay(config.oem_col, true),
                 brand_col: adjustForDisplay(config.brand_col, true),
                 name_col: adjustForDisplay(config.name_col, true),
+                multiplicity_col: adjustForDisplay(
+                    config.multiplicity_col,
+                    true
+                ),
                 qty_col: adjustForDisplay(config.qty_col, true),
                 price_col: adjustForDisplay(config.price_col, true),
             });
@@ -311,6 +315,10 @@ const ProviderPage = () => {
                 oem_col: adjustForPayload(values.oem_col, configNumberingFromOne),
                 brand_col: adjustForPayload(values.brand_col, configNumberingFromOne),
                 name_col: adjustForPayload(values.name_col, configNumberingFromOne),
+                multiplicity_col: adjustForPayload(
+                    values.multiplicity_col,
+                    configNumberingFromOne
+                ),
                 qty_col: adjustForPayload(values.qty_col, configNumberingFromOne),
                 price_col: adjustForPayload(values.price_col, configNumberingFromOne),
             };
@@ -482,6 +490,10 @@ const ProviderPage = () => {
             oem_col: adjustForDisplay(config?.oem_col ?? 0, true),
             brand_col: adjustForDisplay(config?.brand_col, true),
             name_col: adjustForDisplay(config?.name_col, true),
+            multiplicity_col: adjustForDisplay(
+                config?.multiplicity_col,
+                true
+            ),
             qty_col: adjustForDisplay(config?.qty_col ?? 0, true),
             price_col: adjustForDisplay(config?.price_col ?? 0, true),
         });
@@ -510,6 +522,10 @@ const ProviderPage = () => {
                 oem_col: adjustForPayload(values.oem_col, uploadNumberingFromOne),
                 brand_col: adjustForPayload(values.brand_col, uploadNumberingFromOne),
                 name_col: adjustForPayload(values.name_col, uploadNumberingFromOne),
+                multiplicity_col: adjustForPayload(
+                    values.multiplicity_col,
+                    uploadNumberingFromOne
+                ),
                 qty_col: adjustForPayload(values.qty_col, uploadNumberingFromOne),
                 price_col: adjustForPayload(values.price_col, uploadNumberingFromOne),
             });
@@ -573,6 +589,10 @@ const ProviderPage = () => {
                     <div>OEM: {record.oem_col}</div>
                     <div>Кол-во: {record.qty_col}</div>
                     <div>Цена: {record.price_col}</div>
+                    {record.multiplicity_col !== null
+                        && record.multiplicity_col !== undefined && (
+                        <div>Кратность: {record.multiplicity_col}</div>
+                    )}
                     {record.name_col !== null && record.name_col !== undefined && (
                         <div>Название: {record.name_col}</div>
                     )}
@@ -1091,6 +1111,14 @@ const ProviderPage = () => {
                             />
                         </Form.Item>
 
+                        <Form.Item name="multiplicity_col" label="Колонка кратности">
+                            <InputNumber
+                                min={configNumberingFromOne ? 1 : 0}
+                                placeholder="Номер колонки"
+                                style={{ width: "100%" }}
+                            />
+                        </Form.Item>
+
                         <Form.Item
                             name="qty_col"
                             label="Колонка количества"
@@ -1411,6 +1439,16 @@ const ProviderPage = () => {
                                         </Form.Item>
 
                                         <Form.Item name="brand_col" label="Колонка бренда">
+                                            <InputNumber
+                                                min={uploadNumberingFromOne ? 1 : 0}
+                                                style={{ width: "100%" }}
+                                            />
+                                        </Form.Item>
+
+                                        <Form.Item
+                                            name="multiplicity_col"
+                                            label="Колонка кратности"
+                                        >
                                             <InputNumber
                                                 min={uploadNumberingFromOne ? 1 : 0}
                                                 style={{ width: "100%" }}
