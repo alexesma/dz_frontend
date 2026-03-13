@@ -518,7 +518,12 @@ const CustomerPage = () => {
             applyOrderConfigToForm(activeConfig || null);
         } catch (error) {
             console.error(error);
-            message.error('Ошибка сохранения конфигурации заказов');
+            const detail = error?.response?.data?.detail;
+            message.error(
+                Array.isArray(detail) ? detail.join('; ') : (
+                    detail || 'Ошибка сохранения конфигурации заказов'
+                )
+            );
         } finally {
             setOrderConfigLoading(false);
         }
@@ -1370,26 +1375,27 @@ const CustomerPage = () => {
                                 <Input placeholder="reply1@example.com, reply2@example.com" />
                             </Form.Item>
                             <Form.Item
-                                name="email_account_id"
                                 label="Почтовый ящик для заказов"
                                 extra="Если не выбрано — ищем письма во всех активных ящиках с назначением «orders_in»."
                             >
                                 <Space direction="vertical" style={{ width: '100%' }}>
-                                    <Select
-                                        allowClear
-                                        loading={orderInboxLoading}
-                                        placeholder="Любая входящая почта"
-                                        options={orderInboxAccounts.map((account) => {
-                                            const name = account.name || account.email;
-                                            const label = name === account.email
-                                                ? account.email
-                                                : `${name} • ${account.email}`;
-                                            return {
-                                                value: account.id,
-                                                label,
-                                            };
-                                        })}
-                                    />
+                                    <Form.Item name="email_account_id" noStyle>
+                                        <Select
+                                            allowClear
+                                            loading={orderInboxLoading}
+                                            placeholder="Любая входящая почта"
+                                            options={orderInboxAccounts.map((account) => {
+                                                const name = account.name || account.email;
+                                                const label = name === account.email
+                                                    ? account.email
+                                                    : `${name} • ${account.email}`;
+                                                return {
+                                                    value: account.id,
+                                                    label,
+                                                };
+                                            })}
+                                        />
+                                    </Form.Item>
                                     <Button
                                         onClick={handleOrderInboxTest}
                                         loading={orderInboxTestLoading}
@@ -1406,7 +1412,14 @@ const CustomerPage = () => {
                             </Form.Item>
                             <Divider />
                             <Form.Item name="order_number_column" label="Колонка номера заказа">
-                                <InputNumber min={0} style={{ width: '100%' }} />
+                                <InputNumber min={0} style={{ width: 220 }} />
+                            </Form.Item>
+                            <Form.Item
+                                name="order_number_row"
+                                label="Строка номера заказа (с 1)"
+                                extra="Можно оставить пустым: номер будет искаться по всем строкам файла."
+                            >
+                                <InputNumber min={1} style={{ width: 220 }} />
                             </Form.Item>
                             <Form.Item name="order_number_regex_subject" label="Regex номера (тема)">
                                 <Input />
@@ -1438,13 +1451,20 @@ const CustomerPage = () => {
                                 />
                             </Form.Item>
                             <Form.Item name="order_date_column" label="Колонка даты заказа">
-                                <InputNumber min={0} style={{ width: '100%' }} />
+                                <InputNumber min={0} style={{ width: 220 }} />
+                            </Form.Item>
+                            <Form.Item
+                                name="order_date_row"
+                                label="Строка даты заказа (с 1)"
+                                extra="Можно оставить пустым: дата будет искаться по всем строкам файла."
+                            >
+                                <InputNumber min={1} style={{ width: 220 }} />
                             </Form.Item>
                             <Form.Item
                                 name="order_start_row"
                                 label="Строка начала (с 1)"
                             >
-                                <InputNumber min={1} style={{ width: '100%' }} />
+                                <InputNumber min={1} style={{ width: 220 }} />
                             </Form.Item>
                             <Divider />
                             <Form.Item name="oem_col" label="Колонка OEM" rules={[{ required: true }]}>
