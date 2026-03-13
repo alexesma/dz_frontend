@@ -45,6 +45,7 @@ import {
     uploadProviderPricelist,
     parseProviderExcludePositions,
 } from "../api/providers";
+import { getEmailAccounts } from "../api/emailAccounts";
 import { getPriceStaleAlerts } from "../api/settings";
 import { formatMoscow } from '../utils/time';
 
@@ -75,6 +76,7 @@ const ProviderPage = () => {
     const [providerData, setProviderData] = useState(null);
     const [alertsLoading, setAlertsLoading] = useState(false);
     const [staleAlerts, setStaleAlerts] = useState([]);
+    const [priceInEmailAccounts, setPriceInEmailAccounts] = useState([]);
 
     const [configModalVisible, setConfigModalVisible] = useState(false);
     const [editingConfig, setEditingConfig] = useState(null);
@@ -230,6 +232,22 @@ const ProviderPage = () => {
         })();
     }, [providerId, isNew]);
 
+    useEffect(() => {
+        (async () => {
+            try {
+                const { data } = await getEmailAccounts();
+                const priceInAccounts = (data || []).filter(
+                    (account) =>
+                        account.is_active
+                        && (account.purposes || []).includes("prices_in")
+                );
+                setPriceInEmailAccounts(priceInAccounts);
+            } catch {
+                setPriceInEmailAccounts([]);
+            }
+        })();
+    }, []);
+
 
     const handleProviderSubmit = async (values) => {
         setSaving(true);
@@ -343,6 +361,13 @@ const ProviderPage = () => {
         } finally {
             setConfigSaving(false);
         }
+    };
+
+    const getPriceInMailboxLabel = (accountId) => {
+        if (!accountId) return "По умолчанию (.env)";
+        const account = priceInEmailAccounts.find((item) => item.id === accountId);
+        if (!account) return `ID ${accountId}`;
+        return `${account.name} (${account.email})`;
     };
 
     const handleDeleteConfig = async (configId) => {
@@ -569,6 +594,12 @@ const ProviderPage = () => {
             dataIndex: "name_mail",
             key: "name_mail",
             render: (text) => text || <span style={{ color: "#ccc" }}>—</span>,
+        },
+        {
+            title: "Почтовый ящик",
+            dataIndex: "incoming_email_account_id",
+            key: "incoming_email_account_id",
+            render: (value) => getPriceInMailboxLabel(value),
         },
         {
             title: "URL файла",
@@ -1037,6 +1068,23 @@ const ProviderPage = () => {
                         extra="Можно оставить пустым"
                     >
                         <Input placeholder="Шаблон темы письма для поиска" />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="incoming_email_account_id"
+                        label="Почтовый ящик для входящих прайсов"
+                        extra="Для принудительной загрузки из почты. Если не выбран — используется ящик из .env."
+                    >
+                        <Select
+                            allowClear
+                            placeholder="По умолчанию (.env)"
+                            options={priceInEmailAccounts.map((account) => ({
+                                value: account.id,
+                                label: `${account.name} (${account.email})`,
+                            }))}
+                            showSearch
+                            optionFilterProp="label"
+                        />
                     </Form.Item>
 
                     <Form.Item name="file_url" label="URL файла">
