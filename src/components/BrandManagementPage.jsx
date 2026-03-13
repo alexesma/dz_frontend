@@ -20,7 +20,9 @@ import {
     addBrandSynonyms,
     createBrand,
     getBrands,
+    getMissingBrandsFromPricelists,
     removeBrandSynonyms,
+    resolveMissingBrand,
     updateBrand,
 } from '../api/brands';
 
@@ -66,7 +68,12 @@ const BrandManagementPage = () => {
     const [selectedBrandId, setSelectedBrandId] = useState(null);
     const [newSynonyms, setNewSynonyms] = useState([]);
     const [createModalOpen, setCreateModalOpen] = useState(false);
+    const [missingBrands, setMissingBrands] = useState([]);
+    const [missingLoading, setMissingLoading] = useState(false);
+    const [resolveModalOpen, setResolveModalOpen] = useState(false);
+    const [resolvingBrandRow, setResolvingBrandRow] = useState(null);
     const [createForm] = Form.useForm();
+    const [resolveForm] = Form.useForm();
 
     const loadBrands = useCallback(async () => {
         setLoading(true);
@@ -84,9 +91,25 @@ const BrandManagementPage = () => {
         }
     }, []);
 
+    const loadMissingBrands = useCallback(async () => {
+        setMissingLoading(true);
+        try {
+            const { data } = await getMissingBrandsFromPricelists();
+            setMissingBrands(Array.isArray(data) ? data : []);
+        } catch {
+            message.error('Не удалось загрузить отсутствующие бренды');
+        } finally {
+            setMissingLoading(false);
+        }
+    }, []);
+
     useEffect(() => {
         loadBrands();
     }, [loadBrands]);
+
+    useEffect(() => {
+        loadMissingBrands();
+    }, [loadMissingBrands]);
 
     const filteredBrands = useMemo(() => {
         const needle = search.trim().toLowerCase();
@@ -239,6 +262,71 @@ const BrandManagementPage = () => {
         }
     };
 
+    const handleCreateMissingBrand = async (row) => {
+        if (!row?.brand_name) {
+            return;
+        }
+        setSaving(true);
+        try {
+            await resolveMissingBrand({
+                missing_brand_name: row.brand_name,
+                action: 'create_brand',
+                country_of_origin: 'China',
+            });
+            message.success(`Бренд ${row.brand_name} создан`);
+            await Promise.all([loadBrands(), loadMissingBrands()]);
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail
+                    || 'Не удалось создать бренд'
+            );
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleOpenResolveModal = (row) => {
+        setResolvingBrandRow(row);
+        resolveForm.setFieldsValue({
+            target_brand_id: undefined,
+            country_of_origin: 'China',
+        });
+        setResolveModalOpen(true);
+    };
+
+    const handleResolveAsSynonym = async () => {
+        if (!resolvingBrandRow?.brand_name) {
+            return;
+        }
+        try {
+            const values = await resolveForm.validateFields();
+            setSaving(true);
+            await resolveMissingBrand({
+                missing_brand_name: resolvingBrandRow.brand_name,
+                action: 'set_synonym',
+                target_brand_id: values.target_brand_id,
+                country_of_origin: values.country_of_origin,
+            });
+            message.success(
+                `Синоним ${resolvingBrandRow.brand_name} сохранён`
+            );
+            setResolveModalOpen(false);
+            setResolvingBrandRow(null);
+            resolveForm.resetFields();
+            await Promise.all([loadBrands(), loadMissingBrands()]);
+        } catch (err) {
+            if (err?.errorFields) {
+                return;
+            }
+            message.error(
+                err?.response?.data?.detail
+                    || 'Не удалось сохранить синоним'
+            );
+        } finally {
+            setSaving(false);
+        }
+    };
+
     const columns = [
         {
             title: 'ID',
@@ -265,6 +353,58 @@ const BrandManagementPage = () => {
         },
     ];
 
+    const missingColumns = [
+        {
+            title: 'Поставщик',
+            dataIndex: 'provider_name',
+            width: 200,
+        },
+        {
+            title: 'Прайс',
+            dataIndex: 'provider_config_name',
+            render: (value) => value || 'Без названия',
+            width: 220,
+        },
+        {
+            title: 'Бренд из прайса',
+            dataIndex: 'brand_name',
+            width: 180,
+        },
+        {
+            title: 'Позиций',
+            dataIndex: 'positions_count',
+            width: 110,
+        },
+        {
+            title: 'Дата последнего прайса',
+            dataIndex: 'pricelist_date',
+            width: 170,
+        },
+        {
+            title: 'Действия',
+            key: 'actions',
+            render: (_, row) => (
+                <Space>
+                    <Button
+                        size="small"
+                        onClick={() => handleCreateMissingBrand(row)}
+                        loading={saving}
+                    >
+                        Создать бренд
+                    </Button>
+                    <Button
+                        size="small"
+                        type="primary"
+                        onClick={() => handleOpenResolveModal(row)}
+                    >
+                        Синоним
+                    </Button>
+                </Space>
+            ),
+            width: 230,
+        },
+    ];
+
     return (
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
             <Card
@@ -280,8 +420,11 @@ const BrandManagementPage = () => {
                         </Button>
                         <Button
                             icon={<ReloadOutlined />}
-                            onClick={loadBrands}
-                            loading={loading}
+                            onClick={() => {
+                                loadBrands();
+                                loadMissingBrands();
+                            }}
+                            loading={loading || missingLoading}
                         >
                             Обновить
                         </Button>
@@ -406,6 +549,82 @@ const BrandManagementPage = () => {
                     )}
                 </Space>
             </Card>
+            <Card
+                title="Бренды из прайсов, которых нет в справочнике"
+                style={{ margin: '0 20px 20px 20px' }}
+            >
+                <Typography.Paragraph type="secondary">
+                    Показываются бренды из последнего загруженного прайса
+                    каждого источника. Можно создать новый бренд или
+                    привязать как синоним к существующему.
+                </Typography.Paragraph>
+                <Table
+                    rowKey={(row) =>
+                        `${row.provider_config_id}-${row.brand_name}`
+                    }
+                    size="small"
+                    columns={missingColumns}
+                    dataSource={missingBrands}
+                    loading={missingLoading}
+                    pagination={{ pageSize: 12, showSizeChanger: false }}
+                    locale={{
+                        emptyText: 'Нет отсутствующих брендов',
+                    }}
+                    scroll={{ x: 1100 }}
+                />
+            </Card>
+            <Modal
+                title="Сохранить как синоним"
+                open={resolveModalOpen}
+                onCancel={() => {
+                    setResolveModalOpen(false);
+                    setResolvingBrandRow(null);
+                }}
+                onOk={handleResolveAsSynonym}
+                okText="Сохранить"
+                cancelText="Отмена"
+                confirmLoading={saving}
+                destroyOnHidden
+            >
+                <Typography.Paragraph type="secondary">
+                    Бренд из прайса: <strong>
+                        {resolvingBrandRow?.brand_name || '-'}
+                    </strong>
+                </Typography.Paragraph>
+                <Form form={resolveForm} layout="vertical">
+                    <Form.Item
+                        name="target_brand_id"
+                        label="Главный бренд"
+                        rules={[
+                            {
+                                required: true,
+                                message: 'Выберите бренд',
+                            },
+                        ]}
+                    >
+                        <Select
+                            showSearch
+                            placeholder="Выберите бренд"
+                            optionFilterProp="label"
+                            options={brands.map((brand) => ({
+                                value: brand.id,
+                                label: `${brand.name} (#${brand.id})`,
+                            }))}
+                        />
+                    </Form.Item>
+                    <Form.Item
+                        name="country_of_origin"
+                        label="Страна нового бренда"
+                    >
+                        <Select
+                            showSearch
+                            options={COUNTRY_OPTIONS}
+                            placeholder="Выберите страну"
+                            optionFilterProp="label"
+                        />
+                    </Form.Item>
+                </Form>
+            </Modal>
             <Modal
                 title="Новый бренд"
                 open={createModalOpen}

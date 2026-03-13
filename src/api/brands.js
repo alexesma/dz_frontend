@@ -14,3 +14,9 @@ export const removeBrandSynonyms = (brandId, names) =>
     api.delete(`/brand/${brandId}/synonyms`, {
         data: { names },
     });
+
+export const getMissingBrandsFromPricelists = () =>
+    api.get('/brand/missing-from-pricelists');
+
+export const resolveMissingBrand = (payload) =>
+    api.post('/brand/missing-from-pricelists/resolve', payload);
