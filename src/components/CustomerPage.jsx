@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     Card,
@@ -46,6 +46,8 @@ import {
 import { getProviderConfigOptions } from '../api/providers';
 import { getEmailAccounts } from '../api/emailAccounts';
 import { testEmailAccount } from '../api/emailAccounts';
+import { lookupBrands } from '../api/brands';
+import { searchAutopartsByOem } from '../api/autoparts';
 
 const CustomerPage = () => {
     const { customerId: customerIdParam } = useParams();
@@ -73,8 +75,17 @@ const CustomerPage = () => {
     const [selectedPriceConfigId, setSelectedPriceConfigId] = useState(null);
     const [orderConfigLoading, setOrderConfigLoading] = useState(false);
     const [orderInboxAccounts, setOrderInboxAccounts] = useState([]);
+    const [priceOutAccounts, setPriceOutAccounts] = useState([]);
+    const [brandFilterOptions, setBrandFilterOptions] = useState([]);
+    const [brandFilterLoading, setBrandFilterLoading] = useState(false);
+    const [autopartFilterOptions, setAutopartFilterOptions] = useState([]);
+    const [autopartFilterLoading, setAutopartFilterLoading] = useState(false);
     const [orderInboxLoading, setOrderInboxLoading] = useState(false);
     const [orderInboxTestLoading, setOrderInboxTestLoading] = useState(false);
+    const brandSearchRequestRef = useRef(0);
+    const brandSearchTimerRef = useRef(null);
+    const autopartSearchRequestRef = useRef(0);
+    const autopartSearchTimerRef = useRef(null);
 
     const [customerForm] = Form.useForm();
     const [configForm] = Form.useForm();
@@ -121,12 +132,17 @@ const CustomerPage = () => {
             setOrderInboxLoading(true);
             try {
                 const { data } = await getEmailAccounts();
-                const filtered = (data || []).filter((account) => {
+                const orderInFiltered = (data || []).filter((account) => {
                     if (!account?.is_active) return false;
                     return (account.purposes || []).includes('orders_in');
                 });
+                const priceOutFiltered = (data || []).filter((account) => {
+                    if (!account?.is_active) return false;
+                    return (account.purposes || []).includes('prices_out');
+                });
                 if (mounted) {
-                    setOrderInboxAccounts(filtered);
+                    setOrderInboxAccounts(orderInFiltered);
+                    setPriceOutAccounts(priceOutFiltered);
                 }
             } catch (err) {
                 console.error('Load email accounts failed:', err);
@@ -139,6 +155,104 @@ const CustomerPage = () => {
         loadAccounts();
         return () => {
             mounted = false;
+        };
+    }, []);
+
+    useEffect(() => {
+        let mounted = true;
+        const loadBrandOptions = async (query = '') => {
+            setBrandFilterLoading(true);
+            try {
+                const { data } = await lookupBrands(query, 100);
+                if (!mounted) return;
+                const options = (data || []).map((brand) => ({
+                    value: String(brand.id),
+                    label: `${brand.name} (ID: ${brand.id})`,
+                }));
+                setBrandFilterOptions(options);
+            } catch (err) {
+                console.error('Load brand options failed:', err);
+            } finally {
+                if (mounted) {
+                    setBrandFilterLoading(false);
+                }
+            }
+        };
+        loadBrandOptions();
+        return () => {
+            mounted = false;
+        };
+    }, []);
+
+    const handleBrandFilterSearch = useCallback((rawValue) => {
+        const value = String(rawValue || '').trim();
+        if (brandSearchTimerRef.current) {
+            clearTimeout(brandSearchTimerRef.current);
+        }
+        brandSearchTimerRef.current = setTimeout(async () => {
+            const requestId = brandSearchRequestRef.current + 1;
+            brandSearchRequestRef.current = requestId;
+            setBrandFilterLoading(true);
+            try {
+                const { data } = await lookupBrands(value, 100);
+                if (brandSearchRequestRef.current !== requestId) return;
+                const options = (data || []).map((brand) => ({
+                    value: String(brand.id),
+                    label: `${brand.name} (ID: ${brand.id})`,
+                }));
+                setBrandFilterOptions(options);
+            } catch (err) {
+                if (brandSearchRequestRef.current !== requestId) return;
+                console.error('Brand lookup failed:', err);
+            } finally {
+                if (brandSearchRequestRef.current === requestId) {
+                    setBrandFilterLoading(false);
+                }
+            }
+        }, 250);
+    }, []);
+
+    const handleAutopartFilterSearch = useCallback((rawValue) => {
+        const value = String(rawValue || '').trim();
+        if (autopartSearchTimerRef.current) {
+            clearTimeout(autopartSearchTimerRef.current);
+        }
+        if (!value || value.length < 2) {
+            setAutopartFilterOptions([]);
+            setAutopartFilterLoading(false);
+            return;
+        }
+        autopartSearchTimerRef.current = setTimeout(async () => {
+            const requestId = autopartSearchRequestRef.current + 1;
+            autopartSearchRequestRef.current = requestId;
+            setAutopartFilterLoading(true);
+            try {
+                const { data } = await searchAutopartsByOem(value, 50);
+                if (autopartSearchRequestRef.current !== requestId) return;
+                const options = (data || []).map((item) => ({
+                    value: String(item.id),
+                    label: `${item.oem_number} • ${item.brand} • ${item.name || 'Без названия'}`,
+                }));
+                setAutopartFilterOptions(options);
+            } catch (err) {
+                if (autopartSearchRequestRef.current !== requestId) return;
+                console.error('Autopart lookup failed:', err);
+            } finally {
+                if (autopartSearchRequestRef.current === requestId) {
+                    setAutopartFilterLoading(false);
+                }
+            }
+        }, 250);
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            if (brandSearchTimerRef.current) {
+                clearTimeout(brandSearchTimerRef.current);
+            }
+            if (autopartSearchTimerRef.current) {
+                clearTimeout(autopartSearchTimerRef.current);
+            }
         };
     }, []);
 
@@ -277,8 +391,22 @@ const CustomerPage = () => {
                             ]}
                         />
                     </Form.Item>
-                    <Form.Item name={[...namePrefix, 'brand_ids']} label="ID брендов">
-                        <Select mode="tags" placeholder="1, 2, 3" />
+                    <Form.Item
+                        name={[...namePrefix, 'brand_ids']}
+                        label="Бренды"
+                        extra="Начните вводить название бренда"
+                    >
+                        <Select
+                            mode="multiple"
+                            showSearch
+                            filterOption={false}
+                            onSearch={handleBrandFilterSearch}
+                            notFoundContent={
+                                brandFilterLoading ? <Spin size="small" /> : null
+                            }
+                            placeholder="Например: TOYOTA"
+                            options={brandFilterOptions}
+                        />
                     </Form.Item>
                 </div>
 
@@ -293,8 +421,22 @@ const CustomerPage = () => {
                             ]}
                         />
                     </Form.Item>
-                    <Form.Item name={[...namePrefix, 'position_ids']} label="ID позиций">
-                        <Select mode="tags" placeholder="1001, 1002" />
+                    <Form.Item
+                        name={[...namePrefix, 'position_ids']}
+                        label="Позиции (артикул)"
+                        extra="Поиск по артикулу OEM. В подсказке: артикул • бренд • наименование"
+                    >
+                        <Select
+                            mode="multiple"
+                            showSearch
+                            filterOption={false}
+                            onSearch={handleAutopartFilterSearch}
+                            notFoundContent={
+                                autopartFilterLoading ? <Spin size="small" /> : null
+                            }
+                            placeholder="Например: 90915YZZN2"
+                            options={autopartFilterOptions}
+                        />
                     </Form.Item>
                 </div>
 
@@ -782,9 +924,9 @@ const CustomerPage = () => {
             enabled: source.enabled,
             markup: source.markup,
             brand_filter_type: source.brand_filters?.type || null,
-            brand_ids: source.brand_filters?.brands || [],
+            brand_ids: (source.brand_filters?.brands || []).map((v) => String(v)),
             position_filter_type: source.position_filters?.type || null,
-            position_ids: source.position_filters?.autoparts || [],
+            position_ids: (source.position_filters?.autoparts || []).map((v) => String(v)),
             min_price: source.min_price !== null && source.min_price !== undefined
                 ? Number(source.min_price)
                 : null,
@@ -1299,6 +1441,23 @@ const CustomerPage = () => {
                     </Form.Item>
 
                     <Form.Item
+                        name="outgoing_email_account_id"
+                        label="Почта отправителя прайсов"
+                        extra="Если не выбрано, используется первый активный ящик с назначением prices_out или .env."
+                    >
+                        <Select
+                            allowClear
+                            placeholder="По умолчанию"
+                            options={priceOutAccounts.map((account) => ({
+                                value: account.id,
+                                label: `${account.name} (${account.email})`,
+                            }))}
+                            showSearch
+                            optionFilterProp="label"
+                        />
+                    </Form.Item>
+
+                    <Form.Item
                         name="is_active"
                         label="Активна"
                         valuePropName="checked"
@@ -1694,8 +1853,22 @@ const CustomerPage = () => {
                                     ]}
                                 />
                             </Form.Item>
-                            <Form.Item name="brand_ids" label="ID брендов">
-                                <Select mode="tags" placeholder="1, 2, 3" />
+                            <Form.Item
+                                name="brand_ids"
+                                label="Бренды"
+                                extra="Начните вводить название бренда"
+                            >
+                                <Select
+                                    mode="multiple"
+                                    showSearch
+                                    filterOption={false}
+                                    onSearch={handleBrandFilterSearch}
+                                    notFoundContent={
+                                        brandFilterLoading ? <Spin size="small" /> : null
+                                    }
+                                    placeholder="Например: TOYOTA"
+                                    options={brandFilterOptions}
+                                />
                             </Form.Item>
                         </div>
 
@@ -1710,8 +1883,22 @@ const CustomerPage = () => {
                                     ]}
                                 />
                             </Form.Item>
-                            <Form.Item name="position_ids" label="ID позиций">
-                                <Select mode="tags" placeholder="1001, 1002" />
+                            <Form.Item
+                                name="position_ids"
+                                label="Позиции (артикул)"
+                                extra="Поиск по артикулу OEM. В подсказке: артикул • бренд • наименование"
+                            >
+                                <Select
+                                    mode="multiple"
+                                    showSearch
+                                    filterOption={false}
+                                    onSearch={handleAutopartFilterSearch}
+                                    notFoundContent={
+                                        autopartFilterLoading ? <Spin size="small" /> : null
+                                    }
+                                    placeholder="Например: 90915YZZN2"
+                                    options={autopartFilterOptions}
+                                />
                             </Form.Item>
                         </div>
 

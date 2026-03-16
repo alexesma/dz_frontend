@@ -2,6 +2,9 @@ import api from '../api.js';
 
 export const getBrands = () => api.get('/brand/');
 
+export const lookupBrands = (q = '', limit = 100) =>
+    api.get('/brand/lookup/', { params: { q, limit } });
+
 export const createBrand = (payload) => api.post('/brand/', payload);
 
 export const updateBrand = (brandId, payload) =>
