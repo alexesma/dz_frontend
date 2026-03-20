@@ -12,10 +12,20 @@ import {
 
 const purposeOptions = [
     { label: 'Прием заказов (IMAP)', value: 'orders_in' },
-    { label: 'Отправка заказов (SMTP)', value: 'orders_out' },
-    { label: 'Отчеты (SMTP)', value: 'reports_out' },
+    { label: 'Отправка заказов (исходящая почта)', value: 'orders_out' },
+    { label: 'Отчеты (исходящая почта)', value: 'reports_out' },
     { label: 'Прайсы входящие', value: 'prices_in' },
     { label: 'Прайсы исходящие', value: 'prices_out' },
+];
+
+const transportOptions = [
+    { label: 'SMTP', value: 'smtp' },
+    { label: 'HTTP API', value: 'http_api' },
+];
+
+const httpApiProviderOptions = [
+    { label: 'Resend', value: 'resend' },
+    { label: 'Brevo', value: 'brevo' },
 ];
 
 const EmailAccountsPage = () => {
@@ -24,7 +34,11 @@ const EmailAccountsPage = () => {
     const [modalOpen, setModalOpen] = useState(false);
     const [editing, setEditing] = useState(null);
     const [testLoading, setTestLoading] = useState(false);
+    const [testSendOpen, setTestSendOpen] = useState(false);
     const [form] = Form.useForm();
+    const [testSendForm] = Form.useForm();
+    const transport = Form.useWatch('transport', form) || 'smtp';
+    const httpApiProvider = Form.useWatch('http_api_provider', form);
 
     const fetchAccounts = async () => {
         setLoading(true);
@@ -45,11 +59,36 @@ const EmailAccountsPage = () => {
     const openModal = (record = null) => {
         setEditing(record);
         if (record) {
-            form.setFieldsValue(record);
+            form.setFieldsValue({
+                transport: 'smtp',
+                smtp_use_ssl: true,
+                imap_port: 993,
+                smtp_port: 465,
+                http_api_timeout: 20,
+                ...record,
+            });
         } else {
-            form.resetFields();
+            form.setFieldsValue({
+                transport: 'smtp',
+                password: '',
+                imap_port: 993,
+                smtp_port: 465,
+                smtp_use_ssl: true,
+                http_api_provider: 'resend',
+                http_api_timeout: 20,
+                purposes: [],
+                is_active: true,
+            });
         }
         setModalOpen(true);
+    };
+
+    const openTestSendModal = () => {
+        if (!editing) return;
+        testSendForm.setFieldsValue({
+            to_email: editing.email || '',
+        });
+        setTestSendOpen(true);
     };
 
     const handleSubmit = async (values) => {
@@ -85,13 +124,22 @@ const EmailAccountsPage = () => {
             } else if (data.imap_ok === false) {
                 lines.push(`IMAP: Ошибка: ${data.imap_error || 'неизвестно'}`);
             }
+            const outboundLabel = data.outbound_transport === 'http_api'
+                ? 'Исходящая почта (HTTP API)'
+                : 'Исходящая почта (SMTP)';
             if (data.smtp_ok) {
-                lines.push('SMTP: OK');
+                lines.push(`${outboundLabel}: OK`);
             } else if (data.smtp_ok === false) {
-                lines.push(`SMTP: Ошибка: ${data.smtp_error || 'неизвестно'}`);
+                lines.push(
+                    `${outboundLabel}: Ошибка: `
+                    + `${data.smtp_error || 'неизвестно'}`
+                );
+            }
+            if (data.outbound_note) {
+                lines.push(data.outbound_note);
             }
             if (data.imap_ok && data.smtp_ok) {
-                message.success('IMAP и SMTP успешно проверены');
+                message.success('Проверка учетной записи пройдена');
             } else {
                 Modal.info({
                     title: 'Результат проверки',
@@ -107,6 +155,40 @@ const EmailAccountsPage = () => {
         } catch (error) {
             console.error('Test email account failed:', error);
             message.error('Не удалось проверить почту');
+        } finally {
+            setTestLoading(false);
+        }
+    };
+
+    const handleRealSendTest = async () => {
+        if (!editing) return;
+        try {
+            const values = await testSendForm.validateFields();
+            setTestLoading(true);
+            const { data } = await testEmailAccount(editing.id, {
+                imap: false,
+                smtp: true,
+                real_send: true,
+                to_email: values.to_email,
+            });
+            if (data.smtp_ok) {
+                message.success(
+                    data.outbound_note || 'Тестовое письмо отправлено'
+                );
+                setTestSendOpen(false);
+                testSendForm.resetFields();
+            } else {
+                Modal.error({
+                    title: 'Тестовая отправка не пройдена',
+                    content: data.smtp_error || 'Неизвестная ошибка',
+                });
+            }
+        } catch (error) {
+            if (error?.errorFields) {
+                return;
+            }
+            console.error('Real send email test failed:', error);
+            message.error('Не удалось отправить тестовое письмо');
         } finally {
             setTestLoading(false);
         }
@@ -159,7 +241,22 @@ const EmailAccountsPage = () => {
             key: 'imap_folder',
             render: (value) => value || 'INBOX',
         },
+        {
+            title: 'Транспорт',
+            dataIndex: 'transport',
+            key: 'transport',
+            render: (value) => (value === 'http_api' ? 'HTTP API' : 'SMTP'),
+        },
         { title: 'SMTP host', dataIndex: 'smtp_host', key: 'smtp_host' },
+        {
+            title: 'HTTP API',
+            key: 'http_api',
+            render: (_, record) => (
+                record.transport === 'http_api'
+                    ? `${record.http_api_provider || '—'}`
+                    : '—'
+            ),
+        },
         {
             title: 'OAuth',
             key: 'oauth',
@@ -258,8 +355,20 @@ const EmailAccountsPage = () => {
                     <Form.Item name="email" label="Email" rules={[{ required: true }]}> 
                         <Input />
                     </Form.Item>
-                    <Form.Item name="password" label="Пароль" rules={[{ required: true }]}> 
+                    <Form.Item
+                        name="password"
+                        label="Пароль почты / SMTP"
+                        extra="Для HTTP API можно оставить пустым, если IMAP/SMTP не используется."
+                    >
                         <Input.Password />
+                    </Form.Item>
+                    <Form.Item
+                        name="transport"
+                        label="Транспорт исходящей почты"
+                        initialValue="smtp"
+                        extra="SMTP подойдет для обычной отправки. HTTP API нужен, когда SMTP-порты недоступны или заблокированы."
+                    >
+                        <Select options={transportOptions} />
                     </Form.Item>
                     <Form.Item name="imap_host" label="IMAP host"> 
                         <Input />
@@ -270,15 +379,61 @@ const EmailAccountsPage = () => {
                     <Form.Item name="imap_folder" label="IMAP папка">
                         <Input placeholder="INBOX" />
                     </Form.Item>
-                    <Form.Item name="smtp_host" label="SMTP host"> 
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="smtp_port" label="SMTP port" initialValue={465}> 
-                        <InputNumber style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="smtp_use_ssl" label="SMTP SSL" valuePropName="checked" initialValue>
-                        <Switch />
-                    </Form.Item>
+                    {transport === 'smtp' ? (
+                        <>
+                            <Form.Item name="smtp_host" label="SMTP host"> 
+                                <Input />
+                            </Form.Item>
+                            <Form.Item name="smtp_port" label="SMTP port" initialValue={465}> 
+                                <InputNumber style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item
+                                name="smtp_use_ssl"
+                                label="SMTP SSL"
+                                valuePropName="checked"
+                                initialValue
+                            >
+                                <Switch />
+                            </Form.Item>
+                        </>
+                    ) : (
+                        <>
+                            <Form.Item
+                                name="http_api_provider"
+                                label="HTTP API провайдер"
+                                extra="Сейчас поддержаны Resend и Brevo."
+                            >
+                                <Select options={httpApiProviderOptions} />
+                            </Form.Item>
+                            <Form.Item
+                                name="http_api_url"
+                                label="URL API"
+                                extra="Можно оставить пустым, будет использован стандартный URL выбранного провайдера."
+                            >
+                                <Input placeholder="https://api.resend.com/emails" />
+                            </Form.Item>
+                            <Form.Item
+                                name="http_api_key"
+                                label="API ключ"
+                                extra={
+                                    httpApiProvider === 'resend'
+                                        ? 'Ключ API из панели Resend.'
+                                        : httpApiProvider === 'brevo'
+                                            ? 'Ключ API из раздела SMTP & API в кабинете Brevo.'
+                                            : 'Ключ исходящей отправки. Используется вместо SMTP-пароля.'
+                                }
+                            >
+                                <Input.Password />
+                            </Form.Item>
+                            <Form.Item
+                                name="http_api_timeout"
+                                label="Таймаут HTTP API (сек)"
+                                initialValue={20}
+                            >
+                                <InputNumber style={{ width: '100%' }} min={1} />
+                            </Form.Item>
+                        </>
+                    )}
                     <Form.Item name="purposes" label="Назначения">
                         <Select mode="multiple" options={purposeOptions} />
                     </Form.Item>
@@ -288,13 +443,42 @@ const EmailAccountsPage = () => {
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                         {editing ? (
                             <Button onClick={handleTest} loading={testLoading}>
-                                Проверить IMAP + SMTP
+                                Проверить входящую и исходящую почту
+                            </Button>
+                        ) : null}
+                        {editing ? (
+                            <Button onClick={openTestSendModal} loading={testLoading}>
+                                Отправить тестовое письмо
                             </Button>
                         ) : null}
                         <Button type="primary" htmlType="submit">
                             Сохранить
                         </Button>
                     </div>
+                </Form>
+            </Modal>
+            <Modal
+                open={testSendOpen}
+                title="Тестовая отправка"
+                onCancel={() => setTestSendOpen(false)}
+                onOk={handleRealSendTest}
+                confirmLoading={testLoading}
+                okText="Отправить"
+                cancelText="Отмена"
+                destroyOnClose
+            >
+                <Form form={testSendForm} layout="vertical">
+                    <Form.Item
+                        name="to_email"
+                        label="Кому отправить тест"
+                        extra="На этот адрес уйдет реальное письмо через выбранный транспорт."
+                        rules={[
+                            { required: true, message: 'Укажите email' },
+                            { type: 'email', message: 'Некорректный email' },
+                        ]}
+                    >
+                        <Input placeholder="name@example.com" />
+                    </Form.Item>
                 </Form>
             </Modal>
         </Card>
