@@ -138,7 +138,12 @@ const CustomerPage = () => {
                 });
                 const priceOutFiltered = (data || []).filter((account) => {
                     if (!account?.is_active) return false;
-                    return (account.purposes || []).includes('prices_out');
+                    const purposes = account.purposes || [];
+                    return (
+                        purposes.includes('prices_out') ||
+                        purposes.includes('orders_out') ||
+                        purposes.includes('orders_in')
+                    );
                 });
                 if (mounted) {
                     setOrderInboxAccounts(orderInFiltered);
@@ -1443,7 +1448,7 @@ const CustomerPage = () => {
                     <Form.Item
                         name="outgoing_email_account_id"
                         label="Почта отправителя прайсов"
-                        extra="Если не выбрано, используется первый активный ящик с назначением prices_out или .env."
+                        extra="Если не выбрано, используется первый активный ящик с назначением prices_out/orders_out/orders_in или .env."
                     >
                         <Select
                             allowClear
