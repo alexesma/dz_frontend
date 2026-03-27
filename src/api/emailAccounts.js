@@ -10,5 +10,8 @@ export const testEmailAccount = (id, data) =>
 export const initGoogleOAuth = (id) =>
     api.post(`/email-accounts/${id}/google-oauth/init`);
 
+export const saveGoogleOAuthToken = (id, data) =>
+    api.post(`/email-accounts/${id}/google-oauth/token`, data);
+
 export const disconnectGoogleOAuth = (id) =>
     api.post(`/email-accounts/${id}/google-oauth/disconnect`);

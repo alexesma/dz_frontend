@@ -4,10 +4,11 @@ import {
     createEmailAccount,
     deleteEmailAccount,
     getEmailAccounts,
+    disconnectGoogleOAuth,
+    initGoogleOAuth,
+    saveGoogleOAuthToken,
     testEmailAccount,
     updateEmailAccount,
-    initGoogleOAuth,
-    disconnectGoogleOAuth,
 } from '../api/emailAccounts';
 
 const purposeOptions = [
@@ -20,12 +21,8 @@ const purposeOptions = [
 
 const transportOptions = [
     { label: 'SMTP', value: 'smtp' },
-    { label: 'HTTP API', value: 'http_api' },
-];
-
-const httpApiProviderOptions = [
-    { label: 'Resend', value: 'resend' },
-    { label: 'Brevo', value: 'brevo' },
+    { label: 'Gmail API', value: 'gmail_api' },
+    { label: 'Resend API', value: 'resend_api' },
 ];
 
 const EmailAccountsPage = () => {
@@ -35,11 +32,10 @@ const EmailAccountsPage = () => {
     const [editing, setEditing] = useState(null);
     const [testLoading, setTestLoading] = useState(false);
     const [testSendOpen, setTestSendOpen] = useState(false);
+    const [tokenLoading, setTokenLoading] = useState(false);
     const [form] = Form.useForm();
     const [testSendForm] = Form.useForm();
     const transport = Form.useWatch('transport', form) || 'smtp';
-    const httpApiProvider = Form.useWatch('http_api_provider', form);
-
     const fetchAccounts = async () => {
         setLoading(true);
         try {
@@ -60,11 +56,14 @@ const EmailAccountsPage = () => {
         setEditing(record);
         if (record) {
             form.setFieldsValue({
-                transport: 'smtp',
+                transport: ['gmail_api', 'resend_api'].includes(record.transport)
+                    ? record.transport
+                    : 'smtp',
                 smtp_use_ssl: true,
                 imap_port: 993,
                 smtp_port: 465,
-                http_api_timeout: 20,
+                resend_timeout: 20,
+                google_refresh_token: '',
                 ...record,
             });
         } else {
@@ -73,9 +72,9 @@ const EmailAccountsPage = () => {
                 password: '',
                 imap_port: 993,
                 smtp_port: 465,
+                resend_timeout: 20,
                 smtp_use_ssl: true,
-                http_api_provider: 'resend',
-                http_api_timeout: 20,
+                google_refresh_token: '',
                 purposes: [],
                 is_active: true,
             });
@@ -93,11 +92,13 @@ const EmailAccountsPage = () => {
 
     const handleSubmit = async (values) => {
         try {
+            const payload = { ...values };
+            delete payload.google_refresh_token;
             if (editing) {
-                await updateEmailAccount(editing.id, values);
+                await updateEmailAccount(editing.id, payload);
                 message.success('Аккаунт обновлен');
             } else {
-                await createEmailAccount(values);
+                await createEmailAccount(payload);
                 message.success('Аккаунт создан');
             }
             setModalOpen(false);
@@ -110,6 +111,32 @@ const EmailAccountsPage = () => {
         }
     };
 
+    const handleSaveGoogleToken = async () => {
+        if (!editing) return;
+        try {
+            const values = await form.validateFields(['google_refresh_token']);
+            setTokenLoading(true);
+            const { data } = await saveGoogleOAuthToken(editing.id, {
+                refresh_token: values.google_refresh_token,
+            });
+            message.success('Google refresh token сохранен');
+            setEditing(data);
+            form.setFieldsValue({ google_refresh_token: '' });
+            fetchAccounts();
+        } catch (error) {
+            if (error?.errorFields) {
+                return;
+            }
+            console.error('Save Google refresh token failed:', error);
+            message.error(
+                error?.response?.data?.detail
+                || 'Не удалось сохранить Google refresh token'
+            );
+        } finally {
+            setTokenLoading(false);
+        }
+    };
+
     const handleTest = async () => {
         if (!editing) return;
         setTestLoading(true);
@@ -119,14 +146,25 @@ const EmailAccountsPage = () => {
                 smtp: true,
             });
             const lines = [];
+            const inboundLabel = data.outbound_transport === 'resend_api'
+                ? 'Входящая почта (Resend receiving)'
+                : 'IMAP';
             if (data.imap_ok) {
-                lines.push('IMAP: OK');
+                lines.push(`${inboundLabel}: OK`);
             } else if (data.imap_ok === false) {
-                lines.push(`IMAP: Ошибка: ${data.imap_error || 'неизвестно'}`);
+                lines.push(
+                    `${inboundLabel}: Ошибка: `
+                    + `${data.imap_error || 'неизвестно'}`
+                );
             }
-            const outboundLabel = data.outbound_transport === 'http_api'
-                ? 'Исходящая почта (HTTP API)'
-                : 'Исходящая почта (SMTP)';
+            if (data.inbound_note) {
+                lines.push(data.inbound_note);
+            }
+            const outboundLabel = data.outbound_transport === 'gmail_api'
+                ? 'Исходящая почта (Gmail API)'
+                : data.outbound_transport === 'resend_api'
+                    ? 'Исходящая почта (Resend API)'
+                    : 'Исходящая почта (SMTP)';
             if (data.smtp_ok) {
                 lines.push(`${outboundLabel}: OK`);
             } else if (data.smtp_ok === false) {
@@ -245,18 +283,15 @@ const EmailAccountsPage = () => {
             title: 'Транспорт',
             dataIndex: 'transport',
             key: 'transport',
-            render: (value) => (value === 'http_api' ? 'HTTP API' : 'SMTP'),
-        },
-        { title: 'SMTP host', dataIndex: 'smtp_host', key: 'smtp_host' },
-        {
-            title: 'HTTP API',
-            key: 'http_api',
-            render: (_, record) => (
-                record.transport === 'http_api'
-                    ? `${record.http_api_provider || '—'}`
-                    : '—'
+            render: (value) => (
+                value === 'gmail_api'
+                    ? 'Gmail API'
+                    : value === 'resend_api'
+                        ? 'Resend API'
+                        : 'SMTP'
             ),
         },
+        { title: 'SMTP host', dataIndex: 'smtp_host', key: 'smtp_host' },
         {
             title: 'OAuth',
             key: 'oauth',
@@ -284,15 +319,16 @@ const EmailAccountsPage = () => {
             render: (_, record) => (
                 <div style={{ display: 'flex', gap: 8 }}>
                     <Button size="small" onClick={() => openModal(record)}>Редактировать</Button>
-                    {record.oauth_provider ? (
+                    {record.transport === 'gmail_api' && record.oauth_provider ? (
                         <Button size="small" onClick={() => handleDisconnectOAuth(record)}>
                             Отвязать Google
                         </Button>
-                    ) : (
+                    ) : null}
+                    {record.transport === 'gmail_api' && !record.oauth_provider ? (
                         <Button size="small" onClick={() => handleGoogleOAuth(record)}>
                             Google OAuth
                         </Button>
-                    )}
+                    ) : null}
                     <Popconfirm
                         title="Удалить аккаунт?"
                         description="Это действие необратимо"
@@ -358,7 +394,7 @@ const EmailAccountsPage = () => {
                     <Form.Item
                         name="password"
                         label="Пароль почты / SMTP"
-                        extra="Для HTTP API можно оставить пустым, если IMAP/SMTP не используется."
+                        extra="Для Gmail API и Resend API можно оставить пустым, если IMAP/SMTP не используется."
                     >
                         <Input.Password />
                     </Form.Item>
@@ -366,19 +402,30 @@ const EmailAccountsPage = () => {
                         name="transport"
                         label="Транспорт исходящей почты"
                         initialValue="smtp"
-                        extra="SMTP подойдет для обычной отправки. HTTP API нужен, когда SMTP-порты недоступны или заблокированы."
+                        extra="SMTP подходит для обычной отправки. Gmail API нужен для @gmail.com. Resend API подходит для доменов, где отправка и прием идут через Resend по HTTPS."
                     >
                         <Select options={transportOptions} />
                     </Form.Item>
-                    <Form.Item name="imap_host" label="IMAP host"> 
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="imap_port" label="IMAP port" initialValue={993}> 
-                        <InputNumber style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="imap_folder" label="IMAP папка">
-                        <Input placeholder="INBOX" />
-                    </Form.Item>
+                    {transport !== 'resend_api' ? (
+                        <>
+                            <Form.Item name="imap_host" label="IMAP host"> 
+                                <Input />
+                            </Form.Item>
+                            <Form.Item name="imap_port" label="IMAP port" initialValue={993}> 
+                                <InputNumber style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item name="imap_folder" label="IMAP папка">
+                                <Input placeholder="INBOX" />
+                            </Form.Item>
+                        </>
+                    ) : (
+                        <Form.Item
+                            label="Resend receiving"
+                            extra="Для входящей почты через Resend достаточно email аккаунта и API key. IMAP не нужен."
+                        >
+                            <Input value="Входящие письма будут забираться через Resend Receiving API" readOnly />
+                        </Form.Item>
+                    )}
                     {transport === 'smtp' ? (
                         <>
                             <Form.Item name="smtp_host" label="SMTP host"> 
@@ -396,44 +443,53 @@ const EmailAccountsPage = () => {
                                 <Switch />
                             </Form.Item>
                         </>
-                    ) : (
+                    ) : transport === 'gmail_api' ? (
                         <>
                             <Form.Item
-                                name="http_api_provider"
-                                label="HTTP API провайдер"
-                                extra="Сейчас поддержаны Resend и Brevo."
+                                label="Gmail API"
+                                extra="Можно подключить Gmail двумя способами: через кнопку «Google OAuth» при наличии публичного callback URL или вручную вставить Google refresh token."
                             >
-                                <Select options={httpApiProviderOptions} />
+                                <Input
+                                    value={
+                                        editing?.oauth_provider === 'google'
+                                            ? 'Google OAuth подключён'
+                                            : 'Google OAuth не подключён'
+                                    }
+                                    readOnly
+                                />
                             </Form.Item>
                             <Form.Item
-                                name="http_api_url"
-                                label="URL API"
-                                extra="Можно оставить пустым, будет использован стандартный URL выбранного провайдера."
+                                name="google_refresh_token"
+                                label="Google refresh token"
+                                extra="Для режима без поддомена и без HTTPS callback вставьте сюда refresh token, полученный локально один раз."
                             >
-                                <Input placeholder="https://api.resend.com/emails" />
-                            </Form.Item>
-                            <Form.Item
-                                name="http_api_key"
-                                label="API ключ"
-                                extra={
-                                    httpApiProvider === 'resend'
-                                        ? 'Ключ API из панели Resend.'
-                                        : httpApiProvider === 'brevo'
-                                            ? 'Ключ API из раздела SMTP & API в кабинете Brevo.'
-                                            : 'Ключ исходящей отправки. Используется вместо SMTP-пароля.'
-                                }
-                            >
-                                <Input.Password />
-                            </Form.Item>
-                            <Form.Item
-                                name="http_api_timeout"
-                                label="Таймаут HTTP API (сек)"
-                                initialValue={20}
-                            >
-                                <InputNumber style={{ width: '100%' }} min={1} />
+                                <Input.Password
+                                    placeholder="1//0g..."
+                                    autoComplete="new-password"
+                                />
                             </Form.Item>
                         </>
-                    )}
+                    ) : transport === 'resend_api' ? (
+                        <>
+                            <Form.Item
+                                name="resend_api_key"
+                                label="Resend API key"
+                                extra="API key из панели Resend. Для приема писем домен должен быть включен на Receiving, для отправки — Verified на Sending."
+                            >
+                                <Input.Password
+                                    placeholder="re_..."
+                                    autoComplete="new-password"
+                                />
+                            </Form.Item>
+                            <Form.Item
+                                name="resend_timeout"
+                                label="Resend timeout (сек)"
+                                initialValue={20}
+                            >
+                                <InputNumber style={{ width: '100%' }} min={5} max={120} />
+                            </Form.Item>
+                        </>
+                    ) : null}
                     <Form.Item name="purposes" label="Назначения">
                         <Select mode="multiple" options={purposeOptions} />
                     </Form.Item>
@@ -441,6 +497,14 @@ const EmailAccountsPage = () => {
                         <Switch />
                     </Form.Item>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {editing && transport === 'gmail_api' ? (
+                            <Button
+                                onClick={handleSaveGoogleToken}
+                                loading={tokenLoading}
+                            >
+                                Сохранить Google token
+                            </Button>
+                        ) : null}
                         {editing ? (
                             <Button onClick={handleTest} loading={testLoading}>
                                 Проверить входящую и исходящую почту
