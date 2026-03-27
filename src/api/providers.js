@@ -96,6 +96,10 @@ export const getProviderConfigOptions = async () => {
     return api.get('/provider-configs/');
 };
 
+export const getProviderPricelistAnalytics = async (providerId, params = {}) => {
+    return api.get(`/providers/${providerId}/pricelist-analytics`, { params });
+};
+
 export const parseProviderExcludePositions = async (file) => {
     const form = new FormData();
     form.append("file", file);

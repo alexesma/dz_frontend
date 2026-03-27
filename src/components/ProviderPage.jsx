@@ -48,6 +48,7 @@ import {
 import { getEmailAccounts } from "../api/emailAccounts";
 import { getPriceStaleAlerts } from "../api/settings";
 import { formatMoscow } from '../utils/time';
+import ProviderPricelistAnalyticsSection from "./ProviderPricelistAnalyticsSection";
 
 const { Title, Text } = Typography;
 const providerPriceTypeOptions = [
@@ -77,6 +78,7 @@ const ProviderPage = () => {
     const [alertsLoading, setAlertsLoading] = useState(false);
     const [staleAlerts, setStaleAlerts] = useState([]);
     const [priceInEmailAccounts, setPriceInEmailAccounts] = useState([]);
+    const [analyticsRefreshKey, setAnalyticsRefreshKey] = useState(0);
 
     const [configModalVisible, setConfigModalVisible] = useState(false);
     const [editingConfig, setEditingConfig] = useState(null);
@@ -96,6 +98,18 @@ const ProviderPage = () => {
     const [providerForm] = Form.useForm();
     const [configForm] = Form.useForm();
     const [abbrForm] = Form.useForm();
+
+    const refreshAnalytics = () => {
+        setAnalyticsRefreshKey((prev) => prev + 1);
+    };
+
+    const refreshProviderData = async () => {
+        if (!providerId) return null;
+        const { data } = await getProviderFullById(providerId);
+        setProviderData(data);
+        refreshAnalytics();
+        return data;
+    };
 
     const dayOptions = [
         { label: 'Пн', value: 'mon' },
@@ -260,9 +274,7 @@ const ProviderPage = () => {
             } else {
                 await updateProvider(providerId, values);
                 message.success("Данные поставщика обновлены");
-                // обновляем данные на странице
-                const { data } = await getProviderFullById(providerId);
-                setProviderData(data);
+                await refreshProviderData();
             }
         } catch (err) {
             console.error(err);
@@ -352,8 +364,7 @@ const ProviderPage = () => {
             configForm.resetFields();
 
             // обновляем данные
-            const { data } = await getProviderFullById(providerId);
-            setProviderData(data);
+            await refreshProviderData();
         } catch (err) {
             console.error(err);
             const detail = err?.response?.data?.detail;
@@ -378,8 +389,7 @@ const ProviderPage = () => {
             message.success("Конфигурация удалена");
 
             // обновляем данные
-            const { data } = await getProviderFullById(providerId);
-            setProviderData(data);
+            await refreshProviderData();
         } catch (err) {
             console.error(err);
             message.error("Ошибка удаления конфигурации");
@@ -397,8 +407,7 @@ const ProviderPage = () => {
                     ? "Конфигурация включена"
                     : "Конфигурация отключена"
             );
-            const { data } = await getProviderFullById(providerId);
-            setProviderData(data);
+            await refreshProviderData();
         } catch (err) {
             console.error(err);
             message.error("Не удалось обновить статус конфигурации");
@@ -436,8 +445,7 @@ const ProviderPage = () => {
             abbrForm.resetFields();
 
             // обновляем данные
-            const { data } = await getProviderFullById(providerId);
-            setProviderData(data);
+            await refreshProviderData();
         } catch (err) {
             console.error(err);
             message.error("Ошибка сохранения аббревиатуры");
@@ -462,8 +470,7 @@ const ProviderPage = () => {
             message.success("Аббревиатура удалена");
 
             // обновляем данные
-            const { data } = await getProviderFullById(providerId);
-            setProviderData(data);
+            await refreshProviderData();
         } catch (err) {
             if (err?.message === "cancel") return;
             console.error(err);
@@ -492,8 +499,7 @@ const ProviderPage = () => {
             }
 
             // обновляем данные после загрузки
-            const { data: providerDataResp } = await getProviderFullById(providerId);
-            setProviderData(providerDataResp);
+            await refreshProviderData();
         } catch (err) {
             console.error(err);
             message.error(err?.response?.data?.detail || "Ошибка загрузки прайс-листа из email");
@@ -571,8 +577,7 @@ const ProviderPage = () => {
             uploadForm.resetFields();
 
             // обновляем данные после загрузки
-            const { data: providerDataResp } = await getProviderFullById(providerId);
-            setProviderData(providerDataResp);
+            await refreshProviderData();
         } catch (err) {
             console.error(err);
             message.error(err?.response?.data?.detail || "Ошибка загрузки прайс-листа");
@@ -972,6 +977,11 @@ const ProviderPage = () => {
                             scroll={{ x: 900 }}
                         />
                     </Card>
+
+                    <ProviderPricelistAnalyticsSection
+                        providerId={providerId}
+                        refreshKey={analyticsRefreshKey}
+                    />
 
                     <Card title="История оповещений о просрочке" style={{ marginTop: 16 }}>
                         <Table
