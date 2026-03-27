@@ -150,61 +150,69 @@ const CustomerSupplierOrderDetailPage = () => {
     ];
 
     return (
-        <Card loading={loading}>
-            <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-                <Button onClick={() => navigate('/customer-orders/suppliers')}>
-                    Назад к списку
-                </Button>
-                {order?.status !== 'SENT' && (
-                    <Button
-                        type="primary"
-                        onClick={handleSendNow}
-                        loading={sending}
-                    >
-                        Отправить сейчас
+        <div className="page-shell">
+            <Card loading={loading}>
+                <div className="page-header-actions" style={{ marginBottom: 16 }}>
+                    <Button onClick={() => navigate('/customer-orders/suppliers')}>
+                        Назад к списку
                     </Button>
+                    {order?.status !== 'SENT' && (
+                        <Button
+                            type="primary"
+                            onClick={handleSendNow}
+                            loading={sending}
+                        >
+                            Отправить сейчас
+                        </Button>
+                    )}
+                </div>
+                <Title level={3}>Заказ поставщику</Title>
+                {order ? (
+                    <>
+                        <Descriptions
+                            bordered
+                            size="small"
+                            column={{ xs: 1, sm: 1, md: 2 }}
+                            style={{ marginBottom: 16 }}
+                        >
+                            <Descriptions.Item label="Поставщик">
+                                {order.provider_name || order.provider_id}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Статус">
+                                <Tag color={SUPPLIER_STATUS_COLORS[order.status] || 'default'}>
+                                    {SUPPLIER_STATUS_LABELS[order.status] || order.status}
+                                </Tag>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Создан">
+                                {formatDateTime(order.created_at)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Запланирован">
+                                {formatDateTime(order.scheduled_at)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Отправлен">
+                                {formatDateTime(order.sent_at)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Кол-во позиций">
+                                {totals.totalQty}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Сумма заказа">
+                                {formatMoney(totals.totalSum)}
+                            </Descriptions.Item>
+                        </Descriptions>
+                        <Table
+                            rowKey="id"
+                            dataSource={order.items || []}
+                            columns={columns}
+                            pagination={false}
+                            size="small"
+                            scroll={{ x: 'max-content' }}
+                        />
+                    </>
+                ) : (
+                    <div>Заказ не найден.</div>
                 )}
-            </div>
-            <Title level={3}>Заказ поставщику</Title>
-            {order ? (
-                <>
-                    <Descriptions bordered size="small" column={2} style={{ marginBottom: 16 }}>
-                        <Descriptions.Item label="Поставщик">
-                            {order.provider_name || order.provider_id}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Статус">
-                            <Tag color={SUPPLIER_STATUS_COLORS[order.status] || 'default'}>
-                                {SUPPLIER_STATUS_LABELS[order.status] || order.status}
-                            </Tag>
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Создан">
-                            {formatDateTime(order.created_at)}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Запланирован">
-                            {formatDateTime(order.scheduled_at)}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Отправлен">
-                            {formatDateTime(order.sent_at)}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Кол-во позиций">
-                            {totals.totalQty}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Сумма заказа">
-                            {formatMoney(totals.totalSum)}
-                        </Descriptions.Item>
-                    </Descriptions>
-                    <Table
-                        rowKey="id"
-                        dataSource={order.items || []}
-                        columns={columns}
-                        pagination={false}
-                        size="small"
-                    />
-                </>
-            ) : (
-                <div>Заказ не найден.</div>
-            )}
-        </Card>
+            </Card>
+        </div>
     );
 };
 

@@ -684,9 +684,9 @@ const ProviderPage = () => {
         {
             title: "Действия",
             key: "actions",
-            width: 120,
+            width: 220,
             render: (_, record) => (
-                <Space size="small">
+                <Space size="small" wrap className="table-actions">
                     <Button
                         icon={<UploadOutlined />}
                         size="small"
@@ -731,8 +731,8 @@ const ProviderPage = () => {
     }
 
     return (
-        <div style={{ margin: 20 }}>
-            <div style={{ marginBottom: 16, display: "flex", gap: 8 }}>
+        <div className="page-shell">
+            <div className="page-header-actions">
                 <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/providers')}>
                     Назад к списку
                 </Button>
@@ -974,7 +974,7 @@ const ProviderPage = () => {
                             pagination={false}
                             size="middle"
                             locale={{ emptyText: "Конфигурации не настроены" }}
-                            scroll={{ x: 900 }}
+                            scroll={{ x: 'max-content' }}
                         />
                     </Card>
 
@@ -1018,6 +1018,7 @@ const ProviderPage = () => {
                                     key: "last_price_date",
                                 },
                             ]}
+                            scroll={{ x: 'max-content' }}
                         />
                     </Card>
 
@@ -1138,9 +1139,7 @@ const ProviderPage = () => {
                         />
                     </Form.Item>
 
-                    <div
-                        style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}
-                    >
+                    <div className="responsive-form-grid-2">
                         <Form.Item
                             name="oem_col"
                             label="Колонка OEM номера"
@@ -1204,9 +1203,7 @@ const ProviderPage = () => {
 
                     <Divider>Фильтры прайс-листа</Divider>
 
-                    <div
-                        style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}
-                    >
+                    <div className="responsive-form-grid-2">
                         <Form.Item name="min_price" label="Минимальная цена">
                             <InputNumber min={0} style={{ width: "100%" }} />
                         </Form.Item>
@@ -1255,6 +1252,7 @@ const ProviderPage = () => {
                                         key={field.key}
                                         style={{ display: "flex", marginBottom: 8 }}
                                         align="baseline"
+                                        wrap
                                     >
                                         <Form.Item
                                             {...field}
@@ -1285,9 +1283,7 @@ const ProviderPage = () => {
 
                     <Divider>Настройки доставки</Divider>
 
-                    <div
-                        style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}
-                    >
+                    <div className="responsive-form-grid-2">
                         <Form.Item name="min_delivery_day" label="Минимум дней доставки" initialValue={1}>
                             <InputNumber min={0} style={{ width: "100%" }} />
                         </Form.Item>
@@ -1298,7 +1294,7 @@ const ProviderPage = () => {
                     </div>
 
                     <Form.Item>
-                        <Space>
+                        <Space wrap>
                             <Button
                                 type="primary"
                                 htmlType="submit"
@@ -1369,7 +1365,7 @@ const ProviderPage = () => {
                     </Form.Item>
 
                     <Form.Item>
-                        <Space>
+                        <Space wrap>
                             <Button type="primary" htmlType="submit" icon={<SaveOutlined />}>
                                 {editingAbbr ? "Обновить" : "Добавить"}
                             </Button>
@@ -1477,7 +1473,7 @@ const ProviderPage = () => {
                                         />
                                     </Form.Item>
 
-                                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}>
+                                    <div className="responsive-form-grid-2">
                                         <Form.Item
                                             name="oem_col"
                                             label="Колонка OEM"
@@ -1541,7 +1537,7 @@ const ProviderPage = () => {
                     </Form.Item>
 
                     <Form.Item>
-                        <Space>
+                        <Space wrap>
                             <Button type="primary" htmlType="submit" loading={uploading} icon={<SaveOutlined />}>
                                 Загрузить и обработать
                             </Button>

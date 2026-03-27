@@ -252,9 +252,9 @@ const ProvidersList = () => {
         {
             title: 'Действия',
             key: 'actions',
-            width: 120,
+            width: 140,
             render: (text, record) => (
-                <Space size="small">
+                <Space size="small" wrap className="table-actions">
                     <Button
                         type="primary"
                         size="small"
@@ -281,16 +281,16 @@ const ProvidersList = () => {
     ];
 
     return (
-        <Card title="Список поставщиков" style={{ margin: '20px' }}>
+        <div className="page-shell">
+        <Card title="Список поставщиков">
             <div style={{ marginBottom: 16 }}>
-                <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                    <Space>
+                <div className="page-toolbar">
+                    <div className="page-toolbar-main">
                         <Search
                             placeholder="Поиск по названию поставщика"
                             allowClear
                             enterButton={<SearchOutlined />}
                             size="middle"
-                            style={{ width: 300 }}
                             onSearch={handleSearch}
                             value={searchText}
                             onChange={(e) => setSearchText(e.target.value)}
@@ -338,7 +338,8 @@ const ProvidersList = () => {
                                 { value: 'no', label: 'Обычные' },
                             ]}
                         />
-                    </Space>
+                    </div>
+                    <div className="page-toolbar-side">
                     <Button
                         type="primary"
                         icon={<PlusOutlined />}
@@ -347,7 +348,8 @@ const ProvidersList = () => {
                     >
                         Добавить поставщика
                     </Button>
-                </Space>
+                    </div>
+                </div>
             </div>
 
             <Spin spinning={loading}>
@@ -357,11 +359,12 @@ const ProvidersList = () => {
                     dataSource={providers}
                     pagination={pagination}
                     onChange={handleTableChange}
-                    scroll={{ x: 1200 }}
+                    scroll={{ x: 'max-content' }}
                     size="middle"
                 />
             </Spin>
         </Card>
+        </div>
     );
 };
 

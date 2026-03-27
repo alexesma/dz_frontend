@@ -370,7 +370,7 @@ const CustomerPage = () => {
         const showSupplierQty = options.showSupplierQty ?? true;
         return (
             <>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+                <div className="responsive-form-grid-4">
                     <Form.Item name={[...namePrefix, 'min_price']} label="Мин. цена">
                         <InputNumber min={0} step={1} style={{ width: '100%' }} />
                     </Form.Item>
@@ -386,7 +386,7 @@ const CustomerPage = () => {
                 </div>
 
                 <Divider>Фильтры по брендам</Divider>
-                <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 16 }}>
+                <div className="responsive-form-grid-key">
                     <Form.Item name={[...namePrefix, 'brand_filter_type']} label="Тип">
                         <Select
                             allowClear
@@ -416,7 +416,7 @@ const CustomerPage = () => {
                 </div>
 
                 <Divider>Фильтры по позициям</Divider>
-                <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 16 }}>
+                <div className="responsive-form-grid-key">
                     <Form.Item name={[...namePrefix, 'position_filter_type']} label="Тип">
                         <Select
                             allowClear
@@ -452,7 +452,8 @@ const CustomerPage = () => {
                             {fields.map((field) => (
                                 <div
                                     key={field.key}
-                                    style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 12, marginBottom: 12 }}
+                                    className="responsive-inline-grid"
+                                    style={{ marginBottom: 12 }}
                                 >
                                     <Form.Item name={[field.name, 'min_price']} label="От">
                                         <InputNumber min={0} step={1} style={{ width: '100%' }} />
@@ -484,7 +485,8 @@ const CustomerPage = () => {
                                     {fields.map((field) => (
                                         <div
                                             key={field.key}
-                                            style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 12, marginBottom: 12 }}
+                                            className="responsive-inline-grid"
+                                            style={{ marginBottom: 12 }}
                                         >
                                             <Form.Item name={[field.name, 'provider_id']} label="Поставщик">
                                                 <Select
@@ -1025,9 +1027,9 @@ const CustomerPage = () => {
         {
             title: 'Действия',
             key: 'actions',
-            width: 200,
+            width: 220,
             render: (_, record) => (
-                <Space size="small">
+                <Space size="small" wrap className="table-actions">
                     <Button
                         type="primary"
                         size="small"
@@ -1074,8 +1076,8 @@ const CustomerPage = () => {
     }
 
     return (
-        <div style={{ margin: 20 }}>
-            <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
+        <div className="page-shell">
+            <div className="page-header-actions">
                 <Button
                     icon={<ArrowLeftOutlined />}
                     onClick={() => navigate('/customers')}
@@ -1210,7 +1212,7 @@ const CustomerPage = () => {
                         pagination={false}
                         size="middle"
                         locale={{ emptyText: 'Конфигурации не настроены' }}
-                        scroll={{ x: 1000 }}
+                        scroll={{ x: 'max-content' }}
                     />
                 </Card>
             )}
@@ -1276,7 +1278,7 @@ const CustomerPage = () => {
 
                     <Divider>Наценки (коэффициенты)</Divider>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+                    <div className="responsive-form-grid-3">
                         <Form.Item
                             name="general_markup"
                             label="Общая наценка"
@@ -1471,7 +1473,7 @@ const CustomerPage = () => {
                     </Form.Item>
 
                     <Form.Item>
-                        <Space>
+                        <Space wrap>
                             <Button
                                 type="primary"
                                 htmlType="submit"
@@ -1542,9 +1544,9 @@ const CustomerPage = () => {
                                 label="Почтовый ящик для заказов"
                                 extra="Если не выбрано — ищем письма во всех активных ящиках с назначением «orders_in»."
                             >
-                                <Space direction="vertical" style={{ width: '100%' }}>
-                                    <Form.Item name="email_account_id" noStyle>
-                                        <Select
+                                    <Space direction="vertical" style={{ width: '100%' }}>
+                                        <Form.Item name="email_account_id" noStyle>
+                                            <Select
                                             allowClear
                                             loading={orderInboxLoading}
                                             placeholder="Любая входящая почта"
@@ -1672,30 +1674,31 @@ const CustomerPage = () => {
                             </Form.Item>
                         </Space>
                         <Divider />
-                        <Button type="primary" htmlType="submit" loading={orderConfigLoading}>
-                            Сохранить обработку заказов
-                        </Button>
-                        {orderConfig && (
-                            <Button
-                                danger
-                                style={{ marginLeft: 8 }}
-                                onClick={async () => {
-                                    try {
-                                        await deleteCustomerOrderConfig(orderConfig.id);
-                                        message.success('Конфигурация удалена');
-                                        const orderResp = await getCustomerOrderConfigs(customerId);
-                                        const configs = orderResp.data || [];
-                                        setOrderConfigs(configs);
-                                        setOrderConfig(null);
-                                        applyOrderConfigToForm(null);
-                                    } catch {
-                                        message.error('Не удалось удалить конфигурацию');
-                                    }
-                                }}
-                            >
-                                Удалить обработку
+                        <Space wrap>
+                            <Button type="primary" htmlType="submit" loading={orderConfigLoading}>
+                                Сохранить обработку заказов
                             </Button>
-                        )}
+                            {orderConfig && (
+                                <Button
+                                    danger
+                                    onClick={async () => {
+                                        try {
+                                            await deleteCustomerOrderConfig(orderConfig.id);
+                                            message.success('Конфигурация удалена');
+                                            const orderResp = await getCustomerOrderConfigs(customerId);
+                                            const configs = orderResp.data || [];
+                                            setOrderConfigs(configs);
+                                            setOrderConfig(null);
+                                            applyOrderConfigToForm(null);
+                                        } catch {
+                                            message.error('Не удалось удалить конфигурацию');
+                                        }
+                                    }}
+                                >
+                                    Удалить обработку
+                                </Button>
+                            )}
+                        </Space>
                     </Form>
                 ) : (
                     <Text type="secondary">
@@ -1752,9 +1755,9 @@ const CustomerPage = () => {
                             {
                                 title: 'Действия',
                                 key: 'actions',
-                                width: 120,
+                                width: 140,
                                 render: (_, record) => (
-                                    <Space size="small">
+                                    <Space size="small" wrap className="table-actions">
                                         <Button
                                             size="small"
                                             icon={<EditOutlined />}
@@ -1778,6 +1781,7 @@ const CustomerPage = () => {
                         ]}
                         locale={{ emptyText: 'Источники не добавлены' }}
                         style={{ marginBottom: 16 }}
+                        scroll={{ x: 'max-content' }}
                     />
 
                     <Divider>{editingSource ? 'Редактирование источника' : 'Добавление источника'}</Divider>
@@ -1823,7 +1827,7 @@ const CustomerPage = () => {
                             />
                         </Form.Item>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+                        <div className="responsive-form-grid-3">
                             <Form.Item name="markup" label="Наценка (коэфф.)">
                                 <InputNumber min={0} step={0.1} style={{ width: '100%' }} />
                             </Form.Item>
@@ -1835,7 +1839,7 @@ const CustomerPage = () => {
                             </Form.Item>
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+                        <div className="responsive-form-grid-3">
                             <Form.Item name="min_quantity" label="Мин. количество">
                                 <InputNumber min={0} step={1} style={{ width: '100%' }} />
                             </Form.Item>
@@ -1848,7 +1852,7 @@ const CustomerPage = () => {
                         </div>
 
                         <Divider>Фильтры по брендам</Divider>
-                        <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 16 }}>
+                        <div className="responsive-form-grid-key">
                             <Form.Item name="brand_filter_type" label="Тип">
                                 <Select
                                     allowClear
@@ -1878,7 +1882,7 @@ const CustomerPage = () => {
                         </div>
 
                         <Divider>Фильтры по позициям</Divider>
-                        <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 16 }}>
+                        <div className="responsive-form-grid-key">
                             <Form.Item name="position_filter_type" label="Тип">
                                 <Select
                                     allowClear
@@ -1908,7 +1912,7 @@ const CustomerPage = () => {
                         </div>
 
                         <Form.Item>
-                            <Space>
+                            <Space wrap>
                                 <Button type="primary" htmlType="submit">
                                     {editingSource ? 'Обновить' : 'Добавить'}
                                 </Button>

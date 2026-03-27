@@ -337,7 +337,7 @@ const BrandManagementPage = () => {
             title: 'Бренд',
             dataIndex: 'name',
             render: (value, record) => (
-                <Space>
+                <Space wrap>
                     <span>{value}</span>
                     {record.main_brand ? (
                         <Tag color="green">Главный</Tag>
@@ -384,7 +384,7 @@ const BrandManagementPage = () => {
             title: 'Действия',
             key: 'actions',
             render: (_, row) => (
-                <Space>
+                <Space wrap className="table-actions">
                     <Button
                         size="small"
                         onClick={() => handleCreateMissingBrand(row)}
@@ -406,11 +406,11 @@ const BrandManagementPage = () => {
     ];
 
     return (
-        <Space direction="vertical" size="large" style={{ width: '100%' }}>
+        <div className="page-shell">
             <Card
                 title="Управление брендами и синонимами"
                 extra={(
-                    <Space>
+                    <Space wrap>
                         <Button
                             type="primary"
                             icon={<PlusOutlined />}
@@ -430,7 +430,6 @@ const BrandManagementPage = () => {
                         </Button>
                     </Space>
                 )}
-                style={{ margin: '20px' }}
             >
                 <Typography.Paragraph type="secondary">
                     Здесь можно найти бренд, назначить «главный бренд» и
@@ -457,6 +456,7 @@ const BrandManagementPage = () => {
                         dataSource={filteredBrands}
                         loading={loading}
                         pagination={{ pageSize: 12, showSizeChanger: false }}
+                        scroll={{ x: 'max-content' }}
                         onRow={(record) => ({
                             onClick: () => setSelectedBrandId(record.id),
                         })}
@@ -475,7 +475,7 @@ const BrandManagementPage = () => {
                         <Card
                             type="inner"
                             title={(
-                                <Space>
+                                <Space wrap>
                                     <span>{selectedBrand.name}</span>
                                     <Tag>#{selectedBrand.id}</Tag>
                                 </Space>
@@ -486,7 +486,7 @@ const BrandManagementPage = () => {
                                 size="middle"
                                 style={{ width: '100%' }}
                             >
-                                <Space>
+                                <Space wrap>
                                     <Typography.Text>
                                         Главный бренд:
                                     </Typography.Text>
@@ -525,7 +525,8 @@ const BrandManagementPage = () => {
                                     </div>
                                 </div>
 
-                                <Space.Compact style={{ width: '100%' }}>
+                                <div className="page-toolbar">
+                                    <div className="page-toolbar-main">
                                     <Select
                                         mode="multiple"
                                         value={newSynonyms}
@@ -535,6 +536,8 @@ const BrandManagementPage = () => {
                                         style={{ width: '100%' }}
                                         maxTagCount={4}
                                     />
+                                    </div>
+                                    <div className="page-toolbar-side">
                                     <Button
                                         type="primary"
                                         onClick={handleAddSynonyms}
@@ -543,7 +546,8 @@ const BrandManagementPage = () => {
                                     >
                                         Добавить
                                     </Button>
-                                </Space.Compact>
+                                    </div>
+                                </div>
                             </Space>
                         </Card>
                     )}
@@ -551,7 +555,6 @@ const BrandManagementPage = () => {
             </Card>
             <Card
                 title="Бренды из прайсов, которых нет в справочнике"
-                style={{ margin: '0 20px 20px 20px' }}
             >
                 <Typography.Paragraph type="secondary">
                     Показываются бренды из последнего загруженного прайса
@@ -570,7 +573,7 @@ const BrandManagementPage = () => {
                     locale={{
                         emptyText: 'Нет отсутствующих брендов',
                     }}
-                    scroll={{ x: 1100 }}
+                    scroll={{ x: 'max-content' }}
                 />
             </Card>
             <Modal
@@ -686,7 +689,7 @@ const BrandManagementPage = () => {
                     </Form.Item>
                 </Form>
             </Modal>
-        </Space>
+        </div>
     );
 };
 

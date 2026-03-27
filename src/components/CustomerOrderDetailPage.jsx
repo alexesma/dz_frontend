@@ -296,7 +296,7 @@ const CustomerOrderDetailPage = () => {
                     onChange={(val) => handleSetSupplier(record, val)}
                     optionFilterProp="label"
                     loading={!!updatingItems[record.id]}
-                    style={{ minWidth: 200 }}
+                    style={{ width: '100%' }}
                 />
             ),
         },
@@ -305,7 +305,7 @@ const CustomerOrderDetailPage = () => {
             key: 'actions',
             width: 220,
             render: (_, record) => (
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <div className="table-actions">
                     <Button
                         size="small"
                         onClick={() => handleOwnStock(record)}
@@ -327,65 +327,73 @@ const CustomerOrderDetailPage = () => {
     ];
 
     return (
-        <Card loading={loading}>
-            <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-                <Button onClick={() => navigate('/customer-orders')}>
-                    Назад к списку
-                </Button>
-                {order?.status === 'NEW' && (
-                    <Button
-                        type="primary"
-                        onClick={handleProcessOrder}
-                        loading={processing}
-                    >
-                        Автообработать
+        <div className="page-shell">
+            <Card loading={loading}>
+                <div className="page-header-actions" style={{ marginBottom: 16 }}>
+                    <Button onClick={() => navigate('/customer-orders')}>
+                        Назад к списку
                     </Button>
+                    {order?.status === 'NEW' && (
+                        <Button
+                            type="primary"
+                            onClick={handleProcessOrder}
+                            loading={processing}
+                        >
+                            Автообработать
+                        </Button>
+                    )}
+                </div>
+                <Title level={3}>Заказ клиента</Title>
+                {order ? (
+                    <>
+                        <Descriptions
+                            bordered
+                            size="small"
+                            column={{ xs: 1, sm: 1, md: 2 }}
+                            style={{ marginBottom: 16 }}
+                        >
+                            <Descriptions.Item label="Дата">
+                                {formatDateTime(order.received_at)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Статус">
+                                {ORDER_STATUS_LABELS[order.status] || order.status}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Номер">
+                                {order.order_number || order.id}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Клиент">
+                                {customerMap[order.customer_id] || order.customer_id}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Сумма заказа">
+                                {formatMoney(summary.totalSum)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Наш склад">
+                                {formatMoney(summary.stockSum)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Поставщики">
+                                {formatMoney(summary.supplierSum)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Отказ, сумма">
+                                {formatMoney(summary.rejectedSum)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Отказ, %">
+                                {summary.rejectedPct.toFixed(1)}%
+                            </Descriptions.Item>
+                        </Descriptions>
+                        <Table
+                            rowKey="id"
+                            dataSource={order.items || []}
+                            columns={columns}
+                            pagination={false}
+                            size="small"
+                            scroll={{ x: 'max-content' }}
+                        />
+                    </>
+                ) : (
+                    <div>Заказ не найден.</div>
                 )}
-            </div>
-            <Title level={3}>Заказ клиента</Title>
-            {order ? (
-                <>
-                    <Descriptions bordered size="small" column={2} style={{ marginBottom: 16 }}>
-                        <Descriptions.Item label="Дата">
-                            {formatDateTime(order.received_at)}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Статус">
-                            {ORDER_STATUS_LABELS[order.status] || order.status}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Номер">
-                            {order.order_number || order.id}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Клиент">
-                            {customerMap[order.customer_id] || order.customer_id}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Сумма заказа">
-                            {formatMoney(summary.totalSum)}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Наш склад">
-                            {formatMoney(summary.stockSum)}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Поставщики">
-                            {formatMoney(summary.supplierSum)}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Отказ, сумма">
-                            {formatMoney(summary.rejectedSum)}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Отказ, %">
-                            {summary.rejectedPct.toFixed(1)}%
-                        </Descriptions.Item>
-                    </Descriptions>
-                    <Table
-                        rowKey="id"
-                        dataSource={order.items || []}
-                        columns={columns}
-                        pagination={false}
-                        size="small"
-                    />
-                </>
-            ) : (
-                <div>Заказ не найден.</div>
-            )}
-        </Card>
+            </Card>
+        </div>
     );
 };
 

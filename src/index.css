@@ -1,8 +1,284 @@
 @import "tailwindcss";
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: "IBM Plex Sans", "Segoe UI", Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
+  color: #172033;
+  background: #eef3fb;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at top left, rgba(95, 137, 214, 0.18), transparent 32%),
+    linear-gradient(180deg, #f4f7fc 0%, #e8eef8 100%);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+.app-shell {
+  min-height: 100vh;
+  align-items: stretch;
+}
+
+.app-main-layout {
+  min-width: 0;
+  background: transparent;
+}
+
+.app-content {
+  min-width: 0;
+  padding: 24px;
+}
+
+.app-content-inner {
+  min-width: 0;
+}
+
+.page-shell {
+  display: grid;
+  gap: 16px;
+}
+
+.page-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.page-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.page-toolbar-main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  flex: 1 1 640px;
+  min-width: 0;
+}
+
+.page-toolbar-main .ant-input-search,
+.page-toolbar-main .ant-select,
+.page-toolbar-main .ant-btn {
+  max-width: 100%;
+}
+
+.page-toolbar-main .ant-input-search {
+  flex: 1 1 280px;
+  min-width: 220px;
+}
+
+.page-toolbar-main .ant-select {
+  flex: 1 1 190px;
+  min-width: 180px;
+}
+
+.page-toolbar-side {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.responsive-form-grid-2,
+.responsive-form-grid-3,
+.responsive-form-grid-4,
+.responsive-form-grid-key,
+.responsive-inline-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.responsive-form-grid-2 {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.responsive-form-grid-3 {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.responsive-form-grid-4 {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.responsive-form-grid-key {
+  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+}
+
+.responsive-inline-grid {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  align-items: end;
+}
+
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.app-sider {
+  background: #001529;
+  box-shadow: 18px 0 40px rgba(7, 23, 49, 0.16);
+}
+
+.app-sider .ant-layout-sider-children {
+  height: 100%;
+}
+
+.app-sider-inner {
+  position: sticky;
+  top: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #001529;
+}
+
+.app-sider-menu {
+  flex: 1;
+  min-height: 100vh;
+  padding-top: 12px;
+}
+
+.app-mobile-nav-trigger {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 1001;
+  box-shadow: 0 10px 24px rgba(7, 23, 49, 0.2);
+}
+
+.app-mobile-drawer .ant-drawer-header {
+  background: #001529;
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+.app-mobile-drawer .ant-drawer-title,
+.app-mobile-drawer .ant-drawer-close {
+  color: #fff;
+}
+
+.ant-card,
+.ant-tabs,
+.ant-table-wrapper,
+.ant-form,
+.ant-space,
+.ant-row,
+.ant-col {
+  min-width: 0;
+}
+
+.ant-card {
+  border-radius: 18px;
+  box-shadow: 0 14px 34px rgba(18, 38, 63, 0.08);
+}
+
+.ant-card-head {
+  height: auto;
+  min-height: 56px;
+}
+
+.ant-card-head-wrapper {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.ant-card-extra {
+  max-width: 100%;
+}
+
+.ant-card-extra > * {
+  max-width: 100%;
+}
+
+.ant-card-extra .ant-space {
+  flex-wrap: wrap;
+}
+
+.ant-table-wrapper {
+  width: 100%;
+}
+
+.ant-table-wrapper .ant-spin-nested-loading,
+.ant-table-wrapper .ant-spin-container,
+.ant-table-wrapper .ant-table-container,
+.ant-table-wrapper .ant-table-content {
+  min-width: 0;
+}
+
+.ant-table-wrapper .ant-table-content {
+  overflow-x: auto;
+}
+
+.ant-table-wrapper .ant-table {
+  min-width: 100%;
+}
+
+.ant-table-wrapper .ant-table-cell {
+  vertical-align: top;
+}
+
+.ant-table-wrapper .ant-table-cell .ant-space {
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+.ant-table-wrapper .ant-btn {
+  max-width: 100%;
+  white-space: normal;
+  height: auto;
+}
+
+.ant-table-wrapper .ant-tag {
+  white-space: normal;
+}
+
+.ant-table-wrapper .ant-table-thead > tr > th,
+.ant-table-wrapper .ant-table-tbody > tr > td {
+  overflow-wrap: anywhere;
+}
+
+.ant-pagination {
+  row-gap: 8px;
+}
+
+@media (max-width: 992px) {
+  .app-content {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-content {
+    padding: 12px;
+  }
+
+  .responsive-form-grid-key {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ant-card {
+    border-radius: 14px;
+  }
 }
 
 .price-control-row-best td {

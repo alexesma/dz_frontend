@@ -109,11 +109,15 @@ const AppRoutes = () => (
 const App = () => (
     <AuthProvider>
         <Router>
-            <Layout style={{ height: '100vh' }}>
+            <Layout className="app-shell">
                 <Sidebar />
-                <Content style={{ padding: '20px' }}>
-                    <AppRoutes />
-                </Content>
+                <Layout className="app-main-layout">
+                    <Content className="app-content">
+                        <div className="app-content-inner">
+                            <AppRoutes />
+                        </div>
+                    </Content>
+                </Layout>
             </Layout>
         </Router>
     </AuthProvider>

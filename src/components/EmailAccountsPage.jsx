@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Switch, Table, message } from 'antd';
+import { Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, message } from 'antd';
 import {
     createEmailAccount,
     deleteEmailAccount,
@@ -316,8 +316,9 @@ const EmailAccountsPage = () => {
         {
             title: 'Действия',
             key: 'actions',
+            width: 280,
             render: (_, record) => (
-                <div style={{ display: 'flex', gap: 8 }}>
+                <Space size="small" wrap className="table-actions">
                     <Button size="small" onClick={() => openModal(record)}>Редактировать</Button>
                     {record.transport === 'gmail_api' && record.oauth_provider ? (
                         <Button size="small" onClick={() => handleDisconnectOAuth(record)}>
@@ -338,12 +339,13 @@ const EmailAccountsPage = () => {
                     >
                         <Button size="small" danger>Удалить</Button>
                     </Popconfirm>
-                </div>
+                </Space>
             ),
         },
     ];
 
     return (
+        <div className="page-shell">
         <Card
             title="Почтовые аккаунты"
             extra={<Button type="primary" onClick={() => openModal()}>Добавить аккаунт</Button>}
@@ -353,6 +355,7 @@ const EmailAccountsPage = () => {
                 loading={loading}
                 columns={columns}
                 dataSource={accounts}
+                scroll={{ x: 'max-content' }}
             />
             <Modal
                 open={modalOpen}
@@ -360,6 +363,7 @@ const EmailAccountsPage = () => {
                 onCancel={() => setModalOpen(false)}
                 footer={null}
                 destroyOnClose
+                width={720}
             >
                 <Form
                     form={form}
@@ -496,7 +500,7 @@ const EmailAccountsPage = () => {
                     <Form.Item name="is_active" label="Активен" valuePropName="checked" initialValue>
                         <Switch />
                     </Form.Item>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <Space wrap>
                         {editing && transport === 'gmail_api' ? (
                             <Button
                                 onClick={handleSaveGoogleToken}
@@ -518,7 +522,7 @@ const EmailAccountsPage = () => {
                         <Button type="primary" htmlType="submit">
                             Сохранить
                         </Button>
-                    </div>
+                    </Space>
                 </Form>
             </Modal>
             <Modal
@@ -546,6 +550,7 @@ const EmailAccountsPage = () => {
                 </Form>
             </Modal>
         </Card>
+        </div>
     );
 };
 

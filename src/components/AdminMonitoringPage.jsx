@@ -135,18 +135,20 @@ const AdminMonitoringPage = () => {
     const schedulerRuns = summary?.app?.scheduler_last_runs || [];
 
     return (
-        <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                    <Title level={3} style={{ margin: 0 }}>Мониторинг системы</Title>
-                    <Text type="secondary">
-                        Последняя проверка прайсов:{' '}
-                        {summary?.app?.last_price_check_at
-                            ? dayjs(summary.app.last_price_check_at).format('DD.MM.YYYY HH:mm')
-                            : '—'}
-                    </Text>
+        <div className="page-shell">
+            <div className="page-toolbar">
+                <div className="page-toolbar-main">
+                    <div>
+                        <Title level={3} style={{ margin: 0 }}>Мониторинг системы</Title>
+                        <Text type="secondary">
+                            Последняя проверка прайсов:{' '}
+                            {summary?.app?.last_price_check_at
+                                ? dayjs(summary.app.last_price_check_at).format('DD.MM.YYYY HH:mm')
+                                : '—'}
+                        </Text>
+                    </div>
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div className="page-toolbar-side">
                     <Button onClick={() => refresh({ withSnapshot: false })} loading={loading}>
                         Обновить данные
                     </Button>
@@ -156,7 +158,7 @@ const AdminMonitoringPage = () => {
                 </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginTop: 16 }}>
+            <div className="responsive-form-grid-4">
                 <Card>
                     <Statistic
                         title="Размер БД"
@@ -200,7 +202,7 @@ const AdminMonitoringPage = () => {
                 </Card>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginTop: 16 }}>
+            <div className="responsive-form-grid-3">
                 <Card title="Рост базы данных">
                     <MiniLineChart data={sortedSnapshots} valueKey="db_size_bytes" color="#722ed1" />
                     <Text type="secondary">
@@ -221,13 +223,14 @@ const AdminMonitoringPage = () => {
                 </Card>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 16, marginTop: 16 }}>
+            <div className="responsive-form-grid-2">
                 <Card title="Самые большие таблицы">
                     <Table
                         size="small"
                         rowKey="table"
                         pagination={false}
                         dataSource={dbTables}
+                        scroll={{ x: 'max-content' }}
                         columns={[
                             { title: 'Таблица', dataIndex: 'table', key: 'table' },
                             { title: 'Размер', dataIndex: 'size_pretty', key: 'size_pretty' },
@@ -246,6 +249,7 @@ const AdminMonitoringPage = () => {
                         rowKey="key"
                         pagination={false}
                         dataSource={schedulerRuns}
+                        scroll={{ x: 'max-content' }}
                         columns={[
                             { title: 'Задача', dataIndex: 'key', key: 'key' },
                             {
