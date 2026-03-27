@@ -1576,7 +1576,7 @@ const CustomerPage = () => {
                             </Form.Item>
                             <Divider />
                             <Form.Item name="order_number_column" label="Колонка номера заказа">
-                                <InputNumber min={0} style={{ width: 220 }} />
+                                <InputNumber min={1} style={{ width: 220 }} />
                             </Form.Item>
                             <Form.Item
                                 name="order_number_row"
@@ -1615,7 +1615,7 @@ const CustomerPage = () => {
                                 />
                             </Form.Item>
                             <Form.Item name="order_date_column" label="Колонка даты заказа">
-                                <InputNumber min={0} style={{ width: 220 }} />
+                                <InputNumber min={1} style={{ width: 220 }} />
                             </Form.Item>
                             <Form.Item
                                 name="order_date_row"
@@ -1631,26 +1631,26 @@ const CustomerPage = () => {
                                 <InputNumber min={1} style={{ width: 220 }} />
                             </Form.Item>
                             <Divider />
-                            <Form.Item name="oem_col" label="Колонка OEM" rules={[{ required: true }]}>
-                                <InputNumber min={0} style={{ width: '100%' }} />
+                            <Form.Item name="oem_col" label="Колонка OEM (с 1)" rules={[{ required: true }]}>
+                                <InputNumber min={1} style={{ width: '100%' }} />
                             </Form.Item>
-                            <Form.Item name="brand_col" label="Колонка бренда" rules={[{ required: true }]}>
-                                <InputNumber min={0} style={{ width: '100%' }} />
+                            <Form.Item name="brand_col" label="Колонка бренда (с 1)" rules={[{ required: true }]}>
+                                <InputNumber min={1} style={{ width: '100%' }} />
                             </Form.Item>
-                            <Form.Item name="name_col" label="Колонка наименования">
-                                <InputNumber min={0} style={{ width: '100%' }} />
+                            <Form.Item name="name_col" label="Колонка наименования (с 1)">
+                                <InputNumber min={1} style={{ width: '100%' }} />
                             </Form.Item>
-                            <Form.Item name="qty_col" label="Колонка количества" rules={[{ required: true }]}>
-                                <InputNumber min={0} style={{ width: '100%' }} />
+                            <Form.Item name="qty_col" label="Колонка количества (с 1)" rules={[{ required: true }]}>
+                                <InputNumber min={1} style={{ width: '100%' }} />
                             </Form.Item>
-                            <Form.Item name="price_col" label="Колонка цены">
-                                <InputNumber min={0} style={{ width: '100%' }} />
+                            <Form.Item name="price_col" label="Колонка цены (с 1)">
+                                <InputNumber min={1} style={{ width: '100%' }} />
                             </Form.Item>
-                            <Form.Item name="ship_qty_col" label="Колонка отгрузки">
-                                <InputNumber min={0} style={{ width: '100%' }} />
+                            <Form.Item name="ship_qty_col" label="Колонка отгрузки (с 1)">
+                                <InputNumber min={1} style={{ width: '100%' }} />
                             </Form.Item>
-                            <Form.Item name="reject_qty_col" label="Колонка отказа">
-                                <InputNumber min={0} style={{ width: '100%' }} />
+                            <Form.Item name="reject_qty_col" label="Колонка отказа (с 1)">
+                                <InputNumber min={1} style={{ width: '100%' }} />
                             </Form.Item>
                             <Form.Item name="ship_mode" label="Режим записи количества">
                                 <Select
