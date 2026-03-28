@@ -56,6 +56,7 @@ const EmailAccountsPage = () => {
         setEditing(record);
         if (record) {
             form.setFieldsValue({
+                ...record,
                 transport: ['gmail_api', 'resend_api'].includes(record.transport)
                     ? record.transport
                     : 'smtp',
@@ -63,14 +64,17 @@ const EmailAccountsPage = () => {
                 imap_port: 993,
                 smtp_port: 465,
                 resend_timeout: 20,
+                imap_folder: record.imap_folder || 'INBOX',
+                imap_additional_folders: record.imap_additional_folders || [],
                 google_refresh_token: '',
-                ...record,
             });
         } else {
             form.setFieldsValue({
                 transport: 'smtp',
                 password: '',
                 imap_port: 993,
+                imap_folder: 'INBOX',
+                imap_additional_folders: [],
                 smtp_port: 465,
                 resend_timeout: 20,
                 smtp_use_ssl: true,
@@ -280,6 +284,12 @@ const EmailAccountsPage = () => {
             render: (value) => value || 'INBOX',
         },
         {
+            title: 'Доп. папки',
+            dataIndex: 'imap_additional_folders',
+            key: 'imap_additional_folders',
+            render: (value) => (value || []).join(', ') || '—',
+        },
+        {
             title: 'Транспорт',
             dataIndex: 'transport',
             key: 'transport',
@@ -420,6 +430,18 @@ const EmailAccountsPage = () => {
                             </Form.Item>
                             <Form.Item name="imap_folder" label="IMAP папка">
                                 <Input placeholder="INBOX" />
+                            </Form.Item>
+                            <Form.Item
+                                name="imap_additional_folders"
+                                label="Дополнительные IMAP папки"
+                                extra="Необязательно. Можно указать несколько папок для поиска заказов и прайсов."
+                            >
+                                <Select
+                                    mode="tags"
+                                    tokenSeparators={[',']}
+                                    placeholder="Например: Заказы поставщикам, Экзист"
+                                    open={false}
+                                />
                             </Form.Item>
                         </>
                     ) : (
