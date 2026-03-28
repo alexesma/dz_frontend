@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     Card,
+    Collapse,
     Form,
     Input,
     Button,
@@ -97,6 +98,43 @@ const CustomerPage = () => {
     const [configForm] = Form.useForm();
     const [sourceForm] = Form.useForm();
     const [orderConfigForm] = Form.useForm();
+
+    const normalizeSourceMarkup = useCallback((value) => {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric) || numeric <= 0) {
+            return 1.0;
+        }
+        return numeric;
+    }, []);
+
+    const formatSourceMarkup = useCallback((value) => {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric) || numeric <= 0) {
+            return '1.0 (без изменения)';
+        }
+        if (numeric === 1) {
+            return '1.0 (без изменения)';
+        }
+        return String(value);
+    }, []);
+
+    const sourceProviderOptions = useMemo(() => {
+        const usedProviderConfigIds = new Set(
+            (sources || [])
+                .filter((source) => !editingSource || source.id !== editingSource.id)
+                .map((source) => Number(source.provider_config_id))
+                .filter((value) => Number.isFinite(value))
+        );
+        return providerOptions.map((opt) => {
+            const label = `${opt.provider_name} • ${opt.name_price || `Конфиг #${opt.id}`}${opt.is_own_price ? ' (Наш)' : ''}`;
+            const isUsed = usedProviderConfigIds.has(Number(opt.id));
+            return {
+                value: opt.id,
+                label: isUsed ? `${label} — уже добавлен` : label,
+                disabled: isUsed,
+            };
+        });
+    }, [editingSource, providerOptions, sources]);
 
     const applyOrderConfigToForm = useCallback((config) => {
         if (config) {
@@ -939,10 +977,20 @@ const CustomerPage = () => {
     const handleSourceSubmit = async (values) => {
         if (!customerId || !activeConfig) return;
 
+        const duplicate = (sources || []).find(
+            (source) =>
+                Number(source.provider_config_id) === Number(values.provider_config_id)
+                && (!editingSource || source.id !== editingSource.id)
+        );
+        if (duplicate) {
+            message.warning('Этот источник уже добавлен в прайс клиента');
+            return;
+        }
+
         const payload = {
             provider_config_id: values.provider_config_id,
             enabled: values.enabled ?? true,
-            markup: values.markup ?? 1.0,
+            markup: normalizeSourceMarkup(values.markup),
             brand_filters: values.brand_filter_type
                 ? {
                     type: values.brand_filter_type,
@@ -987,7 +1035,12 @@ const CustomerPage = () => {
             sourceForm.resetFields();
         } catch (err) {
             console.error(err);
-            message.error('Ошибка сохранения источника');
+            const detail = err?.response?.data?.detail;
+            message.error(
+                detail === 'This source is already added to the customer pricelist'
+                    ? 'Этот источник уже добавлен в прайс клиента'
+                    : 'Ошибка сохранения источника'
+            );
         }
     };
 
@@ -996,7 +1049,7 @@ const CustomerPage = () => {
         sourceForm.setFieldsValue({
             provider_config_id: source.provider_config_id,
             enabled: source.enabled,
-            markup: source.markup,
+            markup: normalizeSourceMarkup(source.markup),
             brand_filter_type: source.brand_filters?.type || null,
             brand_ids: (source.brand_filters?.brands || []).map((v) => String(v)),
             position_filter_type: source.position_filters?.type || null,
@@ -1598,144 +1651,235 @@ const CustomerPage = () => {
                         }}
                     >
                         <Space direction="vertical" style={{ width: '100%' }} size="large">
-                            <Form.Item name="order_emails" label="Почты для заказов (через запятую)">
-                                <Input placeholder="order1@example.com, order2@example.com" />
-                            </Form.Item>
-                            <Form.Item name="order_reply_emails" label="Почты для ответов (через запятую)">
-                                <Input placeholder="reply1@example.com, reply2@example.com" />
-                            </Form.Item>
-                            <Form.Item
-                                label="Почтовый ящик для заказов"
-                                extra="Если не выбрано — ищем письма во всех активных ящиках с назначением «orders_in»."
-                            >
-                                    <Space direction="vertical" style={{ width: '100%' }}>
-                                        <Form.Item name="email_account_id" noStyle>
-                                            <Select
+                            <div>
+                                <Text strong>Поиск писем</Text>
+                                <div className="responsive-form-grid-2" style={{ marginTop: 12 }}>
+                                    <Form.Item name="order_emails" label="Почты для заказов (через запятую)">
+                                        <Input placeholder="order1@example.com, order2@example.com" />
+                                    </Form.Item>
+                                    <Form.Item name="order_reply_emails" label="Почты для ответов (через запятую)">
+                                        <Input placeholder="reply1@example.com, reply2@example.com" />
+                                    </Form.Item>
+                                </div>
+                                <div className="responsive-form-grid-2">
+                                    <Form.Item
+                                        label="Почтовый ящик для заказов"
+                                        extra="Если не выбрано — ищем письма во всех активных ящиках с назначением «orders_in»."
+                                    >
+                                        <Space direction="vertical" style={{ width: '100%' }}>
+                                            <Form.Item name="email_account_id" noStyle>
+                                                <Select
+                                                    allowClear
+                                                    loading={orderInboxLoading}
+                                                    placeholder="Любая входящая почта"
+                                                    options={orderInboxAccounts.map((account) => {
+                                                        const name = account.name || account.email;
+                                                        const label = name === account.email
+                                                            ? account.email
+                                                            : `${name} • ${account.email}`;
+                                                        return {
+                                                            value: account.id,
+                                                            label,
+                                                        };
+                                                    })}
+                                                />
+                                            </Form.Item>
+                                            <Button
+                                                onClick={handleOrderInboxTest}
+                                                loading={orderInboxTestLoading}
+                                            >
+                                                Проверить доступ IMAP
+                                            </Button>
+                                        </Space>
+                                    </Form.Item>
+                                    <Form.Item name="order_subject_pattern" label="Шаблон темы письма">
+                                        <Input />
+                                    </Form.Item>
+                                </div>
+                                <div className="responsive-form-grid-2">
+                                    <Form.Item name="order_filename_pattern" label="Шаблон имени файла">
+                                        <Input />
+                                    </Form.Item>
+                                    <Form.Item
+                                        name="order_number_source"
+                                        label="Источник номера"
+                                    >
+                                        <Select
                                             allowClear
-                                            loading={orderInboxLoading}
-                                            placeholder="Любая входящая почта"
-                                            options={orderInboxAccounts.map((account) => {
-                                                const name = account.name || account.email;
-                                                const label = name === account.email
-                                                    ? account.email
-                                                    : `${name} • ${account.email}`;
-                                                return {
-                                                    value: account.id,
-                                                    label,
-                                                };
-                                            })}
+                                            placeholder="Выберите источник"
+                                            options={[
+                                                { value: 'subject', label: 'Тема письма' },
+                                                { value: 'body', label: 'Тело письма' },
+                                                { value: 'filename', label: 'Имя файла' },
+                                            ]}
                                         />
                                     </Form.Item>
-                                    <Button
-                                        onClick={handleOrderInboxTest}
-                                        loading={orderInboxTestLoading}
+                                </div>
+                            </div>
+
+                            <div>
+                                <Text strong>Номер и дата заказа</Text>
+                                <div
+                                    className="responsive-form-grid-compact"
+                                    style={{ marginTop: 12 }}
+                                >
+                                    <Form.Item
+                                        name="order_number_column"
+                                        label="Кол. номера"
+                                        tooltip="Колонка номера заказа (с 1)"
                                     >
-                                        Проверить доступ IMAP
-                                    </Button>
-                                </Space>
-                            </Form.Item>
-                            <Form.Item name="order_subject_pattern" label="Шаблон темы письма">
-                                <Input />
-                            </Form.Item>
-                            <Form.Item name="order_filename_pattern" label="Шаблон имени файла">
-                                <Input />
-                            </Form.Item>
-                            <Divider />
-                            <Form.Item name="order_number_column" label="Колонка номера заказа">
-                                <InputNumber min={1} style={{ width: 220 }} />
-                            </Form.Item>
-                            <Form.Item
-                                name="order_number_row"
-                                label="Строка номера заказа (с 1)"
-                                extra="Можно оставить пустым: номер будет искаться по всем строкам файла."
-                            >
-                                <InputNumber min={1} style={{ width: 220 }} />
-                            </Form.Item>
-                            <Form.Item name="order_number_regex_subject" label="Regex номера (тема)">
-                                <Input />
-                            </Form.Item>
-                            <Form.Item name="order_number_regex_body" label="Regex номера (тело письма)">
-                                <Input />
-                            </Form.Item>
-                            <Form.Item name="order_number_regex_filename" label="Regex номера (имя файла)">
-                                <Input />
-                            </Form.Item>
-                            <Form.Item name="order_number_prefix" label="Префикс номера">
-                                <Input />
-                            </Form.Item>
-                            <Form.Item name="order_number_suffix" label="Суффикс номера">
-                                <Input />
-                            </Form.Item>
-                            <Form.Item
-                                name="order_number_source"
-                                label="Источник номера"
-                            >
-                                <Select
-                                    allowClear
-                                    placeholder="Выберите источник"
-                                    options={[
-                                        { value: 'subject', label: 'Тема письма' },
-                                        { value: 'body', label: 'Тело письма' },
-                                        { value: 'filename', label: 'Имя файла' },
+                                        <InputNumber min={1} style={{ width: '100%' }} />
+                                    </Form.Item>
+                                    <Form.Item
+                                        name="order_number_row"
+                                        label="Стр. номера"
+                                        tooltip="Строка номера заказа (с 1)"
+                                        extra="Пусто — искать по всем строкам."
+                                    >
+                                        <InputNumber min={1} style={{ width: '100%' }} />
+                                    </Form.Item>
+                                    <Form.Item
+                                        name="order_date_column"
+                                        label="Кол. даты"
+                                        tooltip="Колонка даты заказа (с 1)"
+                                    >
+                                        <InputNumber min={1} style={{ width: '100%' }} />
+                                    </Form.Item>
+                                    <Form.Item
+                                        name="order_date_row"
+                                        label="Стр. даты"
+                                        tooltip="Строка даты заказа (с 1)"
+                                        extra="Пусто — искать по всем строкам."
+                                    >
+                                        <InputNumber min={1} style={{ width: '100%' }} />
+                                    </Form.Item>
+                                    <Form.Item
+                                        name="order_start_row"
+                                        label="Стр. начала"
+                                        tooltip="Первая строка с позициями в файле (с 1)"
+                                    >
+                                        <InputNumber min={1} style={{ width: '100%' }} />
+                                    </Form.Item>
+                                </div>
+                                <Collapse
+                                    style={{ marginTop: 12, background: '#fafafa' }}
+                                    items={[
+                                        {
+                                            key: 'order-config-advanced',
+                                            label: 'Дополнительно: regex, префикс и суффикс',
+                                            children: (
+                                                <Space
+                                                    direction="vertical"
+                                                    style={{ width: '100%' }}
+                                                    size="middle"
+                                                >
+                                                    <div className="responsive-form-grid-2">
+                                                        <Form.Item
+                                                            name="order_number_prefix"
+                                                            label="Префикс номера"
+                                                        >
+                                                            <Input />
+                                                        </Form.Item>
+                                                        <Form.Item
+                                                            name="order_number_suffix"
+                                                            label="Суффикс номера"
+                                                        >
+                                                            <Input />
+                                                        </Form.Item>
+                                                    </div>
+                                                    <div className="responsive-form-grid-3">
+                                                        <Form.Item
+                                                            name="order_number_regex_subject"
+                                                            label="Regex номера (тема)"
+                                                        >
+                                                            <Input />
+                                                        </Form.Item>
+                                                        <Form.Item
+                                                            name="order_number_regex_body"
+                                                            label="Regex номера (тело письма)"
+                                                        >
+                                                            <Input />
+                                                        </Form.Item>
+                                                        <Form.Item
+                                                            name="order_number_regex_filename"
+                                                            label="Regex номера (имя файла)"
+                                                        >
+                                                            <Input />
+                                                        </Form.Item>
+                                                    </div>
+                                                </Space>
+                                            ),
+                                        },
                                     ]}
                                 />
-                            </Form.Item>
-                            <Form.Item name="order_date_column" label="Колонка даты заказа">
-                                <InputNumber min={1} style={{ width: 220 }} />
-                            </Form.Item>
-                            <Form.Item
-                                name="order_date_row"
-                                label="Строка даты заказа (с 1)"
-                                extra="Можно оставить пустым: дата будет искаться по всем строкам файла."
-                            >
-                                <InputNumber min={1} style={{ width: 220 }} />
-                            </Form.Item>
-                            <Form.Item
-                                name="order_start_row"
-                                label="Строка начала (с 1)"
-                            >
-                                <InputNumber min={1} style={{ width: 220 }} />
-                            </Form.Item>
-                            <Divider />
-                            <Form.Item name="oem_col" label="Колонка OEM (с 1)" rules={[{ required: true }]}>
-                                <InputNumber min={1} style={{ width: '100%' }} />
-                            </Form.Item>
-                            <Form.Item name="brand_col" label="Колонка бренда (с 1)" rules={[{ required: true }]}>
-                                <InputNumber min={1} style={{ width: '100%' }} />
-                            </Form.Item>
-                            <Form.Item name="name_col" label="Колонка наименования (с 1)">
-                                <InputNumber min={1} style={{ width: '100%' }} />
-                            </Form.Item>
-                            <Form.Item name="qty_col" label="Колонка количества (с 1)" rules={[{ required: true }]}>
-                                <InputNumber min={1} style={{ width: '100%' }} />
-                            </Form.Item>
-                            <Form.Item name="price_col" label="Колонка цены (с 1)">
-                                <InputNumber min={1} style={{ width: '100%' }} />
-                            </Form.Item>
-                            <Form.Item name="ship_qty_col" label="Колонка отгрузки (с 1)">
-                                <InputNumber min={1} style={{ width: '100%' }} />
-                            </Form.Item>
-                            <Form.Item name="reject_qty_col" label="Колонка отказа (с 1)">
-                                <InputNumber min={1} style={{ width: '100%' }} />
-                            </Form.Item>
-                            <Form.Item name="ship_mode" label="Режим записи количества">
-                                <Select
-                                    options={[
-                                        { label: 'Заменить количество', value: 'REPLACE_QTY' },
-                                        { label: 'Записать отгрузку', value: 'WRITE_SHIP_QTY' },
-                                        { label: 'Записать отказ', value: 'WRITE_REJECT_QTY' },
-                                    ]}
-                                />
-                            </Form.Item>
-                            <Form.Item name="price_tolerance_pct" label="Допустимое отклонение цены (%)">
-                                <InputNumber min={0} style={{ width: '100%' }} />
-                            </Form.Item>
-                            <Form.Item name="price_warning_pct" label="Порог предупреждения (%)">
-                                <InputNumber min={0} style={{ width: '100%' }} />
-                            </Form.Item>
-                            <Form.Item name="is_active" label="Активно" valuePropName="checked">
-                                <Switch />
-                            </Form.Item>
+                            </div>
+
+                            <div>
+                                <Text strong>Колонки файла</Text>
+                                <div
+                                    className="responsive-form-grid-compact"
+                                    style={{ marginTop: 12 }}
+                                >
+                                    <Form.Item name="oem_col" label="OEM" rules={[{ required: true }]}>
+                                        <InputNumber min={1} style={{ width: '100%' }} />
+                                    </Form.Item>
+                                    <Form.Item name="brand_col" label="Бренд" rules={[{ required: true }]}>
+                                        <InputNumber min={1} style={{ width: '100%' }} />
+                                    </Form.Item>
+                                    <Form.Item name="name_col" label="Наим.">
+                                        <InputNumber min={1} style={{ width: '100%' }} />
+                                    </Form.Item>
+                                    <Form.Item name="qty_col" label="Кол-во" rules={[{ required: true }]}>
+                                        <InputNumber min={1} style={{ width: '100%' }} />
+                                    </Form.Item>
+                                    <Form.Item name="price_col" label="Цена">
+                                        <InputNumber min={1} style={{ width: '100%' }} />
+                                    </Form.Item>
+                                    <Form.Item name="ship_qty_col" label="Отгр.">
+                                        <InputNumber min={1} style={{ width: '100%' }} />
+                                    </Form.Item>
+                                    <Form.Item name="reject_qty_col" label="Отказ">
+                                        <InputNumber min={1} style={{ width: '100%' }} />
+                                    </Form.Item>
+                                </div>
+                                <div className="responsive-form-grid-2">
+                                    <Form.Item name="ship_mode" label="Режим количества">
+                                        <Select
+                                            options={[
+                                                { label: 'Заменить количество', value: 'REPLACE_QTY' },
+                                                { label: 'Записать отгрузку', value: 'WRITE_SHIP_QTY' },
+                                                { label: 'Записать отказ', value: 'WRITE_REJECT_QTY' },
+                                            ]}
+                                        />
+                                    </Form.Item>
+                                </div>
+                            </div>
+
+                            <div>
+                                <Text strong>Проверка цены</Text>
+                                <div
+                                    className="responsive-form-grid-compact"
+                                    style={{ marginTop: 12 }}
+                                >
+                                    <Form.Item
+                                        name="price_tolerance_pct"
+                                        label="Допуск (%)"
+                                        tooltip="Допустимое отклонение цены"
+                                    >
+                                        <InputNumber min={0} style={{ width: '100%' }} />
+                                    </Form.Item>
+                                    <Form.Item
+                                        name="price_warning_pct"
+                                        label="Предупр. (%)"
+                                        tooltip="Порог предупреждения по цене"
+                                    >
+                                        <InputNumber min={0} style={{ width: '100%' }} />
+                                    </Form.Item>
+                                    <Form.Item name="is_active" label="Активно" valuePropName="checked">
+                                        <Switch />
+                                    </Form.Item>
+                                </div>
+                            </div>
                         </Space>
                         <Divider />
                         <Space wrap>
@@ -1814,7 +1958,7 @@ const CustomerPage = () => {
                                 title: 'Наценка',
                                 dataIndex: 'markup',
                                 key: 'markup',
-                                render: (value) => value ?? '—',
+                                render: (value) => formatSourceMarkup(value),
                             },
                             {
                                 title: 'Статус',
@@ -1892,17 +2036,24 @@ const CustomerPage = () => {
                         >
                             <Select
                                 placeholder="Выберите конфигурацию поставщика"
-                                options={providerOptions.map((opt) => ({
-                                    value: opt.id,
-                                    label: `${opt.provider_name} • ${opt.name_price || `Конфиг #${opt.id}`}${opt.is_own_price ? ' (Наш)' : ''}`,
-                                }))}
+                                options={sourceProviderOptions}
                                 showSearch
                                 optionFilterProp="label"
                             />
                         </Form.Item>
 
                         <div className="responsive-form-grid-3">
-                            <Form.Item name="markup" label="Наценка (коэфф.)">
+                            <Form.Item
+                                name="markup"
+                                label="Наценка (коэфф. / %)"
+                                extra={(
+                                    <>
+                                        <div>Как работает поле: `1` — цена без изменений.</div>
+                                        <div>`1.55` или `55` — наценка +55% к цене поставщика.</div>
+                                        <div>`0`, пустое значение или отрицательное число — тоже без изменений, цена не станет нулевой.</div>
+                                    </>
+                                )}
+                            >
                                 <InputNumber min={0} step={0.1} style={{ width: '100%' }} />
                             </Form.Item>
                             <Form.Item name="min_price" label="Мин. цена">

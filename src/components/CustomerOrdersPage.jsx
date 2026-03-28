@@ -10,6 +10,7 @@ import {
     Select,
     Switch,
     Table,
+    Tabs,
     Typography,
 } from 'antd';
 import dayjs from 'dayjs';
@@ -18,6 +19,7 @@ import { getAutopartLookupByOem } from '../api/autoparts';
 import {
     createManualCustomerOrder,
     getCustomerOrderConfigs,
+    getCustomerOrders,
     getCustomerOrdersSummary,
     retryCustomerOrder,
 } from '../api/customerOrders';
@@ -42,9 +44,11 @@ const ORDER_STATUS_LABELS = {
 const CustomerOrdersPage = () => {
     const navigate = useNavigate();
     const [orders, setOrders] = useState([]);
+    const [errorOrders, setErrorOrders] = useState([]);
     const [customers, setCustomers] = useState([]);
     const [loading, setLoading] = useState(false);
     const [filters, setFilters] = useState(DEFAULT_FILTERS);
+    const [activeTab, setActiveTab] = useState('orders');
     const [createOpen, setCreateOpen] = useState(false);
     const [creating, setCreating] = useState(false);
     const [orderConfigs, setOrderConfigs] = useState([]);
@@ -88,33 +92,43 @@ const CustomerOrdersPage = () => {
         return map;
     }, [customers]);
 
+    const buildBaseParams = useCallback((activeFilters) => {
+        const params = {};
+        if (activeFilters.customerId) {
+            params.customer_id = activeFilters.customerId;
+        }
+        if (activeFilters.dateRange?.length === 2) {
+            params.date_from = activeFilters.dateRange[0];
+            params.date_to = activeFilters.dateRange[1];
+        }
+        return params;
+    }, []);
+
     const fetchOrders = useCallback(async (filtersState) => {
         const activeFilters = filtersState || DEFAULT_FILTERS;
         setLoading(true);
         try {
-            const params = {};
-            if (activeFilters.customerId) {
-                params.customer_id = activeFilters.customerId;
+            const baseParams = buildBaseParams(activeFilters);
+            const summaryParams = { ...baseParams };
+            if (activeFilters.status && activeFilters.status !== 'ERROR') {
+                summaryParams.status = activeFilters.status;
             }
-            if (activeFilters.status) {
-                params.status = activeFilters.status;
-            }
-            if (activeFilters.dateRange?.length === 2) {
-                params.date_from = activeFilters.dateRange[0];
-                params.date_to = activeFilters.dateRange[1];
-            }
-            const [ordersResp, customersResp] = await Promise.all([
-                getCustomerOrdersSummary(params),
+            const [ordersResp, errorOrdersResp, customersResp] = await Promise.all([
+                getCustomerOrdersSummary(summaryParams),
+                getCustomerOrders({ ...baseParams, status: 'ERROR' }),
                 getCustomersSummary({ page: 1, page_size: 200 }),
             ]);
-            setOrders(ordersResp.data || []);
+            setOrders(
+                (ordersResp.data || []).filter((order) => order.status !== 'ERROR')
+            );
+            setErrorOrders(errorOrdersResp.data || []);
             setCustomers(customersResp.data?.items || []);
         } catch {
             message.error('Не удалось загрузить заказы клиентов');
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [buildBaseParams]);
 
     useEffect(() => {
         fetchOrders(DEFAULT_FILTERS);
@@ -126,6 +140,13 @@ const CustomerOrdersPage = () => {
             ...order,
         }));
     }, [orders]);
+
+    const errorDataSource = useMemo(() => {
+        return (errorOrders || []).map((order) => ({
+            key: order.id,
+            ...order,
+        }));
+    }, [errorOrders]);
 
     const formatDateTime = (value) => {
         if (!value) return '—';
@@ -510,6 +531,100 @@ const CustomerOrdersPage = () => {
         },
     ];
 
+    const errorColumns = [
+        {
+            title: 'Дата письма',
+            dataIndex: 'received_at',
+            key: 'received_at',
+            width: 170,
+            render: formatDateTime,
+        },
+        {
+            title: 'Клиент',
+            dataIndex: 'customer_id',
+            key: 'customer_id',
+            width: 180,
+            render: (value) => customerMap[value] || value,
+        },
+        {
+            title: 'Источник',
+            key: 'source',
+            width: 280,
+            render: (_, record) => (
+                <div>
+                    <div style={{ fontWeight: 600 }}>
+                        {record.source_email || '—'}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#666' }}>
+                        UID: {record.source_uid || '—'}
+                    </div>
+                </div>
+            ),
+        },
+        {
+            title: 'Письмо / файл',
+            key: 'mail',
+            render: (_, record) => (
+                <div>
+                    <div style={{ fontWeight: 600 }}>
+                        {record.source_filename || record.order_number || `Заказ #${record.id}`}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#666' }}>
+                        {record.source_subject || '—'}
+                    </div>
+                </div>
+            ),
+        },
+        {
+            title: 'Ошибка',
+            dataIndex: 'error_details',
+            key: 'error_details',
+            render: (value) => value || 'Причина не сохранена',
+        },
+        {
+            title: 'Действия',
+            key: 'actions',
+            width: 180,
+            render: (_, record) => (
+                <div className="table-actions">
+                    <Button
+                        size="small"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            navigate(`/customer-orders/${record.id}`);
+                        }}
+                    >
+                        Открыть
+                    </Button>
+                    <Button
+                        size="small"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            handleRetryOrder(record.id);
+                        }}
+                        loading={retryingOrderId === record.id}
+                    >
+                        Повторить
+                    </Button>
+                </div>
+            ),
+        },
+    ];
+
+    const statusOptions = useMemo(
+        () => Object.entries(ORDER_STATUS_LABELS)
+            .filter(([value]) => value !== 'ERROR')
+            .map(([value, label]) => ({ value, label })),
+        []
+    );
+
+    const handleTabChange = (key) => {
+        setActiveTab(key);
+        if (key === 'orders' && filters.status === 'ERROR') {
+            setFilters((prev) => ({ ...prev, status: null }));
+        }
+    };
+
     return (
         <Card>
             <Title level={3}>Заказы клиентов</Title>
@@ -551,21 +666,18 @@ const CustomerOrdersPage = () => {
                         label: customer.name,
                     }))}
                 />
-                <Select
-                    allowClear
-                    style={{ minWidth: 180 }}
-                    placeholder="Статус"
-                    value={filters.status}
-                    onChange={(value) =>
-                        setFilters((prev) => ({ ...prev, status: value || null }))
-                    }
-                    options={Object.entries(ORDER_STATUS_LABELS).map(
-                        ([value, label]) => ({
-                            value,
-                            label,
-                        })
-                    )}
-                />
+                {activeTab === 'orders' && (
+                    <Select
+                        allowClear
+                        style={{ minWidth: 180 }}
+                        placeholder="Статус"
+                        value={filters.status}
+                        onChange={(value) =>
+                            setFilters((prev) => ({ ...prev, status: value || null }))
+                        }
+                        options={statusOptions}
+                    />
+                )}
                 <Button
                     type="primary"
                     onClick={() => fetchOrders(filters)}
@@ -585,23 +697,59 @@ const CustomerOrdersPage = () => {
                     Создать заказ
                 </Button>
             </div>
-            <Table
-                loading={loading}
-                dataSource={dataSource}
-                columns={columns}
-                onRow={(record) => ({
-                    onClick: (event) => {
-                        if (
-                            event.target.closest('button') ||
-                            event.target.closest('input') ||
-                            event.target.closest('.ant-select')
-                        ) {
-                            return;
-                        }
-                        navigate(`/customer-orders/${record.id}`);
+            <Tabs
+                activeKey={activeTab}
+                onChange={handleTabChange}
+                items={[
+                    {
+                        key: 'orders',
+                        label: `Заказы (${dataSource.length})`,
+                        children: (
+                            <Table
+                                loading={loading}
+                                dataSource={dataSource}
+                                columns={columns}
+                                onRow={(record) => ({
+                                    onClick: (event) => {
+                                        if (
+                                            event.target.closest('button') ||
+                                            event.target.closest('input') ||
+                                            event.target.closest('.ant-select')
+                                        ) {
+                                            return;
+                                        }
+                                        navigate(`/customer-orders/${record.id}`);
+                                    },
+                                })}
+                                pagination={{ pageSize: 20 }}
+                            />
+                        ),
                     },
-                })}
-                pagination={{ pageSize: 20 }}
+                    {
+                        key: 'errors',
+                        label: `Ошибки импорта (${errorDataSource.length})`,
+                        children: (
+                            <Table
+                                loading={loading}
+                                dataSource={errorDataSource}
+                                columns={errorColumns}
+                                onRow={(record) => ({
+                                    onClick: (event) => {
+                                        if (
+                                            event.target.closest('button') ||
+                                            event.target.closest('input') ||
+                                            event.target.closest('.ant-select')
+                                        ) {
+                                            return;
+                                        }
+                                        navigate(`/customer-orders/${record.id}`);
+                                    },
+                                })}
+                                pagination={{ pageSize: 20 }}
+                            />
+                        ),
+                    },
+                ]}
             />
             <Modal
                 title="Новый заказ клиента"
