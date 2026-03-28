@@ -19,6 +19,7 @@ import {
 } from '../api/customerOrders';
 import { getCustomersSummary } from '../api/customers';
 import { getProviders } from '../api/providers';
+import useAuth from '../context/useAuth';
 
 const { Title } = Typography;
 
@@ -44,6 +45,7 @@ const ITEM_STATUS_COLORS = {
 };
 
 const CustomerOrderDetailPage = () => {
+    const { user } = useAuth();
     const navigate = useNavigate();
     const { orderId } = useParams();
     const [order, setOrder] = useState(null);
@@ -241,6 +243,14 @@ const CustomerOrderDetailPage = () => {
         };
     }, [order?.items]);
 
+    const rejectedItems = useMemo(
+        () =>
+            (order?.items || []).filter(
+                (item) => Number(item.reject_qty ?? 0) > 0
+            ),
+        [order?.items]
+    );
+
     const columns = [
         {
             title: 'OEM',
@@ -344,6 +354,52 @@ const CustomerOrderDetailPage = () => {
         },
     ];
 
+    const rejectColumns = [
+        {
+            title: 'OEM',
+            dataIndex: 'oem',
+            key: 'oem',
+            width: 140,
+        },
+        {
+            title: 'Бренд',
+            dataIndex: 'brand',
+            key: 'brand',
+            width: 120,
+        },
+        {
+            title: 'Запрошено',
+            dataIndex: 'requested_qty',
+            key: 'requested_qty',
+            width: 100,
+        },
+        {
+            title: 'Отгружено',
+            dataIndex: 'ship_qty',
+            key: 'ship_qty',
+            width: 100,
+            render: (value) => value ?? 0,
+        },
+        {
+            title: 'Отказано',
+            dataIndex: 'reject_qty',
+            key: 'reject_qty',
+            width: 100,
+            render: (value) => value ?? 0,
+        },
+        {
+            title: 'Причина',
+            dataIndex: 'reject_reason_text',
+            key: 'reject_reason_text',
+            render: (value, record) =>
+                value || (
+                    record.status === 'REJECTED'
+                        ? 'Причина не сохранена или заказ обработан до обновления.'
+                        : 'Частичный отказ без сохраненной причины.'
+                ),
+        },
+    ];
+
     return (
         <div className="page-shell">
             <Card loading={loading}>
@@ -420,6 +476,22 @@ const CustomerOrderDetailPage = () => {
                             size="small"
                             scroll={{ x: 'max-content' }}
                         />
+                        {user?.role === 'admin' && rejectedItems.length > 0 && (
+                            <Card
+                                size="small"
+                                title="Причины отказов"
+                                style={{ marginTop: 16 }}
+                            >
+                                <Table
+                                    rowKey="id"
+                                    dataSource={rejectedItems}
+                                    columns={rejectColumns}
+                                    pagination={false}
+                                    size="small"
+                                    scroll={{ x: 'max-content' }}
+                                />
+                            </Card>
+                        )}
                     </>
                 ) : (
                     <div>Заказ не найден.</div>

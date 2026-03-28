@@ -987,6 +987,13 @@ const CustomerPage = () => {
             return;
         }
 
+        const normalizeOptionalPositive = (value) => {
+            if (value === null || value === undefined || value === '') return null;
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric) || numeric <= 0) return null;
+            return numeric;
+        };
+
         const payload = {
             provider_config_id: values.provider_config_id,
             enabled: values.enabled ?? true,
@@ -1003,10 +1010,10 @@ const CustomerPage = () => {
                     autoparts: toIntList(values.position_ids),
                 }
                 : {},
-            min_price: values.min_price ?? null,
-            max_price: values.max_price ?? null,
-            min_quantity: values.min_quantity ?? null,
-            max_quantity: values.max_quantity ?? null,
+            min_price: normalizeOptionalPositive(values.min_price),
+            max_price: normalizeOptionalPositive(values.max_price),
+            min_quantity: normalizeOptionalPositive(values.min_quantity),
+            max_quantity: normalizeOptionalPositive(values.max_quantity),
         };
 
         try {
@@ -2066,13 +2073,21 @@ const CustomerPage = () => {
                             <Form.Item name="min_price" label="Мин. цена">
                                 <InputNumber min={0} step={1} style={{ width: '100%' }} />
                             </Form.Item>
-                            <Form.Item name="max_price" label="Макс. цена">
+                            <Form.Item
+                                name="max_price"
+                                label="Макс. цена"
+                                extra="0 и отрицательные значения не применяются и будут очищены."
+                            >
                                 <InputNumber min={0} step={1} style={{ width: '100%' }} />
                             </Form.Item>
                         </div>
 
                         <div className="responsive-form-grid-3">
-                            <Form.Item name="min_quantity" label="Мин. количество">
+                            <Form.Item
+                                name="min_quantity"
+                                label="Мин. количество"
+                                extra="0 и отрицательные значения не применяются и будут очищены."
+                            >
                                 <InputNumber min={0} step={1} style={{ width: '100%' }} />
                             </Form.Item>
                             <Form.Item name="max_quantity" label="Макс. количество">
