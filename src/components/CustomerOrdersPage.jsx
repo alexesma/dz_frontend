@@ -15,7 +15,12 @@ import {
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { getAutopartLookupByOem } from '../api/autoparts';
-import { createManualCustomerOrder, getCustomerOrderConfigs, getCustomerOrdersSummary } from '../api/customerOrders';
+import {
+    createManualCustomerOrder,
+    getCustomerOrderConfigs,
+    getCustomerOrdersSummary,
+    retryCustomerOrder,
+} from '../api/customerOrders';
 import { getCustomersSummary } from '../api/customers';
 
 const { Title } = Typography;
@@ -44,6 +49,7 @@ const CustomerOrdersPage = () => {
     const [creating, setCreating] = useState(false);
     const [orderConfigs, setOrderConfigs] = useState([]);
     const [configsLoading, setConfigsLoading] = useState(false);
+    const [retryingOrderId, setRetryingOrderId] = useState(null);
     const [formState, setFormState] = useState({
         customerId: null,
         orderNumber: '',
@@ -388,6 +394,21 @@ const CustomerOrdersPage = () => {
         }
     };
 
+    const handleRetryOrder = async (orderId) => {
+        setRetryingOrderId(orderId);
+        try {
+            await retryCustomerOrder(orderId);
+            message.success('Заказ перепроверен');
+            fetchOrders(filters);
+        } catch (err) {
+            const detail =
+                err?.response?.data?.detail || 'Не удалось перепроверить заказ';
+            message.error(detail);
+        } finally {
+            setRetryingOrderId(null);
+        }
+    };
+
     const columns = [
         {
             title: 'Дата заказа',
@@ -456,6 +477,36 @@ const CustomerOrdersPage = () => {
                 if (Number.isNaN(num)) return '—';
                 return `${num.toFixed(1)}%`;
             },
+        },
+        {
+            title: 'Действия',
+            key: 'actions',
+            width: 180,
+            render: (_, record) => (
+                <div className="table-actions">
+                    <Button
+                        size="small"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            navigate(`/customer-orders/${record.id}`);
+                        }}
+                    >
+                        Открыть
+                    </Button>
+                    {record.status === 'ERROR' && (
+                        <Button
+                            size="small"
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                handleRetryOrder(record.id);
+                            }}
+                            loading={retryingOrderId === record.id}
+                        >
+                            Повторить
+                        </Button>
+                    )}
+                </div>
+            ),
         },
     ];
 

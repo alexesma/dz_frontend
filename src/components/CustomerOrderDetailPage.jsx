@@ -14,6 +14,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
     getCustomerOrder,
     processManualCustomerOrder,
+    retryCustomerOrder,
     updateCustomerOrderItem,
 } from '../api/customerOrders';
 import { getCustomersSummary } from '../api/customers';
@@ -51,6 +52,7 @@ const CustomerOrderDetailPage = () => {
     const [loading, setLoading] = useState(false);
     const [updatingItems, setUpdatingItems] = useState({});
     const [processing, setProcessing] = useState(false);
+    const [retrying, setRetrying] = useState(false);
 
     const customerMap = useMemo(() => {
         const map = {};
@@ -179,6 +181,22 @@ const CustomerOrderDetailPage = () => {
             message.error(detail);
         } finally {
             setProcessing(false);
+        }
+    };
+
+    const handleRetryOrder = async () => {
+        if (!order) return;
+        setRetrying(true);
+        try {
+            await retryCustomerOrder(order.id);
+            message.success('Заказ перепроверен');
+            fetchData();
+        } catch (err) {
+            const detail =
+                err?.response?.data?.detail || 'Не удалось перепроверить заказ';
+            message.error(detail);
+        } finally {
+            setRetrying(false);
         }
     };
 
@@ -342,6 +360,15 @@ const CustomerOrderDetailPage = () => {
                             Автообработать
                         </Button>
                     )}
+                    {order?.status === 'ERROR' && (
+                        <Button
+                            type="primary"
+                            onClick={handleRetryOrder}
+                            loading={retrying}
+                        >
+                            Повторить обработку
+                        </Button>
+                    )}
                 </div>
                 <Title level={3}>Заказ клиента</Title>
                 {order ? (
@@ -379,6 +406,11 @@ const CustomerOrderDetailPage = () => {
                             <Descriptions.Item label="Отказ, %">
                                 {summary.rejectedPct.toFixed(1)}%
                             </Descriptions.Item>
+                            {order.error_details && (
+                                <Descriptions.Item label="Ошибка" span={2}>
+                                    {order.error_details}
+                                </Descriptions.Item>
+                            )}
                         </Descriptions>
                         <Table
                             rowKey="id"

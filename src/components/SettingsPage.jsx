@@ -145,6 +145,8 @@ const SettingsPage = () => {
             const payload = {
                 lookback_days: orderInboxSettings.lookback_days,
                 mark_seen: orderInboxSettings.mark_seen,
+                error_file_retention_days:
+                    orderInboxSettings.error_file_retention_days,
             };
             const { data } = await updateCustomerOrderInboxSettings(payload);
             setOrderInboxSettings(data);
@@ -302,7 +304,9 @@ const SettingsPage = () => {
             <Card title="Почта заказов клиентов" style={{ marginTop: 16 }}>
                 <Paragraph style={{ marginBottom: 16 }}>
                     Глубина проверки определяет, за сколько последних дней
-                    искать письма с заказами (по дате письма).
+                    искать письма с заказами (по дате письма). Ошибочные
+                    файлы заказов хранятся временно, чтобы их можно было
+                    перепроверить после правки настроек.
                 </Paragraph>
                 <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                     <div>
@@ -316,6 +320,26 @@ const SettingsPage = () => {
                                     setOrderInboxSettings((prev) => ({
                                         ...(prev || {}),
                                         lookback_days: value ?? 1,
+                                    }))
+                                }
+                                disabled={orderInboxLoading}
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <Text strong>Хранить ошибочные файлы (дней)</Text>
+                        <div style={{ marginTop: 8 }}>
+                            <InputNumber
+                                min={1}
+                                max={30}
+                                value={
+                                    orderInboxSettings?.error_file_retention_days
+                                    ?? 5
+                                }
+                                onChange={(value) =>
+                                    setOrderInboxSettings((prev) => ({
+                                        ...(prev || {}),
+                                        error_file_retention_days: value ?? 5,
                                     }))
                                 }
                                 disabled={orderInboxLoading}

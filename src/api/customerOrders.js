@@ -27,6 +27,15 @@ export const createManualCustomerOrder = (payload) =>
 export const processManualCustomerOrder = (orderId) =>
     api.post(`/customer-orders/${orderId}/process-manual`);
 
+export const retryCustomerOrder = (orderId) =>
+    api.post(`/customer-orders/${orderId}/retry`);
+
+export const processCustomerOrderConfigNow = (configId) =>
+    api.post(`/customer-orders/configs/${configId}/process`);
+
+export const retryCustomerOrderErrorsForConfig = (configId) =>
+    api.post(`/customer-orders/configs/${configId}/retry-errors`);
+
 export const createManualSupplierOrder = (payload) =>
     api.post('/customer-orders/supplier/manual', payload);
 

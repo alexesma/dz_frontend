@@ -48,6 +48,10 @@ import { getEmailAccounts } from '../api/emailAccounts';
 import { testEmailAccount } from '../api/emailAccounts';
 import { lookupBrands } from '../api/brands';
 import { searchAutopartsByOem } from '../api/autoparts';
+import {
+    processCustomerOrderConfigNow,
+    retryCustomerOrderErrorsForConfig,
+} from '../api/customerOrders';
 
 const CustomerPage = () => {
     const { customerId: customerIdParam } = useParams();
@@ -82,6 +86,8 @@ const CustomerPage = () => {
     const [autopartFilterLoading, setAutopartFilterLoading] = useState(false);
     const [orderInboxLoading, setOrderInboxLoading] = useState(false);
     const [orderInboxTestLoading, setOrderInboxTestLoading] = useState(false);
+    const [orderProcessNowLoading, setOrderProcessNowLoading] = useState(false);
+    const [orderRetryErrorsLoading, setOrderRetryErrorsLoading] = useState(false);
     const brandSearchRequestRef = useRef(0);
     const brandSearchTimerRef = useRef(null);
     const autopartSearchRequestRef = useRef(0);
@@ -94,9 +100,17 @@ const CustomerPage = () => {
 
     const applyOrderConfigToForm = useCallback((config) => {
         if (config) {
+            const mergedOrderEmails = Array.from(
+                new Set(
+                    [...(config.order_emails || []), config.order_email]
+                        .filter((value) => value)
+                        .map((value) => String(value).trim())
+                        .filter((value) => value)
+                )
+            );
             orderConfigForm.setFieldsValue({
                 ...config,
-                order_emails: (config.order_emails || []).join(', '),
+                order_emails: mergedOrderEmails.join(', '),
                 order_reply_emails: (config.order_reply_emails || []).join(', '),
             });
         } else {
@@ -110,6 +124,24 @@ const CustomerPage = () => {
             });
         }
     }, [orderConfigForm]);
+
+    const refreshOrderConfigs = useCallback(async (priceConfigId = selectedPriceConfigId) => {
+        if (!customerId) {
+            setOrderConfigs([]);
+            setOrderConfig(null);
+            applyOrderConfigToForm(null);
+            return [];
+        }
+        const orderResp = await getCustomerOrderConfigs(customerId);
+        const configs = orderResp.data || [];
+        setOrderConfigs(configs);
+        const activeConfig = configs.find(
+            (cfg) => cfg.pricelist_config_id === priceConfigId
+        );
+        setOrderConfig(activeConfig || null);
+        applyOrderConfigToForm(activeConfig || null);
+        return configs;
+    }, [applyOrderConfigToForm, customerId, selectedPriceConfigId]);
 
 
     const dayOptions = [
@@ -641,6 +673,7 @@ const CustomerPage = () => {
                 ...values,
                 customer_id: customerId,
                 pricelist_config_id: selectedPriceConfigId,
+                order_email: null,
                 order_emails: (values.order_emails || '')
                     .split(',')
                     .map((v) => v.trim())
@@ -657,14 +690,7 @@ const CustomerPage = () => {
                 await createCustomerOrderConfig(payload);
                 message.success('Конфигурация заказов создана');
             }
-            const orderResp = await getCustomerOrderConfigs(customerId);
-            const configs = orderResp.data || [];
-            setOrderConfigs(configs);
-            const activeConfig = configs.find(
-                (cfg) => cfg.pricelist_config_id === selectedPriceConfigId
-            );
-            setOrderConfig(activeConfig || null);
-            applyOrderConfigToForm(activeConfig || null);
+            await refreshOrderConfigs(selectedPriceConfigId);
         } catch (error) {
             console.error(error);
             const detail = error?.response?.data?.detail;
@@ -703,6 +729,47 @@ const CustomerPage = () => {
             message.error('Не удалось проверить IMAP доступ');
         } finally {
             setOrderInboxTestLoading(false);
+        }
+    };
+
+    const handleProcessOrderConfigNow = async () => {
+        if (!orderConfig?.id) {
+            message.warning('Сначала сохраните конфигурацию обработки заказов');
+            return;
+        }
+        setOrderProcessNowLoading(true);
+        try {
+            await processCustomerOrderConfigNow(orderConfig.id);
+            message.success('Проверка почты запущена');
+            await refreshOrderConfigs(orderConfig.pricelist_config_id);
+        } catch (err) {
+            const detail = err?.response?.data?.detail;
+            message.error(detail || 'Не удалось запустить проверку почты');
+        } finally {
+            setOrderProcessNowLoading(false);
+        }
+    };
+
+    const handleRetryOrderErrors = async () => {
+        if (!orderConfig?.id) {
+            message.warning('Сначала сохраните конфигурацию обработки заказов');
+            return;
+        }
+        setOrderRetryErrorsLoading(true);
+        try {
+            const { data } = await retryCustomerOrderErrorsForConfig(
+                orderConfig.id
+            );
+            const succeeded = data?.succeeded ?? 0;
+            const failed = data?.failed ?? 0;
+            message.success(
+                `Перепроверка завершена: успешно ${succeeded}, с ошибкой ${failed}`
+            );
+        } catch (err) {
+            const detail = err?.response?.data?.detail;
+            message.error(detail || 'Не удалось перепроверить ошибки');
+        } finally {
+            setOrderRetryErrorsLoading(false);
         }
     };
 
@@ -1534,9 +1601,6 @@ const CustomerPage = () => {
                             <Form.Item name="order_emails" label="Почты для заказов (через запятую)">
                                 <Input placeholder="order1@example.com, order2@example.com" />
                             </Form.Item>
-                            <Form.Item name="order_email" label="Почта для заказов (одна)">
-                                <Input />
-                            </Form.Item>
                             <Form.Item name="order_reply_emails" label="Почты для ответов (через запятую)">
                                 <Input placeholder="reply1@example.com, reply2@example.com" />
                             </Form.Item>
@@ -1678,6 +1742,20 @@ const CustomerPage = () => {
                             <Button type="primary" htmlType="submit" loading={orderConfigLoading}>
                                 Сохранить обработку заказов
                             </Button>
+                            <Button
+                                onClick={handleProcessOrderConfigNow}
+                                loading={orderProcessNowLoading}
+                                disabled={!orderConfig}
+                            >
+                                Проверить почту сейчас
+                            </Button>
+                            <Button
+                                onClick={handleRetryOrderErrors}
+                                loading={orderRetryErrorsLoading}
+                                disabled={!orderConfig}
+                            >
+                                Перепроверить ошибки
+                            </Button>
                             {orderConfig && (
                                 <Button
                                     danger
@@ -1685,11 +1763,7 @@ const CustomerPage = () => {
                                         try {
                                             await deleteCustomerOrderConfig(orderConfig.id);
                                             message.success('Конфигурация удалена');
-                                            const orderResp = await getCustomerOrderConfigs(customerId);
-                                            const configs = orderResp.data || [];
-                                            setOrderConfigs(configs);
-                                            setOrderConfig(null);
-                                            applyOrderConfigToForm(null);
+                                            await refreshOrderConfigs(selectedPriceConfigId);
                                         } catch {
                                             message.error('Не удалось удалить конфигурацию');
                                         }
