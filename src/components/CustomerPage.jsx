@@ -1838,6 +1838,13 @@ const CustomerPage = () => {
                                     <Form.Item name="ship_qty_col" label="Отгр.">
                                         <InputNumber min={1} style={{ width: '100%' }} />
                                     </Form.Item>
+                                    <Form.Item
+                                        name="ship_price_col"
+                                        label="Цена отгр."
+                                        tooltip="Необязательная колонка для цены отгрузки. Если заполнена, при отгрузке сюда записывается цена из заказа."
+                                    >
+                                        <InputNumber min={1} style={{ width: '100%' }} />
+                                    </Form.Item>
                                     <Form.Item name="reject_qty_col" label="Отказ">
                                         <InputNumber min={1} style={{ width: '100%' }} />
                                     </Form.Item>
