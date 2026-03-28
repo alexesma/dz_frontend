@@ -22,7 +22,22 @@ import {
 } from '../api/autoparts';
 
 const OEM_HISTORY_KEY = 'autopart_oem_history_v1';
-const STATE_STORAGE_KEY = 'autopart_offers_state_v1';
+const STATE_STORAGE_KEY = 'autopart_offers_state_v2';
+
+const formatShortDate = (value) => {
+    if (!value) {
+        return '—';
+    }
+    const date = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+    return date.toLocaleDateString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        year: '2-digit',
+    });
+};
 
 const safeJsonParse = (value, fallback) => {
     if (!value) {
@@ -38,6 +53,7 @@ const safeJsonParse = (value, fallback) => {
 const AutopartOffers = () => {
     const [form] = Form.useForm();
     const [offers, setOffers] = useState([]);
+    const [historicalOffers, setHistoricalOffers] = useState([]);
     const [loading, setLoading] = useState(false);
     const [remoteOffers, setRemoteOffers] = useState([]);
     const [remoteLoading, setRemoteLoading] = useState(false);
@@ -58,7 +74,7 @@ const AutopartOffers = () => {
 
     const brandOptions = useMemo(() => {
         const uniqueBrands = new Set(
-            offers
+            [...offers, ...historicalOffers]
                 .map((item) => item.brand_name)
                 .filter((value) => value && value.trim())
         );
@@ -66,7 +82,7 @@ const AutopartOffers = () => {
             label: brand,
             value: brand,
         }));
-    }, [offers]);
+    }, [offers, historicalOffers]);
 
     const oemOptions = useMemo(
         () => oemHistory.map((item) => ({ value: item })),
@@ -95,6 +111,9 @@ const AutopartOffers = () => {
             if (Array.isArray(storedState.offers)) {
                 setOffers(storedState.offers);
             }
+            if (Array.isArray(storedState.historicalOffers)) {
+                setHistoricalOffers(storedState.historicalOffers);
+            }
             if (Array.isArray(storedState.remoteOffers)) {
                 setRemoteOffers(storedState.remoteOffers);
             }
@@ -116,11 +135,20 @@ const AutopartOffers = () => {
             selectedBrand,
             showCrosses,
             offers,
+            historicalOffers,
             remoteOffers,
             remoteMeta,
         };
         localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(payload));
-    }, [currentOem, selectedBrand, showCrosses, offers, remoteOffers, remoteMeta]);
+    }, [
+        currentOem,
+        selectedBrand,
+        showCrosses,
+        offers,
+        historicalOffers,
+        remoteOffers,
+        remoteMeta,
+    ]);
 
     const pushOemHistory = (value) => {
         const normalized = String(value || '').trim();
@@ -144,12 +172,19 @@ const AutopartOffers = () => {
             return;
         }
         setLoading(true);
+        setHistoricalOffers([]);
         setRemoteOffers([]);
         setRemoteMeta({ total: 0 });
         try {
             const { data } = await getAutopartOffers(oemValue);
             const list = Array.isArray(data?.offers) ? data.offers : [];
+            const historicalList = Array.isArray(data?.historical_offers)
+                ? data.historical_offers
+                : [];
             const filtered = list.filter(
+                (item) => (item.quantity ?? 0) > 0
+            );
+            const filteredHistorical = historicalList.filter(
                 (item) => (item.quantity ?? 0) > 0
             );
             const sortedByPrice = [...filtered].sort((a, b) => {
@@ -157,13 +192,33 @@ const AutopartOffers = () => {
                 const bPrice = Number(b.price ?? Number.POSITIVE_INFINITY);
                 return aPrice - bPrice;
             });
+            const sortedHistorical = [...filteredHistorical].sort((a, b) => {
+                const aDate = String(a.pricelist_date || '');
+                const bDate = String(b.pricelist_date || '');
+                if (aDate !== bDate) {
+                    return bDate.localeCompare(aDate);
+                }
+                const aPrice = Number(a.price ?? Number.POSITIVE_INFINITY);
+                const bPrice = Number(b.price ?? Number.POSITIVE_INFINITY);
+                return aPrice - bPrice;
+            });
             setOffers(sortedByPrice);
+            setHistoricalOffers(sortedHistorical);
             setCurrentOem(oemValue);
             pushOemHistory(oemValue);
-            const fallbackBrand = list.find((item) => item.brand_name)?.brand_name;
+            const fallbackBrand = [...list, ...historicalList].find(
+                (item) => item.brand_name
+            )?.brand_name;
             setSelectedBrand(fallbackBrand || '');
             if (!filtered.length) {
-                message.info('В прайс-листах ничего не найдено');
+                if (sortedHistorical.length) {
+                    message.info(
+                        'В актуальных прайсах ничего не найдено. ' +
+                        'Ниже показана последняя история по старым прайсам.'
+                    );
+                } else {
+                    message.info('В актуальных прайсах ничего не найдено');
+                }
             }
         } catch (error) {
             console.error('Fetch offers error:', error);
@@ -364,38 +419,43 @@ const AutopartOffers = () => {
             title: 'OEM',
             dataIndex: 'oem_number',
             key: 'oem_number',
-            width: 140,
+            width: 130,
+            ellipsis: true,
         },
         {
             title: 'Бренд',
             dataIndex: 'brand_name',
             key: 'brand_name',
-            width: 140,
+            width: 110,
+            ellipsis: true,
         },
         {
             title: 'Наименование',
             dataIndex: 'name',
             key: 'name',
             ellipsis: true,
+            width: 220,
         },
         {
-            title: 'Поставщик',
-            dataIndex: 'provider_name',
-            key: 'provider_name',
-            width: 180,
-        },
-        {
-            title: 'Прайс',
-            dataIndex: 'provider_config_name',
-            key: 'provider_config_name',
-            width: 180,
-            render: (value) => value || 'Основной прайс',
+            title: 'Источник',
+            key: 'source',
+            width: 220,
+            ellipsis: true,
+            render: (_, record) => (
+                <div>
+                    <div style={{ fontWeight: 500 }}>{record.provider_name}</div>
+                    <div style={{ color: '#6b7280', fontSize: 12 }}>
+                        {record.provider_config_name || 'Основной прайс'}
+                        {record.is_own_price ? ' · Наш прайс' : ''}
+                    </div>
+                </div>
+            ),
         },
         {
             title: 'Цена',
             dataIndex: 'price',
             key: 'price',
-            width: 100,
+            width: 90,
             sorter: (a, b) => {
                 const aPrice = Number(a.price ?? Number.POSITIVE_INFINITY);
                 const bPrice = Number(b.price ?? Number.POSITIVE_INFINITY);
@@ -409,7 +469,7 @@ const AutopartOffers = () => {
             title: 'Кол-во',
             dataIndex: 'quantity',
             key: 'quantity',
-            width: 90,
+            width: 75,
             sorter: (a, b) => {
                 const aQty = Number(a.quantity ?? Number.NEGATIVE_INFINITY);
                 const bQty = Number(b.quantity ?? Number.NEGATIVE_INFINITY);
@@ -419,7 +479,7 @@ const AutopartOffers = () => {
         {
             title: 'Срок',
             key: 'delivery',
-            width: 140,
+            width: 90,
             sorter: (a, b) => {
                 const aVal = Number(a.min_delivery_day ?? a.max_delivery_day ?? Number.POSITIVE_INFINITY);
                 const bVal = Number(b.min_delivery_day ?? b.max_delivery_day ?? Number.POSITIVE_INFINITY);
@@ -438,42 +498,54 @@ const AutopartOffers = () => {
             title: 'Обновлён',
             dataIndex: 'pricelist_date',
             key: 'pricelist_date',
-            width: 120,
-            render: (value) => value || '—',
-        },
-        {
-            title: 'Наш прайс',
-            dataIndex: 'is_own_price',
-            key: 'is_own_price',
-            width: 120,
-            render: (value) =>
-                value ? <Tag color="gold">Наш</Tag> : <span style={{ color: '#ccc' }}>—</span>,
+            width: 95,
+            render: (value) => formatShortDate(value),
         },
         {
             title: 'График',
             key: 'price_history',
-            width: 110,
+            width: 84,
             render: (_, record) => (
                 <Button
                     size="small"
                     icon={<LineChartOutlined />}
                     onClick={() => navigate(`/autoparts/price-history?oem=${encodeURIComponent(record.oem_number)}`)}
                 >
-                    Открыть
+                    График
                 </Button>
             ),
         },
     ];
 
+    const historicalColumns = [
+        ...localColumns.map((column) => {
+            if (column.key === 'source') {
+                return {
+                    ...column,
+                    render: (_, record) => (
+                        <div>
+                            <div style={{ fontWeight: 500 }}>{record.provider_name}</div>
+                            <div style={{ color: '#b45309', fontSize: 12 }}>
+                                {record.provider_config_name || 'Основной прайс'} ·
+                                {' '}нет в свежем прайсе
+                            </div>
+                        </div>
+                    ),
+                };
+            }
+            return column;
+        }),
+    ];
+
     const remoteColumns = [
         { title: 'OEM', dataIndex: 'oem', key: 'oem', width: 140 },
-        { title: 'Бренд', dataIndex: 'make_name', key: 'make_name', width: 140 },
-        { title: 'Наименование', dataIndex: 'detail_name', key: 'detail_name', ellipsis: true },
+        { title: 'Бренд', dataIndex: 'make_name', key: 'make_name', width: 110, ellipsis: true },
+        { title: 'Наименование', dataIndex: 'detail_name', key: 'detail_name', ellipsis: true, width: 220 },
         {
             title: 'Цена',
             dataIndex: 'price',
             key: 'price',
-            width: 100,
+            width: 90,
             sorter: (a, b) => {
                 const aPrice = Number(a.price ?? Number.POSITIVE_INFINITY);
                 const bPrice = Number(b.price ?? Number.POSITIVE_INFINITY);
@@ -486,13 +558,13 @@ const AutopartOffers = () => {
             title: 'Кол-во',
             dataIndex: 'qnt',
             key: 'qnt',
-            width: 80,
+            width: 70,
             render: (value) => (value === null || value === undefined ? '—' : value),
         },
         {
             title: 'Срок',
             key: 'delivery',
-            width: 140,
+            width: 90,
             sorter: (a, b) => {
                 const aVal = Number(a.min_delivery_day ?? a.max_delivery_day ?? Number.POSITIVE_INFINITY);
                 const bVal = Number(b.min_delivery_day ?? b.max_delivery_day ?? Number.POSITIVE_INFINITY);
@@ -511,14 +583,14 @@ const AutopartOffers = () => {
             title: 'Поставщик',
             dataIndex: 'supplier_name',
             key: 'supplier_name',
-            width: 180,
+            width: 170,
             render: (value) => value || '—',
         },
-        { title: 'Комментарий', dataIndex: 'comment', key: 'comment', ellipsis: true },
+        { title: 'Комментарий', dataIndex: 'comment', key: 'comment', ellipsis: true, width: 180 },
         {
             title: 'График',
             key: 'price_history',
-            width: 110,
+            width: 84,
             render: (_, record) => {
                 const oem = record.oem || record.oem_number;
                 return (
@@ -649,8 +721,10 @@ const AutopartOffers = () => {
                     }
                     columns={localColumns}
                     dataSource={filteredOffers}
-                    pagination={{ pageSize: 12 }}
-                    scroll={{ x: 1200 }}
+                    size="small"
+                    pagination={{ pageSize: 20, showSizeChanger: false }}
+                    tableLayout="fixed"
+                    scroll={{ x: 980 }}
                 />
             </Spin>
 
@@ -698,11 +772,41 @@ const AutopartOffers = () => {
                         rowKey={(record, index) => record.api_hash || `${record.oem}-${index}`}
                         columns={remoteColumns}
                         dataSource={remoteOffers}
-                        pagination={{ pageSize: 10 }}
-                        scroll={{ x: 1200 }}
+                        size="small"
+                        pagination={{ pageSize: 20, showSizeChanger: false }}
+                        tableLayout="fixed"
+                        scroll={{ x: 980 }}
                     />
                 </Spin>
             </Space>
+
+            {historicalOffers.length ? (
+                <>
+                    <Divider />
+                    <Space
+                        direction="vertical"
+                        style={{ width: '100%' }}
+                        size="small"
+                    >
+                        <div style={{ color: '#6b7280' }}>
+                            История по старым прайсам. Эти позиции уже не
+                            найдены в свежих прайсах поставщиков, но раньше по
+                            ним были предложения.
+                        </div>
+                        <Table
+                            rowKey={(record) =>
+                                `history-${record.autopart_id}-${record.provider_id}-${record.provider_config_id || 'base'}`
+                            }
+                            columns={historicalColumns}
+                            dataSource={historicalOffers}
+                            size="small"
+                            pagination={{ pageSize: 20, showSizeChanger: false }}
+                            tableLayout="fixed"
+                            scroll={{ x: 980 }}
+                        />
+                    </Space>
+                </>
+            ) : null}
         </Card>
     );
 };
