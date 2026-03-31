@@ -1219,7 +1219,7 @@ const ProviderPage = () => {
                         <Form.Item
                             name="max_days_without_update"
                             label="Дней без обновления"
-                            extra="Если превышено — уведомление в Telegram"
+                            extra="Если превышено — уведомление администраторам в программе"
                             initialValue={3}
                         >
                             <InputNumber min={0} style={{ width: "100%" }} />

@@ -2,6 +2,7 @@ import React from 'react';
 import { Layout } from 'antd';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
+import NotificationCenter from './components/NotificationCenter';
 import RestockOffers from './components/RestockOffers';
 import OrdersList from './components/OrdersList';
 import Dashboard from './components/Dashboard';
@@ -118,6 +119,7 @@ const App = () => (
                         </div>
                     </Content>
                 </Layout>
+                <NotificationCenter />
             </Layout>
         </Router>
     </AuthProvider>
