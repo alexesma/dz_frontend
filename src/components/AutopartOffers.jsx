@@ -13,12 +13,14 @@ import {
     message,
     Checkbox,
     Spin,
+    Tooltip,
 } from 'antd';
 import {
     SearchOutlined,
     CloudDownloadOutlined,
     LineChartOutlined,
     PlusOutlined,
+    ShoppingCartOutlined,
     DeleteOutlined,
     SendOutlined,
     MailOutlined,
@@ -930,14 +932,14 @@ const AutopartOffers = () => {
             title: 'OEM',
             dataIndex: 'oem_number',
             key: 'oem_number',
-            width: 130,
+            width: 112,
             ellipsis: true,
         },
         {
             title: 'Бренд',
             dataIndex: 'brand_name',
             key: 'brand_name',
-            width: 110,
+            width: 88,
             ellipsis: true,
         },
         {
@@ -945,17 +947,17 @@ const AutopartOffers = () => {
             dataIndex: 'name',
             key: 'name',
             ellipsis: true,
-            width: 220,
+            width: 180,
         },
         {
             title: 'Источник',
             key: 'source',
-            width: 220,
+            width: 170,
             ellipsis: true,
             render: (_, record) => (
-                <div>
-                    <div style={{ fontWeight: 500 }}>{record.provider_name}</div>
-                    <div style={{ color: '#6b7280', fontSize: 12 }}>
+                <div className="autopart-offers-source-cell">
+                    <div className="autopart-offers-source-title">{record.provider_name}</div>
+                    <div className="autopart-offers-source-meta">
                         {record.provider_config_name || 'Основной прайс'}
                         {record.is_own_price ? ' · Наш прайс' : ''}
                     </div>
@@ -966,7 +968,7 @@ const AutopartOffers = () => {
             title: 'Цена',
             dataIndex: 'price',
             key: 'price',
-            width: 90,
+            width: 82,
             sorter: (a, b) => {
                 const aPrice = Number(a.price ?? Number.POSITIVE_INFINITY);
                 const bPrice = Number(b.price ?? Number.POSITIVE_INFINITY);
@@ -980,7 +982,7 @@ const AutopartOffers = () => {
             title: 'Кол-во',
             dataIndex: 'quantity',
             key: 'quantity',
-            width: 75,
+            width: 62,
             sorter: (a, b) => {
                 const aQty = Number(a.quantity ?? Number.NEGATIVE_INFINITY);
                 const bQty = Number(b.quantity ?? Number.NEGATIVE_INFINITY);
@@ -990,7 +992,7 @@ const AutopartOffers = () => {
         {
             title: 'Срок',
             key: 'delivery',
-            width: 90,
+            width: 72,
             sorter: (a, b) => {
                 const aVal = Number(a.min_delivery_day ?? a.max_delivery_day ?? Number.POSITIVE_INFINITY);
                 const bVal = Number(b.min_delivery_day ?? b.max_delivery_day ?? Number.POSITIVE_INFINITY);
@@ -1009,35 +1011,39 @@ const AutopartOffers = () => {
             title: 'Обновлён',
             dataIndex: 'pricelist_date',
             key: 'pricelist_date',
-            width: 95,
+            width: 86,
             render: (value) => formatShortDate(value),
         },
         {
-            title: 'График',
+            title: '',
             key: 'price_history',
-            width: 84,
+            width: 48,
             render: (_, record) => (
-                <Button
-                    size="small"
-                    icon={<LineChartOutlined />}
-                    onClick={() => navigate(`/autoparts/price-history?oem=${encodeURIComponent(record.oem_number)}`)}
-                >
-                    График
-                </Button>
+                <Tooltip title="График цен">
+                    <Button
+                        size="small"
+                        type="text"
+                        shape="circle"
+                        icon={<LineChartOutlined />}
+                        onClick={() => navigate(`/autoparts/price-history?oem=${encodeURIComponent(record.oem_number)}`)}
+                    />
+                </Tooltip>
             ),
         },
         {
             title: '',
             key: 'add_to_cart',
-            width: 84,
+            width: 48,
             render: (_, record) => (
-                <Button
-                    size="small"
-                    icon={<PlusOutlined />}
-                    onClick={() => addLocalOfferToCart(record)}
-                >
-                    В корзину
-                </Button>
+                <Tooltip title="Добавить в корзину">
+                    <Button
+                        size="small"
+                        type="text"
+                        shape="circle"
+                        icon={<ShoppingCartOutlined />}
+                        onClick={() => addLocalOfferToCart(record)}
+                    />
+                </Tooltip>
             ),
         },
     ];
@@ -1065,14 +1071,14 @@ const AutopartOffers = () => {
     ];
 
     const remoteColumns = [
-        { title: 'OEM', dataIndex: 'oem', key: 'oem', width: 140 },
-        { title: 'Бренд', dataIndex: 'make_name', key: 'make_name', width: 110, ellipsis: true },
-        { title: 'Наименование', dataIndex: 'detail_name', key: 'detail_name', ellipsis: true, width: 220 },
+        { title: 'OEM', dataIndex: 'oem', key: 'oem', width: 112 },
+        { title: 'Бренд', dataIndex: 'make_name', key: 'make_name', width: 88, ellipsis: true },
+        { title: 'Наименование', dataIndex: 'detail_name', key: 'detail_name', ellipsis: true, width: 180 },
         {
             title: 'Цена',
             dataIndex: 'price',
             key: 'price',
-            width: 90,
+            width: 82,
             sorter: (a, b) => {
                 const aPrice = Number(a.price ?? Number.POSITIVE_INFINITY);
                 const bPrice = Number(b.price ?? Number.POSITIVE_INFINITY);
@@ -1085,13 +1091,13 @@ const AutopartOffers = () => {
             title: 'Кол-во',
             dataIndex: 'qnt',
             key: 'qnt',
-            width: 70,
+            width: 62,
             render: (value) => (value === null || value === undefined ? '—' : value),
         },
         {
             title: 'Срок',
             key: 'delivery',
-            width: 90,
+            width: 72,
             sorter: (a, b) => {
                 const aVal = Number(a.min_delivery_day ?? a.max_delivery_day ?? Number.POSITIVE_INFINITY);
                 const bVal = Number(b.min_delivery_day ?? b.max_delivery_day ?? Number.POSITIVE_INFINITY);
@@ -1110,42 +1116,46 @@ const AutopartOffers = () => {
             title: 'Поставщик',
             dataIndex: 'supplier_name',
             key: 'supplier_name',
-            width: 170,
+            width: 130,
             render: (value) => value || '—',
         },
-        { title: 'Комментарий', dataIndex: 'comment', key: 'comment', ellipsis: true, width: 180 },
+        { title: 'Комментарий', dataIndex: 'comment', key: 'comment', ellipsis: true, width: 140 },
         {
-            title: 'График',
+            title: '',
             key: 'price_history',
-            width: 84,
+            width: 48,
             render: (_, record) => {
                 const oem = record.oem || record.oem_number;
                 return (
-                    <Button
-                        size="small"
-                        icon={<LineChartOutlined />}
-                        onClick={() => {
-                            if (!oem) return;
-                            navigate(`/autoparts/price-history?oem=${encodeURIComponent(oem)}`);
-                        }}
-                    >
-                        Открыть
-                    </Button>
+                    <Tooltip title="График цен">
+                        <Button
+                            size="small"
+                            type="text"
+                            shape="circle"
+                            icon={<LineChartOutlined />}
+                            onClick={() => {
+                                if (!oem) return;
+                                navigate(`/autoparts/price-history?oem=${encodeURIComponent(oem)}`);
+                            }}
+                        />
+                    </Tooltip>
                 );
             },
         },
         {
             title: '',
             key: 'add_to_cart',
-            width: 84,
+            width: 48,
             render: (_, record) => (
-                <Button
-                    size="small"
-                    icon={<PlusOutlined />}
-                    onClick={() => addDragonzapOfferToCart(record)}
-                >
-                    В корзину
-                </Button>
+                <Tooltip title="Добавить в корзину">
+                    <Button
+                        size="small"
+                        type="text"
+                        shape="circle"
+                        icon={<ShoppingCartOutlined />}
+                        onClick={() => addDragonzapOfferToCart(record)}
+                    />
+                </Tooltip>
             ),
         },
     ];
@@ -1386,6 +1396,7 @@ const AutopartOffers = () => {
 
             <Spin spinning={loading}>
                 <Table
+                    className="autopart-offers-table"
                     rowKey={(record) =>
                         `${record.autopart_id}-${record.provider_id}-${record.provider_config_id || 'base'}`
                     }
@@ -1394,7 +1405,7 @@ const AutopartOffers = () => {
                     size="small"
                     pagination={{ pageSize: 20, showSizeChanger: false }}
                     tableLayout="fixed"
-                    scroll={{ x: 980 }}
+                    scroll={{ x: 820 }}
                 />
             </Spin>
 
@@ -1439,13 +1450,14 @@ const AutopartOffers = () => {
                         </div>
                     ) : null}
                     <Table
+                        className="autopart-offers-table"
                         rowKey={(record, index) => record.api_hash || `${record.oem}-${index}`}
                         columns={remoteColumns}
                         dataSource={remoteOffers}
                         size="small"
                         pagination={{ pageSize: 20, showSizeChanger: false }}
                         tableLayout="fixed"
-                        scroll={{ x: 980 }}
+                        scroll={{ x: 820 }}
                     />
                 </Spin>
             </Space>
@@ -1536,6 +1548,7 @@ const AutopartOffers = () => {
                             ним были предложения.
                         </div>
                         <Table
+                            className="autopart-offers-table"
                             rowKey={(record) =>
                                 `history-${record.autopart_id}-${record.provider_id}-${record.provider_config_id || 'base'}`
                             }
@@ -1544,7 +1557,7 @@ const AutopartOffers = () => {
                             size="small"
                             pagination={{ pageSize: 20, showSizeChanger: false }}
                             tableLayout="fixed"
-                            scroll={{ x: 980 }}
+                            scroll={{ x: 820 }}
                         />
                     </Space>
                 </>

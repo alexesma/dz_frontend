@@ -269,8 +269,46 @@ body {
   box-shadow: 0 16px 32px rgba(7, 23, 49, 0.24);
 }
 
+.notification-center-bell-active {
+  animation: notification-center-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes notification-center-pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 16px 32px rgba(7, 23, 49, 0.24);
+  }
+  50% {
+    transform: scale(1.06);
+    box-shadow: 0 20px 36px rgba(22, 119, 255, 0.34);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 16px 32px rgba(7, 23, 49, 0.24);
+  }
+}
+
 .notification-center-drawer .ant-drawer-body {
   padding: 12px 16px 16px;
+}
+
+.notification-center-http-note {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(250, 173, 20, 0.24);
+  border-radius: 12px;
+  background: rgba(250, 173, 20, 0.12);
+  color: #8a5b00;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.notification-center-settings {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border: 1px solid rgba(23, 32, 51, 0.08);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.02);
 }
 
 .notification-center-list .ant-list-items {
@@ -356,4 +394,33 @@ body {
 
 .price-control-row-below-cost td {
   background: #fff0f6;
+}
+
+.autopart-offers-table .ant-table-thead > tr > th,
+.autopart-offers-table .ant-table-tbody > tr > td {
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.autopart-offers-table .ant-btn.ant-btn-sm {
+  min-width: 28px;
+  height: 28px;
+}
+
+.autopart-offers-source-cell {
+  display: grid;
+  gap: 2px;
+}
+
+.autopart-offers-source-title {
+  font-weight: 600;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.autopart-offers-source-meta {
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.2;
 }

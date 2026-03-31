@@ -7,6 +7,7 @@ import {
     Grid,
     List,
     Space,
+    Switch,
     Tag,
     Typography,
     message,
@@ -28,6 +29,10 @@ import {
 
 const POLL_INTERVAL_MS = 15000;
 const MAX_NOTIFICATIONS = 50;
+const SOUND_ENABLED_KEY = 'notification_center_sound_enabled_v1';
+const VIBRATION_ENABLED_KEY = 'notification_center_vibration_enabled_v1';
+const DND_ENABLED_KEY = 'notification_center_dnd_enabled_v1';
+const IMPORTANT_ONLY_KEY = 'notification_center_important_only_v1';
 
 const levelColorMap = {
     info: 'blue',
@@ -47,6 +52,16 @@ const supportsBrowserNotifications = () => (
     typeof window !== 'undefined' && 'Notification' in window
 );
 
+const supportsSecurePush = () => {
+    if (typeof window === 'undefined') {
+        return false;
+    }
+    if (window.isSecureContext) {
+        return true;
+    }
+    return ['localhost', '127.0.0.1'].includes(window.location.hostname);
+};
+
 const getBrowserPermission = () => {
     if (!supportsBrowserNotifications()) {
         return 'unsupported';
@@ -55,6 +70,17 @@ const getBrowserPermission = () => {
 };
 
 const formatNotificationDate = (value) => dayjs(value).format('DD.MM.YY HH:mm');
+
+const loadBooleanPreference = (key, fallback = true) => {
+    if (typeof window === 'undefined') {
+        return fallback;
+    }
+    const rawValue = window.localStorage.getItem(key);
+    if (rawValue === null) {
+        return fallback;
+    }
+    return rawValue === '1';
+};
 
 const NotificationCenter = () => {
     const { user, loading } = useAuth();
@@ -66,11 +92,101 @@ const NotificationCenter = () => {
     const [unreadCount, setUnreadCount] = useState(0);
     const [fetching, setFetching] = useState(false);
     const [browserPermission, setBrowserPermission] = useState(getBrowserPermission);
+    const [soundEnabled, setSoundEnabled] = useState(() => loadBooleanPreference(SOUND_ENABLED_KEY, true));
+    const [vibrationEnabled, setVibrationEnabled] = useState(() => loadBooleanPreference(VIBRATION_ENABLED_KEY, true));
+    const [dndEnabled, setDndEnabled] = useState(() => loadBooleanPreference(DND_ENABLED_KEY, false));
+    const [importantOnlyEnabled, setImportantOnlyEnabled] = useState(() => loadBooleanPreference(IMPORTANT_ONLY_KEY, false));
     const initializedRef = useRef(false);
     const seenIdsRef = useRef(new Set());
+    const titleFlashIntervalRef = useRef(null);
+    const titleBaseRef = useRef(
+        typeof document !== 'undefined' ? document.title : 'Dragonzap'
+    );
 
     const isAuthenticated = !loading && Boolean(user);
     const drawerPlacement = screens.md ? 'right' : 'bottom';
+    const securePushAvailable = supportsBrowserNotifications() && supportsSecurePush();
+
+    const stopTitleFlash = useCallback(() => {
+        if (titleFlashIntervalRef.current) {
+            window.clearInterval(titleFlashIntervalRef.current);
+            titleFlashIntervalRef.current = null;
+        }
+        if (typeof document !== 'undefined') {
+            document.title = titleBaseRef.current;
+        }
+    }, []);
+
+    const startTitleFlash = useCallback((count) => {
+        if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+            return;
+        }
+        titleBaseRef.current = titleBaseRef.current || document.title;
+        if (titleFlashIntervalRef.current) {
+            return;
+        }
+        let showAlert = true;
+        titleFlashIntervalRef.current = window.setInterval(() => {
+            document.title = showAlert
+                ? `(${count}) Новые сообщения`
+                : titleBaseRef.current;
+            showAlert = !showAlert;
+        }, 1000);
+    }, []);
+
+    const triggerFallbackAttention = useCallback((count) => {
+        if (typeof window === 'undefined') {
+            return;
+        }
+        startTitleFlash(count);
+        try {
+            if (
+                vibrationEnabled
+                && typeof window.navigator !== 'undefined'
+                && typeof window.navigator.vibrate === 'function'
+            ) {
+                window.navigator.vibrate([180, 80, 180]);
+            }
+        } catch (err) {
+            console.debug('Vibration is not available', err);
+        }
+
+        if (!soundEnabled) {
+            return;
+        }
+
+        try {
+            if (
+                typeof window.navigator !== 'undefined'
+                && document.visibilityState === 'visible'
+            ) {
+                return;
+            }
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContextClass) {
+                return;
+            }
+            const audioContext = new AudioContextClass();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.type = 'triangle';
+            oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
+            gainNode.gain.setValueAtTime(0.0001, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.05, audioContext.currentTime + 0.02);
+            gainNode.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.35);
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + 0.35);
+            oscillator.onended = () => {
+                void audioContext.close().catch(() => {});
+            };
+        } catch (err) {
+            console.debug('Audio attention signal is not available', err);
+        }
+    }, [soundEnabled, startTitleFlash, vibrationEnabled]);
 
     const updateReadState = useCallback((notificationId, readAt = new Date().toISOString()) => {
         setItems((current) => current.map((item) => (
@@ -90,6 +206,16 @@ const NotificationCenter = () => {
         navigate(link);
     }, [navigate]);
 
+    const shouldActivelyNotify = useCallback((item) => {
+        if (dndEnabled) {
+            return false;
+        }
+        if (!importantOnlyEnabled) {
+            return true;
+        }
+        return ['warning', 'error'].includes(item?.level);
+    }, [dndEnabled, importantOnlyEnabled]);
+
     const openNotificationItem = useCallback(async (item) => {
         if (!item.read_at) {
             try {
@@ -106,7 +232,7 @@ const NotificationCenter = () => {
     }, [navigateByLink, updateReadState]);
 
     const showBrowserNotification = useCallback((item) => {
-        if (!supportsBrowserNotifications()) {
+        if (!securePushAvailable) {
             return;
         }
         if (browserPermission !== 'granted') {
@@ -124,7 +250,7 @@ const NotificationCenter = () => {
             void openNotificationItem(item);
             nativeNotification.close();
         };
-    }, [browserPermission, openNotificationItem]);
+    }, [browserPermission, openNotificationItem, securePushAvailable]);
 
     const showInAppNotification = useCallback((item) => {
         notificationApi.open({
@@ -170,11 +296,14 @@ const NotificationCenter = () => {
                 .filter((item) => !seenIdsRef.current.has(item.id))
                 .sort((left, right) => dayjs(left.created_at).valueOf() - dayjs(right.created_at).valueOf());
 
-            if (newItems.length > 0) {
-                newItems.forEach((item) => {
+            const activeItems = newItems.filter(shouldActivelyNotify);
+
+            if (activeItems.length > 0) {
+                activeItems.forEach((item) => {
                     showInAppNotification(item);
                     showBrowserNotification(item);
                 });
+                triggerFallbackAttention(activeItems.length);
             }
             seenIdsRef.current = new Set([...seenIdsRef.current, ...nextIds]);
         } catch (err) {
@@ -184,11 +313,18 @@ const NotificationCenter = () => {
                 setFetching(false);
             }
         }
-    }, [isAuthenticated, showBrowserNotification, showInAppNotification]);
+    }, [isAuthenticated, shouldActivelyNotify, showBrowserNotification, showInAppNotification, triggerFallbackAttention]);
 
     const handleRequestBrowserPermission = useCallback(async () => {
         if (!supportsBrowserNotifications()) {
             message.warning('Браузер не поддерживает системные push-уведомления.');
+            return;
+        }
+        if (!supportsSecurePush()) {
+            message.warning(
+                'Для системных push-уведомлений нужен HTTPS. '
+                + 'Сейчас работают уведомления внутри страницы, звук и вибрация.'
+            );
             return;
         }
         try {
@@ -223,12 +359,53 @@ const NotificationCenter = () => {
     }, []);
 
     useEffect(() => {
+        if (typeof window === 'undefined') {
+            return;
+        }
+        window.localStorage.setItem(
+            SOUND_ENABLED_KEY,
+            soundEnabled ? '1' : '0'
+        );
+    }, [soundEnabled]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') {
+            return;
+        }
+        window.localStorage.setItem(
+            VIBRATION_ENABLED_KEY,
+            vibrationEnabled ? '1' : '0'
+        );
+    }, [vibrationEnabled]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') {
+            return;
+        }
+        window.localStorage.setItem(
+            DND_ENABLED_KEY,
+            dndEnabled ? '1' : '0'
+        );
+    }, [dndEnabled]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') {
+            return;
+        }
+        window.localStorage.setItem(
+            IMPORTANT_ONLY_KEY,
+            importantOnlyEnabled ? '1' : '0'
+        );
+    }, [importantOnlyEnabled]);
+
+    useEffect(() => {
         if (!isAuthenticated) {
             initializedRef.current = false;
             seenIdsRef.current = new Set();
             setItems([]);
             setUnreadCount(0);
             setDrawerOpen(false);
+            stopTitleFlash();
             return undefined;
         }
 
@@ -239,6 +416,7 @@ const NotificationCenter = () => {
 
         const handleVisibilityChange = () => {
             if (document.visibilityState === 'visible') {
+                stopTitleFlash();
                 void fetchNotificationState({ silent: true });
             }
         };
@@ -247,8 +425,21 @@ const NotificationCenter = () => {
         return () => {
             window.clearInterval(intervalId);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
+            stopTitleFlash();
         };
-    }, [fetchNotificationState, isAuthenticated]);
+    }, [fetchNotificationState, isAuthenticated, stopTitleFlash]);
+
+    useEffect(() => {
+        if (drawerOpen) {
+            stopTitleFlash();
+        }
+    }, [drawerOpen, stopTitleFlash]);
+
+    useEffect(() => {
+        if (dndEnabled) {
+            stopTitleFlash();
+        }
+    }, [dndEnabled, stopTitleFlash]);
 
     const unreadItems = useMemo(() => items.filter((item) => !item.read_at).length, [items]);
 
@@ -266,6 +457,7 @@ const NotificationCenter = () => {
                         shape="circle"
                         size="large"
                         icon={<BellOutlined />}
+                        className={unreadCount ? 'notification-center-bell notification-center-bell-active' : 'notification-center-bell'}
                         onClick={() => setDrawerOpen(true)}
                     />
                 </Badge>
@@ -304,6 +496,65 @@ const NotificationCenter = () => {
                     </Space>
                 )}
             >
+                {!securePushAvailable ? (
+                    <div className="notification-center-http-note">
+                        Сайт открыт без HTTPS. Поэтому системные push браузера недоступны,
+                        но сообщения внутри страницы, звук, вибрация и мигающий заголовок уже работают.
+                    </div>
+                ) : null}
+                <div className="notification-center-settings">
+                    <Space wrap size={[12, 8]}>
+                        <Space size={6}>
+                            <Typography.Text type="secondary">
+                                Не беспокоить
+                            </Typography.Text>
+                            <Switch
+                                size="small"
+                                checked={dndEnabled}
+                                onChange={setDndEnabled}
+                            />
+                        </Space>
+                        <Space size={6}>
+                            <Typography.Text type="secondary">
+                                Только важные
+                            </Typography.Text>
+                            <Switch
+                                size="small"
+                                checked={importantOnlyEnabled}
+                                onChange={setImportantOnlyEnabled}
+                            />
+                        </Space>
+                        <Space size={6}>
+                            <Typography.Text type="secondary">
+                                Звук
+                            </Typography.Text>
+                            <Switch
+                                size="small"
+                                checked={soundEnabled}
+                                onChange={setSoundEnabled}
+                                disabled={dndEnabled}
+                            />
+                        </Space>
+                        <Space size={6}>
+                            <Typography.Text type="secondary">
+                                Вибрация
+                            </Typography.Text>
+                            <Switch
+                                size="small"
+                                checked={vibrationEnabled}
+                                onChange={setVibrationEnabled}
+                                disabled={
+                                    dndEnabled
+                                    || (
+                                        typeof window !== 'undefined'
+                                        && typeof window.navigator !== 'undefined'
+                                        && typeof window.navigator.vibrate !== 'function'
+                                    )
+                                }
+                            />
+                        </Space>
+                    </Space>
+                </div>
                 <List
                     loading={fetching}
                     dataSource={items}
