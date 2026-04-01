@@ -52,7 +52,12 @@ const buildCartKey = (sourceType, record) => {
     }
     return [
         'dragonzap',
-        record.supplier_id || record.provider_id || 'unknown',
+        record.supplier_id ||
+            record.provider_id ||
+            normalizeSupplierName(
+                record.supplier_name || record.sup_logo || record.provider_name
+            ) ||
+            'unknown',
         record.hash_key || record.api_hash || record.system_hash || record.oem,
         record.oem,
     ].join(':');
@@ -67,6 +72,25 @@ const clampQty = (value, maxValue) => {
         return Math.min(parsed, maxValue);
     }
     return parsed;
+};
+
+function normalizeSupplierName(value) {
+    const normalized = String(value || '').trim();
+    return normalized || null;
+}
+
+const extractRequestError = (error, fallback) => {
+    const detail = error?.response?.data?.detail;
+    if (typeof detail === 'string' && detail.trim()) {
+        return detail.trim();
+    }
+    if (Array.isArray(detail) && detail.length) {
+        return detail
+            .map((item) => item?.msg || item?.message || String(item))
+            .filter(Boolean)
+            .join('; ');
+    }
+    return fallback;
 };
 
 const formatShortDate = (value) => {
@@ -408,17 +432,17 @@ const AutopartOffers = () => {
     const addDragonzapOfferToCart = (record) => {
         const supplierId = record.supplier_id || record.provider_id || null;
         const hashKey = record.hash_key || record.api_hash || null;
+        const supplierName = normalizeSupplierName(
+            record.supplier_name || record.sup_logo || record.provider_name
+        );
         upsertCartItem({
             cart_key: buildCartKey('dragonzap', record),
             source_type: 'dragonzap',
             autopart_id: record.autopart_id ?? null,
             supplier_id: supplierId,
             provider_id: supplierId,
-            provider_name:
-                record.supplier_name ||
-                record.sup_logo ||
-                record.provider_name ||
-                'Dragonzap',
+            supplier_name: supplierName,
+            provider_name: supplierName || 'Dragonzap',
             oem_number: record.oem || record.oem_number,
             brand_name: record.make_name || record.brand_name,
             name: record.detail_name || record.name,
@@ -572,14 +596,16 @@ const AutopartOffers = () => {
                     item.price_with_markup ??
                     item.cost;
                 const supplierName =
-                    item.supplier_name ??
-                    item.supplier ??
-                    item.supplier_title ??
-                    item.supplier_company ??
-                    item.provider ??
-                    item.seller_name ??
-                    item.price_name ??
-                    item.sup_logo;
+                    normalizeSupplierName(
+                        item.supplier_name ??
+                            item.supplier ??
+                            item.supplier_title ??
+                            item.supplier_company ??
+                            item.provider ??
+                            item.seller_name ??
+                            item.price_name ??
+                            item.sup_logo
+                    );
                 const quantity =
                     item.qnt ??
                     item.quantity ??
@@ -850,17 +876,29 @@ const AutopartOffers = () => {
         }
 
         const invalidItems = selectedDragonzapCartItems.filter(
-            (item) => !item.supplier_id || !item.hash_key
+            (item) =>
+                !item.hash_key ||
+                (!item.supplier_id && !normalizeSupplierName(item.supplier_name))
         );
         if (invalidItems.length) {
+            const invalidPreview = invalidItems
+                .slice(0, 3)
+                .map((item) => item.oem_number || item.name || item.cart_key)
+                .join(', ');
             message.error(
-                'У части позиций сайта нет supplier_id или hash_key. Их нельзя отправить в заказ.'
+                `У части позиций сайта не хватает данных для заказа (${invalidPreview}). Нужны hash_key и поставщик.`
             );
             return;
         }
 
         const groups = selectedDragonzapCartItems.reduce((acc, item) => {
-            const key = String(item.supplier_id);
+            const supplierName = normalizeSupplierName(
+                item.supplier_name || item.provider_name
+            );
+            const key =
+                item.supplier_id != null
+                    ? `id:${item.supplier_id}`
+                    : `name:${supplierName}`;
             if (!acc[key]) {
                 acc[key] = [];
             }
@@ -880,7 +918,13 @@ const AutopartOffers = () => {
                         oem_number: item.oem_number,
                         brand_name: item.brand_name,
                         autopart_name: item.name,
-                        supplier_id: Number(supplierId),
+                        supplier_id:
+                            item.supplier_id != null
+                                ? Number(item.supplier_id)
+                                : null,
+                        supplier_name: normalizeSupplierName(
+                            item.supplier_name || item.provider_name
+                        ),
                         quantity: Number(item.order_qty),
                         confirmed_price: Number(item.price),
                         min_delivery_day: item.min_delivery_day,
@@ -907,9 +951,13 @@ const AutopartOffers = () => {
                             items[0]?.provider_name || `#${supplierId}`
                         );
                     }
-                } catch {
+                } catch (error) {
+                    const errorMessage = extractRequestError(
+                        error,
+                        'Ошибка отправки на Dragonzap'
+                    );
                     failedSuppliers.push(
-                        items[0]?.provider_name || `#${supplierId}`
+                        `${items[0]?.provider_name || `#${supplierId}`}: ${errorMessage}`
                     );
                 }
             }
