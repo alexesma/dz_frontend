@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     AutoComplete,
     Card,
@@ -26,7 +26,7 @@ import {
     SendOutlined,
     MailOutlined,
 } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
     getAutopartOffers,
     getDragonzapOffers,
@@ -186,7 +186,9 @@ const AutopartOffers = () => {
         maxDelivery: null,
     });
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     const lookupRequestIdRef = useRef(0);
+    const autoSearchKeyRef = useRef('');
     const activeLookupQuery = String(oemInput || '').trim();
 
     const brandOptions = useMemo(() => {
@@ -425,7 +427,7 @@ const AutopartOffers = () => {
         };
     }, [oemInput]);
 
-    const pushOemHistory = (value) => {
+    const pushOemHistory = useCallback((value) => {
         const normalized = String(value || '').trim();
         if (!normalized) {
             return;
@@ -438,7 +440,7 @@ const AutopartOffers = () => {
             localStorage.setItem(OEM_HISTORY_KEY, JSON.stringify(next));
             return next;
         });
-    };
+    }, []);
 
     const upsertCartItem = (nextItem) => {
         setCartItems((prev) => {
@@ -540,10 +542,14 @@ const AutopartOffers = () => {
         setSelectedCartKeys((prev) => prev.filter((key) => !keySet.has(key)));
     };
 
-    const executeSearch = async (oemValue, usePartialSearch) => {
+    const executeSearch = useCallback(async (
+        oemValue,
+        usePartialSearch,
+        brandHint = ''
+    ) => {
         if (!oemValue) {
             message.warning('Введите OEM номер');
-            return;
+            return '';
         }
         setLoading(true);
         setHistoricalOffers([]);
@@ -587,7 +593,8 @@ const AutopartOffers = () => {
             const fallbackBrand = [...list, ...historicalList].find(
                 (item) => item.brand_name
             )?.brand_name;
-            setSelectedBrand(fallbackBrand || '');
+            const resolvedBrand = brandHint || fallbackBrand || '';
+            setSelectedBrand(resolvedBrand);
             if (!filtered.length) {
                 if (sortedHistorical.length) {
                     message.info(
@@ -598,22 +605,22 @@ const AutopartOffers = () => {
                     message.info('В актуальных прайсах ничего не найдено');
                 }
             }
+            return resolvedBrand;
         } catch (error) {
             console.error('Fetch offers error:', error);
             message.error('Ошибка получения данных');
+            return '';
         } finally {
             setLoading(false);
         }
-    };
+    }, [pushOemHistory]);
 
     const handleSearch = async (values) => {
         const oemValue = (values.oem || '').trim();
         await executeSearch(oemValue, partialSearch);
     };
 
-    const handleDragonzapRequest = async () => {
-        const oemValue = currentOem || form.getFieldValue('oem');
-        const brandValue = selectedBrand;
+    const requestDragonzapOffers = useCallback(async (oemValue, brandValue) => {
         if (!oemValue || !brandValue) {
             message.warning(
                 'Не удалось определить бренд для запроса. ' +
@@ -751,7 +758,43 @@ const AutopartOffers = () => {
         } finally {
             setRemoteLoading(false);
         }
+    }, [showCrosses]);
+
+    const handleDragonzapRequest = async () => {
+        const oemValue = currentOem || form.getFieldValue('oem');
+        const brandValue = selectedBrand;
+        await requestDragonzapOffers(oemValue, brandValue);
     };
+
+    useEffect(() => {
+        const oemValue = String(searchParams.get('oem') || '').trim();
+        const brandValue = String(searchParams.get('brand') || '').trim();
+        const shouldAutoSearch = searchParams.get('auto') === '1';
+        if (!shouldAutoSearch || !oemValue) {
+            return;
+        }
+
+        const requestKey = `${oemValue}::${brandValue}`;
+        if (autoSearchKeyRef.current === requestKey) {
+            return;
+        }
+        autoSearchKeyRef.current = requestKey;
+
+        form.setFieldsValue({ oem: oemValue });
+        setOemInput(oemValue);
+
+        void (async () => {
+            const resolvedBrand = await executeSearch(
+                oemValue,
+                false,
+                brandValue
+            );
+            const effectiveBrand = brandValue || resolvedBrand;
+            if (effectiveBrand) {
+                await requestDragonzapOffers(oemValue, effectiveBrand);
+            }
+        })();
+    }, [executeSearch, form, requestDragonzapOffers, searchParams]);
 
     const filteredOffers = useMemo(() => {
         const brandNeedle = localFilters.brand.trim().toLowerCase();
