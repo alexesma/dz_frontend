@@ -118,6 +118,56 @@ const CustomerPage = () => {
         return String(value);
     }, []);
 
+    const mapBrandLookupOptions = useCallback((brands = []) => (
+        (brands || []).map((brand) => ({
+            value: String(brand.id),
+            label: `${brand.name} (ID: ${brand.id})`,
+        }))
+    ), []);
+
+    const mergeOptionsByValue = useCallback((current = [], incoming = []) => {
+        const merged = new Map();
+        [...current, ...incoming].forEach((option) => {
+            if (!option?.value) return;
+            merged.set(String(option.value), {
+                value: String(option.value),
+                label: option.label,
+            });
+        });
+        return Array.from(merged.values());
+    }, []);
+
+    const collectFilterBrandIds = useCallback((filters = {}) => (
+        (filters?.brand_filters?.brands || []).map((value) => String(value))
+    ), []);
+
+    const collectConfigBrandIds = useCallback((config = {}) => {
+        const ids = new Set();
+        [
+            config?.default_filters,
+            config?.own_filters,
+            config?.other_filters,
+            ...Object.values(config?.supplier_filters || {}),
+        ].forEach((filters) => {
+            collectFilterBrandIds(filters).forEach((value) => ids.add(value));
+        });
+        return Array.from(ids);
+    }, [collectFilterBrandIds]);
+
+    const ensureBrandFilterOptionsByIds = useCallback(async (ids = []) => {
+        const normalizedIds = Array.from(
+            new Set((ids || []).map((value) => String(value || '').trim()).filter(Boolean))
+        );
+        if (!normalizedIds.length) return;
+        try {
+            const { data } = await lookupBrands('', normalizedIds.length, normalizedIds);
+            const options = mapBrandLookupOptions(data || []);
+            setBrandFilterOptions((prev) => mergeOptionsByValue(prev, options));
+        } catch (err) {
+            console.error('Load brand labels by ids failed:', err);
+        }
+    }, [mapBrandLookupOptions, mergeOptionsByValue]);
+
     const sourceProviderOptions = useMemo(() => {
         const usedProviderConfigIds = new Set(
             (sources || [])
@@ -240,11 +290,8 @@ const CustomerPage = () => {
             try {
                 const { data } = await lookupBrands(query, 100);
                 if (!mounted) return;
-                const options = (data || []).map((brand) => ({
-                    value: String(brand.id),
-                    label: `${brand.name} (ID: ${brand.id})`,
-                }));
-                setBrandFilterOptions(options);
+                const options = mapBrandLookupOptions(data || []);
+                setBrandFilterOptions((prev) => mergeOptionsByValue(prev, options));
             } catch (err) {
                 console.error('Load brand options failed:', err);
             } finally {
@@ -257,7 +304,7 @@ const CustomerPage = () => {
         return () => {
             mounted = false;
         };
-    }, []);
+    }, [mapBrandLookupOptions, mergeOptionsByValue]);
 
     const handleBrandFilterSearch = useCallback((rawValue) => {
         const value = String(rawValue || '').trim();
@@ -271,11 +318,8 @@ const CustomerPage = () => {
             try {
                 const { data } = await lookupBrands(value, 100);
                 if (brandSearchRequestRef.current !== requestId) return;
-                const options = (data || []).map((brand) => ({
-                    value: String(brand.id),
-                    label: `${brand.name} (ID: ${brand.id})`,
-                }));
-                setBrandFilterOptions(options);
+                const options = mapBrandLookupOptions(data || []);
+                setBrandFilterOptions((prev) => mergeOptionsByValue(prev, options));
             } catch (err) {
                 if (brandSearchRequestRef.current !== requestId) return;
                 console.error('Brand lookup failed:', err);
@@ -285,7 +329,7 @@ const CustomerPage = () => {
                 }
             }
         }, 250);
-    }, []);
+    }, [mapBrandLookupOptions, mergeOptionsByValue]);
 
     const handleAutopartFilterSearch = useCallback((rawValue) => {
         const value = String(rawValue || '').trim();
@@ -859,6 +903,7 @@ const CustomerPage = () => {
                     ...mapFilterToForm(filters || {}),
                 })
             );
+            await ensureBrandFilterOptionsByIds(collectConfigBrandIds(config));
             configForm.setFieldsValue({
                 ...config,
                 default_filters: mapFilterToForm(config.default_filters || {}),
@@ -868,6 +913,7 @@ const CustomerPage = () => {
             });
         } else {
             configForm.resetFields();
+            configForm.setFieldsValue({ export_file_format: 'xlsx' });
         }
         setConfigModalVisible(true);
     };
@@ -903,6 +949,7 @@ const CustomerPage = () => {
                 setEditingConfig(createdConfig || null);
                 setSelectedPriceConfigId(createdConfig?.id || null);
                 if (createdConfig) {
+                    await ensureBrandFilterOptionsByIds(collectConfigBrandIds(createdConfig));
                     configForm.setFieldsValue({
                         ...createdConfig,
                         default_filters: mapFilterToForm(createdConfig.default_filters || {}),
@@ -1051,8 +1098,9 @@ const CustomerPage = () => {
         }
     };
 
-    const handleEditSource = (source) => {
+    const handleEditSource = async (source) => {
         setEditingSource(source);
+        await ensureBrandFilterOptionsByIds(source.brand_filters?.brands || []);
         sourceForm.setFieldsValue({
             provider_config_id: source.provider_config_id,
             enabled: source.enabled,
@@ -1389,6 +1437,7 @@ const CustomerPage = () => {
                         general_markup: 1.0,
                         own_price_list_markup: 1.0,
                         third_party_markup: 1.0,
+                        export_file_format: 'xlsx',
                         schedule_days: [],
                         schedule_times: [],
                         emails: [],
@@ -1590,6 +1639,36 @@ const CustomerPage = () => {
                             optionFilterProp="label"
                         />
                     </Form.Item>
+
+                    <Divider>Файл прайса</Divider>
+
+                    <div className="responsive-form-grid-3">
+                        <Form.Item
+                            name="export_file_name"
+                            label="Имя файла"
+                            extra="Без расширения. Например: motor_price"
+                        >
+                            <Input placeholder="zzap_kross" />
+                        </Form.Item>
+                        <Form.Item
+                            name="export_file_format"
+                            label="Формат файла"
+                        >
+                            <Select
+                                options={[
+                                    { value: 'xlsx', label: 'Excel (.xlsx)' },
+                                    { value: 'csv', label: 'CSV (.csv)' },
+                                ]}
+                            />
+                        </Form.Item>
+                        <Form.Item
+                            name="export_file_extension"
+                            label="Расширение"
+                            extra="Можно переопределить отдельно от формата. Например: xls или txt"
+                        >
+                            <Input placeholder="По умолчанию по формату" />
+                        </Form.Item>
+                    </div>
 
                     <Form.Item
                         name="is_active"
