@@ -14,7 +14,7 @@ export const getDragonzapOffers = (oem, makeName, withoutCross = true) =>
         params: { oem, make_name: makeName, without_cross: withoutCross },
     });
 
-export const sendDragonzapOrder = (items, customerId = 2) =>
+export const sendDragonzapOrder = (items, customerId) =>
     api.post('/order/send_api', items, {
         params: { customer_id: customerId },
     });

@@ -8,6 +8,7 @@ import {
     Button,
     Table,
     Space,
+    Select,
     Tag,
     Divider,
     message,
@@ -32,6 +33,7 @@ import {
     searchAutopartsByOem,
     sendDragonzapOrder,
 } from '../api/autoparts';
+import { getCustomersSummary } from '../api/customers';
 import {
     createManualSupplierOrder,
     sendSupplierOrders,
@@ -172,6 +174,9 @@ const AutopartOffers = () => {
     const [lookupResults, setLookupResults] = useState([]);
     const [selectedBrand, setSelectedBrand] = useState('');
     const [oemHistory, setOemHistory] = useState([]);
+    const [customerOptions, setCustomerOptions] = useState([]);
+    const [customersLoading, setCustomersLoading] = useState(false);
+    const [selectedCustomerId, setSelectedCustomerId] = useState(null);
     const [localFilters, setLocalFilters] = useState({
         brand: '',
         provider: '',
@@ -297,6 +302,11 @@ const AutopartOffers = () => {
             setPartialSearch(Boolean(storedState.partialSearch));
             setCurrentOem(storedState.currentOem || '');
             setSelectedBrand(storedState.selectedBrand || '');
+            setSelectedCustomerId(
+                storedState.selectedCustomerId
+                    ? Number(storedState.selectedCustomerId)
+                    : null
+            );
             if (storedState.currentOem) {
                 form.setFieldsValue({ oem: storedState.currentOem });
                 setOemInput(storedState.currentOem);
@@ -305,9 +315,56 @@ const AutopartOffers = () => {
     }, [form]);
 
     useEffect(() => {
+        let isMounted = true;
+
+        const fetchCustomers = async () => {
+            setCustomersLoading(true);
+            try {
+                const { data } = await getCustomersSummary({
+                    page: 1,
+                    page_size: 200,
+                });
+                if (!isMounted) {
+                    return;
+                }
+                const items = Array.isArray(data?.items) ? data.items : [];
+                const options = items.map((item) => ({
+                    value: item.id,
+                    label: item.name || `#${item.id}`,
+                }));
+                setCustomerOptions(options);
+                setSelectedCustomerId((prev) => {
+                    if (
+                        prev != null &&
+                        options.some((option) => option.value === prev)
+                    ) {
+                        return prev;
+                    }
+                    return null;
+                });
+            } catch {
+                if (isMounted) {
+                    setCustomerOptions([]);
+                }
+            } finally {
+                if (isMounted) {
+                    setCustomersLoading(false);
+                }
+            }
+        };
+
+        fetchCustomers();
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
+
+    useEffect(() => {
         const payload = {
             currentOem,
             selectedBrand,
+            selectedCustomerId,
             showCrosses,
             partialSearch,
             offers,
@@ -321,6 +378,7 @@ const AutopartOffers = () => {
     }, [
         currentOem,
         selectedBrand,
+        selectedCustomerId,
         showCrosses,
         partialSearch,
         offers,
@@ -874,6 +932,12 @@ const AutopartOffers = () => {
             );
             return;
         }
+        if (!selectedCustomerId) {
+            message.warning(
+                'Выберите клиента, от имени которого нужно оформить заказ на Dragonzap'
+            );
+            return;
+        }
 
         const invalidItems = selectedDragonzapCartItems.filter(
             (item) =>
@@ -934,7 +998,10 @@ const AutopartOffers = () => {
                         hash_key: item.hash_key,
                         system_hash: item.system_hash,
                     }));
-                    const { data } = await sendDragonzapOrder(payload);
+                    const { data } = await sendDragonzapOrder(
+                        payload,
+                        selectedCustomerId
+                    );
                     const successfulKeys = Array.isArray(data?.results)
                         ? data.results
                             .filter((result) => result?.status === 'success')
@@ -1525,6 +1592,21 @@ const AutopartOffers = () => {
                     </div>
                 </div>
 
+                <Space wrap align="center">
+                    <span style={{ color: '#374151' }}>Клиент для сайта:</span>
+                    <Select
+                        allowClear
+                        showSearch
+                        placeholder="Выберите клиента"
+                        value={selectedCustomerId}
+                        loading={customersLoading}
+                        options={customerOptions}
+                        style={{ minWidth: 260 }}
+                        optionFilterProp="label"
+                        onChange={(value) => setSelectedCustomerId(value ?? null)}
+                    />
+                </Space>
+
                 <Space wrap>
                     <Button
                         type="primary"
@@ -1547,7 +1629,10 @@ const AutopartOffers = () => {
                         type="primary"
                         ghost
                         icon={<SendOutlined />}
-                        disabled={!selectedDragonzapCartItems.length}
+                        disabled={
+                            !selectedDragonzapCartItems.length ||
+                            !selectedCustomerId
+                        }
                         loading={cartSubmitting}
                         onClick={handleSendDragonzapCart}
                     >
