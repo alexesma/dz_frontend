@@ -1069,7 +1069,11 @@ const AutopartOffers = () => {
                     const successfulKeys = Array.isArray(data?.results)
                         ? data.results
                             .filter((result) => result?.status === 'success')
-                            .map((result) => result.tracking_uuid)
+                            .map(
+                                (result) =>
+                                    result.request_tracking_uuid ||
+                                    result.tracking_uuid
+                            )
                         : [];
                     processedKeys.push(...successfulKeys);
                     if ((data?.successful_items || 0) > 0) {
