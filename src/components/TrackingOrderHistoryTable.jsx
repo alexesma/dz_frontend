@@ -1,16 +1,13 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
-    Button,
     InputNumber,
     Select,
-    Space,
     Table,
     Tag,
     Tooltip,
     message,
 } from 'antd';
 import dayjs from 'dayjs';
-import { CheckOutlined } from '@ant-design/icons';
 import { updateTrackingOrderItem } from '../api/orderTracking';
 
 const SOURCE_LABELS = {
@@ -20,17 +17,17 @@ const SOURCE_LABELS = {
 
 const STATUS_COLORS = {
     NEW: 'default',
-    SCHEDULED: 'blue',
-    SENT: 'cyan',
+    SCHEDULED: 'default',
+    SENT: 'blue',
     ERROR: 'red',
     ORDERED: 'blue',
     PROCESSING: 'gold',
-    CONFIRMED: 'green',
+    CONFIRMED: 'cyan',
     ARRIVED: 'green',
     SHIPPED: 'green',
     REFUSAL: 'red',
     REMOVED: 'default',
-    TRANSIT: 'cyan',
+    TRANSIT: 'orange',
     ACCEPTED: 'lime',
     RETURNED: 'orange',
     FAILED: 'red',
@@ -120,6 +117,48 @@ const buildStatusOptions = (sourceType) =>
         label: STATUS_LABELS[value] || value,
     }));
 
+const SUCCESS_STATUSES = new Set([
+    'ACCEPTED',
+    'ARRIVED',
+    'SHIPPED',
+    'DELIVERED',
+]);
+const PROGRESS_STATUSES = new Set([
+    'NEW',
+    'SCHEDULED',
+    'SENT',
+    'ORDERED',
+    'PROCESSING',
+    'CONFIRMED',
+    'TRANSIT',
+]);
+const WARNING_STATUSES = new Set([
+    'RETURNED',
+    'REMOVED',
+]);
+const ERROR_STATUSES = new Set([
+    'REFUSAL',
+    'ERROR',
+    'FAILED',
+    'CANCELLED',
+]);
+
+const getRowStatusClass = (status) => {
+    if (SUCCESS_STATUSES.has(status)) {
+        return 'tracking-orders-row-success';
+    }
+    if (ERROR_STATUSES.has(status)) {
+        return 'tracking-orders-row-error';
+    }
+    if (WARNING_STATUSES.has(status)) {
+        return 'tracking-orders-row-warning';
+    }
+    if (PROGRESS_STATUSES.has(status)) {
+        return 'tracking-orders-row-progress';
+    }
+    return '';
+};
+
 const TrackingOrderHistoryTable = ({
     rows,
     loading = false,
@@ -143,12 +182,19 @@ const TrackingOrderHistoryTable = ({
     }, []);
 
     const handleSave = useCallback(
-        async (record) => {
+        async (
+            record,
+            extraPatch = {},
+            { notifyIfNoChanges = true } = {}
+        ) => {
             const rowKey = `${record.source_type}:${record.item_id}`;
-            const draft = drafts[rowKey] || {};
+            const draft = {
+                ...(drafts[rowKey] || {}),
+                ...extraPatch,
+            };
             const payload = {};
             if (
-                draft.status &&
+                draft.status !== undefined &&
                 draft.status !== (record.order_status || record.current_status)
             ) {
                 payload.status = draft.status;
@@ -161,7 +207,9 @@ const TrackingOrderHistoryTable = ({
                 payload.received_quantity = Number(draft.received_quantity);
             }
             if (!Object.keys(payload).length) {
-                message.info('Нет изменений для сохранения');
+                if (notifyIfNoChanges) {
+                    message.info('Нет изменений для сохранения');
+                }
                 return;
             }
             setSavingKey(rowKey);
@@ -242,58 +290,110 @@ const TrackingOrderHistoryTable = ({
                 render: (value) => value || '—',
             },
             {
-                title: 'Где заказали',
-                dataIndex: 'provider_name',
-                key: 'provider_name',
-                width: compact ? 140 : 180,
-                ellipsis: true,
-                render: (value) => value || '—',
-            },
-            {
-                title: 'Кто',
-                dataIndex: 'ordered_by_email',
-                key: 'ordered_by_email',
-                width: compact ? 140 : 180,
-                ellipsis: true,
-                render: (value) => value || 'Система',
+                title: 'Где / кто',
+                key: 'provider_summary',
+                width: compact ? 172 : 228,
+                render: (_, record) => (
+                    <div className="tracking-orders-provider-cell">
+                        <div className="tracking-orders-provider-name">
+                            {record.provider_name || '—'}
+                        </div>
+                        <div className="tracking-orders-provider-user">
+                            {record.ordered_by_email || 'Система'}
+                        </div>
+                    </div>
+                ),
             },
             {
                 title: 'Цена',
                 dataIndex: 'price',
                 key: 'price',
-                width: compact ? 78 : 92,
+                width: compact ? 70 : 88,
                 render: formatMoney,
             },
             {
                 title: 'Заказ',
                 dataIndex: 'ordered_quantity',
                 key: 'ordered_quantity',
-                width: compact ? 70 : 86,
+                width: compact ? 64 : 82,
             },
             {
-                title: 'Получено',
+                title: (
+                    <Tooltip title="Сколько фактически получили по этой строке">
+                        <span>Получено</span>
+                    </Tooltip>
+                ),
                 dataIndex: 'received_quantity',
                 key: 'received_quantity',
-                width: compact ? 90 : 116,
+                width: compact ? 82 : 110,
                 render: (value, record) => {
                     if (!allowEdit) {
-                        return value ?? '—';
+                        if (value === null || value === undefined) {
+                            return '—';
+                        }
+                        return value;
                     }
                     const rowKey = `${record.source_type}:${record.item_id}`;
+                    if (
+                        record.source_type === 'site' &&
+                        (record.current_status || '').trim()
+                    ) {
+                        const title = (
+                            'Количество обычно подставляется автоматически '
+                            + 'при статусе "Прибыл" или "Выдан". Если факт '
+                            + 'отличается, здесь можно поправить вручную.'
+                        );
+                        return (
+                            <Tooltip title={title}>
+                                <InputNumber
+                                    min={0}
+                                    placeholder="0"
+                                    value={
+                                        drafts[rowKey]?.received_quantity ??
+                                        record.received_quantity
+                                    }
+                                    size="small"
+                                    style={{ width: '100%' }}
+                                    disabled={savingKey === rowKey}
+                                    onChange={(next) =>
+                                        updateDraft(rowKey, {
+                                            received_quantity: next,
+                                        })
+                                    }
+                                    onBlur={() => {
+                                        void handleSave(
+                                            record,
+                                            {},
+                                            { notifyIfNoChanges: false }
+                                        );
+                                    }}
+                                />
+                            </Tooltip>
+                        );
+                    }
                     return (
                         <InputNumber
                             min={0}
+                            placeholder="0"
                             value={
                                 drafts[rowKey]?.received_quantity ??
                                 record.received_quantity
                             }
                             size="small"
                             style={{ width: '100%' }}
+                            disabled={savingKey === rowKey}
                             onChange={(next) =>
                                 updateDraft(rowKey, {
-                                    received_quantity: next ?? 0,
+                                    received_quantity: next,
                                 })
                             }
+                            onBlur={() => {
+                                void handleSave(
+                                    record,
+                                    {},
+                                    { notifyIfNoChanges: false }
+                                );
+                            }}
                         />
                     );
                 },
@@ -301,23 +401,44 @@ const TrackingOrderHistoryTable = ({
             {
                 title: 'Срок',
                 key: 'lead_time',
-                width: compact ? 104 : 118,
+                width: compact ? 94 : 114,
                 render: (_, record) => formatLeadTime(record),
             },
             {
                 title: 'Статус',
                 dataIndex: 'current_status',
                 key: 'current_status',
-                width: compact ? 120 : 160,
+                width: compact ? 124 : 154,
                 render: (value, record) => {
                     if (!allowEdit) {
+                        const className = value ? getRowStatusClass(value) : '';
                         return (
-                            <Tag color={STATUS_COLORS[value] || 'default'}>
-                                {STATUS_LABELS[value] || value || '—'}
-                            </Tag>
+                            <Tooltip
+                                title={
+                                    record.source_type === 'site'
+                                        ? 'Статус синхронизируется с Dragonzap автоматически'
+                                        : 'Статус ведется внутри программы'
+                                }
+                            >
+                                <Tag
+                                    color={STATUS_COLORS[value] || 'default'}
+                                    className={className}
+                                >
+                                    {STATUS_LABELS[value] || value || '—'}
+                                </Tag>
+                            </Tooltip>
                         );
                     }
                     const rowKey = `${record.source_type}:${record.item_id}`;
+                    if (record.source_type === 'site') {
+                        return (
+                            <Tooltip title="Статус синхронизируется с Dragonzap автоматически">
+                                <Tag color={STATUS_COLORS[value] || 'default'}>
+                                    {STATUS_LABELS[value] || value || '—'}
+                                </Tag>
+                            </Tooltip>
+                        );
+                    }
                     return (
                         <Select
                             size="small"
@@ -328,34 +449,16 @@ const TrackingOrderHistoryTable = ({
                                 record.current_status
                             }
                             options={buildStatusOptions(record.source_type)}
-                            onChange={(next) => updateDraft(rowKey, { status: next })}
+                            disabled={savingKey === rowKey}
+                            onChange={(next) => {
+                                updateDraft(rowKey, { status: next });
+                                void handleSave(record, { status: next });
+                            }}
                         />
                     );
                 },
             }
         );
-
-        if (allowEdit) {
-            baseColumns.push({
-                title: '',
-                key: 'save',
-                width: 54,
-                render: (_, record) => {
-                    const rowKey = `${record.source_type}:${record.item_id}`;
-                    return (
-                        <Tooltip title="Сохранить">
-                            <Button
-                                type="text"
-                                shape="circle"
-                                icon={<CheckOutlined />}
-                                loading={savingKey === rowKey}
-                                onClick={() => handleSave(record)}
-                            />
-                        </Tooltip>
-                    );
-                },
-            });
-        }
 
         return baseColumns;
     }, [
@@ -374,11 +477,13 @@ const TrackingOrderHistoryTable = ({
             columns={columns}
             dataSource={rows}
             loading={loading}
+            className={`tracking-orders-table${compact ? ' tracking-orders-table-compact' : ''}`}
             size="small"
             pagination={{ pageSize: compact ? 8 : 20, showSizeChanger: false }}
             tableLayout="fixed"
-            scroll={{ x: compact ? 1120 : 1380 }}
+            scroll={{ x: compact ? 980 : 1220 }}
             locale={{ emptyText }}
+            rowClassName={(record) => getRowStatusClass(record.current_status)}
         />
     );
 };

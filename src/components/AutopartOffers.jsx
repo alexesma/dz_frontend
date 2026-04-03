@@ -569,6 +569,7 @@ const AutopartOffers = () => {
                 ),
                 getTrackingOrderItems({
                     oem: oemValue,
+                    sync_site: true,
                     limit: 100,
                 }).catch(() => null),
             ]);
@@ -1597,6 +1598,7 @@ const AutopartOffers = () => {
                     <div style={{ color: '#6b7280' }}>
                         Здесь видно, где мы уже заказывали эту позицию, по какой цене,
                         сколько заказали, сколько получили и какой статус сейчас.
+                        Для заказов с сайта статусы подтягиваются автоматически.
                     </div>
                 </div>
                 <TrackingOrderHistoryTable

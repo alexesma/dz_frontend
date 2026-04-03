@@ -1,5 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Card, DatePicker, Form, Input, Select, Space, Typography, message } from 'antd';
+import {
+    Button,
+    Card,
+    DatePicker,
+    Form,
+    Input,
+    Select,
+    Space,
+    Typography,
+    message,
+} from 'antd';
 import dayjs from 'dayjs';
 import { ReloadOutlined } from '@ant-design/icons';
 import { getTrackingOrderItems } from '../api/orderTracking';
@@ -44,6 +54,7 @@ const OrdersTrackingPage = () => {
             brand: (nextValues.brand || '').trim() || undefined,
             provider_id: nextValues.provider_id || undefined,
             status: nextValues.status || undefined,
+            sync_site: true,
             limit: 500,
         };
         const range = nextValues.date_range;
@@ -94,7 +105,7 @@ const OrdersTrackingPage = () => {
     );
 
     return (
-        <Card style={{ margin: 20 }}>
+        <Card style={{ margin: 16 }}>
             <Space direction="vertical" style={{ width: '100%' }} size="middle">
                 <div>
                     <Title level={3} style={{ marginBottom: 0 }}>
@@ -104,26 +115,35 @@ const OrdersTrackingPage = () => {
                         Здесь видны только заказы, которые мы создавали через
                         окно поиска по артикулу. По умолчанию показан последний год.
                     </Text>
+                    <br />
+                    <Text type="secondary">
+                        Для заказов с сайта Dragonzap статусы подтягиваются
+                        автоматически при открытии страницы и по фоновому
+                        опросу. Для заказов из прайсов статус пока ведется
+                        вручную. Поле «Получено» можно поправить руками,
+                        если факт отличается.
+                    </Text>
                 </div>
 
                 <Form
                     form={form}
                     layout="inline"
+                    size="small"
                     onFinish={fetchRows}
                     style={{ rowGap: 12 }}
                 >
                     <Form.Item name="oem">
-                        <Input placeholder="OEM" style={{ width: 180 }} allowClear />
+                        <Input placeholder="OEM" style={{ width: 150 }} allowClear />
                     </Form.Item>
                     <Form.Item name="brand">
-                        <Input placeholder="Бренд" style={{ width: 160 }} allowClear />
+                        <Input placeholder="Бренд" style={{ width: 130 }} allowClear />
                     </Form.Item>
                     <Form.Item name="provider_id">
                         <Select
                             allowClear
                             showSearch
                             placeholder="Поставщик"
-                            style={{ width: 220 }}
+                            style={{ width: 190 }}
                             options={providerOptions}
                             optionFilterProp="label"
                         />
@@ -132,12 +152,12 @@ const OrdersTrackingPage = () => {
                         <Select
                             allowClear
                             placeholder="Статус"
-                            style={{ width: 180 }}
+                            style={{ width: 160 }}
                             options={STATUS_OPTIONS}
                         />
                     </Form.Item>
                     <Form.Item name="date_range">
-                        <RangePicker />
+                        <RangePicker size="small" />
                     </Form.Item>
                     <Form.Item>
                         <Button type="primary" htmlType="submit">
@@ -149,7 +169,7 @@ const OrdersTrackingPage = () => {
                             icon={<ReloadOutlined />}
                             onClick={() => fetchRows()}
                         >
-                            Обновить
+                            Обновить с сайта
                         </Button>
                     </Form.Item>
                 </Form>
@@ -157,6 +177,7 @@ const OrdersTrackingPage = () => {
                 <TrackingOrderHistoryTable
                     rows={rows}
                     loading={loading}
+                    compact
                     allowEdit
                     onUpdated={() => fetchRows()}
                 />

@@ -65,6 +65,7 @@ const Sidebar = () => {
         <Menu
             mode="inline"
             selectedKeys={[selectedKey]}
+            defaultOpenKeys={['autopart-search']}
             theme="dark"
             className="app-sider-menu"
             onClick={() => {
@@ -81,9 +82,6 @@ const Sidebar = () => {
             </Menu.Item>
             <Menu.Item key="3">
                 <Link to="/orders">Заказы поставщикам</Link>
-            </Menu.Item>
-            <Menu.Item key="orders-tracking" icon={<SendOutlined />}>
-                <Link to="/orders/tracking">Наши заказы: отслеживание</Link>
             </Menu.Item>
             <Menu.Item key="customer-orders" icon={<InboxOutlined />}>
                 <Link to="/customer-orders">Заказы клиентов</Link>
@@ -103,14 +101,26 @@ const Sidebar = () => {
             <Menu.Item key="substitutions" icon={<SwapOutlined />}>
                 <Link to="/substitutions">Подмены</Link>
             </Menu.Item>
-            <Menu.Item key="autopart-offers" icon={<SearchOutlined />}>
-                <Link to="/autoparts/offers">Прайсы по артикулу</Link>
-            </Menu.Item>
+            <Menu.SubMenu
+                key="autopart-search"
+                icon={<SearchOutlined />}
+                title="Поиск позиций по артикулу"
+            >
+                <Menu.Item key="autopart-offers">
+                    <Link to="/autoparts/offers">Прайсы по артикулу</Link>
+                </Menu.Item>
+                <Menu.Item key="orders-tracking" icon={<SendOutlined />}>
+                    <Link to="/orders/tracking">Отслеживание наших заказов</Link>
+                </Menu.Item>
+                <Menu.Item
+                    key="autopart-price-history"
+                    icon={<LineChartOutlined />}
+                >
+                    <Link to="/autoparts/price-history">График цен</Link>
+                </Menu.Item>
+            </Menu.SubMenu>
             <Menu.Item key="watchlist" icon={<EyeOutlined />}>
                 <Link to="/watchlist">Отслеживание позиций</Link>
-            </Menu.Item>
-            <Menu.Item key="autopart-price-history" icon={<LineChartOutlined />}>
-                <Link to="/autoparts/price-history">График цен</Link>
             </Menu.Item>
             {user.role === 'admin' && (
                 <>

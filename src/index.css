@@ -424,3 +424,49 @@ body {
   font-size: 11px;
   line-height: 1.2;
 }
+
+.tracking-orders-table .ant-table-thead > tr > th,
+.tracking-orders-table .ant-table-tbody > tr > td {
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.tracking-orders-table-compact .ant-table-thead > tr > th,
+.tracking-orders-table-compact .ant-table-tbody > tr > td {
+  padding: 5px 6px;
+  font-size: 11px;
+}
+
+.tracking-orders-provider-cell {
+  display: grid;
+  gap: 2px;
+}
+
+.tracking-orders-provider-name {
+  font-weight: 600;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.tracking-orders-provider-user {
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.tracking-orders-row-success td {
+  background: #f6ffed !important;
+}
+
+.tracking-orders-row-progress td {
+  background: #e6f4ff !important;
+}
+
+.tracking-orders-row-warning td {
+  background: #fffbe6 !important;
+}
+
+.tracking-orders-row-error td {
+  background: #fff1f0 !important;
+}
