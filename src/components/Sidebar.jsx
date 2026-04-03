@@ -41,6 +41,7 @@ const Sidebar = () => {
     const selectedKey = (() => {
         const path = location.pathname;
         if (path.startsWith('/restock')) return '2';
+        if (path.startsWith('/orders/tracking')) return 'orders-tracking';
         if (path.startsWith('/orders')) return '3';
         if (path.startsWith('/customer-orders/suppliers')) return 'customer-supplier-orders';
         if (path.startsWith('/customer-orders/stock')) return 'stock-orders';
@@ -80,6 +81,9 @@ const Sidebar = () => {
             </Menu.Item>
             <Menu.Item key="3">
                 <Link to="/orders">Заказы поставщикам</Link>
+            </Menu.Item>
+            <Menu.Item key="orders-tracking" icon={<SendOutlined />}>
+                <Link to="/orders/tracking">Наши заказы: отслеживание</Link>
             </Menu.Item>
             <Menu.Item key="customer-orders" icon={<InboxOutlined />}>
                 <Link to="/customer-orders">Заказы клиентов</Link>

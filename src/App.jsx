@@ -15,6 +15,7 @@ import CustomersList from './components/CustomersList';
 import CustomerPage from './components/CustomerPage';
 import AutopartOffers from './components/AutopartOffers';
 import PriceHistoryPlot from './components/PriceHistoryPlot';
+import OrdersTrackingPage from './components/OrdersTrackingPage';
 import StockOrdersPage from './components/StockOrdersPage';
 import CustomerOrdersPage from './components/CustomerOrdersPage';
 import CustomerOrderDetailPage from './components/CustomerOrderDetailPage';
@@ -68,6 +69,7 @@ const AppRoutes = () => (
         <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
         <Route path="/restock" element={<RequireAuth><RestockOffers /></RequireAuth>} />
         <Route path="/orders" element={<RequireAuth><OrdersList /></RequireAuth>} />
+        <Route path="/orders/tracking" element={<RequireAuth><OrdersTrackingPage /></RequireAuth>} />
         <Route path="/customer-orders" element={<RequireAuth><CustomerOrdersPage /></RequireAuth>} />
         <Route path="/customer-orders/:orderId" element={<RequireAuth><CustomerOrderDetailPage /></RequireAuth>} />
         <Route path="/customer-orders/stock" element={<RequireAuth><StockOrdersPage /></RequireAuth>} />

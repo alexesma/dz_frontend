@@ -38,6 +38,8 @@ import {
     createManualSupplierOrder,
     sendSupplierOrders,
 } from '../api/customerOrders';
+import { getTrackingOrderItems } from '../api/orderTracking';
+import TrackingOrderHistoryTable from './TrackingOrderHistoryTable';
 
 const OEM_HISTORY_KEY = 'autopart_oem_history_v1';
 const STATE_STORAGE_KEY = 'autopart_offers_state_v2';
@@ -159,6 +161,8 @@ const AutopartOffers = () => {
     const [form] = Form.useForm();
     const [offers, setOffers] = useState([]);
     const [historicalOffers, setHistoricalOffers] = useState([]);
+    const [trackingHistory, setTrackingHistory] = useState([]);
+    const [trackingHistoryLoading, setTrackingHistoryLoading] = useState(false);
     const [cartItems, setCartItems] = useState([]);
     const [selectedCartKeys, setSelectedCartKeys] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -552,14 +556,22 @@ const AutopartOffers = () => {
             return '';
         }
         setLoading(true);
+        setTrackingHistoryLoading(true);
         setHistoricalOffers([]);
         setRemoteOffers([]);
+        setTrackingHistory([]);
         setRemoteMeta({ total: 0 });
         try {
-            const { data } = await getAutopartOffers(
-                oemValue,
-                usePartialSearch
-            );
+            const [{ data }, trackingResponse] = await Promise.all([
+                getAutopartOffers(
+                    oemValue,
+                    usePartialSearch
+                ),
+                getTrackingOrderItems({
+                    oem: oemValue,
+                    limit: 100,
+                }).catch(() => null),
+            ]);
             const list = Array.isArray(data?.offers) ? data.offers : [];
             const historicalList = Array.isArray(data?.historical_offers)
                 ? data.historical_offers
@@ -590,6 +602,10 @@ const AutopartOffers = () => {
             setCurrentOem(oemValue);
             setOemInput(oemValue);
             pushOemHistory(oemValue);
+            const trackingRows = Array.isArray(trackingResponse?.data)
+                ? trackingResponse.data
+                : [];
+            setTrackingHistory(trackingRows);
             const fallbackBrand = [...list, ...historicalList].find(
                 (item) => item.brand_name
             )?.brand_name;
@@ -612,6 +628,7 @@ const AutopartOffers = () => {
             return '';
         } finally {
             setLoading(false);
+            setTrackingHistoryLoading(false);
         }
     }, [pushOemHistory]);
 
@@ -921,8 +938,11 @@ const AutopartOffers = () => {
                             autopart_id: item.autopart_id,
                             oem: item.oem_number,
                             brand: item.brand_name,
+                            name: item.name,
                             quantity: Number(item.order_qty),
                             price: Number(item.price),
+                            min_delivery_day: item.min_delivery_day,
+                            max_delivery_day: item.max_delivery_day,
                         })),
                     });
                     if (data?.id) {
@@ -1566,6 +1586,27 @@ const AutopartOffers = () => {
                     scroll={{ x: 820 }}
                 />
             </Spin>
+
+            <Divider />
+
+            <Space direction="vertical" style={{ width: '100%' }} size="small">
+                <div>
+                    <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                        Что уже заказывали через программу за 1 год
+                    </div>
+                    <div style={{ color: '#6b7280' }}>
+                        Здесь видно, где мы уже заказывали эту позицию, по какой цене,
+                        сколько заказали, сколько получили и какой статус сейчас.
+                    </div>
+                </div>
+                <TrackingOrderHistoryTable
+                    rows={trackingHistory}
+                    loading={trackingHistoryLoading}
+                    compact
+                    showOem={false}
+                    emptyText="По этой позиции за последний год заказов через программу не было"
+                />
+            </Space>
 
             <Divider />
 
