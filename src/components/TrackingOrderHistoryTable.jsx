@@ -5,6 +5,7 @@ import {
     Table,
     Tag,
     Tooltip,
+    Typography,
     message,
 } from 'antd';
 import dayjs from 'dayjs';
@@ -14,6 +15,8 @@ const SOURCE_LABELS = {
     supplier: { color: 'green', label: 'Прайс' },
     site: { color: 'blue', label: 'Сайт' },
 };
+
+const { Text } = Typography;
 
 const STATUS_COLORS = {
     NEW: 'default',
@@ -408,8 +411,34 @@ const TrackingOrderHistoryTable = ({
                 title: 'Статус',
                 dataIndex: 'current_status',
                 key: 'current_status',
-                width: compact ? 124 : 154,
+                width: compact ? 168 : 210,
                 render: (value, record) => {
+                    const statusTag = (
+                        <Tag color={STATUS_COLORS[value] || 'default'}>
+                            {STATUS_LABELS[value] || value || '—'}
+                        </Tag>
+                    );
+                    const externalHint = record.external_status_raw ? (
+                        <div
+                            style={{
+                                marginTop: 4,
+                                fontSize: 11,
+                                lineHeight: 1.3,
+                            }}
+                        >
+                            {record.needs_status_mapping ? (
+                                <Tag color="gold" style={{ marginBottom: 4 }}>
+                                    Нужно сопоставление
+                                </Tag>
+                            ) : null}
+                            <Tooltip title={record.external_status_raw}>
+                                <Text type="secondary" ellipsis>
+                                    Внешний: {record.external_status_raw}
+                                </Text>
+                            </Tooltip>
+                        </div>
+                    ) : null;
+
                     if (!allowEdit) {
                         const className = value ? getRowStatusClass(value) : '';
                         return (
@@ -420,12 +449,10 @@ const TrackingOrderHistoryTable = ({
                                         : 'Статус ведется внутри программы'
                                 }
                             >
-                                <Tag
-                                    color={STATUS_COLORS[value] || 'default'}
-                                    className={className}
-                                >
-                                    {STATUS_LABELS[value] || value || '—'}
-                                </Tag>
+                                <div className={className}>
+                                    {statusTag}
+                                    {externalHint}
+                                </div>
                             </Tooltip>
                         );
                     }
@@ -433,9 +460,10 @@ const TrackingOrderHistoryTable = ({
                     if (record.source_type === 'site') {
                         return (
                             <Tooltip title="Статус синхронизируется с Dragonzap автоматически">
-                                <Tag color={STATUS_COLORS[value] || 'default'}>
-                                    {STATUS_LABELS[value] || value || '—'}
-                                </Tag>
+                                <div>
+                                    {statusTag}
+                                    {externalHint}
+                                </div>
                             </Tooltip>
                         );
                     }

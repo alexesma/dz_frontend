@@ -57,6 +57,7 @@ const Sidebar = () => {
         if (path.startsWith('/admin/settings')) return 'admin-settings';
         if (path.startsWith('/admin/price-control')) return 'admin-price-control';
         if (path.startsWith('/admin/brands')) return 'admin-brands';
+        if (path.startsWith('/admin/order-status-mappings')) return 'admin-order-status-mappings';
         if (path.startsWith('/admin/monitor')) return 'admin-monitor';
         return '1';
     })();
@@ -138,6 +139,9 @@ const Sidebar = () => {
                     </Menu.Item>
                     <Menu.Item key="admin-brands" icon={<TagsOutlined />}>
                         <Link to="/admin/brands">Админ: бренды</Link>
+                    </Menu.Item>
+                    <Menu.Item key="admin-order-status-mappings" icon={<TagsOutlined />}>
+                        <Link to="/admin/order-status-mappings">Админ: статусы заказов</Link>
                     </Menu.Item>
                     <Menu.Item key="admin-monitor" icon={<BarChartOutlined />}>
                         <Link to="/admin/monitor">Админ: мониторинг</Link>
