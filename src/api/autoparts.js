@@ -18,3 +18,6 @@ export const sendDragonzapOrder = (items, customerId) =>
     api.post('/order/send_api', items, {
         params: { customer_id: customerId },
     });
+
+export const clearDragonzapBasket = () =>
+    api.post('/order/dragonzap/basket/clear');

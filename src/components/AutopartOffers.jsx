@@ -15,6 +15,7 @@ import {
     Checkbox,
     Spin,
     Tooltip,
+    Modal,
 } from 'antd';
 import {
     SearchOutlined,
@@ -28,6 +29,7 @@ import {
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
+    clearDragonzapBasket,
     getAutopartOffers,
     getDragonzapOffers,
     searchAutopartsByOem,
@@ -169,6 +171,7 @@ const AutopartOffers = () => {
     const [remoteOffers, setRemoteOffers] = useState([]);
     const [remoteLoading, setRemoteLoading] = useState(false);
     const [cartSubmitting, setCartSubmitting] = useState(false);
+    const [dragonzapBasketClearing, setDragonzapBasketClearing] = useState(false);
     const [remoteMeta, setRemoteMeta] = useState({ total: 0 });
     const [showCrosses, setShowCrosses] = useState(false);
     const [partialSearch, setPartialSearch] = useState(false);
@@ -544,6 +547,71 @@ const AutopartOffers = () => {
         const keySet = new Set(keys);
         setCartItems((prev) => prev.filter((item) => !keySet.has(item.cart_key)));
         setSelectedCartKeys((prev) => prev.filter((key) => !keySet.has(key)));
+    };
+
+    const showDragonzapBasketConflict = useCallback((detail, processedCount = 0) => {
+        Modal.warning({
+            title: 'Корзина Dragonzap уже занята',
+            okText: 'Понятно',
+            width: 560,
+            content: (
+                <Space direction="vertical" size="small">
+                    <div>
+                        Dragonzap остановил оформление, потому что в его корзине
+                        уже есть другие позиции.
+                    </div>
+                    <div style={{ color: '#4b5563' }}>
+                        {detail}
+                    </div>
+                    {processedCount > 0 ? (
+                        <div style={{ color: '#92400e' }}>
+                            Часть выбранных позиций уже успела оформиться:
+                            {' '}
+                            {processedCount}.
+                            {' '}
+                            Их мы уже убрали из локальной корзины.
+                        </div>
+                    ) : null}
+                    <div style={{ color: '#1d4ed8' }}>
+                        Можно сразу нажать «Очистить корзину Dragonzap» и
+                        повторить отправку.
+                    </div>
+                </Space>
+            ),
+        });
+    }, []);
+
+    const handleClearDragonzapBasket = async () => {
+        Modal.confirm({
+            title: 'Очистить корзину Dragonzap?',
+            okText: 'Очистить',
+            cancelText: 'Отмена',
+            content: (
+                <div>
+                    Мы удалим все позиции из корзины на сайте Dragonzap.
+                    Используй это только если ты уверен, что там остались
+                    старые или ошибочные строки.
+                </div>
+            ),
+            onOk: async () => {
+                setDragonzapBasketClearing(true);
+                try {
+                    const { data } = await clearDragonzapBasket();
+                    message.success(
+                        data?.message || 'Корзина Dragonzap очищена'
+                    );
+                } catch (error) {
+                    message.error(
+                        extractRequestError(
+                            error,
+                            'Не удалось очистить корзину Dragonzap'
+                        )
+                    );
+                } finally {
+                    setDragonzapBasketClearing(false);
+                }
+            },
+        });
     };
 
     const executeSearch = useCallback(async (
@@ -1087,10 +1155,21 @@ const AutopartOffers = () => {
                         );
                     }
                 } catch (error) {
+                    const statusCode = error?.response?.status;
                     const errorMessage = extractRequestError(
                         error,
                         'Ошибка отправки на Dragonzap'
                     );
+                    if (statusCode === 409) {
+                        if (processedKeys.length) {
+                            clearCartItems(processedKeys);
+                        }
+                        showDragonzapBasketConflict(
+                            errorMessage,
+                            processedKeys.length
+                        );
+                        return;
+                    }
                     failedSuppliers.push(
                         `${items[0]?.provider_name || `#${supplierId}`}: ${errorMessage}`
                     );
@@ -1727,6 +1806,13 @@ const AutopartOffers = () => {
                         onClick={handleSendDragonzapCart}
                     >
                         Отправить на Dragonzap
+                    </Button>
+                    <Button
+                        icon={<DeleteOutlined />}
+                        loading={dragonzapBasketClearing}
+                        onClick={handleClearDragonzapBasket}
+                    >
+                        Очистить корзину Dragonzap
                     </Button>
                     <Button
                         disabled={!cartItems.length}
