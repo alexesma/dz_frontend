@@ -16,10 +16,12 @@ import {
     Spin,
     Table,
     Tag,
+    Tooltip,
     Typography,
     message,
 } from 'antd';
 import {
+    BulbOutlined,
     CameraOutlined,
     CheckOutlined,
     ClearOutlined,
@@ -86,6 +88,10 @@ const BarcodeDetectorCtor =
     typeof window !== 'undefined' && 'BarcodeDetector' in window
         ? window.BarcodeDetector
         : null;
+const AudioContextCtor =
+    typeof window !== 'undefined'
+        ? window.AudioContext || window.webkitAudioContext
+        : null;
 
 const StockOrdersPage = () => {
     const screens = useBreakpoint();
@@ -106,13 +112,23 @@ const StockOrdersPage = () => {
     const [scanMatches, setScanMatches] = useState([]);
     const [cameraOpen, setCameraOpen] = useState(false);
     const [cameraError, setCameraError] = useState('');
+    const [cameraEngine, setCameraEngine] = useState('');
+    const [lastScannedCode, setLastScannedCode] = useState('');
+    const [torchSupported, setTorchSupported] = useState(false);
+    const [torchEnabled, setTorchEnabled] = useState(false);
+    const [activeItemId, setActiveItemId] = useState(null);
     const videoRef = useRef(null);
     const streamRef = useRef(null);
     const detectorRef = useRef(null);
     const scanTimerRef = useRef(null);
+    const scannerControlsRef = useRef(null);
+    const cameraCaptureLockRef = useRef(false);
+    const zxingReaderCtorRef = useRef(null);
+    const zxingHintsRef = useRef(null);
+    const audioContextRef = useRef(null);
+    const lastScanOverlayTimerRef = useRef(null);
 
     const cameraSupported = Boolean(
-        BarcodeDetectorCtor &&
         typeof navigator !== 'undefined' &&
         navigator.mediaDevices?.getUserMedia &&
         window.isSecureContext
@@ -256,6 +272,70 @@ const StockOrdersPage = () => {
         }
     }, [updateLocalPick]);
 
+    const playScanSuccessFeedback = useCallback(async () => {
+        try {
+            if (typeof navigator !== 'undefined' && navigator.vibrate) {
+                navigator.vibrate(70);
+            }
+            if (!AudioContextCtor) {
+                return;
+            }
+            if (!audioContextRef.current) {
+                audioContextRef.current = new AudioContextCtor();
+            }
+            const audioContext = audioContextRef.current;
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+            }
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(
+                1046,
+                audioContext.currentTime,
+            );
+            gainNode.gain.setValueAtTime(0.0001, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(
+                0.05,
+                audioContext.currentTime + 0.01,
+            );
+            gainNode.gain.exponentialRampToValueAtTime(
+                0.0001,
+                audioContext.currentTime + 0.12,
+            );
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + 0.12);
+        } catch (err) {
+            console.debug('Scan success feedback unavailable', err);
+        }
+    }, []);
+
+    const clearLastScanOverlay = useCallback(() => {
+        if (lastScanOverlayTimerRef.current) {
+            window.clearTimeout(lastScanOverlayTimerRef.current);
+            lastScanOverlayTimerRef.current = null;
+        }
+        setLastScannedCode('');
+    }, []);
+
+    const showLastScannedCode = useCallback((code) => {
+        clearLastScanOverlay();
+        setLastScannedCode(code);
+        lastScanOverlayTimerRef.current = window.setTimeout(() => {
+            setLastScannedCode('');
+            lastScanOverlayTimerRef.current = null;
+        }, 1600);
+    }, [clearLastScanOverlay]);
+
+    const activeMobileRow = useMemo(() => {
+        if (screens.md || !activeItemId) {
+            return null;
+        }
+        return dataSource.find((row) => row.itemId === activeItemId) || null;
+    }, [activeItemId, dataSource, screens.md]);
+
     const processScanCode = useCallback(async (rawCode, forcedRow = null) => {
         const normalized = normalizeScanValue(rawCode);
         if (!normalized) {
@@ -287,21 +367,31 @@ const StockOrdersPage = () => {
                 },
                 `${target.oem || target.name}: +1`
             );
+            await playScanSuccessFeedback();
+            setActiveItemId(target.itemId);
             setScanMatches([]);
             setScanValue('');
         } finally {
             setScanSubmitting(false);
         }
-    }, [dataSource, handlePickUpdate]);
+    }, [dataSource, handlePickUpdate, playScanSuccessFeedback]);
 
     const handleScanSubmit = async () => {
         await processScanCode(scanValue);
     };
 
     const stopCamera = useCallback(() => {
+        cameraCaptureLockRef.current = false;
+        clearLastScanOverlay();
+        setTorchSupported(false);
+        setTorchEnabled(false);
         if (scanTimerRef.current) {
             window.clearInterval(scanTimerRef.current);
             scanTimerRef.current = null;
+        }
+        if (scannerControlsRef.current) {
+            scannerControlsRef.current.stop();
+            scannerControlsRef.current = null;
         }
         if (streamRef.current) {
             streamRef.current.getTracks().forEach((track) => track.stop());
@@ -310,11 +400,112 @@ const StockOrdersPage = () => {
         if (videoRef.current) {
             videoRef.current.srcObject = null;
         }
-    }, []);
+    }, [clearLastScanOverlay]);
 
     useEffect(() => () => {
         stopCamera();
     }, [stopCamera]);
+
+    const updateTorchSupport = useCallback((controls = null, mediaStream = null) => {
+        let supported = Boolean(controls?.switchTorch);
+        const stream =
+            mediaStream
+            || streamRef.current
+            || (
+                typeof MediaStream !== 'undefined'
+                && videoRef.current?.srcObject instanceof MediaStream
+                    ? videoRef.current.srcObject
+                    : null
+            );
+        const track = stream?.getVideoTracks?.()[0];
+        const capabilities = track?.getCapabilities?.() || {};
+        if (
+            capabilities?.torch
+            || (
+                Array.isArray(capabilities?.fillLightMode)
+                && capabilities.fillLightMode.length > 0
+            )
+        ) {
+            supported = true;
+        }
+        setTorchSupported(Boolean(supported));
+    }, []);
+
+    const toggleTorch = useCallback(async () => {
+        const nextValue = !torchEnabled;
+        try {
+            if (scannerControlsRef.current?.switchTorch) {
+                await scannerControlsRef.current.switchTorch(nextValue);
+                setTorchEnabled(nextValue);
+                return;
+            }
+            const stream =
+                streamRef.current
+                || (
+                    typeof MediaStream !== 'undefined'
+                    && videoRef.current?.srcObject instanceof MediaStream
+                        ? videoRef.current.srcObject
+                        : null
+                );
+            const track = stream?.getVideoTracks?.()[0];
+            if (!track?.applyConstraints) {
+                throw new Error('Torch constraints are unavailable');
+            }
+            await track.applyConstraints({
+                advanced: [{ torch: nextValue }],
+            });
+            setTorchEnabled(nextValue);
+        } catch (err) {
+            console.error('Failed to toggle torch', err);
+            message.warning('Не удалось переключить фонарик на этом устройстве');
+        }
+    }, [torchEnabled]);
+
+    const completeCameraDetection = useCallback(async (detected) => {
+        if (cameraCaptureLockRef.current) {
+            return;
+        }
+        cameraCaptureLockRef.current = true;
+        showLastScannedCode(detected);
+        await playScanSuccessFeedback();
+        await new Promise((resolve) => {
+            window.setTimeout(resolve, 650);
+        });
+        stopCamera();
+        setCameraOpen(false);
+        setCameraEngine('');
+        await processScanCode(detected);
+    }, [playScanSuccessFeedback, processScanCode, showLastScannedCode, stopCamera]);
+
+    const loadZxingFallback = useCallback(async () => {
+        if (zxingReaderCtorRef.current && zxingHintsRef.current) {
+            return {
+                BrowserMultiFormatReader: zxingReaderCtorRef.current,
+                hints: zxingHintsRef.current,
+            };
+        }
+        const [{ BrowserMultiFormatReader }, { BarcodeFormat, DecodeHintType }] =
+            await Promise.all([
+                import('@zxing/browser'),
+                import('@zxing/library'),
+            ]);
+        const hints = new Map([
+            [
+                DecodeHintType.POSSIBLE_FORMATS,
+                [
+                    BarcodeFormat.CODE_128,
+                    BarcodeFormat.EAN_13,
+                    BarcodeFormat.EAN_8,
+                    BarcodeFormat.UPC_A,
+                    BarcodeFormat.UPC_E,
+                    BarcodeFormat.QR_CODE,
+                ],
+            ],
+        ]);
+        zxingReaderCtorRef.current = BrowserMultiFormatReader;
+        zxingHintsRef.current = hints;
+        return { BrowserMultiFormatReader, hints };
+    }, []);
 
     const startCamera = async () => {
         if (!cameraSupported) {
@@ -323,37 +514,88 @@ const StockOrdersPage = () => {
         }
         setCameraError('');
         setCameraOpen(true);
+        setTorchEnabled(false);
+        setTorchSupported(false);
+        cameraCaptureLockRef.current = false;
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    facingMode: { ideal: 'environment' },
-                },
-                audio: false,
+            await new Promise((resolve) => {
+                window.setTimeout(resolve, 40);
             });
-            streamRef.current = stream;
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-                await videoRef.current.play();
+            if (!videoRef.current) {
+                throw new Error('Camera preview is not ready');
             }
-            detectorRef.current = new BarcodeDetectorCtor({
-                formats: ['code_128', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'qr_code'],
-            });
-            scanTimerRef.current = window.setInterval(async () => {
-                if (!videoRef.current || !detectorRef.current) return;
-                try {
-                    const barcodes = await detectorRef.current.detect(videoRef.current);
-                    if (!barcodes?.length) return;
-                    const detected = barcodes[0]?.rawValue;
-                    if (!detected) return;
-                    stopCamera();
-                    setCameraOpen(false);
-                    await processScanCode(detected);
-                } catch (err) {
-                    console.error('Camera barcode detect failed', err);
+            if (BarcodeDetectorCtor) {
+                setCameraEngine('native');
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: { ideal: 'environment' },
+                    },
+                    audio: false,
+                });
+                streamRef.current = stream;
+                updateTorchSupport(null, stream);
+                if (videoRef.current) {
+                    videoRef.current.srcObject = stream;
+                    await videoRef.current.play();
                 }
-            }, 700);
+                detectorRef.current = new BarcodeDetectorCtor({
+                    formats: [
+                        'code_128',
+                        'ean_13',
+                        'ean_8',
+                        'upc_a',
+                        'upc_e',
+                        'qr_code',
+                    ],
+                });
+                scanTimerRef.current = window.setInterval(async () => {
+                    if (!videoRef.current || !detectorRef.current) return;
+                    try {
+                        const barcodes = await detectorRef.current.detect(videoRef.current);
+                        if (!barcodes?.length || cameraCaptureLockRef.current) return;
+                        const detected = barcodes[0]?.rawValue;
+                        if (!detected) return;
+                        await completeCameraDetection(detected);
+                    } catch (err) {
+                        console.error('Camera barcode detect failed', err);
+                    }
+                }, 700);
+                return;
+            }
+
+            setCameraEngine('zxing-loading');
+            const { BrowserMultiFormatReader, hints } = await loadZxingFallback();
+            setCameraEngine('zxing');
+            const reader = new BrowserMultiFormatReader(hints);
+            scannerControlsRef.current = await reader.decodeFromVideoDevice(
+                undefined,
+                videoRef.current,
+                async (result, error, controls) => {
+                    if (result && !cameraCaptureLockRef.current) {
+                        scannerControlsRef.current = controls;
+                        await completeCameraDetection(result.getText());
+                        return;
+                    }
+                    if (
+                        error &&
+                        !String(error?.message || '').toLowerCase().includes('not found')
+                    ) {
+                        console.error('ZXing camera detect failed', error);
+                    }
+                }
+            );
+            updateTorchSupport(
+                scannerControlsRef.current,
+                (
+                    typeof MediaStream !== 'undefined'
+                    && videoRef.current?.srcObject instanceof MediaStream
+                )
+                    ? videoRef.current.srcObject
+                    : null,
+            );
         } catch (err) {
             console.error('Failed to start camera', err);
+            setCameraEngine('');
             setCameraError('Не удалось открыть камеру. Проверьте разрешения браузера.');
         }
     };
@@ -367,104 +609,89 @@ const StockOrdersPage = () => {
 
     const renderActionButtons = (row) => (
         <Space size={4} wrap>
-            <Button
-                size="small"
-                icon={<PlusOutlined />}
-                onClick={() => handlePickUpdate(row, { increment: 1 })}
-            />
-            <Button
-                size="small"
-                icon={<CheckOutlined />}
-                onClick={() => handlePickUpdate(row, { picked_quantity: row.quantity })}
-            >
-                Всё
-            </Button>
-            <Button
-                size="small"
-                icon={<ClearOutlined />}
-                onClick={() => handlePickUpdate(row, { picked_quantity: 0 })}
-            />
+            <Tooltip title="+1 к собранному">
+                <Button
+                    size="small"
+                    icon={<PlusOutlined />}
+                    onClick={() => handlePickUpdate(row, { increment: 1 })}
+                />
+            </Tooltip>
+            <Tooltip title="Собрать всё">
+                <Button
+                    size="small"
+                    icon={<CheckOutlined />}
+                    onClick={() => handlePickUpdate(row, { picked_quantity: row.quantity })}
+                />
+            </Tooltip>
+            <Tooltip title="Сбросить сборку">
+                <Button
+                    size="small"
+                    icon={<ClearOutlined />}
+                    onClick={() => handlePickUpdate(row, { picked_quantity: 0 })}
+                />
+            </Tooltip>
         </Space>
     );
 
     const columns = [
         {
             title: 'Заказ',
-            dataIndex: 'orderId',
-            key: 'orderId',
-            width: 76,
+            key: 'orderMeta',
+            width: 150,
+            render: (_, row) => (
+                <div className="stock-compact-cell">
+                    <Text strong>#{row.orderId}</Text>
+                    <Text ellipsis={{ tooltip: row.customerName }}>
+                        {row.customerName || '—'}
+                    </Text>
+                    <Text type="secondary">{formatCreatedAt(row.createdAt)}</Text>
+                </div>
+            ),
         },
         {
-            title: 'Клиент',
-            dataIndex: 'customerName',
-            key: 'customerName',
+            title: 'Позиция',
+            key: 'position',
             width: 160,
-            ellipsis: true,
-        },
-        {
-            title: 'OEM',
-            dataIndex: 'oem',
-            key: 'oem',
-            width: 140,
-            ellipsis: true,
-        },
-        {
-            title: 'Бренд',
-            dataIndex: 'brandId',
-            key: 'brandId',
-            width: 110,
-            ellipsis: true,
-            render: (value) => brandMap[value] || value || '—',
+            render: (_, row) => (
+                <div className="stock-compact-cell">
+                    <Text strong>{row.oem || '—'}</Text>
+                    <Text type="secondary">{brandMap[row.brandId] || '—'}</Text>
+                </div>
+            ),
         },
         {
             title: 'Наименование',
             dataIndex: 'name',
             key: 'name',
-            width: 210,
-            ellipsis: true,
-        },
-        {
-            title: 'ШК / код',
-            dataIndex: 'barcode',
-            key: 'barcode',
             width: 180,
             ellipsis: true,
-            render: (value) => value || '—',
         },
         {
             title: 'Место',
             dataIndex: 'storageText',
             key: 'storageText',
-            width: 160,
+            width: 120,
             ellipsis: true,
             render: (value) => value || '—',
         },
         {
-            title: 'Нужно',
-            dataIndex: 'quantity',
-            key: 'quantity',
-            width: 74,
-            align: 'right',
-        },
-        {
-            title: 'Собрано',
-            dataIndex: 'pickedQuantity',
-            key: 'pickedQuantity',
-            width: 88,
-            align: 'right',
-        },
-        {
-            title: 'Осталось',
-            dataIndex: 'remainingQuantity',
-            key: 'remainingQuantity',
-            width: 88,
-            align: 'right',
+            title: 'Кол-во',
+            key: 'quantities',
+            width: 104,
+            render: (_, row) => (
+                <div className="stock-compact-cell stock-compact-cell-numeric">
+                    <Text strong>
+                        {row.pickedQuantity} / {row.quantity}
+                    </Text>
+                    <Text type="secondary">ост. {row.remainingQuantity}</Text>
+                </div>
+            ),
         },
         {
             title: 'Состояние',
             dataIndex: 'pickState',
             key: 'pickState',
-            width: 118,
+            width: 132,
             render: (_, row) => {
                 const state = getPickState(row.pickedQuantity, row.quantity);
                 const color =
@@ -473,28 +700,25 @@ const StockOrdersPage = () => {
                         : state === 'partial'
                             ? 'gold'
                             : 'default';
-                return <Tag color={color}>{getPickStateLabel(row.pickedQuantity, row.quantity)}</Tag>;
+                return (
+                    <div className="stock-compact-cell">
+                        <Tag color={color}>
+                            {getPickStateLabel(row.pickedQuantity, row.quantity)}
+                        </Tag>
+                        <Text
+                            type="secondary"
+                            ellipsis={{ tooltip: row.pickedByEmail || '—' }}
+                        >
+                            {row.pickedByEmail || '—'}
+                        </Text>
+                    </div>
+                );
             },
-        },
-        {
-            title: 'Собрал',
-            dataIndex: 'pickedByEmail',
-            key: 'pickedByEmail',
-            width: 160,
-            ellipsis: true,
-            render: (value) => value || '—',
-        },
-        {
-            title: 'Создан',
-            dataIndex: 'createdAt',
-            key: 'createdAt',
-            width: 138,
-            render: formatCreatedAt,
         },
         {
             title: 'Действия',
             key: 'actions',
-            width: 156,
+            width: 92,
             fixed: 'right',
             render: (_, row) => renderActionButtons(row),
         },
@@ -507,7 +731,12 @@ const StockOrdersPage = () => {
     };
 
     return (
-        <div className="page-shell">
+        <div
+            className="page-shell"
+            style={{
+                paddingBottom: !screens.md && activeMobileRow ? 112 : undefined,
+            }}
+        >
             <Card>
                 <Title level={3}>Заказы с нашего склада</Title>
                 <Row gutter={12} style={{ marginBottom: 16 }}>
@@ -602,12 +831,13 @@ const StockOrdersPage = () => {
                     <Empty description="Нет строк для сборки по выбранным фильтрам" />
                 ) : screens.md ? (
                     <Table
+                        className="stock-orders-table"
                         dataSource={dataSource}
                         columns={columns}
                         pagination={{ pageSize: 50, showSizeChanger: true }}
                         size="small"
                         rowClassName={rowClassName}
-                        scroll={{ x: 1600 }}
+                        scroll={{ x: 980 }}
                     />
                 ) : (
                     <List
@@ -616,8 +846,11 @@ const StockOrdersPage = () => {
                             <List.Item style={{ padding: 0, marginBottom: 12, border: 'none' }}>
                                 <Card
                                     size="small"
-                                    className={`stock-mobile-card stock-mobile-card-${row.pickState}`}
+                                    className={`stock-mobile-card stock-mobile-card-${row.pickState} ${
+                                        activeItemId === row.itemId ? 'stock-mobile-card-active' : ''
+                                    }`}
                                     style={{ width: '100%' }}
+                                    onClick={() => setActiveItemId(row.itemId)}
                                 >
                                     <Space direction="vertical" size={6} style={{ width: '100%' }}>
                                         <Space align="start" style={{ justifyContent: 'space-between', width: '100%' }}>
@@ -644,11 +877,8 @@ const StockOrdersPage = () => {
                                             Место: {row.storageText || '—'}
                                         </Text>
                                         <Text type="secondary">
-                                            Нужно {row.quantity} · Собрано {row.pickedQuantity} · Осталось {row.remainingQuantity}
+                                            Собрано {row.pickedQuantity} / {row.quantity}
                                         </Text>
-                                        {row.barcode && (
-                                            <Text type="secondary">ШК: {row.barcode}</Text>
-                                        )}
                                         {renderActionButtons(row)}
                                     </Space>
                                 </Card>
@@ -657,6 +887,54 @@ const StockOrdersPage = () => {
                     />
                 )}
             </Card>
+
+            {!screens.md && activeMobileRow && (
+                <div className="stock-mobile-action-bar">
+                    <Space
+                        direction="vertical"
+                        size={8}
+                        style={{ width: '100%' }}
+                    >
+                        <div className="stock-mobile-action-bar__summary">
+                            <Text strong>
+                                {activeMobileRow.oem || '—'} ·{' '}
+                                {brandMap[activeMobileRow.brandId] || '—'}
+                            </Text>
+                            <Text type="secondary" ellipsis>
+                                {activeMobileRow.name || '—'}
+                            </Text>
+                            <Text type="secondary">
+                                Собрано {activeMobileRow.pickedQuantity} / {activeMobileRow.quantity}
+                            </Text>
+                        </div>
+                        <Space.Compact style={{ width: '100%' }}>
+                            <Button
+                                icon={<ClearOutlined />}
+                                onClick={() => handlePickUpdate(activeMobileRow, { picked_quantity: 0 })}
+                            >
+                                Сброс
+                            </Button>
+                            <Button
+                                type="default"
+                                icon={<PlusOutlined />}
+                                onClick={() => handlePickUpdate(activeMobileRow, { increment: 1 })}
+                            >
+                                +1
+                            </Button>
+                            <Button
+                                type="primary"
+                                icon={<CheckOutlined />}
+                                onClick={() => handlePickUpdate(
+                                    activeMobileRow,
+                                    { picked_quantity: activeMobileRow.quantity },
+                                )}
+                            >
+                                Всё
+                            </Button>
+                        </Space.Compact>
+                    </Space>
+                </div>
+            )}
 
             <Modal
                 open={scanMatches.length > 1}
@@ -699,32 +977,72 @@ const StockOrdersPage = () => {
             <Modal
                 open={cameraOpen}
                 footer={null}
+                wrapClassName={screens.md ? '' : 'stock-camera-modal-mobile'}
                 onCancel={() => {
                     stopCamera();
                     setCameraOpen(false);
+                    setCameraEngine('');
                 }}
                 title="Сканирование камерой"
-                width={screens.md ? 720 : '100%'}
+                width={screens.md ? 720 : '100vw'}
+                style={screens.md ? undefined : { top: 0, margin: 0, paddingBottom: 0 }}
             >
                 <Space direction="vertical" style={{ width: '100%' }} size={12}>
                     {cameraError ? (
                         <Text type="danger">{cameraError}</Text>
                     ) : (
-                        <Text type="secondary">
-                            Наведите камеру на штрих-код. После распознавания строка будет отмечена автоматически.
-                        </Text>
+                        <Space wrap>
+                            <Text type="secondary">
+                                Наведите камеру на штрих-код. После распознавания строка будет отмечена автоматически.
+                            </Text>
+                            <Tag
+                                color={
+                                    cameraEngine === 'zxing'
+                                    || cameraEngine === 'zxing-loading'
+                                        ? 'blue'
+                                        : 'green'
+                                }
+                            >
+                                {cameraEngine === 'zxing-loading'
+                                    ? 'Камера: загрузка ZXing'
+                                    : cameraEngine === 'zxing'
+                                        ? 'Камера: fallback ZXing'
+                                        : 'Камера: BarcodeDetector'}
+                            </Tag>
+                            {torchSupported && (
+                                <Button
+                                    size="small"
+                                    icon={<BulbOutlined />}
+                                    type={torchEnabled ? 'primary' : 'default'}
+                                    onClick={toggleTorch}
+                                >
+                                    {torchEnabled ? 'Фонарик выкл' : 'Фонарик'}
+                                </Button>
+                            )}
+                        </Space>
                     )}
-                    <video
-                        ref={videoRef}
-                        style={{
-                            width: '100%',
-                            minHeight: screens.md ? 360 : 240,
-                            background: '#000',
-                            borderRadius: 8,
-                        }}
-                        muted
-                        playsInline
-                    />
+                    <div className="stock-camera-frame">
+                        <video
+                            ref={videoRef}
+                            style={{
+                                width: '100%',
+                                minHeight: screens.md ? 360 : 240,
+                                background: '#000',
+                                borderRadius: 8,
+                            }}
+                            muted
+                            playsInline
+                        />
+                        <div className="stock-camera-frame__guide" />
+                        {lastScannedCode && (
+                            <div className="stock-camera-frame__last-code">
+                                Найден код: {lastScannedCode}
+                            </div>
+                        )}
+                        <div className="stock-camera-frame__hint">
+                            Держите штрих-код внутри рамки
+                        </div>
+                    </div>
                 </Space>
             </Modal>
         </div>

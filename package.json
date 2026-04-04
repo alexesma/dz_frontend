@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.11",
+    "@zxing/browser": "^0.1.5",
+    "@zxing/library": "^0.21.3",
     "antd": "^5.26.3",
     "axios": "^1.11.0",
     "dayjs": "^1.11.11",
