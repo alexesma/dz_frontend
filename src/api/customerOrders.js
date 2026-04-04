@@ -7,7 +7,7 @@ export const updateStockOrderItemPick = (itemId, payload) =>
     api.patch(`/customer-orders/stock/items/${itemId}/pick`, payload);
 
 export const getCustomerOrders = (params) =>
-    api.get('/customer-orders', { params });
+    api.get('/customer-orders/', { params });
 
 export const getCustomerOrder = (orderId) =>
     api.get(`/customer-orders/${orderId}`);
