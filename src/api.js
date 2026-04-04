@@ -1,7 +1,7 @@
 const rawApiUrl = import.meta.env.VITE_API_URL;
 export const API_URL = rawApiUrl && rawApiUrl.trim()
     ? rawApiUrl.trim()
-    : 'http://90.156.158.19:8000';
+    : '/api';
 
 import axios from 'axios';
 
