@@ -470,3 +470,55 @@ body {
 .tracking-orders-row-error td {
   background: #fff1f0 !important;
 }
+
+.stock-scan-panel {
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(22, 119, 255, 0.06), rgba(82, 196, 26, 0.05));
+}
+
+.stock-pick-row-idle td {
+  background: #ffffff !important;
+}
+
+.stock-pick-row-partial td {
+  background: #fffbe6 !important;
+}
+
+.stock-pick-row-complete td {
+  background: #f6ffed !important;
+}
+
+.stock-mobile-card {
+  border-radius: 14px;
+}
+
+.stock-mobile-card-idle {
+  background: #ffffff;
+}
+
+.stock-mobile-card-partial {
+  background: #fffbe6;
+}
+
+.stock-mobile-card-complete {
+  background: #f6ffed;
+}
+
+.supplier-receipts-table .ant-table-thead > tr > th,
+.supplier-receipts-table .ant-table-tbody > tr > td {
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.supplier-receipt-row-complete td {
+  background: #f6ffed !important;
+}
+
+.supplier-receipt-row-partial td {
+  background: #fffbe6 !important;
+}
+
+.supplier-receipt-row-rejected td {
+  background: #fff1f0 !important;
+}

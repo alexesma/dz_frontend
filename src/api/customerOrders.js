@@ -3,6 +3,9 @@ import api from '../api.js';
 export const getStockOrders = (params) =>
     api.get('/customer-orders/stock/list', { params });
 
+export const updateStockOrderItemPick = (itemId, payload) =>
+    api.patch(`/customer-orders/stock/items/${itemId}/pick`, payload);
+
 export const getCustomerOrders = (params) =>
     api.get('/customer-orders', { params });
 
@@ -23,6 +26,15 @@ export const getSupplierOrderDetail = (orderId) =>
 
 export const getSupplierOrders = (params) =>
     api.get('/customer-orders/supplier/list', { params });
+
+export const getSupplierReceiptCandidates = (params) =>
+    api.get('/customer-orders/supplier-receipts/candidates', { params });
+
+export const processSupplierResponses = (params) =>
+    api.post('/customer-orders/supplier/process-responses', null, { params });
+
+export const createSupplierReceipt = (payload) =>
+    api.post('/customer-orders/supplier-receipts', payload);
 
 export const createManualCustomerOrder = (payload) =>
     api.post('/customer-orders/manual', payload);

@@ -57,6 +57,7 @@ const EMPTY_OPTIONS = {
     match_modes: [],
     order_statuses: [],
     item_statuses: [],
+    supplier_response_actions: [],
 };
 
 const OrderStatusMappingsPage = () => {
@@ -101,6 +102,10 @@ const OrderStatusMappingsPage = () => {
     const itemStatusOptions = useMemo(
         () => options.item_statuses || [],
         [options.item_statuses]
+    );
+    const supplierResponseActionOptions = useMemo(
+        () => options.supplier_response_actions || [],
+        [options.supplier_response_actions]
     );
 
     const loadProviders = useCallback(async () => {
@@ -178,6 +183,7 @@ const OrderStatusMappingsPage = () => {
             provider_id: row.provider_id || undefined,
             internal_order_status: undefined,
             internal_item_status: undefined,
+            supplier_response_action: undefined,
             priority: 100,
             is_active: true,
             apply_existing: true,
@@ -196,6 +202,7 @@ const OrderStatusMappingsPage = () => {
             provider_id: row.provider_id || undefined,
             internal_order_status: row.internal_order_status || undefined,
             internal_item_status: row.internal_item_status || undefined,
+            supplier_response_action: row.supplier_response_action || undefined,
             priority: row.priority,
             is_active: row.is_active,
             apply_existing: true,
@@ -212,6 +219,7 @@ const OrderStatusMappingsPage = () => {
             match_mode: values.match_mode,
             internal_order_status: values.internal_order_status || null,
             internal_item_status: values.internal_item_status || null,
+            supplier_response_action: values.supplier_response_action || null,
             priority: values.priority,
             is_active: values.is_active,
             apply_existing: values.apply_existing,
@@ -309,6 +317,8 @@ const OrderStatusMappingsPage = () => {
                     <Text type="secondary">
                         {record.sample_order_id
                             ? `Заказ #${record.sample_order_id}`
+                            : record.sample_payload?.supplier_order_id
+                                ? `Поставщик #${record.sample_payload.supplier_order_id}`
                             : '—'}
                     </Text>
                 ),
@@ -394,6 +404,18 @@ const OrderStatusMappingsPage = () => {
                     ) : '—',
             },
             {
+                title: 'Действие',
+                dataIndex: 'supplier_response_action',
+                key: 'supplier_response_action',
+                width: 170,
+                render: (value) =>
+                    value ? (
+                        <Tag color="purple">
+                            {supplierResponseActionOptions.find((item) => item.value === value)?.label || value}
+                        </Tag>
+                    ) : '—',
+            },
+            {
                 title: 'Активно',
                 dataIndex: 'is_active',
                 key: 'is_active',
@@ -429,6 +451,7 @@ const OrderStatusMappingsPage = () => {
             openEditModal,
             orderStatusOptions,
             sourceOptions,
+            supplierResponseActionOptions,
         ]
     );
 
@@ -603,6 +626,7 @@ const OrderStatusMappingsPage = () => {
                                                     priority: 100,
                                                     is_active: true,
                                                     apply_existing: true,
+                                                    supplier_response_action: undefined,
                                                 });
                                             }}
                                         >
@@ -770,6 +794,16 @@ const OrderStatusMappingsPage = () => {
                             />
                         </Form.Item>
                     </Space>
+                    <Form.Item
+                        name="supplier_response_action"
+                        label="Действие для ответа поставщика"
+                    >
+                        <Select
+                            allowClear
+                            options={supplierResponseActionOptions}
+                            placeholder="Нужно для ответов поставщиков по email"
+                        />
+                    </Form.Item>
                     <Form.Item name="notes" label="Комментарий">
                         <Input.TextArea rows={3} />
                     </Form.Item>

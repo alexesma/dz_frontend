@@ -44,6 +44,7 @@ const Sidebar = () => {
         if (path.startsWith('/orders/tracking')) return 'orders-tracking';
         if (path.startsWith('/orders')) return '3';
         if (path.startsWith('/customer-orders/suppliers')) return 'customer-supplier-orders';
+        if (path.startsWith('/customer-orders/receipts')) return 'supplier-receipts';
         if (path.startsWith('/customer-orders/stock')) return 'stock-orders';
         if (path.startsWith('/customer-orders')) return 'customer-orders';
         if (path.startsWith('/providers') || path.startsWith('/provider-configs')) return '4';
@@ -92,6 +93,9 @@ const Sidebar = () => {
             </Menu.Item>
             <Menu.Item key="stock-orders" icon={<InboxOutlined />}>
                 <Link to="/customer-orders/stock">Наш склад: заказы</Link>
+            </Menu.Item>
+            <Menu.Item key="supplier-receipts" icon={<InboxOutlined />}>
+                <Link to="/customer-orders/receipts">Поступления от поставщиков</Link>
             </Menu.Item>
             <Menu.Item key="4">
                 <Link to="/providers">Поставщики</Link>

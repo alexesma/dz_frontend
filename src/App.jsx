@@ -17,6 +17,7 @@ import AutopartOffers from './components/AutopartOffers';
 import PriceHistoryPlot from './components/PriceHistoryPlot';
 import OrdersTrackingPage from './components/OrdersTrackingPage';
 import StockOrdersPage from './components/StockOrdersPage';
+import SupplierReceiptsPage from './components/SupplierReceiptsPage';
 import CustomerOrdersPage from './components/CustomerOrdersPage';
 import CustomerOrderDetailPage from './components/CustomerOrderDetailPage';
 import CustomerSupplierOrdersPage from './components/CustomerSupplierOrdersPage';
@@ -74,6 +75,7 @@ const AppRoutes = () => (
         <Route path="/customer-orders" element={<RequireAuth><CustomerOrdersPage /></RequireAuth>} />
         <Route path="/customer-orders/:orderId" element={<RequireAuth><CustomerOrderDetailPage /></RequireAuth>} />
         <Route path="/customer-orders/stock" element={<RequireAuth><StockOrdersPage /></RequireAuth>} />
+        <Route path="/customer-orders/receipts" element={<RequireAuth><SupplierReceiptsPage /></RequireAuth>} />
         <Route path="/customer-orders/suppliers" element={<RequireAuth><CustomerSupplierOrdersPage /></RequireAuth>} />
         <Route path="/customer-orders/suppliers/:orderId" element={<RequireAuth><CustomerSupplierOrderDetailPage /></RequireAuth>} />
 
