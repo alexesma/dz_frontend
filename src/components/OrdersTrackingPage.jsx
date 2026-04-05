@@ -13,7 +13,7 @@ import {
 import dayjs from 'dayjs';
 import { ReloadOutlined } from '@ant-design/icons';
 import { getTrackingOrderItems } from '../api/orderTracking';
-import { getProviders } from '../api/providers';
+import { getAllProviders } from '../api/providers';
 import TrackingOrderHistoryTable from './TrackingOrderHistoryTable';
 
 const { RangePicker } = DatePicker;
@@ -87,8 +87,11 @@ const OrdersTrackingPage = () => {
     useEffect(() => {
         const loadProviders = async () => {
             try {
-                const { data } = await getProviders({ page: 1, page_size: 200 });
-                setProviders(data?.items || []);
+                const items = await getAllProviders({
+                    sort_by: 'name',
+                    sort_dir: 'asc',
+                });
+                setProviders(items);
             } catch {
                 setProviders([]);
             }

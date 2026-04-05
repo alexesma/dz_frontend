@@ -158,7 +158,7 @@ const ProvidersList = () => {
             title: 'ID',
             dataIndex: 'id',
             key: 'id',
-            width: 70,
+            width: 56,
             sorter: true,
             sortOrder: sortState.sortBy === 'id' ? (sortState.sortDir === 'asc' ? 'ascend' : 'descend') : null,
         },
@@ -166,41 +166,64 @@ const ProvidersList = () => {
             title: 'Название',
             dataIndex: 'name',
             key: 'name',
+            width: 180,
             sorter: true,
             sortOrder: sortState.sortBy === 'name' ? (sortState.sortDir === 'asc' ? 'ascend' : 'descend') : null,
             render: (text, record) => (
-                <div>
-                    <div style={{ fontWeight: 'bold' }}>{text}</div>
+                <div className="directory-cell">
+                    <div className="directory-cell__title" title={text}>
+                        {text}
+                    </div>
                     {record.abbr && (
-                        <Tag color="blue" size="small">{record.abbr}</Tag>
+                        <Tag color="blue">{record.abbr}</Tag>
                     )}
                 </div>
             ),
         },
         {
-            title: 'Email входящих прайсов',
+            title: 'Входящий email',
             dataIndex: 'email_incoming_price',
             key: 'email_incoming_price',
-            render: (email) => email || <span style={{ color: '#ccc' }}>—</span>,
+            width: 176,
+            ellipsis: true,
+            render: (email) => (
+                <span title={email || ''}>
+                    {email || <span style={{ color: '#ccc' }}>—</span>}
+                </span>
+            ),
         },
         {
-            title: 'Контактный Email',
+            title: 'Контакт',
             dataIndex: 'email_contact',
             key: 'email_contact',
-            render: (email) => email || <span style={{ color: '#ccc' }}>—</span>,
+            width: 170,
+            ellipsis: true,
+            render: (email) => (
+                <span title={email || ''}>
+                    {email || <span style={{ color: '#ccc' }}>—</span>}
+                </span>
+            ),
         },
         {
-            title: 'Последний Email UID',
+            title: 'Последний UID',
             key: 'last_email_uid',
+            width: 152,
             render: (text, record) => {
                 if (!record.last_email_uid) {
                     return <span style={{ color: '#ccc' }}>—</span>;
                 }
+                const uidText = String(record.last_email_uid.uid || '');
+                const compactUid = uidText.length > 12 ? `${uidText.slice(0, 12)}...` : uidText;
                 return (
-                    <div>
-                        <div>UID: {record.last_email_uid.uid}</div>
+                    <div className="directory-cell">
+                        <div
+                            className="directory-cell__mono"
+                            title={`UID: ${uidText}`}
+                        >
+                            UID: {compactUid}
+                        </div>
                         {record.last_email_uid.updated_at && (
-                            <div style={{ fontSize: '12px', color: '#666' }}>
+                            <div className="directory-cell__meta">
                                 {formatMoscow(record.last_email_uid.updated_at)}
                             </div>
                         )}
@@ -211,6 +234,7 @@ const ProvidersList = () => {
         {
             title: 'Прайс-листы',
             key: 'price_lists',
+            width: 120,
             render: (text, record) => {
                 const priceLists = record.price_lists || [];
                 const activeCount = priceLists.filter(pl => pl.is_active).length;
@@ -221,26 +245,25 @@ const ProvidersList = () => {
                 }
 
                 return (
-                    <div>
-                        <Tag color={activeCount > 0 ? "green" : "orange"}>
-                            Активных: {activeCount}
-                        </Tag>
-                        <Tag color="blue">Всего: {totalCount}</Tag>
+                    <div className="directory-cell">
+                        <span>Активных: {activeCount}</span>
+                        <span className="directory-cell__meta">Всего: {totalCount}</span>
                     </div>
                 );
             },
         },
         {
-            title: 'Конфигурация прайса',
+            title: 'Конфиг',
             key: 'pricelist_config',
+            width: 150,
             render: (_, record) => {
                 const cfg = record.pricelist_config;
                 if (!cfg) return <Tag color="red">Не настроен</Tag>;
 
                 return (
-                    <Space direction="vertical" size={2}>
+                    <Space direction="vertical" size={2} className="directory-cell">
                         <Tag color="green">Настроен</Tag>
-                        <div style={{fontSize: 12}}>
+                        <div className="directory-cell__meta">
                             <Link to={`/provider-configs/${cfg.id}`}>
                                 {cfg.name_price || `Конфиг #${cfg.id}`}
                             </Link>
@@ -252,7 +275,7 @@ const ProvidersList = () => {
         {
             title: 'Действия',
             key: 'actions',
-            width: 140,
+            width: 92,
             render: (text, record) => (
                 <Space size="small" wrap className="table-actions">
                     <Button
@@ -354,13 +377,15 @@ const ProvidersList = () => {
 
             <Spin spinning={loading}>
                 <Table
+                    className="directory-table"
                     rowKey="id"
                     columns={columns}
                     dataSource={providers}
                     pagination={pagination}
                     onChange={handleTableChange}
-                    scroll={{ x: 'max-content' }}
-                    size="middle"
+                    scroll={{ x: 1080 }}
+                    size="small"
+                    tableLayout="fixed"
                 />
             </Spin>
         </Card>

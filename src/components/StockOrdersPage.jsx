@@ -640,11 +640,12 @@ const StockOrdersPage = () => {
             width: 150,
             render: (_, row) => (
                 <div className="stock-compact-cell">
-                    <Text strong>#{row.orderId}</Text>
+                    <Text strong>
+                        #{row.orderId} · {formatCreatedAt(row.createdAt)}
+                    </Text>
                     <Text ellipsis={{ tooltip: row.customerName }}>
                         {row.customerName || '—'}
                     </Text>
-                    <Text type="secondary">{formatCreatedAt(row.createdAt)}</Text>
                 </div>
             ),
         },
@@ -681,9 +682,8 @@ const StockOrdersPage = () => {
             render: (_, row) => (
                 <div className="stock-compact-cell stock-compact-cell-numeric">
                     <Text strong>
-                        {row.pickedQuantity} / {row.quantity}
+                        {row.pickedQuantity} / {row.quantity} · ост. {row.remainingQuantity}
                     </Text>
-                    <Text type="secondary">ост. {row.remainingQuantity}</Text>
                 </div>
             ),
         },

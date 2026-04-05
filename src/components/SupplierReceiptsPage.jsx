@@ -17,7 +17,7 @@ import {
     message,
 } from 'antd';
 
-import { getProviders } from '../api/providers';
+import { getAllProviders } from '../api/providers';
 import {
     createSupplierReceipt,
     getSupplierReceiptCandidates,
@@ -70,8 +70,11 @@ const SupplierReceiptsPage = () => {
     useEffect(() => {
         const fetchProviders = async () => {
             try {
-                const resp = await getProviders({ page: 1, page_size: 200 });
-                setProviders(resp.data?.items || []);
+                const items = await getAllProviders({
+                    sort_by: 'name',
+                    sort_dir: 'asc',
+                });
+                setProviders(items);
             } catch (err) {
                 console.error('Failed to fetch providers', err);
                 message.error('Не удалось загрузить поставщиков');

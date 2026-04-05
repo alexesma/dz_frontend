@@ -8,6 +8,43 @@ export const getProviders = async (params = {}) => {
     return api.get('/providers/', { params });
 };
 
+export const getAllProviders = async (params = {}) => {
+    const pageSize = Math.min(Number(params.page_size) || 100, 100);
+    const baseParams = {
+        ...params,
+        page_size: pageSize,
+    };
+    const firstResponse = await getProviders({
+        ...baseParams,
+        page: 1,
+    });
+    const firstPage = firstResponse.data || {};
+    const items = Array.isArray(firstPage.items) ? [...firstPage.items] : [];
+    const totalPages = Number(firstPage.pages) || 1;
+
+    if (totalPages <= 1) {
+        return items;
+    }
+
+    const remainingResponses = await Promise.all(
+        Array.from({ length: totalPages - 1 }, (_, index) => (
+            getProviders({
+                ...baseParams,
+                page: index + 2,
+            })
+        ))
+    );
+
+    remainingResponses.forEach((response) => {
+        const pageItems = response.data?.items;
+        if (Array.isArray(pageItems)) {
+            items.push(...pageItems);
+        }
+    });
+
+    return items;
+};
+
 export const createProvider = async (data) => {
     return api.post(`/providers/`, data);
 };

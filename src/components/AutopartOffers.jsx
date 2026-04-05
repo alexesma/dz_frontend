@@ -29,7 +29,6 @@ import {
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-    clearDragonzapBasket,
     getAutopartOffers,
     getDragonzapOffers,
     searchAutopartsByOem,
@@ -171,7 +170,6 @@ const AutopartOffers = () => {
     const [remoteOffers, setRemoteOffers] = useState([]);
     const [remoteLoading, setRemoteLoading] = useState(false);
     const [cartSubmitting, setCartSubmitting] = useState(false);
-    const [dragonzapBasketClearing, setDragonzapBasketClearing] = useState(false);
     const [remoteMeta, setRemoteMeta] = useState({ total: 0 });
     const [showCrosses, setShowCrosses] = useState(false);
     const [partialSearch, setPartialSearch] = useState(false);
@@ -551,14 +549,15 @@ const AutopartOffers = () => {
 
     const showDragonzapBasketConflict = useCallback((detail, processedCount = 0) => {
         Modal.warning({
-            title: 'Корзина Dragonzap уже занята',
+            title: 'Не удалось автоматически очистить корзину Dragonzap',
             okText: 'Понятно',
             width: 560,
             content: (
                 <Space direction="vertical" size="small">
                     <div>
-                        Dragonzap остановил оформление, потому что в его корзине
-                        уже есть другие позиции.
+                        Отправка остановлена, потому что в корзине Dragonzap
+                        остались старые позиции и автоматическая очистка не
+                        сработала.
                     </div>
                     <div style={{ color: '#4b5563' }}>
                         {detail}
@@ -573,46 +572,13 @@ const AutopartOffers = () => {
                         </div>
                     ) : null}
                     <div style={{ color: '#1d4ed8' }}>
-                        Можно сразу нажать «Очистить корзину Dragonzap» и
-                        повторить отправку.
+                        Очисти корзину на сайте Dragonzap вручную и потом
+                        повтори отправку.
                     </div>
                 </Space>
             ),
         });
     }, []);
-
-    const handleClearDragonzapBasket = async () => {
-        Modal.confirm({
-            title: 'Очистить корзину Dragonzap?',
-            okText: 'Очистить',
-            cancelText: 'Отмена',
-            content: (
-                <div>
-                    Мы удалим все позиции из корзины на сайте Dragonzap.
-                    Используй это только если ты уверен, что там остались
-                    старые или ошибочные строки.
-                </div>
-            ),
-            onOk: async () => {
-                setDragonzapBasketClearing(true);
-                try {
-                    const { data } = await clearDragonzapBasket();
-                    message.success(
-                        data?.message || 'Корзина Dragonzap очищена'
-                    );
-                } catch (error) {
-                    message.error(
-                        extractRequestError(
-                            error,
-                            'Не удалось очистить корзину Dragonzap'
-                        )
-                    );
-                } finally {
-                    setDragonzapBasketClearing(false);
-                }
-            },
-        });
-    };
 
     const executeSearch = useCallback(async (
         oemValue,
@@ -1806,13 +1772,6 @@ const AutopartOffers = () => {
                         onClick={handleSendDragonzapCart}
                     >
                         Отправить на Dragonzap
-                    </Button>
-                    <Button
-                        icon={<DeleteOutlined />}
-                        loading={dragonzapBasketClearing}
-                        onClick={handleClearDragonzapBasket}
-                    >
-                        Очистить корзину Dragonzap
                     </Button>
                     <Button
                         disabled={!cartItems.length}

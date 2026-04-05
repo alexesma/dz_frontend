@@ -28,7 +28,7 @@ import {
     getUnmappedExternalStatuses,
     updateOrderStatusMapping,
 } from '../api/orderStatusMappings';
-import { getProviders } from '../api/providers';
+import { getAllProviders } from '../api/providers';
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -110,8 +110,11 @@ const OrderStatusMappingsPage = () => {
 
     const loadProviders = useCallback(async () => {
         try {
-            const { data } = await getProviders({ page: 1, page_size: 500 });
-            setProviders(data?.items || []);
+            const items = await getAllProviders({
+                sort_by: 'name',
+                sort_dir: 'asc',
+            });
+            setProviders(items);
         } catch {
             setProviders([]);
         }

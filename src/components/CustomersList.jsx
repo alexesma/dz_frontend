@@ -163,7 +163,7 @@ const CustomersList = () => {
             title: 'ID',
             dataIndex: 'id',
             key: 'id',
-            width: 70,
+            width: 56,
             sorter: true,
             sortOrder: sortState.sortBy === 'id' ? (sortState.sortDir === 'asc' ? 'ascend' : 'descend') : null,
         },
@@ -171,26 +171,45 @@ const CustomersList = () => {
             title: 'Название',
             dataIndex: 'name',
             key: 'name',
+            width: 180,
             sorter: true,
             sortOrder: sortState.sortBy === 'name' ? (sortState.sortDir === 'asc' ? 'ascend' : 'descend') : null,
-            render: (text) => <div style={{ fontWeight: 'bold' }}>{text}</div>,
+            ellipsis: true,
+            render: (text) => (
+                <div className="directory-cell__title" title={text}>
+                    {text}
+                </div>
+            ),
         },
         {
-            title: 'Email исходящих прайсов',
+            title: 'Исходящий email',
             dataIndex: 'email_outgoing_price',
             key: 'email_outgoing_price',
-            render: (email) => email || <span style={{ color: '#ccc' }}>—</span>,
+            width: 188,
+            ellipsis: true,
+            render: (email) => (
+                <span title={email || ''}>
+                    {email || <span style={{ color: '#ccc' }}>—</span>}
+                </span>
+            ),
         },
         {
-            title: 'Контактный Email',
+            title: 'Контакт',
             dataIndex: 'email_contact',
             key: 'email_contact',
-            render: (email) => email || <span style={{ color: '#ccc' }}>—</span>,
+            width: 168,
+            ellipsis: true,
+            render: (email) => (
+                <span title={email || ''}>
+                    {email || <span style={{ color: '#ccc' }}>—</span>}
+                </span>
+            ),
         },
         {
             title: 'Тип цен',
             dataIndex: 'type_prices',
             key: 'type_prices',
+            width: 112,
             render: (type) => (
                 <Tag color={type === 'Wholesale' ? 'blue' : 'green'}>
                     {type === 'Wholesale' ? 'Оптовые' : 'Розничные'}
@@ -201,6 +220,7 @@ const CustomersList = () => {
             title: 'Прайс-листы',
             key: 'customer_price_lists',
             dataIndex: 'price_lists_count',
+            width: 112,
             sorter: true,
             sortOrder: sortState.sortBy === 'price_lists_count' ? (sortState.sortDir === 'asc' ? 'ascend' : 'descend') : null,
             render: (_, record) => {
@@ -217,6 +237,7 @@ const CustomersList = () => {
             title: 'Конфигурации',
             key: 'pricelist_configs',
             dataIndex: 'pricelist_configs_count',
+            width: 136,
             sorter: true,
             sortOrder: sortState.sortBy === 'pricelist_configs_count' ? (sortState.sortDir === 'asc' ? 'ascend' : 'descend') : null,
             render: (_, record) => {
@@ -226,9 +247,9 @@ const CustomersList = () => {
                     return <Tag color="default">Нет</Tag>;
                 }
                 return (
-                    <Space direction="vertical" size={2}>
-                        <Tag color="green">Конфигов: {configsCount}</Tag>
-                        <Tag color="blue">Источников: {sourcesCount}</Tag>
+                    <Space direction="vertical" size={2} className="directory-cell">
+                        <span>Конфигов: {configsCount}</span>
+                        <span className="directory-cell__meta">Источников: {sourcesCount}</span>
                     </Space>
                 );
             },
@@ -236,7 +257,7 @@ const CustomersList = () => {
         {
             title: 'Действия',
             key: 'actions',
-            width: 120,
+            width: 92,
             render: (_, record) => (
                 <Space size="small">
                     <Button
@@ -267,14 +288,13 @@ const CustomersList = () => {
     return (
         <Card title="Список клиентов" style={{ margin: '20px' }}>
             <div style={{ marginBottom: 16 }}>
-                <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                    <Space>
+                <div className="page-toolbar">
+                    <div className="page-toolbar-main">
                         <Search
                             placeholder="Поиск по названию клиента"
                             allowClear
                             enterButton={<SearchOutlined />}
                             size="middle"
-                            style={{ width: 300 }}
                             onSearch={handleSearch}
                             value={searchText}
                             onChange={(e) => setSearchText(e.target.value)}
@@ -330,27 +350,31 @@ const CustomersList = () => {
                                 { value: 'no', label: 'Без конфигов' },
                             ]}
                         />
-                    </Space>
-                    <Button
-                        type="primary"
-                        icon={<PlusOutlined />}
-                        onClick={() => navigate('/customers/create')}
-                        size="middle"
-                    >
-                        Добавить клиента
-                    </Button>
-                </Space>
+                    </div>
+                    <div className="page-toolbar-side">
+                        <Button
+                            type="primary"
+                            icon={<PlusOutlined />}
+                            onClick={() => navigate('/customers/create')}
+                            size="middle"
+                        >
+                            Добавить клиента
+                        </Button>
+                    </div>
+                </div>
             </div>
 
             <Spin spinning={loading}>
                 <Table
+                    className="directory-table"
                     rowKey="id"
                     columns={columns}
                     dataSource={customers}
                     pagination={pagination}
                     onChange={handleTableChange}
-                    scroll={{ x: 1200 }}
-                    size="middle"
+                    scroll={{ x: 1040 }}
+                    size="small"
+                    tableLayout="fixed"
                 />
             </Spin>
         </Card>
