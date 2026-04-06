@@ -128,11 +128,13 @@ const StockOrdersPage = () => {
     const audioContextRef = useRef(null);
     const lastScanOverlayTimerRef = useRef(null);
 
-    const cameraSupported = Boolean(
+    const cameraApiSupported = Boolean(
         typeof navigator !== 'undefined' &&
-        navigator.mediaDevices?.getUserMedia &&
-        window.isSecureContext
+        navigator.mediaDevices?.getUserMedia
     );
+    const secureCameraContext = typeof window !== 'undefined'
+        ? window.isSecureContext
+        : false;
 
     const fetchMeta = useCallback(async () => {
         try {
@@ -508,8 +510,16 @@ const StockOrdersPage = () => {
     }, []);
 
     const startCamera = async () => {
-        if (!cameraSupported) {
-            message.warning('Камера для сканирования доступна после HTTPS и в поддерживаемом браузере');
+        if (!cameraApiSupported) {
+            message.warning(
+                'Этот браузер не поддерживает доступ к камере. На iPhone откройте сайт напрямую в Safari.'
+            );
+            return;
+        }
+        if (!secureCameraContext) {
+            message.warning(
+                'Камера доступна только в защищенном контексте. Откройте сайт напрямую по HTTPS, лучше в Safari, а не во встроенном браузере мессенджера.'
+            );
             return;
         }
         setCameraError('');
@@ -596,7 +606,20 @@ const StockOrdersPage = () => {
         } catch (err) {
             console.error('Failed to start camera', err);
             setCameraEngine('');
-            setCameraError('Не удалось открыть камеру. Проверьте разрешения браузера.');
+            const errorName = String(err?.name || '');
+            if (errorName === 'NotAllowedError') {
+                setCameraError('Браузер не дал доступ к камере. Проверьте разрешения сайта в Safari.');
+                return;
+            }
+            if (errorName === 'NotFoundError') {
+                setCameraError('Камера на устройстве не найдена.');
+                return;
+            }
+            if (errorName === 'NotReadableError') {
+                setCameraError('Камера сейчас занята другим приложением. Закройте его и попробуйте снова.');
+                return;
+            }
+            setCameraError('Не удалось открыть камеру. На iPhone попробуйте открыть сайт напрямую в Safari и проверьте разрешения камеры.');
         }
     };
 
@@ -813,13 +836,18 @@ const StockOrdersPage = () => {
                         <Button
                             icon={<CameraOutlined />}
                             onClick={startCamera}
-                            disabled={!cameraSupported}
+                            disabled={!cameraApiSupported}
                         >
                             Камера
                         </Button>
-                        {!cameraSupported && (
+                        {!cameraApiSupported && (
                             <Text type="secondary">
-                                Камера станет доступна после HTTPS в поддерживаемом браузере.
+                                Браузер не поддерживает камеру. На iPhone откройте сайт в Safari.
+                            </Text>
+                        )}
+                        {cameraApiSupported && !secureCameraContext && (
+                            <Text type="secondary">
+                                Откройте страницу напрямую по HTTPS. Во встроенном браузере мессенджера камера может быть недоступна.
                             </Text>
                         )}
                     </Space>
