@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
+    Alert,
     Card,
     Collapse,
     Form,
@@ -64,6 +65,8 @@ const CustomerPage = () => {
     const [loading, setLoading] = useState(!isNew);
     const [saving, setSaving] = useState(false);
     const [customerData, setCustomerData] = useState(null);
+    const [loadError, setLoadError] = useState('');
+    const [loadVersion, setLoadVersion] = useState(0);
 
     const [configModalVisible, setConfigModalVisible] = useState(false);
     const [editingConfig, setEditingConfig] = useState(null);
@@ -98,6 +101,20 @@ const CustomerPage = () => {
     const [configForm] = Form.useForm();
     const [sourceForm] = Form.useForm();
     const [orderConfigForm] = Form.useForm();
+
+    const extractApiError = useCallback((err, fallback) => {
+        const detail = err?.response?.data?.detail;
+        if (Array.isArray(detail)) {
+            return detail
+                .map((item) => item?.msg || item?.message || JSON.stringify(item))
+                .filter(Boolean)
+                .join('; ') || fallback;
+        }
+        if (typeof detail === 'string' && detail.trim()) {
+            return detail;
+        }
+        return err?.message || fallback;
+    }, []);
 
     const normalizeSourceMarkup = useCallback((value) => {
         const numeric = Number(value);
@@ -645,6 +662,7 @@ const CustomerPage = () => {
         if (isNew) {
             customerForm.resetFields();
             setCustomerData(null);
+            setLoadError('');
             setLoading(false);
             return;
         }
@@ -657,6 +675,7 @@ const CustomerPage = () => {
 
         (async () => {
             setLoading(true);
+            setLoadError('');
             try {
                 const { data: customer } = await getCustomerById(customerId);
                 const { data: configs } = await getCustomerPricelistConfigs(customerId);
@@ -682,14 +701,33 @@ const CustomerPage = () => {
                     description: customer.description,
                     comment: customer.comment,
                 });
-        } catch (err) {
-            message.error(err?.message || 'Ошибка загрузки клиента');
-            navigate('/customers');
-        } finally {
-            setLoading(false);
-        }
-    })();
-    }, [isNew, customerId, customerForm, navigate, orderConfigForm, applyOrderConfigToForm]);
+            } catch (err) {
+                const detail = extractApiError(
+                    err,
+                    'Не удалось загрузить клиента',
+                );
+                console.error(
+                    `Failed to load customer ${customerId} edit page:`,
+                    err,
+                );
+                setCustomerData(null);
+                setOrderConfigs([]);
+                setLoadError(detail);
+                message.error(detail);
+            } finally {
+                setLoading(false);
+            }
+        })();
+    }, [
+        applyOrderConfigToForm,
+        customerForm,
+        customerId,
+        extractApiError,
+        isNew,
+        loadVersion,
+        navigate,
+        orderConfigForm,
+    ]);
 
     useEffect(() => {
         if (!selectedPriceConfigId) {
@@ -1246,6 +1284,36 @@ const CustomerPage = () => {
         return (
             <div style={{ display: 'flex', justifyContent: 'center', padding: 50 }}>
                 <Spin size="large" />
+            </div>
+        );
+    }
+
+    if (!isNew && loadError) {
+        return (
+            <div className="page-shell">
+                <div className="page-header-actions">
+                    <Button
+                        icon={<ArrowLeftOutlined />}
+                        onClick={() => navigate('/customers')}
+                    >
+                        Назад к списку
+                    </Button>
+                    <Button
+                        type="primary"
+                        onClick={() => setLoadVersion((prev) => prev + 1)}
+                    >
+                        Повторить загрузку
+                    </Button>
+                </div>
+
+                <Card title={`Клиент #${customerId}`}>
+                    <Alert
+                        type="error"
+                        showIcon
+                        message="Не удалось открыть страницу клиента"
+                        description={loadError}
+                    />
+                </Card>
             </div>
         );
     }
