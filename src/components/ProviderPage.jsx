@@ -189,6 +189,15 @@ const ProviderPage = () => {
                 supplier_response_allow_shipping_docs: true,
                 supplier_response_allow_response_files: true,
                 supplier_response_allow_text_status: true,
+                supplier_response_start_row: 1,
+                supplier_response_filename_pattern: "",
+                supplier_shipping_doc_filename_pattern: "",
+                supplier_response_oem_col: null,
+                supplier_response_brand_col: null,
+                supplier_response_qty_col: null,
+                supplier_response_price_col: null,
+                supplier_response_comment_col: null,
+                supplier_response_status_col: null,
             });
             setProviderData(null);
             setLoading(false);
@@ -230,6 +239,25 @@ const ProviderPage = () => {
                     supplier_response_allow_text_status:
                         data.provider.supplier_response_allow_text_status
                         ?? true,
+                    supplier_response_start_row:
+                        data.provider.supplier_response_start_row || 1,
+                    supplier_response_filename_pattern:
+                        data.provider.supplier_response_filename_pattern || "",
+                    supplier_shipping_doc_filename_pattern:
+                        data.provider.supplier_shipping_doc_filename_pattern
+                        || "",
+                    supplier_response_oem_col:
+                        data.provider.supplier_response_oem_col,
+                    supplier_response_brand_col:
+                        data.provider.supplier_response_brand_col,
+                    supplier_response_qty_col:
+                        data.provider.supplier_response_qty_col,
+                    supplier_response_price_col:
+                        data.provider.supplier_response_price_col,
+                    supplier_response_comment_col:
+                        data.provider.supplier_response_comment_col,
+                    supplier_response_status_col:
+                        data.provider.supplier_response_status_col,
                 });
             } catch (err) {
                 message.error(err?.message || "Ошибка загрузки поставщика");
@@ -884,6 +912,69 @@ const ProviderPage = () => {
                     >
                         <Switch />
                     </Form.Item>
+
+                    <Form.Item
+                        name="supplier_response_filename_pattern"
+                        label="Шаблон имени файла ответа (regex)"
+                        extra="Необязательно. Если указан — обрабатываются только файлы с именем, подходящим под шаблон."
+                    >
+                        <Input placeholder="Например: ^ответ_заказ_\\d+\\.(xlsx|csv)$" />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="supplier_shipping_doc_filename_pattern"
+                        label="Шаблон имени УПД/накладной (regex)"
+                        extra="Необязательно. Если указан — используется для распознавания УПД/накладных вместо ключевых слов."
+                    >
+                        <Input placeholder="Например: (упд|накладн|invoice)" />
+                    </Form.Item>
+
+                    <div className="responsive-form-grid-compact">
+                        <Form.Item
+                            name="supplier_response_start_row"
+                            label="Стартовая строка данных"
+                            extra="1 = первая строка."
+                        >
+                            <InputNumber min={1} style={{ width: "100%" }} />
+                        </Form.Item>
+                        <Form.Item
+                            name="supplier_response_oem_col"
+                            label="Колонка OEM"
+                            extra="Номер колонки, начиная с 1."
+                        >
+                            <InputNumber min={1} style={{ width: "100%" }} />
+                        </Form.Item>
+                        <Form.Item
+                            name="supplier_response_brand_col"
+                            label="Колонка Бренд"
+                        >
+                            <InputNumber min={1} style={{ width: "100%" }} />
+                        </Form.Item>
+                        <Form.Item
+                            name="supplier_response_qty_col"
+                            label="Колонка Кол-во"
+                        >
+                            <InputNumber min={1} style={{ width: "100%" }} />
+                        </Form.Item>
+                        <Form.Item
+                            name="supplier_response_price_col"
+                            label="Колонка Цена"
+                        >
+                            <InputNumber min={1} style={{ width: "100%" }} />
+                        </Form.Item>
+                        <Form.Item
+                            name="supplier_response_comment_col"
+                            label="Колонка Комментарий"
+                        >
+                            <InputNumber min={1} style={{ width: "100%" }} />
+                        </Form.Item>
+                        <Form.Item
+                            name="supplier_response_status_col"
+                            label="Колонка Статус"
+                        >
+                            <InputNumber min={1} style={{ width: "100%" }} />
+                        </Form.Item>
+                    </div>
 
                     <Form.Item name="description" label="Описание">
                         <Input.TextArea rows={3} placeholder="Описание поставщика" />
