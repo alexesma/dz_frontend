@@ -186,6 +186,9 @@ const ProviderPage = () => {
                 order_schedule_enabled: false,
                 order_schedule_days: [],
                 order_schedule_times: [],
+                supplier_response_allow_shipping_docs: true,
+                supplier_response_allow_response_files: true,
+                supplier_response_allow_text_status: true,
             });
             setProviderData(null);
             setLoading(false);
@@ -218,6 +221,15 @@ const ProviderPage = () => {
                     order_schedule_days: data.provider.order_schedule_days || [],
                     order_schedule_times: data.provider.order_schedule_times || [],
                     order_schedule_enabled: data.provider.order_schedule_enabled || false,
+                    supplier_response_allow_shipping_docs:
+                        data.provider.supplier_response_allow_shipping_docs
+                        ?? true,
+                    supplier_response_allow_response_files:
+                        data.provider.supplier_response_allow_response_files
+                        ?? true,
+                    supplier_response_allow_text_status:
+                        data.provider.supplier_response_allow_text_status
+                        ?? true,
                 });
             } catch (err) {
                 message.error(err?.message || "Ошибка загрузки поставщика");
@@ -842,6 +854,35 @@ const ProviderPage = () => {
                         rules={[{ type: "email", message: "Введите корректный email" }]}
                     >
                         <Input placeholder="prices@provider.com" />
+                    </Form.Item>
+
+                    <Divider>Обработка ответов поставщика</Divider>
+
+                    <Form.Item
+                        name="supplier_response_allow_response_files"
+                        label="Обрабатывать файлы-ответы"
+                        valuePropName="checked"
+                        extra="Excel/CSV со статусами и количествами по строкам заказа."
+                    >
+                        <Switch />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="supplier_response_allow_shipping_docs"
+                        label="Обрабатывать документы УПД/накладные"
+                        valuePropName="checked"
+                        extra="Распознаём документы по имени вложения (УПД, накладная, invoice и т.д.)."
+                    >
+                        <Switch />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="supplier_response_allow_text_status"
+                        label="Обрабатывать текстовый ответ в письме"
+                        valuePropName="checked"
+                        extra="Используется текст темы/тела письма, даже если вложений нет."
+                    >
+                        <Switch />
                     </Form.Item>
 
                     <Form.Item name="description" label="Описание">
