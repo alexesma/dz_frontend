@@ -123,6 +123,8 @@ const StockOrdersPage = () => {
     const scanTimerRef = useRef(null);
     const scannerControlsRef = useRef(null);
     const cameraCaptureLockRef = useRef(false);
+    const cameraDetectBusyRef = useRef(false);
+    const scanSourceRef = useRef('manual');
     const zxingReaderCtorRef = useRef(null);
     const zxingHintsRef = useRef(null);
     const audioContextRef = useRef(null);
@@ -338,11 +340,15 @@ const StockOrdersPage = () => {
         return dataSource.find((row) => row.itemId === activeItemId) || null;
     }, [activeItemId, dataSource, screens.md]);
 
-    const processScanCode = useCallback(async (rawCode, forcedRow = null) => {
-        const normalized = normalizeScanValue(rawCode);
+    const processScanCode = useCallback(async (rawCode, forcedRow = null, options = {}) => {
+        const nextScanValue = String(rawCode || '').trim();
+        const normalized = normalizeScanValue(nextScanValue);
+        const clearInputOnSuccess = options.clearInputOnSuccess
+            ?? scanSourceRef.current !== 'camera';
         if (!normalized) {
             return;
         }
+        setScanValue(nextScanValue);
         const matches = forcedRow
             ? [forcedRow]
             : dataSource.filter((row) => {
@@ -372,21 +378,25 @@ const StockOrdersPage = () => {
             await playScanSuccessFeedback();
             setActiveItemId(target.itemId);
             setScanMatches([]);
-            setScanValue('');
+            if (clearInputOnSuccess) {
+                setScanValue('');
+            }
         } finally {
             setScanSubmitting(false);
         }
     }, [dataSource, handlePickUpdate, playScanSuccessFeedback]);
 
-    const handleScanSubmit = async () => {
-        await processScanCode(scanValue);
+    const handleScanSubmit = async (explicitValue = scanValue) => {
+        scanSourceRef.current = 'manual';
+        await processScanCode(explicitValue);
     };
 
     const stopCamera = useCallback(() => {
-        cameraCaptureLockRef.current = false;
         clearLastScanOverlay();
         setTorchSupported(false);
         setTorchEnabled(false);
+        cameraDetectBusyRef.current = false;
+        detectorRef.current = null;
         if (scanTimerRef.current) {
             window.clearInterval(scanTimerRef.current);
             scanTimerRef.current = null;
@@ -407,6 +417,56 @@ const StockOrdersPage = () => {
     useEffect(() => () => {
         stopCamera();
     }, [stopCamera]);
+
+    const configureCameraTrack = useCallback(async (mediaStream = null) => {
+        const stream =
+            mediaStream
+            || streamRef.current
+            || (
+                typeof MediaStream !== 'undefined'
+                && videoRef.current?.srcObject instanceof MediaStream
+                    ? videoRef.current.srcObject
+                    : null
+            );
+        const track = stream?.getVideoTracks?.()[0];
+        if (!track?.applyConstraints) {
+            return;
+        }
+
+        const capabilities = track.getCapabilities?.() || {};
+        const focusModes = Array.isArray(capabilities.focusMode)
+            ? capabilities.focusMode
+            : [];
+        const exposureModes = Array.isArray(capabilities.exposureMode)
+            ? capabilities.exposureMode
+            : [];
+        const whiteBalanceModes = Array.isArray(capabilities.whiteBalanceMode)
+            ? capabilities.whiteBalanceMode
+            : [];
+        const advanced = [];
+
+        if (focusModes.includes('continuous')) {
+            advanced.push({ focusMode: 'continuous' });
+        } else if (focusModes.includes('single-shot')) {
+            advanced.push({ focusMode: 'single-shot' });
+        }
+        if (exposureModes.includes('continuous')) {
+            advanced.push({ exposureMode: 'continuous' });
+        }
+        if (whiteBalanceModes.includes('continuous')) {
+            advanced.push({ whiteBalanceMode: 'continuous' });
+        }
+
+        if (!advanced.length) {
+            return;
+        }
+
+        try {
+            await track.applyConstraints({ advanced });
+        } catch (err) {
+            console.debug('Camera advanced constraints unavailable', err);
+        }
+    }, []);
 
     const updateTorchSupport = useCallback((controls = null, mediaStream = null) => {
         let supported = Boolean(controls?.switchTorch);
@@ -467,17 +527,22 @@ const StockOrdersPage = () => {
         if (cameraCaptureLockRef.current) {
             return;
         }
+        const nextDetected = String(detected || '').trim();
+        if (!nextDetected) {
+            return;
+        }
         cameraCaptureLockRef.current = true;
-        showLastScannedCode(detected);
-        await playScanSuccessFeedback();
+        scanSourceRef.current = 'camera';
+        showLastScannedCode(nextDetected);
         await new Promise((resolve) => {
-            window.setTimeout(resolve, 650);
+            window.setTimeout(resolve, 180);
         });
-        stopCamera();
         setCameraOpen(false);
         setCameraEngine('');
-        await processScanCode(detected);
-    }, [playScanSuccessFeedback, processScanCode, showLastScannedCode, stopCamera]);
+        stopCamera();
+        await processScanCode(nextDetected);
+
+    }, [processScanCode, showLastScannedCode, stopCamera]);
 
     const loadZxingFallback = useCallback(async () => {
         if (zxingReaderCtorRef.current && zxingHintsRef.current) {
@@ -539,10 +604,14 @@ const StockOrdersPage = () => {
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: {
                         facingMode: { ideal: 'environment' },
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        frameRate: { ideal: 24, max: 30 },
                     },
                     audio: false,
                 });
                 streamRef.current = stream;
+                await configureCameraTrack(stream);
                 updateTorchSupport(null, stream);
                 if (videoRef.current) {
                     videoRef.current.srcObject = stream;
@@ -559,7 +628,16 @@ const StockOrdersPage = () => {
                     ],
                 });
                 scanTimerRef.current = window.setInterval(async () => {
-                    if (!videoRef.current || !detectorRef.current) return;
+                    if (
+                        !videoRef.current
+                        || !detectorRef.current
+                        || cameraCaptureLockRef.current
+                        || cameraDetectBusyRef.current
+                        || videoRef.current.readyState < 2
+                    ) {
+                        return;
+                    }
+                    cameraDetectBusyRef.current = true;
                     try {
                         const barcodes = await detectorRef.current.detect(videoRef.current);
                         if (!barcodes?.length || cameraCaptureLockRef.current) return;
@@ -568,8 +646,10 @@ const StockOrdersPage = () => {
                         await completeCameraDetection(detected);
                     } catch (err) {
                         console.error('Camera barcode detect failed', err);
+                    } finally {
+                        cameraDetectBusyRef.current = false;
                     }
-                }, 700);
+                }, 220);
                 return;
             }
 
@@ -819,7 +899,7 @@ const StockOrdersPage = () => {
                         <Input
                             value={scanValue}
                             onChange={(event) => setScanValue(event.target.value)}
-                            onPressEnter={handleScanSubmit}
+                            onPressEnter={(event) => handleScanSubmit(event.currentTarget.value)}
                             prefix={<ScanOutlined />}
                             placeholder="Сканируйте штрих-код или OEM"
                             style={{ minWidth: screens.md ? 360 : '100%' }}
