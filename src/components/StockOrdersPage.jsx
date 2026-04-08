@@ -593,9 +593,15 @@ const StockOrdersPage = () => {
         setTorchSupported(false);
         cameraCaptureLockRef.current = false;
         try {
-            await new Promise((resolve) => {
-                window.setTimeout(resolve, 40);
-            });
+        await new Promise((resolve, reject) => {
+            let attempts = 0;
+            const check = () => {
+                if (videoRef.current) return resolve();
+                if (++attempts > 30) return reject(new Error('Camera preview is not ready'));
+                window.setTimeout(check, 50);
+            };
+            check();
+        });
             if (!videoRef.current) {
                 throw new Error('Camera preview is not ready');
             }
@@ -656,13 +662,17 @@ const StockOrdersPage = () => {
             setCameraEngine('zxing-loading');
             const { BrowserMultiFormatReader, hints } = await loadZxingFallback();
             setCameraEngine('zxing');
+            await new Promise((resolve) => {
+                if (!videoRef.current || videoRef.current.readyState >= 2) return resolve();
+                videoRef.current.addEventListener('canplay', resolve, { once: true });
+                window.setTimeout(resolve, 2000); // страховка
+            });
             const reader = new BrowserMultiFormatReader(hints);
             scannerControlsRef.current = await reader.decodeFromVideoDevice(
                 undefined,
                 videoRef.current,
-                async (result, error, controls) => {
+                async (result, error) => {
                     if (result && !cameraCaptureLockRef.current) {
-                        scannerControlsRef.current = controls;
                         await completeCameraDetection(result.getText());
                         return;
                     }
