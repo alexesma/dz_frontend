@@ -213,18 +213,6 @@ const ProviderPage = () => {
                 order_schedule_enabled: false,
                 order_schedule_days: [],
                 order_schedule_times: [],
-                supplier_response_allow_shipping_docs: true,
-                supplier_response_allow_response_files: true,
-                supplier_response_allow_text_status: true,
-                supplier_response_start_row: 1,
-                supplier_response_filename_pattern: "",
-                supplier_shipping_doc_filename_pattern: "",
-                supplier_response_oem_col: null,
-                supplier_response_brand_col: null,
-                supplier_response_qty_col: null,
-                supplier_response_price_col: null,
-                supplier_response_comment_col: null,
-                supplier_response_status_col: null,
             });
             setProviderData(null);
             setLoading(false);
@@ -257,34 +245,6 @@ const ProviderPage = () => {
                     order_schedule_days: data.provider.order_schedule_days || [],
                     order_schedule_times: data.provider.order_schedule_times || [],
                     order_schedule_enabled: data.provider.order_schedule_enabled || false,
-                    supplier_response_allow_shipping_docs:
-                        data.provider.supplier_response_allow_shipping_docs
-                        ?? true,
-                    supplier_response_allow_response_files:
-                        data.provider.supplier_response_allow_response_files
-                        ?? true,
-                    supplier_response_allow_text_status:
-                        data.provider.supplier_response_allow_text_status
-                        ?? true,
-                    supplier_response_start_row:
-                        data.provider.supplier_response_start_row || 1,
-                    supplier_response_filename_pattern:
-                        data.provider.supplier_response_filename_pattern || "",
-                    supplier_shipping_doc_filename_pattern:
-                        data.provider.supplier_shipping_doc_filename_pattern
-                        || "",
-                    supplier_response_oem_col:
-                        data.provider.supplier_response_oem_col,
-                    supplier_response_brand_col:
-                        data.provider.supplier_response_brand_col,
-                    supplier_response_qty_col:
-                        data.provider.supplier_response_qty_col,
-                    supplier_response_price_col:
-                        data.provider.supplier_response_price_col,
-                    supplier_response_comment_col:
-                        data.provider.supplier_response_comment_col,
-                    supplier_response_status_col:
-                        data.provider.supplier_response_status_col,
                 });
             } catch (err) {
                 message.error(err?.message || "Ошибка загрузки поставщика");
@@ -537,6 +497,11 @@ const ProviderPage = () => {
                 payload.price_col = null;
                 payload.filename_pattern = null;
             }
+            if (payload.response_type !== "text") {
+                payload.confirm_keywords = [];
+                payload.reject_keywords = [];
+                payload.value_after_article_type = "both";
+            }
             if (editingResponseConfig) {
                 await updateSupplierResponseConfig(
                     providerId,
@@ -593,6 +558,10 @@ const ProviderPage = () => {
                         <div>Писем обработано: {data?.processed_messages || 0}</div>
                         <div>Позиции распознано: {data?.recognized_positions || 0}</div>
                         <div>Позиции не разобраны: {data?.unresolved_positions || 0}</div>
+                        <div>Создано документов поступления: {data?.created_receipts || 0}</div>
+                        <div>Обновлено черновиков поступления: {data?.updated_receipts || 0}</div>
+                        <div>Автопроведено по УПД/накладным: {data?.posted_receipts || 0}</div>
+                        <div>Строк добавлено в поступления: {data?.receipt_items_added || 0}</div>
                         {unresolved.length > 0 && (
                             <div style={{ marginTop: 10 }}>
                                 <b>Не удалось разобрать:</b>
@@ -936,12 +905,19 @@ const ProviderPage = () => {
             title: "Почтовый ящик",
             dataIndex: "inbox_email_account_id",
             key: "inbox_email_account_id",
-            render: (value) => {
+            render: (_, record) => {
+                const accountName = record?.inbox_email_account_name;
+                const accountEmail = record?.inbox_email_account_email;
+                if (accountName || accountEmail) {
+                    if (accountName && accountEmail) {
+                        return `${accountName} (${accountEmail})`;
+                    }
+                    return accountName || accountEmail;
+                }
+                const value = record?.inbox_email_account_id;
                 if (!value) return <span style={{ color: "#999" }}>По умолчанию (orders_out)</span>;
                 const account = responseEmailAccounts.find((item) => item.id === value);
-                return account
-                    ? `${account.name} (${account.email})`
-                    : `ID ${value}`;
+                return account ? `${account.name} (${account.email})` : `ID ${value}`;
             },
         },
         {
@@ -1134,98 +1110,6 @@ const ProviderPage = () => {
                     >
                         <Input placeholder="prices@provider.com" />
                     </Form.Item>
-
-                    <Divider>Обработка ответов поставщика</Divider>
-
-                    <Form.Item
-                        name="supplier_response_allow_response_files"
-                        label="Обрабатывать файлы-ответы"
-                        valuePropName="checked"
-                        extra="Excel/CSV со статусами и количествами по строкам заказа."
-                    >
-                        <Switch />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="supplier_response_allow_shipping_docs"
-                        label="Обрабатывать документы УПД/накладные"
-                        valuePropName="checked"
-                        extra="Распознаём документы по имени вложения (УПД, накладная, invoice и т.д.)."
-                    >
-                        <Switch />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="supplier_response_allow_text_status"
-                        label="Обрабатывать текстовый ответ в письме"
-                        valuePropName="checked"
-                        extra="Используется текст темы/тела письма, даже если вложений нет."
-                    >
-                        <Switch />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="supplier_response_filename_pattern"
-                        label="Шаблон имени файла ответа (regex)"
-                        extra="Необязательно. Если указан — обрабатываются только файлы с именем, подходящим под шаблон."
-                    >
-                        <Input placeholder="Например: ^ответ_заказ_\\d+\\.(xlsx|csv)$" />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="supplier_shipping_doc_filename_pattern"
-                        label="Шаблон имени УПД/накладной (regex)"
-                        extra="Необязательно. Если указан — используется для распознавания УПД/накладных вместо ключевых слов."
-                    >
-                        <Input placeholder="Например: (упд|накладн|invoice)" />
-                    </Form.Item>
-
-                    <div className="responsive-form-grid-compact">
-                        <Form.Item
-                            name="supplier_response_start_row"
-                            label="Стартовая строка данных"
-                            extra="1 = первая строка."
-                        >
-                            <InputNumber min={1} style={{ width: "100%" }} />
-                        </Form.Item>
-                        <Form.Item
-                            name="supplier_response_oem_col"
-                            label="Колонка OEM"
-                            extra="Номер колонки, начиная с 1."
-                        >
-                            <InputNumber min={1} style={{ width: "100%" }} />
-                        </Form.Item>
-                        <Form.Item
-                            name="supplier_response_brand_col"
-                            label="Колонка Бренд"
-                        >
-                            <InputNumber min={1} style={{ width: "100%" }} />
-                        </Form.Item>
-                        <Form.Item
-                            name="supplier_response_qty_col"
-                            label="Колонка Кол-во"
-                        >
-                            <InputNumber min={1} style={{ width: "100%" }} />
-                        </Form.Item>
-                        <Form.Item
-                            name="supplier_response_price_col"
-                            label="Колонка Цена"
-                        >
-                            <InputNumber min={1} style={{ width: "100%" }} />
-                        </Form.Item>
-                        <Form.Item
-                            name="supplier_response_comment_col"
-                            label="Колонка Комментарий"
-                        >
-                            <InputNumber min={1} style={{ width: "100%" }} />
-                        </Form.Item>
-                        <Form.Item
-                            name="supplier_response_status_col"
-                            label="Колонка Статус"
-                        >
-                            <InputNumber min={1} style={{ width: "100%" }} />
-                        </Form.Item>
-                    </div>
 
                     <Form.Item name="description" label="Описание">
                         <Input.TextArea rows={3} placeholder="Описание поставщика" />
@@ -1757,7 +1641,7 @@ const ProviderPage = () => {
 
                     <Form.Item
                         name="inbox_email_account_id"
-                        label="inbox_email (какой ящик читаем)"
+                        label="inbox_email (какой ящик читаем: название + email)"
                         extra="Если не выбран, используется набор ящиков purpose=orders_out."
                     >
                         <Select
@@ -1864,44 +1748,54 @@ const ProviderPage = () => {
                         }}
                     </Form.Item>
 
-                    <Divider>Словари статусов</Divider>
+                    <Form.Item noStyle shouldUpdate>
+                        {({ getFieldValue }) => {
+                            const responseType = getFieldValue("response_type");
+                            if (responseType !== "text") return null;
+                            return (
+                                <>
+                                    <Divider>Словари статусов</Divider>
 
-                    <Form.Item
-                        name="confirm_keywords_text"
-                        label="Подтверждение (через запятую)"
-                    >
-                        <Input.TextArea
-                            rows={2}
-                            placeholder="в наличии, есть, отгружаем, собрали, да"
-                        />
-                    </Form.Item>
+                                    <Form.Item
+                                        name="confirm_keywords_text"
+                                        label="Подтверждение (через запятую)"
+                                    >
+                                        <Input.TextArea
+                                            rows={2}
+                                            placeholder="в наличии, есть, отгружаем, собрали, да"
+                                        />
+                                    </Form.Item>
 
-                    <Form.Item
-                        name="reject_keywords_text"
-                        label="Отказ (через запятую)"
-                    >
-                        <Input.TextArea
-                            rows={2}
-                            placeholder="нет, 0, отсутствует, не можем, снято с производства"
-                        />
-                    </Form.Item>
+                                    <Form.Item
+                                        name="reject_keywords_text"
+                                        label="Отказ (через запятую)"
+                                    >
+                                        <Input.TextArea
+                                            rows={2}
+                                            placeholder="нет, 0, отсутствует, не можем, снято с производства"
+                                        />
+                                    </Form.Item>
 
-                    <Divider>Разбор текста письма</Divider>
-                    <Text type="secondary">
-                        Универсальное правило: артикул в тексте определяется по признаку
-                        «латинские буквы + цифры в одном токене».
-                    </Text>
+                                    <Divider>Разбор текста письма</Divider>
+                                    <Text type="secondary">
+                                        Универсальное правило: артикул в тексте определяется по признаку
+                                        «латинские буквы + цифры в одном токене».
+                                    </Text>
 
-                    <Form.Item
-                        name="value_after_article_type"
-                        label="Что ожидаем после артикула"
-                        style={{ marginTop: 10 }}
-                    >
-                        <Radio.Group>
-                            <Radio.Button value="number">Число</Radio.Button>
-                            <Radio.Button value="text">Текст</Radio.Button>
-                            <Radio.Button value="both">Число или текст</Radio.Button>
-                        </Radio.Group>
+                                    <Form.Item
+                                        name="value_after_article_type"
+                                        label="Что ожидаем после артикула"
+                                        style={{ marginTop: 10 }}
+                                    >
+                                        <Radio.Group>
+                                            <Radio.Button value="number">Число</Radio.Button>
+                                            <Radio.Button value="text">Текст</Radio.Button>
+                                            <Radio.Button value="both">Число или текст</Radio.Button>
+                                        </Radio.Group>
+                                    </Form.Item>
+                                </>
+                            );
+                        }}
                     </Form.Item>
 
                     <Form.Item
