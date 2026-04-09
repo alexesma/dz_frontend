@@ -19,6 +19,7 @@ import {
     Popconfirm,
     Upload,
     Switch,
+    Radio,
 } from "antd";
 import {
     SaveOutlined,
@@ -44,6 +45,10 @@ import {
     downloadProviderPricelist,
     uploadProviderPricelist,
     parseProviderExcludePositions,
+    createSupplierResponseConfig,
+    updateSupplierResponseConfig,
+    deleteSupplierResponseConfig,
+    checkSupplierResponseConfigNow,
 } from "../api/providers";
 import { getEmailAccounts } from "../api/emailAccounts";
 import { getPriceStaleAlerts } from "../api/settings";
@@ -78,6 +83,7 @@ const ProviderPage = () => {
     const [alertsLoading, setAlertsLoading] = useState(false);
     const [staleAlerts, setStaleAlerts] = useState([]);
     const [priceInEmailAccounts, setPriceInEmailAccounts] = useState([]);
+    const [responseEmailAccounts, setResponseEmailAccounts] = useState([]);
     const [analyticsRefreshKey, setAnalyticsRefreshKey] = useState(0);
 
     const [configModalVisible, setConfigModalVisible] = useState(false);
@@ -90,6 +96,10 @@ const ProviderPage = () => {
     const [uploadingForConfigId, setUploadingForConfigId] = useState(null);
     const [uploading, setUploading] = useState(false);
     const [configSaving, setConfigSaving] = useState(false);
+    const [responseConfigModalVisible, setResponseConfigModalVisible] = useState(false);
+    const [editingResponseConfig, setEditingResponseConfig] = useState(null);
+    const [responseConfigSaving, setResponseConfigSaving] = useState(false);
+    const [checkingResponseConfigId, setCheckingResponseConfigId] = useState(null);
     const [uploadForm] = Form.useForm();
     const [configNumberingFromOne, setConfigNumberingFromOne] = useState(true);
     const [uploadNumberingFromOne, setUploadNumberingFromOne] = useState(true);
@@ -97,6 +107,7 @@ const ProviderPage = () => {
 
     const [providerForm] = Form.useForm();
     const [configForm] = Form.useForm();
+    const [responseConfigForm] = Form.useForm();
     const [abbrForm] = Form.useForm();
 
     const refreshAnalytics = () => {
@@ -156,6 +167,22 @@ const ProviderPage = () => {
             }
         });
         return Array.from(map.values());
+    };
+
+    const parseStringList = (value) => String(value || "")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+    const parseSenderEmails = (value) => {
+        const seen = new Set();
+        return parseStringList(value)
+            .map((email) => email.toLowerCase())
+            .filter((email) => {
+                if (seen.has(email)) return false;
+                seen.add(email);
+                return true;
+            });
     };
 
     const handleExcludeUpload = async (file) => {
@@ -290,14 +317,19 @@ const ProviderPage = () => {
         (async () => {
             try {
                 const { data } = await getEmailAccounts();
+                const activeAccounts = (data || []).filter(
+                    (account) => account.is_active
+                );
                 const priceInAccounts = (data || []).filter(
                     (account) =>
                         account.is_active
                         && (account.purposes || []).includes("prices_in")
                 );
                 setPriceInEmailAccounts(priceInAccounts);
+                setResponseEmailAccounts(activeAccounts);
             } catch {
                 setPriceInEmailAccounts([]);
+                setResponseEmailAccounts([]);
             }
         })();
     }, []);
@@ -451,6 +483,138 @@ const ProviderPage = () => {
         } catch (err) {
             console.error(err);
             message.error("Не удалось обновить статус конфигурации");
+        }
+    };
+
+    const openResponseConfigModal = (config = null) => {
+        setEditingResponseConfig(config);
+        if (config) {
+            responseConfigForm.setFieldsValue({
+                ...config,
+                sender_emails_text: (config.sender_emails || []).join(", "),
+                confirm_keywords_text: (config.confirm_keywords || []).join(", "),
+                reject_keywords_text: (config.reject_keywords || []).join(", "),
+            });
+        } else {
+            responseConfigForm.resetFields();
+            responseConfigForm.setFieldsValue({
+                name: "",
+                is_active: true,
+                response_type: "file",
+                process_shipping_docs: true,
+                file_format: "excel",
+                start_row: 1,
+                value_after_article_type: "both",
+                sender_emails_text: "",
+                confirm_keywords_text: "в наличии, есть, отгружаем, собрали, да",
+                reject_keywords_text: "нет, 0, отсутствует, не можем, снято с производства",
+            });
+        }
+        setResponseConfigModalVisible(true);
+    };
+
+    const handleResponseConfigSubmit = async (values) => {
+        if (!providerId) return;
+        setResponseConfigSaving(true);
+        try {
+            const payload = {
+                ...values,
+                sender_emails: parseSenderEmails(values.sender_emails_text),
+                confirm_keywords: parseStringList(values.confirm_keywords_text),
+                reject_keywords: parseStringList(values.reject_keywords_text),
+            };
+            delete payload.sender_emails_text;
+            delete payload.confirm_keywords_text;
+            delete payload.reject_keywords_text;
+            if (payload.response_type !== "file") {
+                payload.file_format = null;
+                payload.start_row = 1;
+                payload.oem_col = null;
+                payload.brand_col = null;
+                payload.qty_col = null;
+                payload.status_col = null;
+                payload.comment_col = null;
+                payload.price_col = null;
+                payload.filename_pattern = null;
+            }
+            if (editingResponseConfig) {
+                await updateSupplierResponseConfig(
+                    providerId,
+                    editingResponseConfig.id,
+                    payload
+                );
+                message.success("Конфигурация ответа обновлена");
+            } else {
+                await createSupplierResponseConfig(providerId, payload);
+                message.success("Конфигурация ответа создана");
+            }
+            setResponseConfigModalVisible(false);
+            setEditingResponseConfig(null);
+            responseConfigForm.resetFields();
+            await refreshProviderData();
+        } catch (err) {
+            console.error(err);
+            message.error(
+                err?.response?.data?.detail
+                || "Ошибка сохранения конфигурации ответа"
+            );
+        } finally {
+            setResponseConfigSaving(false);
+        }
+    };
+
+    const handleDeleteResponseConfig = async (configId) => {
+        if (!providerId) return;
+        try {
+            await deleteSupplierResponseConfig(providerId, configId);
+            message.success("Конфигурация ответа удалена");
+            await refreshProviderData();
+        } catch (err) {
+            console.error(err);
+            message.error("Ошибка удаления конфигурации ответа");
+        }
+    };
+
+    const handleCheckResponseConfigNow = async (configId) => {
+        if (!providerId) return;
+        setCheckingResponseConfigId(configId);
+        try {
+            const { data } = await checkSupplierResponseConfigNow(
+                providerId,
+                configId
+            );
+            const unresolved = data?.unresolved_examples || [];
+            Modal.info({
+                title: "Результат проверки почты",
+                width: 700,
+                content: (
+                    <div>
+                        <div>Писем найдено: {data?.fetched_messages || 0}</div>
+                        <div>Писем обработано: {data?.processed_messages || 0}</div>
+                        <div>Позиции распознано: {data?.recognized_positions || 0}</div>
+                        <div>Позиции не разобраны: {data?.unresolved_positions || 0}</div>
+                        {unresolved.length > 0 && (
+                            <div style={{ marginTop: 10 }}>
+                                <b>Не удалось разобрать:</b>
+                                <ul style={{ marginTop: 6, paddingLeft: 18 }}>
+                                    {unresolved.map((item, index) => (
+                                        <li key={`${index}_${item}`}>{item}</li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+                    </div>
+                ),
+            });
+            await refreshProviderData();
+        } catch (err) {
+            console.error(err);
+            message.error(
+                err?.response?.data?.detail
+                || "Не удалось выполнить проверку почты"
+            );
+        } finally {
+            setCheckingResponseConfigId(null);
         }
     };
 
@@ -752,6 +916,93 @@ const ProviderPage = () => {
                         title="Удалить конфигурацию?"
                         description="Удалить конфигурацию и связанные прайс-листы? Действие необратимо"
                         onConfirm={() => handleDeleteConfig(record.id)}
+                        okText="Да"
+                        cancelText="Нет"
+                    >
+                        <Button type="primary" danger size="small" icon={<DeleteOutlined />} />
+                    </Popconfirm>
+                </Space>
+            ),
+        },
+    ];
+
+    const responseConfigColumns = [
+        {
+            title: "Название",
+            dataIndex: "name",
+            key: "name",
+        },
+        {
+            title: "Почтовый ящик",
+            dataIndex: "inbox_email_account_id",
+            key: "inbox_email_account_id",
+            render: (value) => {
+                if (!value) return <span style={{ color: "#999" }}>По умолчанию (orders_out)</span>;
+                const account = responseEmailAccounts.find((item) => item.id === value);
+                return account
+                    ? `${account.name} (${account.email})`
+                    : `ID ${value}`;
+            },
+        },
+        {
+            title: "Отправители",
+            dataIndex: "sender_emails",
+            key: "sender_emails",
+            render: (value) => {
+                const items = value || [];
+                if (!items.length) return <span style={{ color: "#999" }}>Любой</span>;
+                return items.join(", ");
+            },
+        },
+        {
+            title: "Тип",
+            dataIndex: "response_type",
+            key: "response_type",
+            render: (value) => (value === "file" ? "Файл" : "Текст письма"),
+        },
+        {
+            title: "Логика после артикула",
+            dataIndex: "value_after_article_type",
+            key: "value_after_article_type",
+            render: (value) => {
+                if (value === "number") return "Число";
+                if (value === "text") return "Текст";
+                return "Число или текст";
+            },
+        },
+        {
+            title: "Активна",
+            dataIndex: "is_active",
+            key: "is_active",
+            render: (value) => (
+                <Tag color={value ? "green" : "default"}>
+                    {value ? "Включена" : "Отключена"}
+                </Tag>
+            ),
+        },
+        {
+            title: "Действия",
+            key: "actions",
+            width: 260,
+            render: (_, record) => (
+                <Space size="small" wrap className="table-actions">
+                    <Button
+                        size="small"
+                        loading={checkingResponseConfigId === record.id}
+                        onClick={() => handleCheckResponseConfigNow(record.id)}
+                    >
+                        Проверить почту сейчас
+                    </Button>
+                    <Button
+                        type="primary"
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={() => openResponseConfigModal(record)}
+                    />
+                    <Popconfirm
+                        title="Удалить конфигурацию ответа?"
+                        description="Действие необратимо"
+                        onConfirm={() => handleDeleteResponseConfig(record.id)}
                         okText="Да"
                         cancelText="Нет"
                     >
@@ -1110,6 +1361,30 @@ const ProviderPage = () => {
                         />
                     </Card>
 
+                    <Card
+                        title="Конфигурации ответов поставщиков"
+                        style={{ marginTop: 16 }}
+                        extra={
+                            <Button
+                                type="primary"
+                                icon={<PlusOutlined />}
+                                onClick={() => openResponseConfigModal()}
+                            >
+                                Добавить конфигурацию
+                            </Button>
+                        }
+                    >
+                        <Table
+                            rowKey="id"
+                            columns={responseConfigColumns}
+                            dataSource={providerData.supplier_response_configs || []}
+                            pagination={false}
+                            size="middle"
+                            locale={{ emptyText: "Конфигурации ответов не настроены" }}
+                            scroll={{ x: 'max-content' }}
+                        />
+                    </Card>
+
                     <ProviderPricelistAnalyticsSection
                         providerId={providerId}
                         refreshKey={analyticsRefreshKey}
@@ -1440,6 +1715,225 @@ const ProviderPage = () => {
                                     setConfigModalVisible(false);
                                     setEditingConfig(null);
                                     configForm.resetFields();
+                                }}
+                            >
+                                Отмена
+                            </Button>
+                        </Space>
+                    </Form.Item>
+                </Form>
+            </Modal>
+
+            <Modal
+                title={
+                    editingResponseConfig
+                        ? "Редактирование конфигурации ответа"
+                        : "Создание конфигурации ответа"
+                }
+                open={responseConfigModalVisible}
+                onCancel={() => {
+                    setResponseConfigModalVisible(false);
+                    setEditingResponseConfig(null);
+                    responseConfigForm.resetFields();
+                }}
+                footer={null}
+                width={820}
+                destroyOnClose
+            >
+                <Form
+                    form={responseConfigForm}
+                    layout="vertical"
+                    onFinish={handleResponseConfigSubmit}
+                >
+                    <Form.Item
+                        name="name"
+                        label="Название конфигурации"
+                        rules={[{ required: true, message: "Введите название" }]}
+                    >
+                        <Input placeholder="Например: Основной ответ по email" />
+                    </Form.Item>
+
+                    <Divider>Почтовые настройки</Divider>
+
+                    <Form.Item
+                        name="inbox_email_account_id"
+                        label="inbox_email (какой ящик читаем)"
+                        extra="Если не выбран, используется набор ящиков purpose=orders_out."
+                    >
+                        <Select
+                            allowClear
+                            placeholder="Выберите почтовый ящик"
+                            options={responseEmailAccounts.map((account) => ({
+                                value: account.id,
+                                label: `${account.name} (${account.email})`,
+                            }))}
+                            showSearch
+                            optionFilterProp="label"
+                        />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="sender_emails_text"
+                        label="sender_email (через запятую)"
+                        extra="Допустимо несколько адресов: supplier@a.ru, orders@a.ru"
+                    >
+                        <Input placeholder="supplier@example.com, orders@example.com" />
+                    </Form.Item>
+
+                    <Divider>Тип ответа</Divider>
+
+                    <Form.Item
+                        name="response_type"
+                        label="Тип ответа"
+                        rules={[{ required: true, message: "Выберите тип ответа" }]}
+                    >
+                        <Radio.Group>
+                            <Radio.Button value="file">Файл</Radio.Button>
+                            <Radio.Button value="text">Текст письма</Radio.Button>
+                        </Radio.Group>
+                    </Form.Item>
+
+                    <Form.Item
+                        name="process_shipping_docs"
+                        label="Обрабатывать документы УПД/накладные"
+                        valuePropName="checked"
+                    >
+                        <Switch />
+                    </Form.Item>
+
+                    <Form.Item noStyle shouldUpdate>
+                        {({ getFieldValue }) => {
+                            const responseType = getFieldValue("response_type");
+                            if (responseType !== "file") return null;
+                            return (
+                                <>
+                                    <Divider>Настройки файла ответа</Divider>
+                                    <Form.Item
+                                        name="file_format"
+                                        label="Формат файла"
+                                        rules={[{ required: true, message: "Выберите формат" }]}
+                                    >
+                                        <Radio.Group>
+                                            <Radio.Button value="excel">Excel</Radio.Button>
+                                            <Radio.Button value="csv">CSV</Radio.Button>
+                                        </Radio.Group>
+                                    </Form.Item>
+                                    <Form.Item
+                                        name="filename_pattern"
+                                        label="Шаблон имени файла (regex)"
+                                    >
+                                        <Input placeholder="Например: ^answer_\\d+\\.(xlsx|csv)$" />
+                                    </Form.Item>
+                                    <div className="responsive-form-grid-compact">
+                                        <Form.Item
+                                            name="start_row"
+                                            label="Начальная строка данных"
+                                            rules={[{ required: true, message: "Укажите строку начала" }]}
+                                        >
+                                            <InputNumber min={1} style={{ width: "100%" }} />
+                                        </Form.Item>
+                                        <Form.Item
+                                            name="oem_col"
+                                            label="Колонка OEM"
+                                            rules={[{ required: true, message: "Укажите колонку OEM" }]}
+                                        >
+                                            <InputNumber min={1} style={{ width: "100%" }} />
+                                        </Form.Item>
+                                        <Form.Item name="brand_col" label="Бренд (опционально)">
+                                            <InputNumber min={1} style={{ width: "100%" }} />
+                                        </Form.Item>
+                                        <Form.Item
+                                            name="qty_col"
+                                            label="Количество"
+                                            rules={[{ required: true, message: "Укажите колонку количества" }]}
+                                        >
+                                            <InputNumber min={1} style={{ width: "100%" }} />
+                                        </Form.Item>
+                                        <Form.Item name="status_col" label="Статус (опционально)">
+                                            <InputNumber min={1} style={{ width: "100%" }} />
+                                        </Form.Item>
+                                        <Form.Item name="comment_col" label="Комментарий (опционально)">
+                                            <InputNumber min={1} style={{ width: "100%" }} />
+                                        </Form.Item>
+                                        <Form.Item name="price_col" label="Цена (опционально)">
+                                            <InputNumber min={1} style={{ width: "100%" }} />
+                                        </Form.Item>
+                                    </div>
+                                </>
+                            );
+                        }}
+                    </Form.Item>
+
+                    <Divider>Словари статусов</Divider>
+
+                    <Form.Item
+                        name="confirm_keywords_text"
+                        label="Подтверждение (через запятую)"
+                    >
+                        <Input.TextArea
+                            rows={2}
+                            placeholder="в наличии, есть, отгружаем, собрали, да"
+                        />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="reject_keywords_text"
+                        label="Отказ (через запятую)"
+                    >
+                        <Input.TextArea
+                            rows={2}
+                            placeholder="нет, 0, отсутствует, не можем, снято с производства"
+                        />
+                    </Form.Item>
+
+                    <Divider>Разбор текста письма</Divider>
+                    <Text type="secondary">
+                        Универсальное правило: артикул в тексте определяется по признаку
+                        «латинские буквы + цифры в одном токене».
+                    </Text>
+
+                    <Form.Item
+                        name="value_after_article_type"
+                        label="Что ожидаем после артикула"
+                        style={{ marginTop: 10 }}
+                    >
+                        <Radio.Group>
+                            <Radio.Button value="number">Число</Radio.Button>
+                            <Radio.Button value="text">Текст</Radio.Button>
+                            <Radio.Button value="both">Число или текст</Radio.Button>
+                        </Radio.Group>
+                    </Form.Item>
+
+                    <Form.Item
+                        name="shipping_doc_filename_pattern"
+                        label="Шаблон имени УПД/накладной (regex)"
+                    >
+                        <Input placeholder="Например: (упд|накладн|invoice)" />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="is_active"
+                        label="Конфигурация активна"
+                        valuePropName="checked"
+                    >
+                        <Switch />
+                    </Form.Item>
+
+                    <Form.Item>
+                        <Space wrap>
+                            <Button
+                                type="primary"
+                                htmlType="submit"
+                                icon={<SaveOutlined />}
+                                loading={responseConfigSaving}
+                            >
+                                {editingResponseConfig ? "Сохранить" : "Создать"}
+                            </Button>
+                            <Button
+                                onClick={() => {
+                                    setResponseConfigModalVisible(false);
+                                    setEditingResponseConfig(null);
+                                    responseConfigForm.resetFields();
                                 }}
                             >
                                 Отмена

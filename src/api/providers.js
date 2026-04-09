@@ -70,6 +70,39 @@ export const deleteProviderConfig = async (providerId, configId) => {
     return api.delete(`/providers/${providerId}/pricelist-config/${configId}/`);
 };
 
+export const createSupplierResponseConfig = async (providerId, data) => {
+    return api.post(`/providers/${providerId}/supplier-response-config/`, data);
+};
+
+export const updateSupplierResponseConfig = async (
+    providerId,
+    configId,
+    data
+) => {
+    return api.patch(
+        `/providers/${providerId}/supplier-response-config/${configId}/`,
+        data
+    );
+};
+
+export const deleteSupplierResponseConfig = async (providerId, configId) => {
+    return api.delete(
+        `/providers/${providerId}/supplier-response-config/${configId}/`
+    );
+};
+
+export const checkSupplierResponseConfigNow = async (
+    providerId,
+    configId,
+    params = {}
+) => {
+    return api.post(
+        `/providers/${providerId}/supplier-response-config/${configId}/check-now`,
+        null,
+        { params }
+    );
+};
+
 // Аббревиатуры
 export const createAbbreviation = async (providerId, abbreviation) => {
     return api.post(`/providers/${providerId}/abbreviations`, { abbreviation_name: abbreviation });
