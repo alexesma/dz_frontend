@@ -451,6 +451,7 @@ const ProviderPage = () => {
         if (config) {
             responseConfigForm.setFieldsValue({
                 ...config,
+                file_payload_type: config.file_payload_type || "response",
                 sender_emails_text: (config.sender_emails || []).join(", "),
                 confirm_keywords_text: (config.confirm_keywords || []).join(", "),
                 reject_keywords_text: (config.reject_keywords || []).join(", "),
@@ -463,6 +464,7 @@ const ProviderPage = () => {
                 response_type: "file",
                 process_shipping_docs: true,
                 file_format: "excel",
+                file_payload_type: "response",
                 start_row: 1,
                 value_after_article_type: "both",
                 sender_emails_text: "",
@@ -488,6 +490,7 @@ const ProviderPage = () => {
             delete payload.reject_keywords_text;
             if (payload.response_type !== "file") {
                 payload.file_format = null;
+                payload.file_payload_type = "response";
                 payload.start_row = 1;
                 payload.oem_col = null;
                 payload.brand_col = null;
@@ -495,7 +498,21 @@ const ProviderPage = () => {
                 payload.status_col = null;
                 payload.comment_col = null;
                 payload.price_col = null;
+                payload.document_number_col = null;
+                payload.document_date_col = null;
+                payload.gtd_col = null;
+                payload.country_code_col = null;
+                payload.country_name_col = null;
+                payload.total_price_with_vat_col = null;
                 payload.filename_pattern = null;
+            }
+            if (payload.response_type === "file" && payload.file_payload_type !== "document") {
+                payload.document_number_col = null;
+                payload.document_date_col = null;
+                payload.gtd_col = null;
+                payload.country_code_col = null;
+                payload.country_name_col = null;
+                payload.total_price_with_vat_col = null;
             }
             if (payload.response_type !== "text") {
                 payload.confirm_keywords = [];
@@ -935,6 +952,15 @@ const ProviderPage = () => {
             dataIndex: "response_type",
             key: "response_type",
             render: (value) => (value === "file" ? "Файл" : "Текст письма"),
+        },
+        {
+            title: "Режим файла",
+            dataIndex: "file_payload_type",
+            key: "file_payload_type",
+            render: (value, record) => {
+                if (record?.response_type !== "file") return "—";
+                return value === "document" ? "Документ" : "Ответ";
+            },
         },
         {
             title: "Логика после артикула",
@@ -1703,6 +1729,16 @@ const ProviderPage = () => {
                                         </Radio.Group>
                                     </Form.Item>
                                     <Form.Item
+                                        name="file_payload_type"
+                                        label="Что приходит в файле"
+                                        rules={[{ required: true, message: "Выберите тип файла" }]}
+                                    >
+                                        <Radio.Group>
+                                            <Radio.Button value="response">Ответ</Radio.Button>
+                                            <Radio.Button value="document">Документ (УПД/накладная)</Radio.Button>
+                                        </Radio.Group>
+                                    </Form.Item>
+                                    <Form.Item
                                         name="filename_pattern"
                                         label="Шаблон имени файла (regex)"
                                     >
@@ -1743,6 +1779,56 @@ const ProviderPage = () => {
                                             <InputNumber min={1} style={{ width: "100%" }} />
                                         </Form.Item>
                                     </div>
+                                    <Form.Item noStyle shouldUpdate>
+                                        {({ getFieldValue }) => {
+                                            const payloadType = getFieldValue("file_payload_type");
+                                            if (payloadType !== "document") return null;
+                                            return (
+                                                <>
+                                                    <Divider>Поля документа (опционально)</Divider>
+                                                    <div className="responsive-form-grid-compact">
+                                                        <Form.Item
+                                                            name="document_number_col"
+                                                            label="Номер документа"
+                                                        >
+                                                            <InputNumber min={1} style={{ width: "100%" }} />
+                                                        </Form.Item>
+                                                        <Form.Item
+                                                            name="document_date_col"
+                                                            label="Дата документа"
+                                                        >
+                                                            <InputNumber min={1} style={{ width: "100%" }} />
+                                                        </Form.Item>
+                                                        <Form.Item
+                                                            name="gtd_col"
+                                                            label="ГТД"
+                                                        >
+                                                            <InputNumber min={1} style={{ width: "100%" }} />
+                                                        </Form.Item>
+                                                        <Form.Item
+                                                            name="country_code_col"
+                                                            label="Код страны"
+                                                        >
+                                                            <InputNumber min={1} style={{ width: "100%" }} />
+                                                        </Form.Item>
+                                                        <Form.Item
+                                                            name="country_name_col"
+                                                            label="Название страны"
+                                                        >
+                                                            <InputNumber min={1} style={{ width: "100%" }} />
+                                                        </Form.Item>
+                                                        <Form.Item
+                                                            name="total_price_with_vat_col"
+                                                            label="Сумма с НДС"
+                                                            extra="Если цена не заполнена, она вычисляется как (Сумма с НДС / Количество)."
+                                                        >
+                                                            <InputNumber min={1} style={{ width: "100%" }} />
+                                                        </Form.Item>
+                                                    </div>
+                                                </>
+                                            );
+                                        }}
+                                    </Form.Item>
                                 </>
                             );
                         }}

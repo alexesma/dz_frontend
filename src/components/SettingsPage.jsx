@@ -1,5 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Card, Form, InputNumber, Modal, Select, Switch, Typography, message } from 'antd';
+import {
+    Button,
+    Card,
+    Form,
+    Input,
+    InputNumber,
+    Modal,
+    Select,
+    Switch,
+    Typography,
+    message,
+} from 'antd';
 import {
     getPriceCheckLogs,
     getPriceCheckSchedule,
@@ -147,6 +158,12 @@ const SettingsPage = () => {
                 mark_seen: orderInboxSettings.mark_seen,
                 error_file_retention_days:
                     orderInboxSettings.error_file_retention_days,
+                supplier_response_lookback_days:
+                    orderInboxSettings.supplier_response_lookback_days,
+                supplier_order_stub_enabled:
+                    orderInboxSettings.supplier_order_stub_enabled,
+                supplier_order_stub_email:
+                    orderInboxSettings.supplier_order_stub_email,
             };
             const { data } = await updateCustomerOrderInboxSettings(payload);
             setOrderInboxSettings(data);
@@ -258,6 +275,66 @@ const SettingsPage = () => {
                         {lastCheckedAt ? formatMoscow(lastCheckedAt) : 'нет данных'}
                     </Text>
                 </div>
+
+                <Card title="Ответы поставщиков" style={{ marginTop: 16 }}>
+                    <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div>
+                            <Text strong>Глубина проверки ответов (дней)</Text>
+                            <div style={{ marginTop: 8 }}>
+                                <InputNumber
+                                    min={1}
+                                    max={60}
+                                    value={orderInboxSettings?.supplier_response_lookback_days ?? 14}
+                                    onChange={(value) =>
+                                        setOrderInboxSettings((prev) => ({
+                                            ...(prev || {}),
+                                            supplier_response_lookback_days: value ?? 14,
+                                        }))
+                                    }
+                                    disabled={orderInboxLoading}
+                                />
+                            </div>
+                        </div>
+                        <div>
+                            <Text strong>Заглушка отправки заказов поставщикам</Text>
+                            <div style={{ marginTop: 8 }}>
+                                <Switch
+                                    checked={orderInboxSettings?.supplier_order_stub_enabled ?? true}
+                                    onChange={(checked) =>
+                                        setOrderInboxSettings((prev) => ({
+                                            ...(prev || {}),
+                                            supplier_order_stub_enabled: checked,
+                                        }))
+                                    }
+                                    disabled={orderInboxLoading}
+                                />
+                            </div>
+                        </div>
+                        <div style={{ minWidth: 320 }}>
+                            <Text strong>Email для заглушки</Text>
+                            <div style={{ marginTop: 8 }}>
+                                <Input
+                                    value={orderInboxSettings?.supplier_order_stub_email ?? 'info@dragonzap.ru'}
+                                    onChange={(event) =>
+                                        setOrderInboxSettings((prev) => ({
+                                            ...(prev || {}),
+                                            supplier_order_stub_email: event.target.value,
+                                        }))
+                                    }
+                                    disabled={orderInboxLoading}
+                                    placeholder="info@dragonzap.ru"
+                                />
+                            </div>
+                        </div>
+                        <Button
+                            type="primary"
+                            loading={orderInboxSaving}
+                            onClick={handleOrderInboxSave}
+                        >
+                            Сохранить
+                        </Button>
+                    </div>
+                </Card>
 
                 <Card title="Логи проверки прайсов" style={{ marginTop: 16 }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
