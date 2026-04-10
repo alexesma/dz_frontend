@@ -20,6 +20,7 @@ import {
     Upload,
     Switch,
     Radio,
+    Alert,
 } from "antd";
 import {
     SaveOutlined,
@@ -557,6 +558,30 @@ const ProviderPage = () => {
         }
     };
 
+    const buildResponseCheckHints = (data = {}) => {
+        const fetched = data?.fetched_messages || 0;
+        const processed = data?.processed_messages || 0;
+        const parsedFiles = data?.parsed_response_files || 0;
+        const parsedText = data?.parsed_text_positions || 0;
+        const recognized = data?.recognized_positions || 0;
+        const hints = [];
+        if (fetched > 0 && processed === 0) {
+            hints.push("Письма в ящике есть, но они не прошли фильтры конфигурации.");
+            hints.push("Проверьте sender_email: нужен точный email из поля From.");
+            hints.push("Проверьте inbox_email: письмо должно быть в выбранном ящике и папке INBOX.");
+        }
+        if (processed > 0 && parsedFiles === 0 && parsedText === 0) {
+            hints.push("Письма обработаны, но ответ не извлечен.");
+            hints.push("Для типа 'Файл' проверьте шаблон имени файла и формат вложения.");
+            hints.push("Для типа 'Текст письма' проверьте словари статусов и правило после артикула.");
+        }
+        if (processed > 0 && recognized === 0) {
+            hints.push("Ответ получен, но позиции не сопоставлены с заказами.");
+            hints.push("Проверьте OEM/бренд в ответе и активные заказы поставщику.");
+        }
+        return hints;
+    };
+
     const handleCheckResponseConfigNow = async (configId) => {
         if (!providerId) return;
         setCheckingResponseConfigId(configId);
@@ -566,6 +591,7 @@ const ProviderPage = () => {
                 configId
             );
             const unresolved = data?.unresolved_examples || [];
+            const hints = buildResponseCheckHints(data);
             Modal.info({
                 title: "Результат проверки почты",
                 width: 700,
@@ -579,6 +605,16 @@ const ProviderPage = () => {
                         <div>Обновлено черновиков поступления: {data?.updated_receipts || 0}</div>
                         <div>Автопроведено по УПД/накладным: {data?.posted_receipts || 0}</div>
                         <div>Строк добавлено в поступления: {data?.receipt_items_added || 0}</div>
+                        {hints.length > 0 && (
+                            <div style={{ marginTop: 10 }}>
+                                <b>Что проверить в настройке:</b>
+                                <ul style={{ marginTop: 6, paddingLeft: 18 }}>
+                                    {hints.map((item, index) => (
+                                        <li key={`${index}_${item}`}>{item}</li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
                         {unresolved.length > 0 && (
                             <div style={{ marginTop: 10 }}>
                                 <b>Не удалось разобрать:</b>
@@ -985,16 +1021,9 @@ const ProviderPage = () => {
         {
             title: "Действия",
             key: "actions",
-            width: 260,
+            width: 120,
             render: (_, record) => (
                 <Space size="small" wrap className="table-actions">
-                    <Button
-                        size="small"
-                        loading={checkingResponseConfigId === record.id}
-                        onClick={() => handleCheckResponseConfigNow(record.id)}
-                    >
-                        Проверить почту сейчас
-                    </Button>
                     <Button
                         type="primary"
                         size="small"
@@ -1690,6 +1719,20 @@ const ProviderPage = () => {
                         <Input placeholder="supplier@example.com, orders@example.com" />
                     </Form.Item>
 
+                    <Alert
+                        type="info"
+                        showIcon
+                        style={{ marginBottom: 16 }}
+                        message="Как избежать ошибок при тестовой проверке"
+                        description={(
+                            <div>
+                                <div>1. sender_email должен точно совпадать с адресом в поле From.</div>
+                                <div>2. Для типа «Файл» шаблон имени проверяется по части имени (regex, без учета регистра) и с учетом декодирования MIME-имен.</div>
+                                <div>3. Кнопка «Проверить почту сейчас» использует уже сохраненную конфигурацию.</div>
+                            </div>
+                        )}
+                    />
+
                     <Divider>Тип ответа</Divider>
 
                     <Form.Item
@@ -1901,6 +1944,23 @@ const ProviderPage = () => {
 
                     <Form.Item>
                         <Space wrap>
+                            <Button
+                                onClick={() => (
+                                    editingResponseConfig?.id
+                                        ? handleCheckResponseConfigNow(
+                                            editingResponseConfig.id
+                                        )
+                                        : message.info(
+                                            "Сначала сохраните конфигурацию, затем выполните проверку."
+                                        )
+                                )}
+                                loading={
+                                    checkingResponseConfigId
+                                    === editingResponseConfig?.id
+                                }
+                            >
+                                Проверить почту сейчас
+                            </Button>
                             <Button
                                 type="primary"
                                 htmlType="submit"
