@@ -455,22 +455,24 @@ const ProviderPage = () => {
     const openResponseConfigModal = (config = null) => {
         setEditingResponseConfig(config);
         if (config) {
-            responseConfigForm.setFieldsValue({
-                ...config,
-                file_payload_type: config.file_payload_type || "response",
-                sender_emails_text: (config.sender_emails || []).join(", "),
-                confirm_keywords_text: (config.confirm_keywords || []).join(", "),
-                reject_keywords_text: (config.reject_keywords || []).join(", "),
-            });
+                responseConfigForm.setFieldsValue({
+                    ...config,
+                    file_payload_type: config.file_payload_type || "response",
+                    auto_confirm_unmentioned_items: !!config.auto_confirm_unmentioned_items,
+                    sender_emails_text: (config.sender_emails || []).join(", "),
+                    confirm_keywords_text: (config.confirm_keywords || []).join(", "),
+                    reject_keywords_text: (config.reject_keywords || []).join(", "),
+                });
         } else {
             responseConfigForm.resetFields();
-            responseConfigForm.setFieldsValue({
-                name: "",
-                is_active: true,
-                response_type: "file",
-                process_shipping_docs: true,
-                file_format: "excel",
-                file_payload_type: "response",
+                responseConfigForm.setFieldsValue({
+                    name: "",
+                    is_active: true,
+                    response_type: "file",
+                    process_shipping_docs: true,
+                    auto_confirm_unmentioned_items: false,
+                    file_format: "excel",
+                    file_payload_type: "response",
                 start_row: 1,
                 value_after_article_type: "both",
                 sender_emails_text: "",
@@ -1050,6 +1052,12 @@ const ProviderPage = () => {
             dataIndex: "response_type",
             key: "response_type",
             render: (value) => (value === "file" ? "Файл" : "Текст письма"),
+        },
+        {
+            title: "Режим исключений",
+            dataIndex: "auto_confirm_unmentioned_items",
+            key: "auto_confirm_unmentioned_items",
+            render: (value) => (value ? "Включен" : "Выключен"),
         },
         {
             title: "Режим файла",
@@ -1807,6 +1815,15 @@ const ProviderPage = () => {
                             <Radio.Button value="file">Файл</Radio.Button>
                             <Radio.Button value="text">Текст письма</Radio.Button>
                         </Radio.Group>
+                    </Form.Item>
+
+                    <Form.Item
+                        name="auto_confirm_unmentioned_items"
+                        label="Режим исключений (остальные позиции подтверждать)"
+                        valuePropName="checked"
+                        extra="Если в ответе распознаны позиции, изменения применяются только к ним, а остальные pending-позиции заказа автоматически подтверждаются."
+                    >
+                        <Switch />
                     </Form.Item>
 
                     <Form.Item
