@@ -103,6 +103,26 @@ export const checkSupplierResponseConfigNow = async (
     );
 };
 
+export const getSupplierResponseImportErrors = async (
+    providerId,
+    configId,
+    params = {}
+) => {
+    return api.get(
+        `/providers/${providerId}/supplier-response-config/${configId}/import-errors`,
+        { params }
+    );
+};
+
+export const retrySupplierResponseImportErrors = async (
+    providerId,
+    configId
+) => {
+    return api.post(
+        `/providers/${providerId}/supplier-response-config/${configId}/retry-errors`
+    );
+};
+
 // Аббревиатуры
 export const createAbbreviation = async (providerId, abbreviation) => {
     return api.post(`/providers/${providerId}/abbreviations`, { abbreviation_name: abbreviation });

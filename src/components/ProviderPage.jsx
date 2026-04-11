@@ -50,6 +50,8 @@ import {
     updateSupplierResponseConfig,
     deleteSupplierResponseConfig,
     checkSupplierResponseConfigNow,
+    getSupplierResponseImportErrors,
+    retrySupplierResponseImportErrors,
 } from "../api/providers";
 import { getEmailAccounts } from "../api/emailAccounts";
 import { getPriceStaleAlerts } from "../api/settings";
@@ -101,6 +103,9 @@ const ProviderPage = () => {
     const [editingResponseConfig, setEditingResponseConfig] = useState(null);
     const [responseConfigSaving, setResponseConfigSaving] = useState(false);
     const [checkingResponseConfigId, setCheckingResponseConfigId] = useState(null);
+    const [responseImportErrorsLoading, setResponseImportErrorsLoading] = useState(false);
+    const [responseImportErrorsRetrying, setResponseImportErrorsRetrying] = useState(false);
+    const [responseImportErrors, setResponseImportErrors] = useState([]);
     const [uploadForm] = Form.useForm();
     const [configNumberingFromOne, setConfigNumberingFromOne] = useState(true);
     const [uploadNumberingFromOne, setUploadNumberingFromOne] = useState(true);
@@ -472,6 +477,12 @@ const ProviderPage = () => {
                 confirm_keywords_text: "в наличии, есть, отгружаем, собрали, да",
                 reject_keywords_text: "нет, 0, отсутствует, не можем, снято с производства",
             });
+            setResponseImportErrors([]);
+        }
+        if (config?.id) {
+            loadResponseImportErrors(config.id);
+        } else {
+            setResponseImportErrors([]);
         }
         setResponseConfigModalVisible(true);
     };
@@ -582,6 +593,56 @@ const ProviderPage = () => {
         return hints;
     };
 
+    const loadResponseImportErrors = async (configId) => {
+        if (!providerId || !configId) {
+            setResponseImportErrors([]);
+            return;
+        }
+        setResponseImportErrorsLoading(true);
+        try {
+            const { data } = await getSupplierResponseImportErrors(
+                providerId,
+                configId,
+                { limit: 50 }
+            );
+            setResponseImportErrors(Array.isArray(data) ? data : []);
+        } catch (err) {
+            console.error(err);
+            setResponseImportErrors([]);
+            message.error(
+                err?.response?.data?.detail
+                || "Не удалось загрузить ошибки импорта ответов"
+            );
+        } finally {
+            setResponseImportErrorsLoading(false);
+        }
+    };
+
+    const handleRetryResponseImportErrors = async () => {
+        if (!providerId || !editingResponseConfig?.id) return;
+        setResponseImportErrorsRetrying(true);
+        try {
+            const { data } = await retrySupplierResponseImportErrors(
+                providerId,
+                editingResponseConfig.id
+            );
+            message.success(
+                `Перепроверка завершена: в очереди ${data?.queued || 0}, `
+                + `обработано ${data?.processed_messages || 0}`
+            );
+            await loadResponseImportErrors(editingResponseConfig.id);
+            await refreshProviderData();
+        } catch (err) {
+            console.error(err);
+            message.error(
+                err?.response?.data?.detail
+                || "Не удалось перепроверить ошибки импорта ответов"
+            );
+        } finally {
+            setResponseImportErrorsRetrying(false);
+        }
+    };
+
     const handleCheckResponseConfigNow = async (configId) => {
         if (!providerId) return;
         setCheckingResponseConfigId(configId);
@@ -628,6 +689,7 @@ const ProviderPage = () => {
                     </div>
                 ),
             });
+            await loadResponseImportErrors(configId);
             await refreshProviderData();
         } catch (err) {
             console.error(err);
@@ -1674,6 +1736,7 @@ const ProviderPage = () => {
                     setResponseConfigModalVisible(false);
                     setEditingResponseConfig(null);
                     responseConfigForm.resetFields();
+                    setResponseImportErrors([]);
                 }}
                 footer={null}
                 width={820}
@@ -1942,6 +2005,161 @@ const ProviderPage = () => {
                         <Switch />
                     </Form.Item>
 
+                    {editingResponseConfig?.id && (
+                        <>
+                            <Divider>Ошибки импорта ответов</Divider>
+                            <Space style={{ marginBottom: 10 }} wrap>
+                                <Button
+                                    onClick={() => loadResponseImportErrors(editingResponseConfig.id)}
+                                    loading={responseImportErrorsLoading}
+                                >
+                                    Обновить список ошибок
+                                </Button>
+                                <Button
+                                    type="default"
+                                    onClick={handleRetryResponseImportErrors}
+                                    loading={responseImportErrorsRetrying}
+                                >
+                                    Повторить загрузку ошибок
+                                </Button>
+                            </Space>
+                            <Table
+                                size="small"
+                                rowKey="id"
+                                loading={responseImportErrorsLoading}
+                                dataSource={responseImportErrors}
+                                pagination={false}
+                                locale={{
+                                    emptyText: "Ошибок импорта не найдено",
+                                }}
+                                columns={[
+                                    {
+                                        title: "Дата",
+                                        dataIndex: "received_at",
+                                        width: 160,
+                                        render: (value) => formatMoscow(value),
+                                    },
+                                    {
+                                        title: "Отправитель",
+                                        dataIndex: "sender_email",
+                                        width: 220,
+                                        render: (_, row) => (
+                                            <div>
+                                                <div>{row?.sender_email || "—"}</div>
+                                                {(row?.account_email || row?.account_name) && (
+                                                    <Text type="secondary">
+                                                        Ящик: {
+                                                            row?.account_name
+                                                                ? `${row.account_name} (${row.account_email || "—"})`
+                                                                : row?.account_email
+                                                        }
+                                                    </Text>
+                                                )}
+                                                {(row?.source_folder || row?.source_message_uid) && (
+                                                    <div>
+                                                        <Text type="secondary">
+                                                            {[
+                                                                row?.source_folder
+                                                                    ? `папка: ${row.source_folder}`
+                                                                    : null,
+                                                                row?.source_message_uid
+                                                                    ? `UID: ${row.source_message_uid}`
+                                                                    : null,
+                                                            ].filter(Boolean).join(", ")}
+                                                        </Text>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ),
+                                    },
+                                    {
+                                        title: "Тема (как прочитана)",
+                                        dataIndex: "subject",
+                                        width: 320,
+                                        render: (_, row) => (
+                                            <div>
+                                                <div>{row?.subject || "—"}</div>
+                                                {row?.subject_raw && row?.subject_raw !== row?.subject && (
+                                                    <Text type="secondary">
+                                                        raw: {row.subject_raw}
+                                                    </Text>
+                                                )}
+                                            </div>
+                                        ),
+                                    },
+                                    {
+                                        title: "Ошибка",
+                                        dataIndex: "import_error_details",
+                                        render: (_, row) => (
+                                            <div>
+                                                <div>
+                                                    {row?.import_error_details
+                                                        || "Не удалось обработать по текущим настройкам"}
+                                                </div>
+                                                {(row?.import_error_reasons || []).length > 0 && (
+                                                    <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                                                        {(row.import_error_reasons || []).map((item, idx) => (
+                                                            <li key={`${row.id}_reason_${idx}`}>{item}</li>
+                                                        ))}
+                                                    </ul>
+                                                )}
+                                                {(row?.config_expectations || []).length > 0 && (
+                                                    <div style={{ marginTop: 6 }}>
+                                                        <Text type="secondary">Ожидалось по конфигу:</Text>
+                                                        <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                                                            {(row.config_expectations || []).map((item, idx) => (
+                                                                <li key={`${row.id}_expect_${idx}`}>
+                                                                    <Text type="secondary">{item}</Text>
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                )}
+                                                {(row?.manager_hints || []).length > 0 && (
+                                                    <div style={{ marginTop: 6 }}>
+                                                        <Text type="secondary">Что проверить:</Text>
+                                                        <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                                                            {(row.manager_hints || []).map((item, idx) => (
+                                                                <li key={`${row.id}_hint_${idx}`}>
+                                                                    <Text type="secondary">{item}</Text>
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                )}
+                                                {row?.body_preview && (
+                                                    <div style={{ marginTop: 6 }}>
+                                                        <Text type="secondary">
+                                                            Текст письма (фрагмент): {row.body_preview}
+                                                        </Text>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ),
+                                    },
+                                    {
+                                        title: "Вложения",
+                                        dataIndex: "attachment_filenames",
+                                        width: 220,
+                                        render: (_, row) => {
+                                            const details = row?.attachment_details || [];
+                                            if (details.length > 0) {
+                                                return (
+                                                    <div>
+                                                        {details.map((item, idx) => (
+                                                            <div key={`${row.id}_att_${idx}`}>{item}</div>
+                                                        ))}
+                                                    </div>
+                                                );
+                                            }
+                                            return (row?.attachment_filenames || []).join(", ");
+                                        },
+                                    },
+                                ]}
+                            />
+                        </>
+                    )}
+
                     <Form.Item>
                         <Space wrap>
                             <Button
@@ -1974,6 +2192,7 @@ const ProviderPage = () => {
                                     setResponseConfigModalVisible(false);
                                     setEditingResponseConfig(null);
                                     responseConfigForm.resetFields();
+                                    setResponseImportErrors([]);
                                 }}
                             >
                                 Отмена
