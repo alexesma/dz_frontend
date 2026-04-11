@@ -41,6 +41,8 @@ const CustomerSupplierOrdersPage = () => {
     const [providers, setProviders] = useState([]);
     const [customers, setCustomers] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [sendingSelected, setSendingSelected] = useState(false);
+    const [sendingScheduled, setSendingScheduled] = useState(false);
     const [selectedRowKeys, setSelectedRowKeys] = useState([]);
     const [filters, setFilters] = useState(DEFAULT_FILTERS);
     const [createOpen, setCreateOpen] = useState(false);
@@ -186,25 +188,77 @@ const CustomerSupplierOrdersPage = () => {
             return;
         }
         const orderIds = Array.from(
-            new Set(selectedRowKeys.map((key) => Number(key)))
-        ).filter((value) => !Number.isNaN(value));
-        Modal.confirm({
-            title: 'Отправить выбранные заказы?',
-            content: 'Проверьте список перед отправкой.',
-            okText: 'Отправить',
-            cancelText: 'Отмена',
-            onOk: async () => {
-                try {
-                    await sendSupplierOrders(orderIds);
-                    message.success('Заказы отправлены');
-                    setSelectedRowKeys([]);
-                    fetchOrders();
-                } catch {
-                    message.error('Ошибка отправки заказов');
-                }
-            },
-        });
+            new Set(
+                selectedRowKeys
+                    .map((key) => {
+                        if (typeof key === 'number') {
+                            return key;
+                        }
+                        if (typeof key === 'string' && /^\d+$/.test(key)) {
+                            return Number(key);
+                        }
+                        return Number.NaN;
+                    })
+                    .filter((value) => !Number.isNaN(value))
+            )
+        );
+        if (!orderIds.length) {
+            message.error(
+                'Не удалось определить ID выбранных заказов. Обновите список и выберите заново.'
+            );
+            return;
+        }
+        setSendingSelected(true);
+        try {
+            const { data } = await sendSupplierOrders(orderIds);
+            const sent = Number(data?.sent || 0);
+            const failed = Number(data?.failed || 0);
+            if (failed > 0) {
+                message.warning(
+                    `Отправка завершена: отправлено ${sent}, ошибок ${failed}`
+                );
+            } else {
+                message.success(`Отправлено ${sent} заказов`);
+            }
+            setSelectedRowKeys([]);
+            await fetchOrders(filters);
+        } catch (err) {
+            const detail = err?.response?.data?.detail;
+            message.error(
+                detail
+                    || 'Ошибка отправки заказов'
+            );
+        } finally {
+            setSendingSelected(false);
+        }
     };
+
+    const handleSendScheduled = async () => {
+        setSendingScheduled(true);
+        try {
+            const { data } = await sendScheduledSupplierOrders();
+            const sent = Number(data?.sent || 0);
+            const failed = Number(data?.failed || 0);
+            if (failed > 0) {
+                message.warning(
+                    `Плановая отправка: отправлено ${sent}, ошибок ${failed}`
+                );
+            } else {
+                message.success(`Плановая отправка: отправлено ${sent}`);
+            }
+            await fetchOrders(filters);
+        } catch (err) {
+            const detail = err?.response?.data?.detail;
+            message.error(
+                detail
+                    || 'Ошибка отправки запланированных заказов'
+            );
+        } finally {
+            setSendingScheduled(false);
+        }
+    };
+
+    const selectedOrdersCount = selectedRowKeys.length;
 
     const setItemFields = (index, fields) => {
         setFormState((prev) => {
@@ -347,24 +401,6 @@ const CustomerSupplierOrdersPage = () => {
         }
     };
 
-    const handleSendScheduled = async () => {
-        Modal.confirm({
-            title: 'Отправить заказы по расписанию?',
-            content: 'Будут отправлены все заказы, готовые к отправке.',
-            okText: 'Отправить',
-            cancelText: 'Отмена',
-            onOk: async () => {
-                try {
-                    await sendScheduledSupplierOrders();
-                    message.success('Запланированные заказы отправлены');
-                    fetchOrders();
-                } catch {
-                    message.error('Ошибка отправки запланированных заказов');
-                }
-            },
-        });
-    };
-
     return (
         <Card>
             <Title level={3}>Заказы поставщикам (из заказов клиентов)</Title>
@@ -455,10 +491,15 @@ const CustomerSupplierOrdersPage = () => {
                 </Button>
             </div>
             <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-                <Button type="primary" onClick={handleSendSelected}>
-                    Отправить выбранные
+                <Button
+                    type="primary"
+                    onClick={handleSendSelected}
+                    disabled={!selectedOrdersCount}
+                    loading={sendingSelected}
+                >
+                    Отправить выбранные{selectedOrdersCount ? ` (${selectedOrdersCount})` : ''}
                 </Button>
-                <Button onClick={handleSendScheduled}>
+                <Button onClick={handleSendScheduled} loading={sendingScheduled}>
                     Отправить по расписанию
                 </Button>
                 <Button type="primary" onClick={() => setCreateOpen(true)}>
@@ -471,14 +512,21 @@ const CustomerSupplierOrdersPage = () => {
                 columns={columns}
                 rowSelection={{
                     selectedRowKeys,
-                    onChange: setSelectedRowKeys,
+                    onChange: (keys) => {
+                        setSelectedRowKeys(
+                            (keys || []).filter((key) => key !== null && key !== undefined)
+                        );
+                    },
                 }}
                 onRow={(record) => ({
                     onClick: (event) => {
                         if (
                             event.target.closest('button') ||
                             event.target.closest('input') ||
-                            event.target.closest('.ant-select')
+                            event.target.closest('.ant-select') ||
+                            event.target.closest('.ant-checkbox-wrapper') ||
+                            event.target.closest('.ant-checkbox') ||
+                            event.target.closest('label')
                         ) {
                             return;
                         }

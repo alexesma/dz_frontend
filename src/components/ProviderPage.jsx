@@ -53,6 +53,7 @@ import {
     getSupplierResponseImportErrors,
     retrySupplierResponseImportErrors,
 } from "../api/providers";
+import { updateCustomerPricelistSource } from "../api/customers";
 import { getEmailAccounts } from "../api/emailAccounts";
 import { getPriceStaleAlerts } from "../api/settings";
 import { formatMoscow } from '../utils/time';
@@ -106,7 +107,11 @@ const ProviderPage = () => {
     const [responseImportErrorsLoading, setResponseImportErrorsLoading] = useState(false);
     const [responseImportErrorsRetrying, setResponseImportErrorsRetrying] = useState(false);
     const [responseImportErrors, setResponseImportErrors] = useState([]);
+    const [sourceUsageModalVisible, setSourceUsageModalVisible] = useState(false);
+    const [editingSourceUsage, setEditingSourceUsage] = useState(null);
+    const [sourceUsageSaving, setSourceUsageSaving] = useState(false);
     const [uploadForm] = Form.useForm();
+    const [sourceUsageForm] = Form.useForm();
     const [configNumberingFromOne, setConfigNumberingFromOne] = useState(true);
     const [uploadNumberingFromOne, setUploadNumberingFromOne] = useState(true);
     const [excludeUploading, setExcludeUploading] = useState(false);
@@ -459,6 +464,7 @@ const ProviderPage = () => {
                     ...config,
                     file_payload_type: config.file_payload_type || "response",
                     auto_confirm_unmentioned_items: !!config.auto_confirm_unmentioned_items,
+                    auto_confirm_after_minutes: config.auto_confirm_after_minutes ?? null,
                     sender_emails_text: (config.sender_emails || []).join(", "),
                     confirm_keywords_text: (config.confirm_keywords || []).join(", "),
                     reject_keywords_text: (config.reject_keywords || []).join(", "),
@@ -471,6 +477,7 @@ const ProviderPage = () => {
                     response_type: "file",
                     process_shipping_docs: true,
                     auto_confirm_unmentioned_items: false,
+                    auto_confirm_after_minutes: null,
                     file_format: "excel",
                     file_payload_type: "response",
                 start_row: 1,
@@ -499,6 +506,8 @@ const ProviderPage = () => {
                 confirm_keywords: parseStringList(values.confirm_keywords_text),
                 reject_keywords: parseStringList(values.reject_keywords_text),
             };
+            payload.auto_confirm_after_minutes =
+                payload.auto_confirm_after_minutes || null;
             delete payload.sender_emails_text;
             delete payload.confirm_keywords_text;
             delete payload.reject_keywords_text;
@@ -668,6 +677,7 @@ const ProviderPage = () => {
                         <div>Обновлено черновиков поступления: {data?.updated_receipts || 0}</div>
                         <div>Автопроведено по УПД/накладным: {data?.posted_receipts || 0}</div>
                         <div>Строк добавлено в поступления: {data?.receipt_items_added || 0}</div>
+                        <div>Автоподтверждено по таймеру: {data?.timeout_auto_confirmed_orders || 0}</div>
                         {hints.length > 0 && (
                             <div style={{ marginTop: 10 }}>
                                 <b>Что проверить в настройке:</b>
@@ -876,6 +886,144 @@ const ProviderPage = () => {
         }
     };
 
+    const parseIntListFromText = (value) =>
+        String(value || "")
+            .split(",")
+            .map((item) => Number.parseInt(item.trim(), 10))
+            .filter((item) => Number.isFinite(item));
+
+    const normalizeOptionalPositive = (value) => {
+        if (value === null || value === undefined || value === "") return null;
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric) || numeric <= 0) return null;
+        return numeric;
+    };
+
+    const formatSourceUsageFilters = (row) => {
+        const lines = [];
+        const brandFilter = row?.brand_filters || {};
+        const brandType = brandFilter?.type;
+        const brandIds = brandFilter?.brands || [];
+        if (brandType && brandIds.length) {
+            lines.push(
+                `Бренды: ${brandType === "include" ? "только" : "исключить"} `
+                + `${brandIds.join(", ")}`
+            );
+        }
+        const positionFilter = row?.position_filters || {};
+        const positionType = positionFilter?.type;
+        const positionIds = positionFilter?.autoparts || [];
+        if (positionType && positionIds.length) {
+            lines.push(
+                `Позиции: ${positionType === "include" ? "только" : "исключить"} `
+                + `${positionIds.join(", ")}`
+            );
+        }
+        const minPrice = row?.min_price;
+        const maxPrice = row?.max_price;
+        if (minPrice !== null && minPrice !== undefined) {
+            lines.push(`Мин. цена: ${minPrice}`);
+        }
+        if (maxPrice !== null && maxPrice !== undefined) {
+            lines.push(`Макс. цена: ${maxPrice}`);
+        }
+        const minQty = row?.min_quantity;
+        const maxQty = row?.max_quantity;
+        if (minQty !== null && minQty !== undefined) {
+            lines.push(`Мин. кол-во: ${minQty}`);
+        }
+        if (maxQty !== null && maxQty !== undefined) {
+            lines.push(`Макс. кол-во: ${maxQty}`);
+        }
+        if (!lines.length) return <span style={{ color: "#999" }}>—</span>;
+        return (
+            <div>
+                {lines.map((line) => (
+                    <div key={line}>{line}</div>
+                ))}
+            </div>
+        );
+    };
+
+    const openSourceUsageModal = (sourceUsage) => {
+        setEditingSourceUsage(sourceUsage);
+        sourceUsageForm.setFieldsValue({
+            enabled: sourceUsage?.enabled ?? true,
+            markup: Number(sourceUsage?.markup || 1.0),
+            brand_filter_type: sourceUsage?.brand_filters?.type || null,
+            brand_ids_text: (sourceUsage?.brand_filters?.brands || []).join(", "),
+            position_filter_type:
+                sourceUsage?.position_filters?.type || null,
+            position_ids_text:
+                (sourceUsage?.position_filters?.autoparts || []).join(", "),
+            min_price:
+                sourceUsage?.min_price !== null
+                && sourceUsage?.min_price !== undefined
+                    ? Number(sourceUsage.min_price)
+                    : null,
+            max_price:
+                sourceUsage?.max_price !== null
+                && sourceUsage?.max_price !== undefined
+                    ? Number(sourceUsage.max_price)
+                    : null,
+            min_quantity: sourceUsage?.min_quantity ?? null,
+            max_quantity: sourceUsage?.max_quantity ?? null,
+        });
+        setSourceUsageModalVisible(true);
+    };
+
+    const handleSourceUsageSubmit = async (values) => {
+        if (!editingSourceUsage) return;
+        setSourceUsageSaving(true);
+        try {
+            const markupValue = Number(values.markup);
+            const payload = {
+                enabled: values.enabled ?? true,
+                markup:
+                    Number.isFinite(markupValue) && markupValue > 0
+                        ? markupValue
+                        : 1.0,
+                brand_filters: values.brand_filter_type
+                    ? {
+                        type: values.brand_filter_type,
+                        brands: parseIntListFromText(values.brand_ids_text),
+                    }
+                    : {},
+                position_filters: values.position_filter_type
+                    ? {
+                        type: values.position_filter_type,
+                        autoparts: parseIntListFromText(
+                            values.position_ids_text
+                        ),
+                    }
+                    : {},
+                min_price: normalizeOptionalPositive(values.min_price),
+                max_price: normalizeOptionalPositive(values.max_price),
+                min_quantity: normalizeOptionalPositive(values.min_quantity),
+                max_quantity: normalizeOptionalPositive(values.max_quantity),
+            };
+            await updateCustomerPricelistSource(
+                editingSourceUsage.customer_id,
+                editingSourceUsage.customer_config_id,
+                editingSourceUsage.source_id,
+                payload
+            );
+            message.success("Источник в клиентском прайсе обновлен");
+            setSourceUsageModalVisible(false);
+            setEditingSourceUsage(null);
+            sourceUsageForm.resetFields();
+            await refreshProviderData();
+        } catch (err) {
+            console.error(err);
+            message.error(
+                err?.response?.data?.detail
+                || "Не удалось обновить источник клиентского прайса"
+            );
+        } finally {
+            setSourceUsageSaving(false);
+        }
+    };
+
     // ===== Table columns for configs =====
     const configColumns = [
         {
@@ -1060,6 +1208,12 @@ const ProviderPage = () => {
             render: (value) => (value ? "Включен" : "Выключен"),
         },
         {
+            title: "Таймер без ответа",
+            dataIndex: "auto_confirm_after_minutes",
+            key: "auto_confirm_after_minutes",
+            render: (value) => (value ? `${value} мин` : "—"),
+        },
+        {
             title: "Режим файла",
             dataIndex: "file_payload_type",
             key: "file_payload_type",
@@ -1110,6 +1264,73 @@ const ProviderPage = () => {
                         <Button type="primary" danger size="small" icon={<DeleteOutlined />} />
                     </Popconfirm>
                 </Space>
+            ),
+        },
+    ];
+
+    const sourceUsageColumns = [
+        {
+            title: "Клиент",
+            key: "customer",
+            render: (_, record) => (
+                <div>
+                    <div>{record.customer_name || `Клиент #${record.customer_id}`}</div>
+                    <Text type="secondary">ID: {record.customer_id}</Text>
+                </div>
+            ),
+        },
+        {
+            title: "Конфиг клиента",
+            key: "customer_config",
+            render: (_, record) => (
+                <div>
+                    <div>{record.customer_config_name || `Конфиг #${record.customer_config_id}`}</div>
+                    <Text type="secondary">ID: {record.customer_config_id}</Text>
+                </div>
+            ),
+        },
+        {
+            title: "Конфиг поставщика",
+            key: "provider_config",
+            render: (_, record) => (
+                <div>
+                    <div>{record.provider_config_name || `Конфиг #${record.provider_config_id}`}</div>
+                    <Text type="secondary">ID: {record.provider_config_id}</Text>
+                </div>
+            ),
+        },
+        {
+            title: "Наценка",
+            dataIndex: "markup",
+            key: "markup",
+            render: (value) => Number(value || 1).toFixed(3),
+        },
+        {
+            title: "Фильтры",
+            key: "filters",
+            render: (_, record) => formatSourceUsageFilters(record),
+        },
+        {
+            title: "Включено",
+            dataIndex: "enabled",
+            key: "enabled",
+            render: (value) => (
+                <Tag color={value ? "green" : "default"}>
+                    {value ? "Да" : "Нет"}
+                </Tag>
+            ),
+        },
+        {
+            title: "Действия",
+            key: "actions",
+            width: 90,
+            render: (_, record) => (
+                <Button
+                    type="primary"
+                    size="small"
+                    icon={<EditOutlined />}
+                    onClick={() => openSourceUsageModal(record)}
+                />
             ),
         },
     ];
@@ -1391,6 +1612,29 @@ const ProviderPage = () => {
                             size="middle"
                             locale={{ emptyText: "Конфигурации ответов не настроены" }}
                             scroll={{ x: 'max-content' }}
+                        />
+                    </Card>
+
+                    <Card
+                        title="Использование в прайсах клиентов"
+                        style={{ marginTop: 16 }}
+                    >
+                        <Table
+                            rowKey="source_id"
+                            columns={sourceUsageColumns}
+                            dataSource={
+                                providerData.customer_pricelist_sources_usage
+                                || []
+                            }
+                            pagination={{ pageSize: 10 }}
+                            size="middle"
+                            locale={{
+                                emptyText: (
+                                    "Этот поставщик пока не добавлен "
+                                    + "в источники клиентских прайсов"
+                                ),
+                            }}
+                            scroll={{ x: "max-content" }}
                         />
                     </Card>
 
@@ -1827,6 +2071,14 @@ const ProviderPage = () => {
                     </Form.Item>
 
                     <Form.Item
+                        name="auto_confirm_after_minutes"
+                        label="Автоподтверждение при отсутствии ответа (мин)"
+                        extra="Если ответов по заказу нет дольше этого времени после отправки — позиции автоматически подтверждаются. Пусто = выключено."
+                    >
+                        <InputNumber min={1} style={{ width: "100%" }} placeholder="Например: 30" />
+                    </Form.Item>
+
+                    <Form.Item
                         name="process_shipping_docs"
                         label="Обрабатывать документы УПД/накладные"
                         valuePropName="checked"
@@ -2210,6 +2462,151 @@ const ProviderPage = () => {
                                     setEditingResponseConfig(null);
                                     responseConfigForm.resetFields();
                                     setResponseImportErrors([]);
+                                }}
+                            >
+                                Отмена
+                            </Button>
+                        </Space>
+                    </Form.Item>
+                </Form>
+            </Modal>
+
+            <Modal
+                title="Редактирование источника клиентского прайса"
+                open={sourceUsageModalVisible}
+                onCancel={() => {
+                    setSourceUsageModalVisible(false);
+                    setEditingSourceUsage(null);
+                    sourceUsageForm.resetFields();
+                }}
+                footer={null}
+                destroyOnClose
+                width={760}
+            >
+                <Form
+                    form={sourceUsageForm}
+                    layout="vertical"
+                    onFinish={handleSourceUsageSubmit}
+                >
+                    <Alert
+                        type="info"
+                        showIcon
+                        style={{ marginBottom: 16 }}
+                        message={
+                            editingSourceUsage
+                                ? (
+                                    `${
+                                        editingSourceUsage.customer_name
+                                        || `Клиент #${editingSourceUsage.customer_id}`
+                                    } / ${
+                                        editingSourceUsage.customer_config_name
+                                        || (
+                                            `Конфиг клиента `
+                                            + `#${editingSourceUsage.customer_config_id}`
+                                        )
+                                    } / ${
+                                        editingSourceUsage.provider_config_name
+                                        || (
+                                            `Конфиг поставщика `
+                                            + `#${editingSourceUsage.provider_config_id}`
+                                        )
+                                    }`
+                                )
+                                : "Редактирование источника"
+                        }
+                    />
+
+                    <div className="responsive-form-grid-2">
+                        <Form.Item
+                            name="markup"
+                            label="Наценка"
+                            rules={[
+                                {
+                                    required: true,
+                                    message: "Укажите наценку",
+                                },
+                            ]}
+                        >
+                            <InputNumber
+                                min={0.001}
+                                step={0.001}
+                                style={{ width: "100%" }}
+                            />
+                        </Form.Item>
+                        <Form.Item
+                            name="enabled"
+                            label="Включено"
+                            valuePropName="checked"
+                        >
+                            <Switch />
+                        </Form.Item>
+                        <Form.Item name="min_price" label="Мин. цена">
+                            <InputNumber min={0} step={1} style={{ width: "100%" }} />
+                        </Form.Item>
+                        <Form.Item name="max_price" label="Макс. цена">
+                            <InputNumber min={0} step={1} style={{ width: "100%" }} />
+                        </Form.Item>
+                        <Form.Item name="min_quantity" label="Мин. количество">
+                            <InputNumber min={0} step={1} style={{ width: "100%" }} />
+                        </Form.Item>
+                        <Form.Item name="max_quantity" label="Макс. количество">
+                            <InputNumber min={0} step={1} style={{ width: "100%" }} />
+                        </Form.Item>
+                    </div>
+
+                    <Divider>Фильтр брендов</Divider>
+                    <div className="responsive-form-grid-2">
+                        <Form.Item name="brand_filter_type" label="Тип">
+                            <Select
+                                allowClear
+                                options={[
+                                    { value: "include", label: "Только" },
+                                    { value: "exclude", label: "Исключить" },
+                                ]}
+                            />
+                        </Form.Item>
+                        <Form.Item
+                            name="brand_ids_text"
+                            label="ID брендов (через запятую)"
+                        >
+                            <Input placeholder="Например: 12, 45, 90" />
+                        </Form.Item>
+                    </div>
+
+                    <Divider>Фильтр позиций</Divider>
+                    <div className="responsive-form-grid-2">
+                        <Form.Item name="position_filter_type" label="Тип">
+                            <Select
+                                allowClear
+                                options={[
+                                    { value: "include", label: "Только" },
+                                    { value: "exclude", label: "Исключить" },
+                                ]}
+                            />
+                        </Form.Item>
+                        <Form.Item
+                            name="position_ids_text"
+                            label="ID позиций (через запятую)"
+                        >
+                            <Input placeholder="Например: 101, 102, 103" />
+                        </Form.Item>
+                    </div>
+
+                    <Form.Item>
+                        <Space wrap>
+                            <Button
+                                type="primary"
+                                htmlType="submit"
+                                icon={<SaveOutlined />}
+                                loading={sourceUsageSaving}
+                            >
+                                Сохранить
+                            </Button>
+                            <Button
+                                onClick={() => {
+                                    setSourceUsageModalVisible(false);
+                                    setEditingSourceUsage(null);
+                                    sourceUsageForm.resetFields();
                                 }}
                             >
                                 Отмена

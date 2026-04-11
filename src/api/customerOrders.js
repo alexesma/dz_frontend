@@ -36,6 +36,12 @@ export const processSupplierResponses = (params) =>
 export const createSupplierReceipt = (payload) =>
     api.post('/customer-orders/supplier-receipts', payload);
 
+export const getSupplierReceipts = (params) =>
+    api.get('/customer-orders/supplier-receipts', { params });
+
+export const postSupplierReceipt = (receiptId) =>
+    api.post(`/customer-orders/supplier-receipts/${receiptId}/post`);
+
 export const createManualCustomerOrder = (payload) =>
     api.post('/customer-orders/manual', payload);
 

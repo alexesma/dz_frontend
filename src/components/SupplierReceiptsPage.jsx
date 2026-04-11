@@ -21,6 +21,8 @@ import { getAllProviders } from '../api/providers';
 import {
     createSupplierReceipt,
     getSupplierReceiptCandidates,
+    getSupplierReceipts,
+    postSupplierReceipt,
     processSupplierResponses,
 } from '../api/customerOrders';
 
@@ -57,6 +59,10 @@ const SupplierReceiptsPage = () => {
     const [loading, setLoading] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [rows, setRows] = useState([]);
+    const [receipts, setReceipts] = useState([]);
+    const [receiptsLoading, setReceiptsLoading] = useState(false);
+    const [postingReceiptId, setPostingReceiptId] = useState(null);
+    const [receiptStatusFilter, setReceiptStatusFilter] = useState('all');
     const [syncingResponses, setSyncingResponses] = useState(false);
     const [filters, setFilters] = useState({
         providerId: null,
@@ -111,6 +117,39 @@ const SupplierReceiptsPage = () => {
         fetchRows();
     }, [fetchRows]);
 
+    const fetchReceipts = useCallback(async () => {
+        if (!filters.providerId) {
+            setReceipts([]);
+            return;
+        }
+        setReceiptsLoading(true);
+        try {
+            const params = {
+                provider_id: filters.providerId,
+            };
+            if (filters.dateRange?.length === 2) {
+                params.date_from = filters.dateRange[0].format('YYYY-MM-DD');
+                params.date_to = filters.dateRange[1].format('YYYY-MM-DD');
+            }
+            if (receiptStatusFilter === 'draft') {
+                params.posted = false;
+            } else if (receiptStatusFilter === 'posted') {
+                params.posted = true;
+            }
+            const response = await getSupplierReceipts(params);
+            setReceipts(response.data || []);
+        } catch (err) {
+            console.error('Failed to fetch supplier receipts registry', err);
+            message.error('Не удалось загрузить реестр поступлений');
+        } finally {
+            setReceiptsLoading(false);
+        }
+    }, [filters, receiptStatusFilter]);
+
+    useEffect(() => {
+        fetchReceipts();
+    }, [fetchReceipts]);
+
     const touchedRows = useMemo(() => (
         rows.filter((row) => drafts[row.supplier_order_item_id]?.touched)
     ), [drafts, rows]);
@@ -158,6 +197,7 @@ const SupplierReceiptsPage = () => {
         try {
             const payload = {
                 provider_id: filters.providerId,
+                post_now: false,
                 document_number: documentNumber || undefined,
                 document_date: documentDate ? documentDate.format('YYYY-MM-DD') : undefined,
                 comment: comment || undefined,
@@ -165,13 +205,14 @@ const SupplierReceiptsPage = () => {
             };
             const response = await createSupplierReceipt(payload);
             message.success(
-                `Поступление #${response.data.id} сформировано по ${response.data.items.length} строкам`
+                `Черновик поступления #${response.data.id} создан по ${response.data.items.length} строкам`
             );
             setDrafts({});
             setDocumentNumber('');
             setComment('');
             setDocumentDate(dayjs());
             fetchRows();
+            fetchReceipts();
         } catch (err) {
             console.error('Failed to create supplier receipt', err);
             message.error(err?.response?.data?.detail || 'Не удалось сформировать поступление');
@@ -199,6 +240,7 @@ const SupplierReceiptsPage = () => {
                 `обновлено строк: ${payload.updated_items || 0}`
             );
             fetchRows();
+            fetchReceipts();
         } catch (err) {
             console.error('Failed to process supplier responses', err);
             message.error(
@@ -206,6 +248,23 @@ const SupplierReceiptsPage = () => {
             );
         } finally {
             setSyncingResponses(false);
+        }
+    };
+
+    const handlePostReceipt = async (receiptId) => {
+        setPostingReceiptId(receiptId);
+        try {
+            await postSupplierReceipt(receiptId);
+            message.success(`Документ #${receiptId} проведен`);
+            fetchRows();
+            fetchReceipts();
+        } catch (err) {
+            console.error('Failed to post supplier receipt', err);
+            message.error(
+                err?.response?.data?.detail || 'Не удалось провести документ'
+            );
+        } finally {
+            setPostingReceiptId(null);
         }
     };
 
@@ -356,6 +415,87 @@ const SupplierReceiptsPage = () => {
         return '';
     };
 
+    const receiptColumns = [
+        {
+            title: 'ID',
+            dataIndex: 'id',
+            key: 'id',
+            width: 90,
+            render: (value) => `#${value}`,
+        },
+        {
+            title: 'Статус',
+            key: 'posted_at',
+            width: 120,
+            render: (_, row) => (
+                row.posted_at
+                    ? <Tag color="green">Проведен</Tag>
+                    : <Tag color="gold">Черновик</Tag>
+            ),
+        },
+        {
+            title: 'Документ',
+            key: 'document',
+            width: 220,
+            render: (_, row) => {
+                const number = row.document_number || 'без номера';
+                const docDate = row.document_date
+                    ? dayjs(row.document_date).format('DD.MM.YYYY')
+                    : 'без даты';
+                return `${number} · ${docDate}`;
+            },
+        },
+        {
+            title: 'Создан',
+            dataIndex: 'created_at',
+            key: 'created_at',
+            width: 150,
+            render: (value) => (value ? dayjs(value).format('DD.MM.YY HH:mm') : '—'),
+        },
+        {
+            title: 'Проведен',
+            dataIndex: 'posted_at',
+            key: 'posted_at',
+            width: 150,
+            render: (value) => (value ? dayjs(value).format('DD.MM.YY HH:mm') : '—'),
+        },
+        {
+            title: 'Строк',
+            key: 'items_count',
+            width: 90,
+            align: 'right',
+            render: (_, row) => Number(row.items?.length || 0),
+        },
+        {
+            title: 'Кол-во',
+            key: 'qty',
+            width: 90,
+            align: 'right',
+            render: (_, row) => (
+                row.items || []
+            ).reduce((sum, item) => sum + Number(item.received_quantity || 0), 0),
+        },
+        {
+            title: 'Действие',
+            key: 'actions',
+            width: 120,
+            render: (_, row) => (
+                row.posted_at
+                    ? '—'
+                    : (
+                        <Button
+                            size="small"
+                            type="primary"
+                            loading={postingReceiptId === row.id}
+                            onClick={() => handlePostReceipt(row.id)}
+                        >
+                            Провести
+                        </Button>
+                    )
+            ),
+        },
+    ];
+
     return (
         <div className="page-shell">
             <Card>
@@ -432,7 +572,7 @@ const SupplierReceiptsPage = () => {
                                 onClick={handleCreateReceipt}
                                 loading={submitting}
                             >
-                                Сформировать
+                                Сформировать черновик
                             </Button>
                         </Col>
                     </Row>
@@ -457,6 +597,39 @@ const SupplierReceiptsPage = () => {
                         scroll={{ x: 1700 }}
                     />
                 )}
+
+                <Card
+                    size="small"
+                    title="Реестр документов поступления"
+                    style={{ marginTop: 16 }}
+                >
+                    <Space style={{ marginBottom: 12 }} wrap>
+                        <Select
+                            value={receiptStatusFilter}
+                            style={{ width: 220 }}
+                            onChange={(value) => setReceiptStatusFilter(value)}
+                            options={[
+                                { value: 'all', label: 'Все документы' },
+                                { value: 'draft', label: 'Только черновики' },
+                                { value: 'posted', label: 'Только проведенные' },
+                            ]}
+                        />
+                        <Button onClick={fetchReceipts} loading={receiptsLoading}>
+                            Обновить реестр
+                        </Button>
+                    </Space>
+                    <Table
+                        size="small"
+                        loading={receiptsLoading}
+                        dataSource={(receipts || []).map((receipt) => ({
+                            ...receipt,
+                            key: receipt.id,
+                        }))}
+                        columns={receiptColumns}
+                        pagination={{ pageSize: 20, showSizeChanger: true }}
+                        scroll={{ x: 1000 }}
+                    />
+                </Card>
             </Card>
         </div>
     );
