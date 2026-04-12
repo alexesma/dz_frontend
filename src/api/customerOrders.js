@@ -37,10 +37,16 @@ export const createSupplierReceipt = (payload) =>
     api.post('/customer-orders/supplier-receipts', payload);
 
 export const getSupplierReceipts = (params) =>
-    api.get('/customer-orders/supplier-receipts', { params });
+    api.get('/customer-orders/supplier-receipts/list', { params });
 
 export const postSupplierReceipt = (receiptId) =>
     api.post(`/customer-orders/supplier-receipts/${receiptId}/post`);
+
+export const unpostSupplierReceipt = (receiptId) =>
+    api.post(`/customer-orders/supplier-receipts/${receiptId}/unpost`);
+
+export const deleteSupplierReceipt = (receiptId) =>
+    api.delete(`/customer-orders/supplier-receipts/${receiptId}`);
 
 export const createManualCustomerOrder = (payload) =>
     api.post('/customer-orders/manual', payload);

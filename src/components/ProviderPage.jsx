@@ -50,8 +50,11 @@ import {
     updateSupplierResponseConfig,
     deleteSupplierResponseConfig,
     checkSupplierResponseConfigNow,
+    classifySupplierResponseMessage,
     getSupplierResponseImportErrors,
+    getSupplierResponseMessages,
     retrySupplierResponseImportErrors,
+    retrySupplierResponseMessage,
 } from "../api/providers";
 import { updateCustomerPricelistSource } from "../api/customers";
 import { getEmailAccounts } from "../api/emailAccounts";
@@ -70,6 +73,17 @@ const deliveryMethodOptions = [
     { value: "Self pickup", label: "Забираем сами" },
     { value: "Courier foot", label: "Курьер пеший" },
     { value: "Courier car", label: "Курьер авто" },
+];
+
+const supplierResponseMessageTypeOptions = [
+    { value: "UNKNOWN", label: "Не определено" },
+    { value: "IMPORT_ERROR", label: "Ошибка импорта" },
+    { value: "RESPONSE_FILE", label: "Файл-ответ" },
+    { value: "TEXT_RESPONSE", label: "Текстовый ответ" },
+    { value: "SHIPPING_DOC", label: "Документ УПД/накладная" },
+    { value: "STATUS", label: "Статусное письмо" },
+    { value: "IGNORED", label: "Служебное / игнор" },
+    { value: "RETRY_PENDING", label: "Ожидает перепроверки" },
 ];
 
 const ProviderPage = () => {
@@ -107,6 +121,9 @@ const ProviderPage = () => {
     const [responseImportErrorsLoading, setResponseImportErrorsLoading] = useState(false);
     const [responseImportErrorsRetrying, setResponseImportErrorsRetrying] = useState(false);
     const [responseImportErrors, setResponseImportErrors] = useState([]);
+    const [responseMessagesLoading, setResponseMessagesLoading] = useState(false);
+    const [responseMessages, setResponseMessages] = useState([]);
+    const [responseMessageActionLoadingById, setResponseMessageActionLoadingById] = useState({});
     const [sourceUsageModalVisible, setSourceUsageModalVisible] = useState(false);
     const [editingSourceUsage, setEditingSourceUsage] = useState(null);
     const [sourceUsageSaving, setSourceUsageSaving] = useState(false);
@@ -194,6 +211,31 @@ const ProviderPage = () => {
                 seen.add(email);
                 return true;
             });
+    };
+
+    const supplierResponseMessageTypeLabel = (value) => {
+        const found = supplierResponseMessageTypeOptions.find(
+            (item) => item.value === value
+        );
+        return found?.label || value || "Не определено";
+    };
+
+    const supplierResponseMessageTypeColor = (value) => {
+        if (value === "IMPORT_ERROR") return "red";
+        if (value === "RESPONSE_FILE") return "blue";
+        if (value === "TEXT_RESPONSE") return "cyan";
+        if (value === "SHIPPING_DOC") return "green";
+        if (value === "STATUS") return "orange";
+        if (value === "IGNORED") return "default";
+        if (value === "RETRY_PENDING") return "purple";
+        return "default";
+    };
+
+    const formatSuggestionConfidence = (value) => {
+        const number = Number(value);
+        if (Number.isNaN(number)) return null;
+        const pct = Math.round(Math.max(0, Math.min(1, number)) * 100);
+        return `${pct}%`;
     };
 
     const handleExcludeUpload = async (file) => {
@@ -487,12 +529,16 @@ const ProviderPage = () => {
                 reject_keywords_text: "нет, 0, отсутствует, не можем, снято с производства",
             });
             setResponseImportErrors([]);
+            setResponseMessages([]);
         }
         if (config?.id) {
             loadResponseImportErrors(config.id);
+            loadResponseMessages(config.id);
         } else {
             setResponseImportErrors([]);
+            setResponseMessages([]);
         }
+        setResponseMessageActionLoadingById({});
         setResponseConfigModalVisible(true);
     };
 
@@ -604,6 +650,31 @@ const ProviderPage = () => {
         return hints;
     };
 
+    const loadResponseMessages = async (configId) => {
+        if (!providerId || !configId) {
+            setResponseMessages([]);
+            return;
+        }
+        setResponseMessagesLoading(true);
+        try {
+            const { data } = await getSupplierResponseMessages(
+                providerId,
+                configId,
+                { limit: 100 }
+            );
+            setResponseMessages(Array.isArray(data) ? data : []);
+        } catch (err) {
+            console.error(err);
+            setResponseMessages([]);
+            message.error(
+                err?.response?.data?.detail
+                || "Не удалось загрузить реестр обработанных писем"
+            );
+        } finally {
+            setResponseMessagesLoading(false);
+        }
+    };
+
     const loadResponseImportErrors = async (configId) => {
         if (!providerId || !configId) {
             setResponseImportErrors([]);
@@ -629,6 +700,70 @@ const ProviderPage = () => {
         }
     };
 
+    const setResponseMessageActionLoading = (messageId, value) => {
+        setResponseMessageActionLoadingById((prev) => ({
+            ...prev,
+            [messageId]: value,
+        }));
+    };
+
+    const handleClassifyResponseMessage = async (messageId, messageType) => {
+        if (!providerId || !editingResponseConfig?.id) return;
+        setResponseMessageActionLoading(messageId, true);
+        try {
+            await classifySupplierResponseMessage(
+                providerId,
+                editingResponseConfig.id,
+                messageId,
+                messageType
+            );
+            await loadResponseMessages(editingResponseConfig.id);
+            if (messageType !== "IMPORT_ERROR") {
+                await loadResponseImportErrors(editingResponseConfig.id);
+            }
+            message.success("Классификация письма обновлена");
+        } catch (err) {
+            console.error(err);
+            message.error(
+                err?.response?.data?.detail
+                || "Не удалось обновить классификацию письма"
+            );
+        } finally {
+            setResponseMessageActionLoading(messageId, false);
+        }
+    };
+
+    const handleRetryResponseMessage = async (messageId) => {
+        if (!providerId || !editingResponseConfig?.id) return;
+        setResponseMessageActionLoading(messageId, true);
+        try {
+            const { data } = await retrySupplierResponseMessage(
+                providerId,
+                editingResponseConfig.id,
+                messageId
+            );
+            message.success(
+                data?.queued
+                    ? (
+                        "Письмо отправлено в перепроверку. "
+                        + `Обработано: ${data?.processed_messages || 0}`
+                    )
+                    : "Письмо нельзя перепроверить: нет source UID/message id"
+            );
+            await loadResponseMessages(editingResponseConfig.id);
+            await loadResponseImportErrors(editingResponseConfig.id);
+            await refreshProviderData();
+        } catch (err) {
+            console.error(err);
+            message.error(
+                err?.response?.data?.detail
+                || "Не удалось перепроверить письмо"
+            );
+        } finally {
+            setResponseMessageActionLoading(messageId, false);
+        }
+    };
+
     const handleRetryResponseImportErrors = async () => {
         if (!providerId || !editingResponseConfig?.id) return;
         setResponseImportErrorsRetrying(true);
@@ -642,6 +777,7 @@ const ProviderPage = () => {
                 + `обработано ${data?.processed_messages || 0}`
             );
             await loadResponseImportErrors(editingResponseConfig.id);
+            await loadResponseMessages(editingResponseConfig.id);
             await refreshProviderData();
         } catch (err) {
             console.error(err);
@@ -702,6 +838,7 @@ const ProviderPage = () => {
                 ),
             });
             await loadResponseImportErrors(configId);
+            await loadResponseMessages(configId);
             await refreshProviderData();
         } catch (err) {
             console.error(err);
@@ -1989,6 +2126,8 @@ const ProviderPage = () => {
                     setEditingResponseConfig(null);
                     responseConfigForm.resetFields();
                     setResponseImportErrors([]);
+                    setResponseMessages([]);
+                    setResponseMessageActionLoadingById({});
                 }}
                 footer={null}
                 width={820}
@@ -2429,6 +2568,168 @@ const ProviderPage = () => {
                         </>
                     )}
 
+                    {editingResponseConfig?.id && (
+                        <>
+                            <Divider>Реестр обработанных писем</Divider>
+                            <Alert
+                                type="info"
+                                showIcon
+                                style={{ marginBottom: 10 }}
+                                message={(
+                                    "Здесь видны все письма, которые уже "
+                                    + "обрабатывались по этой конфигурации. "
+                                    + "Можно вручную поправить тип письма "
+                                    + "и запустить повторную обработку."
+                                )}
+                            />
+                            <Space style={{ marginBottom: 10 }} wrap>
+                                <Button
+                                    onClick={() => loadResponseMessages(editingResponseConfig.id)}
+                                    loading={responseMessagesLoading}
+                                >
+                                    Обновить реестр писем
+                                </Button>
+                            </Space>
+                            <Table
+                                size="small"
+                                rowKey="id"
+                                loading={responseMessagesLoading}
+                                dataSource={responseMessages}
+                                pagination={{ pageSize: 8 }}
+                                scroll={{ x: 980 }}
+                                locale={{
+                                    emptyText: "Писем в реестре пока нет",
+                                }}
+                                columns={[
+                                    {
+                                        title: "Дата",
+                                        dataIndex: "received_at",
+                                        width: 160,
+                                        render: (value) => formatMoscow(value),
+                                    },
+                                    {
+                                        title: "Письмо",
+                                        dataIndex: "subject",
+                                        render: (_, row) => (
+                                            <div>
+                                                <div><b>{row?.sender_email || "—"}</b></div>
+                                                <div>{row?.subject || "—"}</div>
+                                                {row?.subject_raw && row?.subject_raw !== row?.subject && (
+                                                    <Text type="secondary">raw: {row.subject_raw}</Text>
+                                                )}
+                                                {(row?.account_email || row?.account_name) && (
+                                                    <div>
+                                                        <Text type="secondary">
+                                                            Ящик: {
+                                                                row?.account_name
+                                                                    ? `${row.account_name} (${row.account_email || "—"})`
+                                                                    : row?.account_email
+                                                            }
+                                                        </Text>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ),
+                                    },
+                                    {
+                                        title: "Классификация",
+                                        dataIndex: "message_type",
+                                        width: 280,
+                                        render: (_, row) => (
+                                            <div>
+                                                <Tag color={supplierResponseMessageTypeColor(row?.message_type)}>
+                                                    {supplierResponseMessageTypeLabel(row?.message_type)}
+                                                </Tag>
+                                                {row?.suggested_message_type && (
+                                                    <div>
+                                                        <Text type="secondary">
+                                                            Подсказка: {supplierResponseMessageTypeLabel(row.suggested_message_type)}
+                                                        </Text>
+                                                    </div>
+                                                )}
+                                                {row?.suggested_source && (
+                                                    <div>
+                                                        <Text type="secondary">
+                                                            Источник подсказки: {
+                                                                row.suggested_source === "ai"
+                                                                    ? "AI"
+                                                                    : "Правила"
+                                                            }
+                                                        </Text>
+                                                    </div>
+                                                )}
+                                                {formatSuggestionConfidence(row?.suggested_confidence) && (
+                                                    <div>
+                                                        <Text type="secondary">
+                                                            Уверенность: {formatSuggestionConfidence(row?.suggested_confidence)}
+                                                        </Text>
+                                                    </div>
+                                                )}
+                                                {row?.suggested_explanation && (
+                                                    <div>
+                                                        <Text type="secondary">
+                                                            Почему: {row.suggested_explanation}
+                                                        </Text>
+                                                    </div>
+                                                )}
+                                                {row?.import_error_details && (
+                                                    <div>
+                                                        <Text type="secondary">
+                                                            Ошибка: {row.import_error_details}
+                                                        </Text>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ),
+                                    },
+                                    {
+                                        title: "Вложения",
+                                        dataIndex: "attachment_details",
+                                        width: 260,
+                                        render: (_, row) => (
+                                            (row?.attachment_details || []).length > 0
+                                                ? (
+                                                    <div>
+                                                        {(row.attachment_details || []).map((item, idx) => (
+                                                            <div key={`${row.id}_msg_att_${idx}`}>{item}</div>
+                                                        ))}
+                                                    </div>
+                                                )
+                                                : "—"
+                                        ),
+                                    },
+                                    {
+                                        title: "Действия",
+                                        key: "actions",
+                                        width: 280,
+                                        render: (_, row) => (
+                                            <Space direction="vertical" size={6}>
+                                                <Select
+                                                    size="small"
+                                                    style={{ width: 250 }}
+                                                    value={row?.message_type || "UNKNOWN"}
+                                                    options={supplierResponseMessageTypeOptions}
+                                                    loading={!!responseMessageActionLoadingById[row.id]}
+                                                    onChange={(value) => (
+                                                        handleClassifyResponseMessage(row.id, value)
+                                                    )}
+                                                />
+                                                <Button
+                                                    size="small"
+                                                    loading={!!responseMessageActionLoadingById[row.id]}
+                                                    onClick={() => handleRetryResponseMessage(row.id)}
+                                                    disabled={!row?.can_retry}
+                                                >
+                                                    Перепроверить это письмо
+                                                </Button>
+                                            </Space>
+                                        ),
+                                    },
+                                ]}
+                            />
+                        </>
+                    )}
+
                     <Form.Item>
                         <Space wrap>
                             <Button
@@ -2462,6 +2763,8 @@ const ProviderPage = () => {
                                     setEditingResponseConfig(null);
                                     responseConfigForm.resetFields();
                                     setResponseImportErrors([]);
+                                    setResponseMessages([]);
+                                    setResponseMessageActionLoadingById({});
                                 }}
                             >
                                 Отмена

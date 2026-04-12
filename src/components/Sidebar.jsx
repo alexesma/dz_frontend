@@ -46,6 +46,8 @@ const Sidebar = () => {
         if (path.startsWith('/customer-orders/suppliers')) return 'customer-supplier-orders';
         if (path.startsWith('/customer-orders/receipts')) return 'supplier-receipts';
         if (path.startsWith('/customer-orders/stock')) return 'stock-orders';
+        if (path.startsWith('/documents/incoming')) return 'documents-incoming';
+        if (path.startsWith('/documents/outgoing')) return 'documents-outgoing';
         if (path.startsWith('/customer-orders')) return 'customer-orders';
         if (path.startsWith('/providers') || path.startsWith('/provider-configs')) return '4';
         if (path.startsWith('/customers')) return 'customers';
@@ -97,6 +99,18 @@ const Sidebar = () => {
             <Menu.Item key="supplier-receipts" icon={<InboxOutlined />}>
                 <Link to="/customer-orders/receipts">Поступления от поставщиков</Link>
             </Menu.Item>
+            <Menu.SubMenu
+                key="documents"
+                icon={<InboxOutlined />}
+                title="Документы"
+            >
+                <Menu.Item key="documents-incoming" icon={<InboxOutlined />}>
+                    <Link to="/documents/incoming">Входящие</Link>
+                </Menu.Item>
+                <Menu.Item key="documents-outgoing" icon={<SendOutlined />}>
+                    <Link to="/documents/outgoing">Исходящие</Link>
+                </Menu.Item>
+            </Menu.SubMenu>
             <Menu.Item key="4">
                 <Link to="/providers">Поставщики</Link>
             </Menu.Item>
@@ -128,29 +142,33 @@ const Sidebar = () => {
                 <Link to="/watchlist">Отслеживание позиций</Link>
             </Menu.Item>
             {user.role === 'admin' && (
-                <>
+                <Menu.SubMenu
+                    key="admin"
+                    icon={<SettingOutlined />}
+                    title="Админ"
+                >
                     <Menu.Item key="admin-users" icon={<UserOutlined />}>
-                        <Link to="/admin/users">Админ: пользователи</Link>
+                        <Link to="/admin/users">Пользователи</Link>
                     </Menu.Item>
                     <Menu.Item key="admin-emails" icon={<UserOutlined />}>
-                        <Link to="/admin/email-accounts">Админ: почты</Link>
+                        <Link to="/admin/email-accounts">Почты</Link>
                     </Menu.Item>
                     <Menu.Item key="admin-settings" icon={<SettingOutlined />}>
-                        <Link to="/admin/settings">Админ: настройки</Link>
+                        <Link to="/admin/settings">Настройки</Link>
                     </Menu.Item>
                     <Menu.Item key="admin-price-control" icon={<DollarOutlined />}>
-                        <Link to="/admin/price-control">Админ: контроль цен</Link>
+                        <Link to="/admin/price-control">Контроль цен</Link>
                     </Menu.Item>
                     <Menu.Item key="admin-brands" icon={<TagsOutlined />}>
-                        <Link to="/admin/brands">Админ: бренды</Link>
+                        <Link to="/admin/brands">Бренды</Link>
                     </Menu.Item>
                     <Menu.Item key="admin-order-status-mappings" icon={<TagsOutlined />}>
-                        <Link to="/admin/order-status-mappings">Админ: статусы заказов</Link>
+                        <Link to="/admin/order-status-mappings">Статусы заказов</Link>
                     </Menu.Item>
                     <Menu.Item key="admin-monitor" icon={<BarChartOutlined />}>
-                        <Link to="/admin/monitor">Админ: мониторинг</Link>
+                        <Link to="/admin/monitor">Мониторинг</Link>
                     </Menu.Item>
-                </>
+                </Menu.SubMenu>
             )}
             <Menu.Item key="logout" onClick={handleLogout}>
                 Выйти

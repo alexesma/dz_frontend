@@ -123,6 +123,45 @@ export const retrySupplierResponseImportErrors = async (
     );
 };
 
+export const getSupplierResponseMessages = async (
+    providerId,
+    configId,
+    params = {}
+) => {
+    return api.get(
+        `/providers/${providerId}/supplier-response-config/${configId}/messages`,
+        { params }
+    );
+};
+
+export const classifySupplierResponseMessage = async (
+    providerId,
+    configId,
+    messageId,
+    messageType
+) => {
+    return api.patch(
+        (
+            `/providers/${providerId}/supplier-response-config/${configId}`
+            + `/messages/${messageId}/classify`
+        ),
+        { message_type: messageType }
+    );
+};
+
+export const retrySupplierResponseMessage = async (
+    providerId,
+    configId,
+    messageId
+) => {
+    return api.post(
+        (
+            `/providers/${providerId}/supplier-response-config/${configId}`
+            + `/messages/${messageId}/retry`
+        )
+    );
+};
+
 // Аббревиатуры
 export const createAbbreviation = async (providerId, abbreviation) => {
     return api.post(`/providers/${providerId}/abbreviations`, { abbreviation_name: abbreviation });

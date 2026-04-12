@@ -8,6 +8,7 @@ import {
     message,
     Modal,
     Select,
+    Tag,
     Table,
     Typography,
 } from 'antd';
@@ -33,6 +34,13 @@ const DEFAULT_FILTERS = {
     totalSumMax: null,
     rejectedSumMin: null,
     rejectedSumMax: null,
+};
+
+const SUPPLIER_ORDER_STATUS_META = {
+    NEW: { color: 'default', label: 'Новый' },
+    SCHEDULED: { color: 'blue', label: 'Запланирован' },
+    SENT: { color: 'green', label: 'Отправлен' },
+    ERROR: { color: 'red', label: 'Ошибка' },
 };
 
 const CustomerSupplierOrdersPage = () => {
@@ -171,7 +179,11 @@ const CustomerSupplierOrdersPage = () => {
             dataIndex: 'status',
             key: 'status',
             width: 120,
-            render: (value) => value || '—',
+            render: (value) => {
+                const meta = SUPPLIER_ORDER_STATUS_META[value];
+                if (!meta) return value || '—';
+                return <Tag color={meta.color}>{meta.label}</Tag>;
+            },
         },
         {
             title: 'Сумма отказа',
