@@ -1036,6 +1036,35 @@ const ProviderPage = () => {
         return numeric;
     };
 
+    const parseBrandMarkupsFromText = (value) => {
+        const result = {};
+        String(value || "")
+            .split(/\n|,/)
+            .map((item) => item.trim())
+            .filter(Boolean)
+            .forEach((chunk) => {
+                const pair = chunk.split(/[:=]/);
+                if (pair.length < 2) return;
+                const brand = String(pair[0] || "").trim().toUpperCase();
+                const numeric = Number(
+                    String(pair.slice(1).join(":") || "")
+                        .trim()
+                        .replace(",", ".")
+                );
+                if (!brand || !Number.isFinite(numeric) || numeric <= 0) return;
+                result[brand] = numeric;
+            });
+        return result;
+    };
+
+    const formatBrandMarkupsToText = (value) => {
+        const entries = Object.entries(value || {});
+        if (!entries.length) return "";
+        return entries
+            .map(([brand, markup]) => `${brand}=${markup}`)
+            .join(", ");
+    };
+
     const formatSourceUsageFilters = (row) => {
         const lines = [];
         const brandFilter = row?.brand_filters || {};
@@ -1072,6 +1101,18 @@ const ProviderPage = () => {
         if (maxQty !== null && maxQty !== undefined) {
             lines.push(`Макс. кол-во: ${maxQty}`);
         }
+        const brandMarkups = row?.brand_markups || {};
+        const markupEntries = Object.entries(brandMarkups);
+        if (markupEntries.length) {
+            lines.push(
+                (
+                    "Наценка по брендам: "
+                    + markupEntries
+                        .map(([brand, markup]) => `${brand}=${markup}`)
+                        .join(", ")
+                )
+            );
+        }
         if (!lines.length) return <span style={{ color: "#999" }}>—</span>;
         return (
             <div>
@@ -1087,6 +1128,9 @@ const ProviderPage = () => {
         sourceUsageForm.setFieldsValue({
             enabled: sourceUsage?.enabled ?? true,
             markup: Number(sourceUsage?.markup || 1.0),
+            brand_markups_text: formatBrandMarkupsToText(
+                sourceUsage?.brand_markups || {}
+            ),
             brand_filter_type: sourceUsage?.brand_filters?.type || null,
             brand_ids_text: (sourceUsage?.brand_filters?.brands || []).join(", "),
             position_filter_type:
@@ -1138,6 +1182,9 @@ const ProviderPage = () => {
                 max_price: normalizeOptionalPositive(values.max_price),
                 min_quantity: normalizeOptionalPositive(values.min_quantity),
                 max_quantity: normalizeOptionalPositive(values.max_quantity),
+                brand_markups: parseBrandMarkupsFromText(
+                    values.brand_markups_text
+                ),
             };
             await updateCustomerPricelistSource(
                 editingSourceUsage.customer_id,
@@ -2894,6 +2941,17 @@ const ProviderPage = () => {
                             <Input placeholder="Например: 101, 102, 103" />
                         </Form.Item>
                     </div>
+
+                    <Form.Item
+                        name="brand_markups_text"
+                        label="Наценка по брендам"
+                        extra="Формат: BRAND=10, BRAND2=40 (допустимы разделители = или :)"
+                    >
+                        <Input.TextArea
+                            rows={3}
+                            placeholder="Например: TOYOTA=10, LEXUS=10, GEELY=40"
+                        />
+                    </Form.Item>
 
                     <Form.Item>
                         <Space wrap>
