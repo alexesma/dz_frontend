@@ -4,10 +4,12 @@ import {
     Badge,
     Button,
     Card,
+    Collapse,
     Divider,
     Drawer,
     Form,
     Input,
+    InputNumber,
     Modal,
     Radio,
     Select,
@@ -36,11 +38,17 @@ import {
 import { getEmailAccounts } from '../api/emailAccounts';
 import {
     fetchInboxEmails,
+    getAttachmentPreview,
     getInboxEmailDetail,
     getInboxEmails,
+    getProviderConfigs,
     getSetupOptions,
     setupEmailRule,
 } from '../api/inbox';
+import {
+    getCustomerOrderConfigs,
+    getCustomerPricelistConfigs,
+} from '../api/customers';
 import { formatMoscow } from '../utils/time';
 
 const { Text, Paragraph } = Typography;
@@ -151,6 +159,33 @@ const RULES_NEEDS_CONFIG = new Set([...RULES_WITH_PROVIDER, ...RULES_WITH_CUSTOM
 
 const DEFAULT_DAYS = 3;
 const DEFAULT_PAGE_SIZE = 50;
+const DEFAULT_CONFIRM_KEYWORDS_TEXT = 'в наличии, есть, отгружаем, собрали, да';
+const DEFAULT_REJECT_KEYWORDS_TEXT = 'нет, 0, отсутствует, не можем, снято с производства';
+const DEFAULT_NEW_ORDER_CONFIG = {
+    pricelist_config_id: null,
+    order_start_row: 1,
+    oem_col: null,
+    brand_col: null,
+    qty_col: null,
+    name_col: null,
+    price_col: null,
+    ship_qty_col: null,
+    reject_qty_col: null,
+    order_number_column: null,
+    order_number_row: null,
+    order_date_column: null,
+    order_date_row: null,
+    order_number_source: null,
+    order_number_regex_subject: '',
+    order_number_regex_body: '',
+    order_number_regex_filename: '',
+    order_number_prefix: '',
+    order_number_suffix: '',
+    ship_mode: 'REPLACE_QTY',
+    price_tolerance_pct: 2,
+    price_warning_pct: 5,
+    is_active: true,
+};
 
 const InboxPage = () => {
     const [accounts, setAccounts] = useState([]);
@@ -171,7 +206,7 @@ const InboxPage = () => {
     // Мастер назначения правила
     const [ruleModalOpen, setRuleModalOpen] = useState(false);
     const [ruleTarget, setRuleTarget] = useState(null);
-    const [wizardStep, setWizardStep] = useState(0);   // 0=выбор типа, 1=настройка
+    const [wizardStep, setWizardStep] = useState(0);   // 0=тип, 1=настройка, 2=конфигурация
     const [ruleType, setRuleType] = useState('price_list');
     const [savePattern, setSavePattern] = useState(true);
     const [assigningRule, setAssigningRule] = useState(false);
@@ -180,11 +215,46 @@ const InboxPage = () => {
     const [setupOptions, setSetupOptions] = useState({ providers: [], customers: [] });
     const [loadingOptions, setLoadingOptions] = useState(false);
     const [providerConfig, setProviderConfig] = useState({
-        provider_id: null, subject_pattern: '', filename_pattern: '',
+        provider_id: null,
+        subject_pattern: '',
+        filename_pattern: '',
+        response_type: 'file',
+        confirm_keywords_text: DEFAULT_CONFIRM_KEYWORDS_TEXT,
+        reject_keywords_text: DEFAULT_REJECT_KEYWORDS_TEXT,
+        value_after_article_type: 'both',
+        config_mode: 'skip',
+        config_id: null,
+        config_name: '',
+        start_row: 1,
+        oem_col: null,
+        qty_col: null,
+        price_col: null,
+        brand_col: null,
+        name_col: null,
+        status_col: null,
+        comment_col: null,
+        document_number_col: null,
+        document_date_col: null,
     });
     const [customerConfig, setCustomerConfig] = useState({
-        customer_id: null, subject_pattern: '', filename_pattern: '',
+        customer_id: null,
+        config_mode: 'existing',
+        config_id: null,
+        subject_pattern: '',
+        filename_pattern: '',
+        order_config: { ...DEFAULT_NEW_ORDER_CONFIG },
     });
+    const [customerOrderConfigs, setCustomerOrderConfigs] = useState([]);
+    const [customerPricelistConfigs, setCustomerPricelistConfigs] = useState([]);
+    const [loadingCustomerSetupConfigs, setLoadingCustomerSetupConfigs] = useState(false);
+    const [providerConfigs, setProviderConfigs] = useState([]);
+    const [loadingProviderConfigs, setLoadingProviderConfigs] = useState(false);
+
+    // Предпросмотр вложения
+    const [attachmentPreview, setAttachmentPreview] = useState(null);
+    const [loadingPreview, setLoadingPreview] = useState(false);
+    const [previewError, setPreviewError] = useState('');
+    const [activeVisualField, setActiveVisualField] = useState('oem_col');
 
     // Загрузка почтовых ящиков
     useEffect(() => {
@@ -219,6 +289,181 @@ const InboxPage = () => {
         setPage(1);
         loadEmails(1, pageSize);
     }, [selectedAccountId, days]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const loadCustomerSetupConfigs = async (customerId) => {
+        if (!customerId) {
+            setCustomerOrderConfigs([]);
+            setCustomerPricelistConfigs([]);
+            return;
+        }
+        setLoadingCustomerSetupConfigs(true);
+        try {
+            const [{ data: orderConfigs }, { data: pricelistConfigs }] = await Promise.all([
+                getCustomerOrderConfigs(customerId),
+                getCustomerPricelistConfigs(customerId),
+            ]);
+            const configs = orderConfigs || [];
+            setCustomerOrderConfigs(configs);
+            setCustomerPricelistConfigs(pricelistConfigs || []);
+
+            // Автовыбор: если есть ровно одна конфигурация — сразу выбираем её
+            if (configs.length === 1) {
+                const cfg = configs[0];
+                setCustomerConfig(c => ({
+                    ...c,
+                    config_mode: 'existing',
+                    config_id: cfg.id,
+                    order_config: {
+                        pricelist_config_id: cfg.pricelist_config_id || null,
+                        order_start_row: cfg.order_start_row || 1,
+                        oem_col: cfg.oem_col || null,
+                        brand_col: cfg.brand_col || null,
+                        qty_col: cfg.qty_col || null,
+                        name_col: cfg.name_col || null,
+                        price_col: cfg.price_col || null,
+                        ship_qty_col: cfg.ship_qty_col || null,
+                        reject_qty_col: cfg.reject_qty_col || null,
+                    },
+                }));
+            } else if (configs.length === 0) {
+                // Нет конфигураций — переключаем в режим создания
+                setCustomerConfig(c => ({
+                    ...c,
+                    config_mode: 'new',
+                    config_id: null,
+                }));
+            }
+        } catch {
+            setCustomerOrderConfigs([]);
+            setCustomerPricelistConfigs([]);
+            message.warning('Не удалось загрузить конфигурации клиента');
+        } finally {
+            setLoadingCustomerSetupConfigs(false);
+        }
+    };
+
+    // Загрузка конфигураций поставщика (для price_list / order_reply / document)
+    const loadProviderConfigs = async (providerId, currentRuleType) => {
+        const configRules = ['price_list', 'order_reply', 'document'];
+        if (!providerId || !configRules.includes(currentRuleType)) {
+            setProviderConfigs([]);
+            return;
+        }
+        setLoadingProviderConfigs(true);
+        try {
+            const { data } = await getProviderConfigs(providerId, currentRuleType);
+            const configs = data || [];
+            setProviderConfigs(configs);
+            if (configs.length === 1) {
+                const cfg = configs[0];
+                setProviderConfig(p => ({
+                    ...p,
+                    config_mode: 'existing',
+                    config_id: cfg.id,
+                    response_type: cfg.response_type || 'file',
+                    confirm_keywords_text: (cfg.confirm_keywords || []).join(', ') || DEFAULT_CONFIRM_KEYWORDS_TEXT,
+                    reject_keywords_text: (cfg.reject_keywords || []).join(', ') || DEFAULT_REJECT_KEYWORDS_TEXT,
+                    value_after_article_type: cfg.value_after_article_type || 'both',
+                    start_row: cfg.start_row || 1,
+                    oem_col: cfg.oem_col || null,
+                    qty_col: cfg.qty_col || null,
+                    price_col: cfg.price_col || null,
+                    brand_col: cfg.brand_col || null,
+                    name_col: cfg.name_col || null,
+                    status_col: cfg.status_col || null,
+                    comment_col: cfg.comment_col || null,
+                    document_number_col: cfg.document_number_col || null,
+                    document_date_col: cfg.document_date_col || null,
+                }));
+            } else if (configs.length === 0) {
+                setProviderConfig(p => ({
+                    ...p,
+                    config_mode: 'new',
+                    config_id: null,
+                    response_type: currentRuleType === 'order_reply' ? 'file' : p.response_type,
+                    confirm_keywords_text: DEFAULT_CONFIRM_KEYWORDS_TEXT,
+                    reject_keywords_text: DEFAULT_REJECT_KEYWORDS_TEXT,
+                    value_after_article_type: 'both',
+                }));
+            }
+        } catch {
+            setProviderConfigs([]);
+            message.warning('Не удалось загрузить конфигурации поставщика');
+        } finally {
+            setLoadingProviderConfigs(false);
+        }
+    };
+
+    // Загрузка предпросмотра вложения
+    const loadAttachmentPreview = async (email) => {
+        const emailId = email?.id;
+        if (!emailId) return;
+        setLoadingPreview(true);
+        setAttachmentPreview(null);
+        setPreviewError('');
+        const attachmentInfo = email?.attachment_info || [];
+        const previewableIndexes = attachmentInfo
+            .map((att, idx) => ({ idx, name: (att?.name || '').toLowerCase() }))
+            .filter(({ name }) => (
+                name.endsWith('.xlsx')
+                || name.endsWith('.xls')
+                || name.endsWith('.csv')
+            ))
+            .map(({ idx }) => idx);
+        if (previewableIndexes.length === 0) {
+            setPreviewError(
+                'Во вложениях нет поддерживаемых файлов (XLS/XLSX/CSV). ' +
+                'Добавьте шаблон файла и перезагрузите письмо.'
+            );
+            setLoadingPreview(false);
+            return;
+        }
+
+        const errors = [];
+        try {
+            for (const idx of previewableIndexes) {
+                try {
+                    const { data } = await getAttachmentPreview(emailId, idx);
+                    setAttachmentPreview(data);
+                    return;
+                } catch (err) {
+                    const detail = err?.response?.data?.detail || err?.message;
+                    errors.push(`#${idx + 1}: ${detail || 'ошибка чтения файла'}`);
+                }
+            }
+            setPreviewError(
+                'Не удалось прочитать ни одно вложение. ' +
+                errors.slice(0, 2).join(' | ')
+            );
+        } catch (err) {
+            setAttachmentPreview(null);
+            const detail = err?.response?.data?.detail || err?.message;
+            setPreviewError(
+                `Ошибка предпросмотра вложения: ${detail || 'неизвестная ошибка'}`
+            );
+        } finally {
+            setLoadingPreview(false);
+        }
+    };
+
+    // Авто-загрузка предпросмотра при выборе правила требующего файл
+    // (customer_order — шаги 1 и 2; price_list/order_reply/document — шаг 1)
+    useEffect(() => {
+        const isCustomerRule = RULES_WITH_CUSTOMER.has(ruleType);
+        const providerNeedsFilePreview = (
+            ['price_list', 'document'].includes(ruleType)
+            || (ruleType === 'order_reply' && providerConfig.response_type !== 'text')
+        );
+        const shouldLoad = ruleTarget?.has_attachments
+            && ruleTarget?.id
+            && (
+                (isCustomerRule && (wizardStep === 1 || wizardStep === 2))
+                || (providerNeedsFilePreview && wizardStep === 1)
+            );
+        if (shouldLoad && !attachmentPreview && !loadingPreview) {
+            loadAttachmentPreview(ruleTarget);
+        }
+    }, [wizardStep, ruleTarget?.id, ruleType, providerConfig.response_type]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Принудительная загрузка с сервера
     const handleFetchFromServer = async () => {
@@ -265,8 +510,44 @@ const InboxPage = () => {
         setRuleType(email.rule_type || 'price_list');
         setSavePattern(true);
         setWizardStep(0);
-        setProviderConfig({ provider_id: null, subject_pattern: email.subject || '', filename_pattern: firstAtt });
-        setCustomerConfig({ customer_id: null, subject_pattern: email.subject || '', filename_pattern: firstAtt });
+        setAttachmentPreview(null);
+        setLoadingPreview(false);
+        setProviderConfig({
+            provider_id: null,
+            subject_pattern: email.subject || '',
+            filename_pattern: firstAtt,
+            response_type: 'file',
+            confirm_keywords_text: DEFAULT_CONFIRM_KEYWORDS_TEXT,
+            reject_keywords_text: DEFAULT_REJECT_KEYWORDS_TEXT,
+            value_after_article_type: 'both',
+            config_mode: 'skip',
+            config_id: null,
+            config_name: '',
+            start_row: 1,
+            oem_col: null,
+            qty_col: null,
+            price_col: null,
+            brand_col: null,
+            name_col: null,
+            status_col: null,
+            comment_col: null,
+            document_number_col: null,
+            document_date_col: null,
+        });
+        setProviderConfigs([]);
+        setCustomerConfig({
+            customer_id: null,
+            config_mode: 'existing',
+            config_id: null,
+            subject_pattern: email.subject || '',
+            filename_pattern: firstAtt,
+            order_config: { ...DEFAULT_NEW_ORDER_CONFIG },
+        });
+        setCustomerOrderConfigs([]);
+        setCustomerPricelistConfigs([]);
+        setAttachmentPreview(null);
+        setPreviewError('');
+        setActiveVisualField('oem_col');
         setRuleModalOpen(true);
 
         // Загружаем поставщиков/клиентов (кешируем — грузим один раз)
@@ -283,33 +564,116 @@ const InboxPage = () => {
         }
     };
 
-    // Шаг 1 → шаг 2 (или сразу применить для простых правил)
+    // Навигация мастера по шагам
     const handleWizardNext = () => {
-        if (RULES_NEEDS_CONFIG.has(ruleType)) {
-            setWizardStep(1);
-        } else {
+        if (wizardStep === 0) {
+            if (RULES_NEEDS_CONFIG.has(ruleType)) {
+                setWizardStep(1);
+                return;
+            }
+            handleApplyRule();
+            return;
+        }
+        if (wizardStep === 1) {
+            if (RULES_WITH_CUSTOMER.has(ruleType)) {
+                if (!customerConfig.customer_id) {
+                    message.warning('Выберите клиента');
+                    return;
+                }
+                setWizardStep(2);
+                return;
+            }
             handleApplyRule();
         }
     };
 
+    const parseCommaSeparated = (value) =>
+        String(value || '')
+            .split(',')
+            .map(part => part.trim())
+            .filter(Boolean);
+
     // Финальное применение правила
     const handleApplyRule = async () => {
         if (!ruleTarget) return;
+        if (RULES_WITH_CUSTOMER.has(ruleType)) {
+            if (!customerConfig.customer_id) {
+                message.warning('Выберите клиента');
+                return;
+            }
+            if (customerConfig.config_mode === 'existing' && !customerConfig.config_id) {
+                message.warning('Выберите конфигурацию обработки заказа');
+                return;
+            }
+            if (customerConfig.config_mode === 'new') {
+                const oc = customerConfig.order_config || {};
+                if (!oc.pricelist_config_id || !oc.oem_col || !oc.brand_col || !oc.qty_col) {
+                    message.warning(
+                        'Для новой конфигурации заполните: прайс клиента, OEM, Бренд и Кол-во'
+                    );
+                    return;
+                }
+            }
+        }
         setAssigningRule(true);
         try {
+            let payloadCustomerConfig = customerConfig;
+            if (RULES_WITH_CUSTOMER.has(ruleType)) {
+                payloadCustomerConfig = {
+                    customer_id: customerConfig.customer_id,
+                    config_mode: customerConfig.config_mode,
+                    config_id: customerConfig.config_mode === 'existing'
+                        ? customerConfig.config_id
+                        : null,
+                    subject_pattern: customerConfig.subject_pattern || null,
+                    filename_pattern: customerConfig.filename_pattern || null,
+                    order_config: customerConfig.config_mode === 'new'
+                        ? customerConfig.order_config
+                        : null,
+                };
+            }
+            let payloadProviderConfig = providerConfig;
+            if (RULES_WITH_PROVIDER.has(ruleType)) {
+                payloadProviderConfig = {
+                    ...providerConfig,
+                };
+                if (ruleType === 'order_reply') {
+                    payloadProviderConfig.confirm_keywords = parseCommaSeparated(
+                        providerConfig.confirm_keywords_text
+                    );
+                    payloadProviderConfig.reject_keywords = parseCommaSeparated(
+                        providerConfig.reject_keywords_text
+                    );
+                    payloadProviderConfig.value_after_article_type = (
+                        providerConfig.value_after_article_type || 'both'
+                    );
+                }
+                delete payloadProviderConfig.confirm_keywords_text;
+                delete payloadProviderConfig.reject_keywords_text;
+            }
             const payload = {
                 rule_type: ruleType,
                 save_pattern: savePattern,
-                provider_config: RULES_WITH_PROVIDER.has(ruleType) ? providerConfig : null,
-                customer_config: RULES_WITH_CUSTOMER.has(ruleType) ? customerConfig : null,
+                provider_config: RULES_WITH_PROVIDER.has(ruleType) ? payloadProviderConfig : null,
+                customer_config: RULES_WITH_CUSTOMER.has(ruleType)
+                    ? payloadCustomerConfig
+                    : null,
             };
 
             const { data } = await setupEmailRule(ruleTarget.id, payload);
 
             // Формируем сообщение об успехе
             const configNotes = (data.configs_set || []).map(c => c.note).filter(Boolean);
+            const queuedByScheduler = (
+                data?.processing_result?.status === 'queued'
+                || (data.configs_set || []).some(
+                    c => c.action === 'queued' || c.action === 'queue_error'
+                )
+            );
             const baseMsg = data.processing_error
                 ? `Правило назначено, но ошибка обработки: ${data.processing_error}`
+                : queuedByScheduler
+                    ? 'Настройки приняты. Обработка письма запустится чуть позже.'
                 : `Правило «${RULE_LABELS[ruleType]}» применено${data.processed ? ' и обработано' : ''}`;
 
             message.success(baseMsg, 4);
@@ -690,8 +1054,9 @@ const InboxPage = () => {
                 }
                 onCancel={() => { setRuleModalOpen(false); setWizardStep(0); }}
                 footer={null}
-                width={640}
+                width={820}
                 destroyOnClose
+                styles={{ body: { maxHeight: '85vh', overflowY: 'auto' } }}
             >
                 {ruleTarget && (
                     <Space direction="vertical" size={16} style={{ width: '100%' }}>
@@ -712,10 +1077,18 @@ const InboxPage = () => {
                         <Steps
                             size="small"
                             current={wizardStep}
-                            items={[
-                                { title: 'Тип правила' },
-                                { title: 'Настройка' },
-                            ]}
+                            items={
+                                RULES_WITH_CUSTOMER.has(ruleType)
+                                    ? [
+                                        { title: 'Тип правила' },
+                                        { title: 'Настройка' },
+                                        { title: 'Конфигурация' },
+                                    ]
+                                    : [
+                                        { title: 'Тип правила' },
+                                        { title: 'Настройка' },
+                                    ]
+                            }
                         />
 
                         {/* ─────────────── ШАГ 0: выбор типа правила ─────────────── */}
@@ -799,7 +1172,19 @@ const InboxPage = () => {
                                                 optionFilterProp="label"
                                                 placeholder="Выберите поставщика"
                                                 value={providerConfig.provider_id}
-                                                onChange={(val) => setProviderConfig(p => ({ ...p, provider_id: val }))}
+                                                onChange={(val) => {
+                                                    setProviderConfig(p => ({
+                                                        ...p,
+                                                        provider_id: val,
+                                                        config_id: null,
+                                                        config_mode: 'skip',
+                                                        response_type: ruleType === 'order_reply' ? 'file' : p.response_type,
+                                                        confirm_keywords_text: DEFAULT_CONFIRM_KEYWORDS_TEXT,
+                                                        reject_keywords_text: DEFAULT_REJECT_KEYWORDS_TEXT,
+                                                        value_after_article_type: 'both',
+                                                    }));
+                                                    loadProviderConfigs(val, ruleType);
+                                                }}
                                                 options={setupOptions.providers.map(p => ({
                                                     value: p.id,
                                                     label: p.email
@@ -809,34 +1194,543 @@ const InboxPage = () => {
                                             />
                                         </div>
 
-                                        {ruleType === 'price_list' && (
+                                        {/* Паттерны (тема и файл) */}
+                                        <div>
+                                            <div style={{ marginBottom: 4, fontWeight: 500 }}>
+                                                Паттерн темы письма
+                                                <Tooltip title="Часть темы, по которой система будет узнавать письма (например: 'Прайс' или 'Price list')">
+                                                    <InfoCircleOutlined style={{ marginLeft: 6, color: '#8c8c8c' }} />
+                                                </Tooltip>
+                                            </div>
+                                            <Input
+                                                value={providerConfig.subject_pattern}
+                                                onChange={(e) => setProviderConfig(p => ({ ...p, subject_pattern: e.target.value }))}
+                                                placeholder="например: Прайс-лист"
+                                            />
+                                        </div>
+                                        <div>
+                                            <div style={{ marginBottom: 4, fontWeight: 500 }}>
+                                                Паттерн имени файла
+                                                <Tooltip title="Часть имени файла, по которой система находит нужный файл во вложении">
+                                                    <InfoCircleOutlined style={{ marginLeft: 6, color: '#8c8c8c' }} />
+                                                </Tooltip>
+                                            </div>
+                                            <Input
+                                                value={providerConfig.filename_pattern}
+                                                onChange={(e) => setProviderConfig(p => ({ ...p, filename_pattern: e.target.value }))}
+                                                placeholder="например: price.xlsx"
+                                            />
+                                        </div>
+
+                                        {ruleType === 'order_reply' && providerConfig.provider_id && (
+                                            <div>
+                                                <div style={{ marginBottom: 6, fontWeight: 500 }}>
+                                                    Тип ответа
+                                                </div>
+                                                <Radio.Group
+                                                    value={providerConfig.response_type || 'file'}
+                                                    onChange={(e) => setProviderConfig(p => ({
+                                                        ...p,
+                                                        response_type: e.target.value,
+                                                    }))}
+                                                >
+                                                    <Radio.Button value="file">
+                                                        Файл
+                                                    </Radio.Button>
+                                                    <Radio.Button value="text">
+                                                        Текст письма
+                                                    </Radio.Button>
+                                                </Radio.Group>
+                                            </div>
+                                        )}
+
+                                        {/* Конфигурация столбцов (price_list / order_reply / document) */}
+                                        {['price_list', 'order_reply', 'document'].includes(ruleType)
+                                            && providerConfig.provider_id && (
                                             <>
+                                                <Divider style={{ margin: '4px 0' }}>
+                                                    <Text style={{ fontSize: 12 }} type="secondary">
+                                                        {ruleType === 'order_reply'
+                                                            && providerConfig.response_type === 'text'
+                                                            ? 'Настройка ответа поставщика'
+                                                            : 'Настройка столбцов файла'}
+                                                    </Text>
+                                                </Divider>
+
+                                                {/* Режим конфигурации */}
                                                 <div>
-                                                    <div style={{ marginBottom: 4, fontWeight: 500 }}>
-                                                        Паттерн темы письма
-                                                        <Tooltip title="Часть темы, по которой система будет узнавать прайс (например: 'Прайс' или 'Price list')">
-                                                            <InfoCircleOutlined style={{ marginLeft: 6, color: '#8c8c8c' }} />
-                                                        </Tooltip>
+                                                    <div style={{ marginBottom: 6, fontWeight: 500 }}>
+                                                        Режим конфигурации
                                                     </div>
-                                                    <Input
-                                                        value={providerConfig.subject_pattern}
-                                                        onChange={(e) => setProviderConfig(p => ({ ...p, subject_pattern: e.target.value }))}
-                                                        placeholder="например: Прайс-лист"
-                                                    />
+                                                    <Radio.Group
+                                                        value={providerConfig.config_mode}
+                                                        onChange={(e) => setProviderConfig(p => ({
+                                                            ...p,
+                                                            config_mode: e.target.value,
+                                                            config_id: null,
+                                                        }))}
+                                                    >
+                                                        <Radio.Button value="skip">
+                                                            Не настраивать
+                                                        </Radio.Button>
+                                                        <Radio.Button
+                                                            value="existing"
+                                                            disabled={providerConfigs.length === 0}
+                                                        >
+                                                            Обновить готовую
+                                                        </Radio.Button>
+                                                        <Radio.Button value="new">
+                                                            Создать новую
+                                                        </Radio.Button>
+                                                    </Radio.Group>
+                                                    {loadingProviderConfigs && (
+                                                        <Spin size="small" style={{ marginLeft: 12 }} />
+                                                    )}
                                                 </div>
-                                                <div>
-                                                    <div style={{ marginBottom: 4, fontWeight: 500 }}>
-                                                        Паттерн имени файла
-                                                        <Tooltip title="Часть имени файла, по которой система находит нужный файл во вложении (например: 'price' или 'прайс')">
-                                                            <InfoCircleOutlined style={{ marginLeft: 6, color: '#8c8c8c' }} />
-                                                        </Tooltip>
+
+                                                {/* Существующая конфигурация */}
+                                                {providerConfig.config_mode === 'existing'
+                                                    && providerConfigs.length > 0 && (
+                                                    <div>
+                                                        <div style={{ marginBottom: 4, fontWeight: 500 }}>
+                                                            Конфигурация <Text type="danger">*</Text>
+                                                        </div>
+                                                        <Select
+                                                            style={{ width: '100%' }}
+                                                            loading={loadingProviderConfigs}
+                                                            placeholder="Выберите конфигурацию"
+                                                            value={providerConfig.config_id}
+                                                            onChange={(val) => {
+                                                                const cfg = providerConfigs.find(
+                                                                    c => c.id === val
+                                                                );
+                                                                setProviderConfig(p => ({
+                                                                    ...p,
+                                                                    config_id: val,
+                                                                    response_type:
+                                                                        cfg?.response_type || p.response_type || 'file',
+                                                                    confirm_keywords_text:
+                                                                        (cfg?.confirm_keywords || []).join(', ')
+                                                                        || DEFAULT_CONFIRM_KEYWORDS_TEXT,
+                                                                    reject_keywords_text:
+                                                                        (cfg?.reject_keywords || []).join(', ')
+                                                                        || DEFAULT_REJECT_KEYWORDS_TEXT,
+                                                                    value_after_article_type:
+                                                                        cfg?.value_after_article_type || 'both',
+                                                                    start_row: cfg?.start_row || 1,
+                                                                    oem_col: cfg?.oem_col || null,
+                                                                    qty_col: cfg?.qty_col || null,
+                                                                    price_col: cfg?.price_col || null,
+                                                                    brand_col: cfg?.brand_col || null,
+                                                                    name_col: cfg?.name_col || null,
+                                                                    status_col: cfg?.status_col || null,
+                                                                    comment_col: cfg?.comment_col || null,
+                                                                    document_number_col:
+                                                                        cfg?.document_number_col || null,
+                                                                    document_date_col:
+                                                                        cfg?.document_date_col || null,
+                                                                }));
+                                                            }}
+                                                            options={providerConfigs.map(cfg => ({
+                                                                value: cfg.id,
+                                                                label: ruleType === 'order_reply'
+                                                                    ? `${cfg.label || cfg.name || `Конфигурация #${cfg.id}`} • ${cfg.response_type === 'text' ? 'Текст' : 'Файл'}`
+                                                                    : (cfg.label
+                                                                        || cfg.name
+                                                                        || `Конфигурация #${cfg.id}`),
+                                                            }))}
+                                                        />
                                                     </div>
-                                                    <Input
-                                                        value={providerConfig.filename_pattern}
-                                                        onChange={(e) => setProviderConfig(p => ({ ...p, filename_pattern: e.target.value }))}
-                                                        placeholder="например: price.xlsx"
-                                                    />
-                                                </div>
+                                                )}
+
+                                                {/* Название для новой конфигурации */}
+                                                {providerConfig.config_mode === 'new'
+                                                    && ruleType !== 'price_list' && (
+                                                    <div>
+                                                        <div style={{ marginBottom: 4, fontWeight: 500 }}>
+                                                            Название новой конфигурации
+                                                        </div>
+                                                        <Input
+                                                            value={providerConfig.config_name}
+                                                            onChange={(e) => setProviderConfig(
+                                                                p => ({ ...p, config_name: e.target.value })
+                                                            )}
+                                                            placeholder="например: Ответ на заказ — основной"
+                                                        />
+                                                    </div>
+                                                )}
+
+                                                {/* Поля столбцов (new или existing+выбрана) */}
+                                                {(providerConfig.config_mode === 'new'
+                                                    || (providerConfig.config_mode === 'existing'
+                                                        && providerConfig.config_id))
+                                                    && ruleType === 'order_reply'
+                                                    && providerConfig.response_type === 'text' && (
+                                                    <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                                                        <Alert
+                                                            type="info"
+                                                            showIcon
+                                                            message="Для текстового ответа настройка колонок файла не требуется."
+                                                            description="Укажите ключевые слова подтверждения/отказа и режим разбора значения после артикула."
+                                                        />
+
+                                                        <div>
+                                                            <div style={{ marginBottom: 4, fontWeight: 500 }}>
+                                                                Подтверждение (через запятую)
+                                                            </div>
+                                                            <Input.TextArea
+                                                                rows={2}
+                                                                value={providerConfig.confirm_keywords_text}
+                                                                onChange={(e) => setProviderConfig(p => ({
+                                                                    ...p,
+                                                                    confirm_keywords_text: e.target.value,
+                                                                }))}
+                                                                placeholder="в наличии, есть, отгружаем, собрали, да"
+                                                            />
+                                                        </div>
+
+                                                        <div>
+                                                            <div style={{ marginBottom: 4, fontWeight: 500 }}>
+                                                                Отказ (через запятую)
+                                                            </div>
+                                                            <Input.TextArea
+                                                                rows={2}
+                                                                value={providerConfig.reject_keywords_text}
+                                                                onChange={(e) => setProviderConfig(p => ({
+                                                                    ...p,
+                                                                    reject_keywords_text: e.target.value,
+                                                                }))}
+                                                                placeholder="нет, 0, отсутствует, не можем, снято с производства"
+                                                            />
+                                                        </div>
+
+                                                        <div>
+                                                            <div style={{ marginBottom: 6, fontWeight: 500 }}>
+                                                                Значение после артикула
+                                                            </div>
+                                                            <Radio.Group
+                                                                value={providerConfig.value_after_article_type || 'both'}
+                                                                onChange={(e) => setProviderConfig(p => ({
+                                                                    ...p,
+                                                                    value_after_article_type: e.target.value,
+                                                                }))}
+                                                            >
+                                                                <Radio.Button value="both">
+                                                                    И число, и текст
+                                                                </Radio.Button>
+                                                                <Radio.Button value="number">
+                                                                    Только число
+                                                                </Radio.Button>
+                                                                <Radio.Button value="text">
+                                                                    Только текст
+                                                                </Radio.Button>
+                                                            </Radio.Group>
+                                                        </div>
+                                                    </Space>
+                                                )}
+
+                                                {(providerConfig.config_mode === 'new'
+                                                    || (providerConfig.config_mode === 'existing'
+                                                        && providerConfig.config_id))
+                                                    && (
+                                                    ruleType !== 'order_reply'
+                                                    || providerConfig.response_type === 'file'
+                                                ) && (() => {
+                                                    // Список полей по типу правила
+                                                    const baseFields = [
+                                                        { key: 'start_row', label: 'Строка начала' },
+                                                        { key: 'oem_col', label: 'OEM' },
+                                                        { key: 'brand_col', label: 'Бренд' },
+                                                        { key: 'qty_col', label: 'Кол-во' },
+                                                        { key: 'price_col', label: 'Цена' },
+                                                    ];
+                                                    const extraFields = ruleType === 'price_list'
+                                                        ? [{ key: 'name_col', label: 'Наименование' }]
+                                                        : ruleType === 'order_reply'
+                                                            ? [
+                                                                { key: 'status_col', label: 'Статус' },
+                                                                { key: 'comment_col', label: 'Коммент' },
+                                                            ]
+                                                            : [
+                                                                {
+                                                                    key: 'document_number_col',
+                                                                    label: '№ документа',
+                                                                },
+                                                                {
+                                                                    key: 'document_date_col',
+                                                                    label: 'Дата',
+                                                                },
+                                                            ];
+                                                    const allFields = [...baseFields, ...extraFields];
+
+                                                    // Подсветки столбцов
+                                                    const pc = providerConfig;
+                                                    const colHL = {};
+                                                    [
+                                                        [pc.oem_col, '#e6fffb'],
+                                                        [pc.brand_col, '#f6ffed'],
+                                                        [pc.qty_col, '#fff7e6'],
+                                                        [pc.price_col, '#f9f0ff'],
+                                                        [pc.name_col, '#fff2e8'],
+                                                        [pc.status_col, '#e6f7ff'],
+                                                        [pc.comment_col, '#fffbe6'],
+                                                        [pc.document_number_col, '#f0f5ff'],
+                                                        [pc.document_date_col, '#fcffe6'],
+                                                    ].forEach(([col, color]) => {
+                                                        if (col) colHL[col] = color;
+                                                    });
+
+                                                    // Столбцы таблицы предпросмотра
+                                                    const previewCols = attachmentPreview
+                                                        ? Array.from(
+                                                            { length: attachmentPreview.columns },
+                                                            (_, i) => ({
+                                                                title: `Кол. ${i + 1}`,
+                                                                dataIndex: i,
+                                                                key: i,
+                                                                width: 130,
+                                                                ellipsis: true,
+                                                                render: (value) => {
+                                                                    const text = value == null
+                                                                        ? ''
+                                                                        : String(value);
+                                                                    return (
+                                                                        <Tooltip title={text || '(пусто)'}>
+                                                                            <span style={{
+                                                                                display: 'block',
+                                                                                whiteSpace: 'nowrap',
+                                                                                overflow: 'hidden',
+                                                                                textOverflow: 'ellipsis',
+                                                                            }}>
+                                                                                {text || '\u00A0'}
+                                                                            </span>
+                                                                        </Tooltip>
+                                                                    );
+                                                                },
+                                                                onHeaderCell: () => ({
+                                                                    style: colHL[i + 1]
+                                                                        ? {
+                                                                            background: colHL[i + 1],
+                                                                            fontWeight: 700,
+                                                                            cursor: activeVisualField !== 'start_row'
+                                                                                ? 'pointer' : 'default',
+                                                                        }
+                                                                        : {
+                                                                            cursor: activeVisualField !== 'start_row'
+                                                                                ? 'pointer' : 'default',
+                                                                        },
+                                                                    onClick: () => {
+                                                                        if (activeVisualField === 'start_row') return;
+                                                                        setProviderConfig(p => ({
+                                                                            ...p,
+                                                                            [activeVisualField]: i + 1,
+                                                                        }));
+                                                                    },
+                                                                }),
+                                                                onCell: () => ({
+                                                                    style: {
+                                                                        whiteSpace: 'nowrap',
+                                                                        overflow: 'hidden',
+                                                                        textOverflow: 'ellipsis',
+                                                                        lineHeight: 1.2,
+                                                                        paddingTop: 4,
+                                                                        paddingBottom: 4,
+                                                                        ...(colHL[i + 1]
+                                                                            ? { background: colHL[i + 1] }
+                                                                            : {}),
+                                                                    },
+                                                                }),
+                                                            })
+                                                        )
+                                                        : [];
+                                                    const previewDS = attachmentPreview
+                                                        ? attachmentPreview.rows.map((row, idx) => ({
+                                                            key: idx,
+                                                            ...Object.fromEntries(
+                                                                row.map((cell, ci) => [ci, cell])
+                                                            ),
+                                                        }))
+                                                        : [];
+
+                                                    return (
+                                                        <>
+                                                            {/* Сообщение об ошибке предпросмотра */}
+                                                            {!!previewError && (
+                                                                <Alert
+                                                                    type="warning"
+                                                                    showIcon
+                                                                    message="Предпросмотр вложения недоступен"
+                                                                    description={previewError}
+                                                                />
+                                                            )}
+
+                                                            {/* Визуальный выбор поля */}
+                                                            {attachmentPreview && (
+                                                                <div>
+                                                                    <div style={{
+                                                                        marginBottom: 4,
+                                                                        fontWeight: 500,
+                                                                    }}>
+                                                                        Визуальный выбор
+                                                                    </div>
+                                                                    <div style={{
+                                                                        marginBottom: 6,
+                                                                        fontSize: 12,
+                                                                        color: '#8c8c8c',
+                                                                    }}>
+                                                                        Выберите поле → кликните
+                                                                        по заголовку колонки в таблице.
+                                                                        Для строки начала — кликните
+                                                                        по нужной строке.
+                                                                    </div>
+                                                                    <Radio.Group
+                                                                        value={activeVisualField}
+                                                                        onChange={(e) => setActiveVisualField(
+                                                                            e.target.value
+                                                                        )}
+                                                                        size="small"
+                                                                        style={{
+                                                                            display: 'flex',
+                                                                            flexWrap: 'wrap',
+                                                                            gap: 6,
+                                                                        }}
+                                                                    >
+                                                                        {allFields.map(f => (
+                                                                            <Radio.Button
+                                                                                key={f.key}
+                                                                                value={f.key}
+                                                                            >
+                                                                                {f.label}
+                                                                            </Radio.Button>
+                                                                        ))}
+                                                                    </Radio.Group>
+                                                                </div>
+                                                            )}
+
+                                                            {/* Предпросмотр файла */}
+                                                            {(loadingPreview || attachmentPreview) && (
+                                                                <Collapse
+                                                                    defaultActiveKey={
+                                                                        attachmentPreview ? ['prev'] : []
+                                                                    }
+                                                                    size="small"
+                                                                    items={[{
+                                                                        key: 'prev',
+                                                                        label: attachmentPreview
+                                                                            ? `Файл вложения: ${attachmentPreview.filename}`
+                                                                            : 'Загрузка файла...',
+                                                                        children: loadingPreview ? (
+                                                                            <div style={{
+                                                                                textAlign: 'center',
+                                                                                padding: 12,
+                                                                            }}>
+                                                                                <Spin size="small" />
+                                                                                <span style={{
+                                                                                    marginLeft: 8,
+                                                                                    color: '#8c8c8c',
+                                                                                }}>
+                                                                                    Чтение файла...
+                                                                                </span>
+                                                                            </div>
+                                                                        ) : (
+                                                                            <>
+                                                                                <div style={{
+                                                                                    marginBottom: 6,
+                                                                                    fontSize: 12,
+                                                                                    color: '#8c8c8c',
+                                                                                }}>
+                                                                                    Показано{' '}
+                                                                                    {attachmentPreview.rows.length}{' '}
+                                                                                    из{' '}
+                                                                                    {attachmentPreview.total_rows}{' '}
+                                                                                    строк.
+                                                                                    Кликните заголовок — задать колонку.
+                                                                                    Кликните строку — задать строку начала.
+                                                                                </div>
+                                                                                <Table
+                                                                                    size="small"
+                                                                                    tableLayout="fixed"
+                                                                                    scroll={{ x: true, y: 280 }}
+                                                                                    pagination={false}
+                                                                                    dataSource={previewDS}
+                                                                                    columns={previewCols}
+                                                                                    onRow={(_, rowIndex) => {
+                                                                                        const idx = (rowIndex ?? 0) + 1;
+                                                                                        const isStart = (
+                                                                                            providerConfig.start_row
+                                                                                            === idx
+                                                                                        );
+                                                                                        return {
+                                                                                            onClick: () => {
+                                                                                                setProviderConfig(
+                                                                                                    p => ({
+                                                                                                        ...p,
+                                                                                                        start_row: idx,
+                                                                                                    })
+                                                                                                );
+                                                                                            },
+                                                                                            style: isStart
+                                                                                                ? {
+                                                                                                    outline: '2px solid #40a9ff',
+                                                                                                }
+                                                                                                : { cursor: 'pointer' },
+                                                                                        };
+                                                                                    }}
+                                                                                    bordered
+                                                                                    style={{ fontSize: 11 }}
+                                                                                />
+                                                                            </>
+                                                                        ),
+                                                                    }]}
+                                                                />
+                                                            )}
+
+                                                            {/* Сетка столбцов */}
+                                                            <div style={{
+                                                                background: '#fafafa',
+                                                                border: '1px solid #e8e8e8',
+                                                                borderRadius: 6,
+                                                                padding: 12,
+                                                            }}>
+                                                                <div style={{
+                                                                    marginBottom: 8,
+                                                                    fontWeight: 600,
+                                                                    color: '#555',
+                                                                }}>
+                                                                    Номера столбцов (начиная с 1)
+                                                                </div>
+                                                                <div style={{
+                                                                    display: 'grid',
+                                                                    gridTemplateColumns: '1fr 1fr 1fr',
+                                                                    gap: 8,
+                                                                }}>
+                                                                    {allFields.map(({ key, label }) => (
+                                                                        <div key={key}>
+                                                                            <div style={{
+                                                                                marginBottom: 4,
+                                                                                fontWeight: 500,
+                                                                                fontSize: 12,
+                                                                            }}>
+                                                                                {label}
+                                                                            </div>
+                                                                            <InputNumber
+                                                                                min={1}
+                                                                                style={{ width: '100%' }}
+                                                                                value={providerConfig[key]}
+                                                                                onChange={(val) =>
+                                                                                    setProviderConfig(p => ({
+                                                                                        ...p,
+                                                                                        [key]: val || null,
+                                                                                    }))
+                                                                                }
+                                                                            />
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        </>
+                                                    );
+                                                })()}
                                             </>
                                         )}
                                     </Space>
@@ -849,8 +1743,127 @@ const InboxPage = () => {
                                             type="info"
                                             showIcon
                                             icon={<InfoCircleOutlined />}
-                                            message="Выберите клиента. Email будет добавлен в его конфигурацию заказов — следующие заказы определятся автоматически."
+                                            message="Выберите клиента и конфигурацию обработки заказа. Можно выбрать готовую или создать новую прямо здесь."
                                         />
+                                        {!ruleTarget?.has_attachments && (
+                                            <Alert
+                                                type="warning"
+                                                showIcon
+                                                message="В выбранном письме нет вложений"
+                                                description="Для визуального выбора столбцов нужен файл XLS/XLSX/CSV во вложении."
+                                            />
+                                        )}
+
+                                        {!!previewError && (
+                                            <Alert
+                                                type="warning"
+                                                showIcon
+                                                message="Не удалось показать предпросмотр файла"
+                                                description={previewError}
+                                            />
+                                        )}
+
+                                        {/* Превью файла вложения */}
+                                        {(loadingPreview || attachmentPreview) && (() => {
+                                            const oc = customerConfig.order_config || {};
+                                            const colHighlights = {
+                                                [oc.oem_col]: '#e6fffb',
+                                                [oc.brand_col]: '#f6ffed',
+                                                [oc.qty_col]: '#fff7e6',
+                                                [oc.price_col]: '#f9f0ff',
+                                            };
+                                            const previewCols = attachmentPreview
+                                                ? Array.from({ length: attachmentPreview.columns }, (_, i) => ({
+                                                    title: `Кол. ${i + 1}`,
+                                                    dataIndex: i,
+                                                    key: i,
+                                                    width: 140,
+                                                    ellipsis: true,
+                                                    render: (value) => {
+                                                        const text = value === null || value === undefined
+                                                            ? ''
+                                                            : String(value);
+                                                        return (
+                                                            <Tooltip title={text || '(пусто)'}>
+                                                                <span
+                                                                    style={{
+                                                                        display: 'block',
+                                                                        whiteSpace: 'nowrap',
+                                                                        overflow: 'hidden',
+                                                                        textOverflow: 'ellipsis',
+                                                                    }}
+                                                                >
+                                                                    {text || '\u00A0'}
+                                                                </span>
+                                                            </Tooltip>
+                                                        );
+                                                    },
+                                                    onHeaderCell: () => ({
+                                                        style: colHighlights[i + 1]
+                                                            ? { background: colHighlights[i + 1], fontWeight: 700 }
+                                                            : {},
+                                                    }),
+                                                    onCell: () => ({
+                                                        style: {
+                                                            whiteSpace: 'nowrap',
+                                                            overflow: 'hidden',
+                                                            textOverflow: 'ellipsis',
+                                                            lineHeight: 1.2,
+                                                            paddingTop: 4,
+                                                            paddingBottom: 4,
+                                                            ...(colHighlights[i + 1]
+                                                                ? { background: colHighlights[i + 1] }
+                                                                : {}),
+                                                        },
+                                                    }),
+                                                }))
+                                                : [];
+                                            const previewDS = attachmentPreview
+                                                ? attachmentPreview.rows.map((row, idx) => ({
+                                                    key: idx,
+                                                    ...Object.fromEntries(row.map((cell, ci) => [ci, cell])),
+                                                }))
+                                                : [];
+                                            const panelLabel = attachmentPreview
+                                                ? `Файл вложения: ${attachmentPreview.filename} (${attachmentPreview.total_rows} строк)`
+                                                : 'Загрузка файла...';
+                                            return (
+                                                <Collapse
+                                                    defaultActiveKey={['preview']}
+                                                    size="small"
+                                                    items={[{
+                                                        key: 'preview',
+                                                        label: panelLabel,
+                                                        children: loadingPreview ? (
+                                                            <div style={{ textAlign: 'center', padding: 12 }}>
+                                                                <Spin size="small" />
+                                                                <span style={{ marginLeft: 8, color: '#8c8c8c' }}>
+                                                                    Чтение файла...
+                                                                </span>
+                                                            </div>
+                                                        ) : (
+                                                            <>
+                                                                <div style={{ marginBottom: 6, fontSize: 12, color: '#8c8c8c' }}>
+                                                                    Первые {attachmentPreview.rows.length} строк из {attachmentPreview.total_rows}.
+                                                                    Номер столбца = заголовок «Кол. N».
+                                                                    Цвета столбцов отражают настройки ниже.
+                                                                </div>
+                                                                <Table
+                                                                    size="small"
+                                                                    tableLayout="fixed"
+                                                                    scroll={{ x: true, y: 320 }}
+                                                                    pagination={false}
+                                                                    dataSource={previewDS}
+                                                                    columns={previewCols}
+                                                                    bordered
+                                                                    style={{ fontSize: 11 }}
+                                                                />
+                                                            </>
+                                                        ),
+                                                    }]}
+                                                />
+                                            );
+                                        })()}
 
                                         <div>
                                             <div style={{ marginBottom: 4, fontWeight: 500 }}>
@@ -863,13 +1876,30 @@ const InboxPage = () => {
                                                 optionFilterProp="label"
                                                 placeholder="Выберите клиента"
                                                 value={customerConfig.customer_id}
-                                                onChange={(val) => setCustomerConfig(c => ({ ...c, customer_id: val }))}
+                                                onChange={async (val) => {
+                                                    setCustomerConfig(c => ({
+                                                        ...c,
+                                                        customer_id: val,
+                                                        config_id: null,
+                                                        order_config: {
+                                                            ...c.order_config,
+                                                            pricelist_config_id: null,
+                                                        },
+                                                    }));
+                                                    await loadCustomerSetupConfigs(val);
+                                                }}
                                                 options={setupOptions.customers.map(c => ({
                                                     value: c.id,
                                                     label: c.name,
                                                 }))}
                                             />
                                         </div>
+
+                                        <Alert
+                                            type="info"
+                                            showIcon
+                                            message="На следующем шаге выберите готовую конфигурацию или создайте новую."
+                                        />
 
                                         <div>
                                             <div style={{ marginBottom: 4, fontWeight: 500 }}>
@@ -901,7 +1931,418 @@ const InboxPage = () => {
                                     </Space>
                                 )}
 
-                                {/* Запомнить паттерн */}
+                                {!RULES_WITH_CUSTOMER.has(ruleType) && (
+                                    <>
+                                        {/* Запомнить паттерн */}
+                                        <div
+                                            style={{
+                                                padding: '10px 12px',
+                                                background: '#e6f4ff',
+                                                borderRadius: 6,
+                                                display: 'flex',
+                                                gap: 8,
+                                                alignItems: 'flex-start',
+                                            }}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                id="save-pattern"
+                                                checked={savePattern}
+                                                style={{ marginTop: 3 }}
+                                                onChange={(e) => setSavePattern(e.target.checked)}
+                                            />
+                                            <label htmlFor="save-pattern" style={{ cursor: 'pointer', margin: 0 }}>
+                                                <strong>Запомнить паттерн</strong> — система будет автоматически
+                                                определять похожие письма и обрабатывать их без участия менеджера
+                                            </label>
+                                        </div>
+
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 8 }}>
+                                            <Button onClick={() => setWizardStep(0)}>← Назад</Button>
+                                            <Space>
+                                                <Button onClick={() => setRuleModalOpen(false)}>Отмена</Button>
+                                                <Button
+                                                    type="primary"
+                                                    loading={assigningRule}
+                                                    onClick={handleApplyRule}
+                                                >
+                                                    Применить и сохранить
+                                                </Button>
+                                            </Space>
+                                        </div>
+                                    </>
+                                )}
+                                {RULES_WITH_CUSTOMER.has(ruleType) && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 8 }}>
+                                        <Button onClick={() => setWizardStep(0)}>← Назад</Button>
+                                        <Space>
+                                            <Button onClick={() => setRuleModalOpen(false)}>Отмена</Button>
+                                            <Button type="primary" onClick={handleWizardNext}>
+                                                Далее →
+                                            </Button>
+                                        </Space>
+                                    </div>
+                                )}
+                            </Space>
+                        )}
+
+                        {/* ─────────────── ШАГ 2: конфигурация заказа клиента ─────────────── */}
+                        {wizardStep === 2 && RULES_WITH_CUSTOMER.has(ruleType) && (
+                            <Space direction="vertical" size={14} style={{ width: '100%' }}>
+                                {customerOrderConfigs.length === 0 && !loadingCustomerSetupConfigs ? (
+                                    <Alert
+                                        type="warning"
+                                        showIcon
+                                        message="У клиента нет конфигураций обработки заказов"
+                                        description="Создайте новую конфигурацию ниже, заполнив номера столбцов файла заказа."
+                                    />
+                                ) : (
+                                    <Alert
+                                        type="info"
+                                        showIcon
+                                        message="Выберите готовую конфигурацию или создайте новую для обработки входящего заказа."
+                                    />
+                                )}
+
+                                {!!previewError && (
+                                    <Alert
+                                        type="warning"
+                                        showIcon
+                                        message="Предпросмотр вложения недоступен"
+                                        description={previewError}
+                                    />
+                                )}
+                                {!ruleTarget?.has_attachments && (
+                                    <Alert
+                                        type="warning"
+                                        showIcon
+                                        message="В письме нет вложений для предпросмотра"
+                                    />
+                                )}
+
+                                {customerOrderConfigs.length > 0 && (
+                                    <div>
+                                        <div style={{ marginBottom: 4, fontWeight: 500 }}>
+                                            Режим конфигурации <Text type="danger">*</Text>
+                                        </div>
+                                        <Radio.Group
+                                            value={customerConfig.config_mode}
+                                            onChange={(e) => setCustomerConfig(c => ({
+                                                ...c,
+                                                config_mode: e.target.value,
+                                                config_id: null,
+                                                order_config: { ...DEFAULT_NEW_ORDER_CONFIG },
+                                            }))}
+                                        >
+                                            <Radio.Button value="existing">Редактировать готовую</Radio.Button>
+                                            <Radio.Button value="new">Создать новую</Radio.Button>
+                                        </Radio.Group>
+                                    </div>
+                                )}
+
+                                {/* --- Выбор существующей конфигурации --- */}
+                                {customerConfig.config_mode === 'existing' && customerOrderConfigs.length > 0 && (
+                                    <div>
+                                        <div style={{ marginBottom: 4, fontWeight: 500 }}>
+                                            Конфигурация заказа <Text type="danger">*</Text>
+                                        </div>
+                                        <Select
+                                            style={{ width: '100%' }}
+                                            loading={loadingCustomerSetupConfigs}
+                                            placeholder="Выберите конфигурацию"
+                                            value={customerConfig.config_id}
+                                            onChange={(val) => {
+                                                const cfg = customerOrderConfigs.find(c => c.id === val);
+                                                setCustomerConfig(c => ({
+                                                    ...c,
+                                                    config_id: val,
+                                                    // Заполняем поля из выбранной конфигурации
+                                                    order_config: cfg ? {
+                                                        pricelist_config_id: cfg.pricelist_config_id || null,
+                                                        order_start_row: cfg.order_start_row || 1,
+                                                        oem_col: cfg.oem_col || null,
+                                                        brand_col: cfg.brand_col || null,
+                                                        qty_col: cfg.qty_col || null,
+                                                        name_col: cfg.name_col || null,
+                                                        price_col: cfg.price_col || null,
+                                                        ship_qty_col: cfg.ship_qty_col || null,
+                                                        reject_qty_col: cfg.reject_qty_col || null,
+                                                    } : { ...DEFAULT_NEW_ORDER_CONFIG },
+                                                }));
+                                            }}
+                                            options={(customerOrderConfigs || []).map(cfg => ({
+                                                value: cfg.id,
+                                                label: cfg.pricelist_config_name
+                                                    ? `#${cfg.id} • ${cfg.pricelist_config_name}`
+                                                    : `Конфигурация #${cfg.id}`,
+                                            }))}
+                                        />
+                                    </div>
+                                )}
+
+                                {/* --- Поля конфигурации (для обоих режимов) --- */}
+                                {(customerConfig.config_mode === 'new' || customerConfig.config_id) && (
+                                    <>
+                                        {customerConfig.config_mode === 'new' && (
+                                            <Alert
+                                                type="warning"
+                                                showIcon
+                                                message="Новая конфигурация будет создана и сразу использована для пробной загрузки этого письма."
+                                            />
+                                        )}
+                                        {customerConfig.config_mode === 'existing' && customerConfig.config_id && (
+                                            <Alert
+                                                type="success"
+                                                showIcon
+                                                message="Вы можете изменить настройки столбцов — они будут обновлены в существующей конфигурации."
+                                            />
+                                        )}
+
+                                        {/* Прайс клиента (только для новой конфигурации) */}
+                                        {customerConfig.config_mode === 'new' && (
+                                            <div>
+                                                <div style={{ marginBottom: 4, fontWeight: 500 }}>
+                                                    Прайс клиента <Text type="danger">*</Text>
+                                                </div>
+                                                <Select
+                                                    style={{ width: '100%' }}
+                                                    loading={loadingCustomerSetupConfigs}
+                                                    placeholder="Выберите прайс клиента"
+                                                    value={customerConfig.order_config?.pricelist_config_id}
+                                                    onChange={(val) => setCustomerConfig(c => ({
+                                                        ...c,
+                                                        order_config: {
+                                                            ...c.order_config,
+                                                            pricelist_config_id: val,
+                                                        },
+                                                    }))}
+                                                    options={(customerPricelistConfigs || []).map(cfg => ({
+                                                        value: cfg.id,
+                                                        label: cfg.name || `#${cfg.id}`,
+                                                    }))}
+                                                />
+                                            </div>
+                                        )}
+
+                                        {/* Визуальный выбор колонок */}
+                                        {attachmentPreview && (
+                                            <div>
+                                                <div style={{ marginBottom: 4, fontWeight: 500 }}>
+                                                    Визуальный выбор
+                                                </div>
+                                                <div style={{ marginBottom: 6, fontSize: 12, color: '#8c8c8c' }}>
+                                                    Выберите поле ниже и кликните по заголовку нужной колонки в таблице.
+                                                    Для строки начала кликните по нужной строке в таблице.
+                                                </div>
+                                                <Radio.Group
+                                                    value={activeVisualField}
+                                                    onChange={(e) => setActiveVisualField(e.target.value)}
+                                                    size="small"
+                                                    style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}
+                                                >
+                                                    <Radio.Button value="oem_col">OEM</Radio.Button>
+                                                    <Radio.Button value="brand_col">Бренд</Radio.Button>
+                                                    <Radio.Button value="qty_col">Кол-во</Radio.Button>
+                                                    <Radio.Button value="name_col">Наименование</Radio.Button>
+                                                    <Radio.Button value="price_col">Цена</Radio.Button>
+                                                    <Radio.Button value="ship_qty_col">Отгружено</Radio.Button>
+                                                    <Radio.Button value="reject_qty_col">Отказ</Radio.Button>
+                                                    <Radio.Button value="order_start_row">Строка начала</Radio.Button>
+                                                </Radio.Group>
+                                            </div>
+                                        )}
+
+                                        {/* Предпросмотр файла вложения */}
+                                        {(loadingPreview || attachmentPreview) && (() => {
+                                            const oc = customerConfig.order_config || {};
+                                            const colHighlights = {
+                                                [oc.oem_col]: '#e6fffb',
+                                                [oc.brand_col]: '#f6ffed',
+                                                [oc.qty_col]: '#fff7e6',
+                                                [oc.price_col]: '#f9f0ff',
+                                            };
+                                            const previewColumns = attachmentPreview
+                                                ? Array.from(
+                                                    { length: attachmentPreview.columns },
+                                                    (_, i) => ({
+                                                        title: `Кол. ${i + 1}`,
+                                                        dataIndex: i,
+                                                        key: i,
+                                                        width: 140,
+                                                        ellipsis: true,
+                                                        render: (value) => {
+                                                            const text = value === null || value === undefined
+                                                                ? ''
+                                                                : String(value);
+                                                            return (
+                                                                <Tooltip title={text || '(пусто)'}>
+                                                                    <span
+                                                                        style={{
+                                                                            display: 'block',
+                                                                            whiteSpace: 'nowrap',
+                                                                            overflow: 'hidden',
+                                                                            textOverflow: 'ellipsis',
+                                                                        }}
+                                                                    >
+                                                                        {text || '\u00A0'}
+                                                                    </span>
+                                                                </Tooltip>
+                                                            );
+                                                        },
+                                                        onHeaderCell: () => ({
+                                                            style: colHighlights[i + 1]
+                                                                ? {
+                                                                    background: colHighlights[i + 1],
+                                                                    fontWeight: 700,
+                                                                    cursor: activeVisualField !== 'order_start_row'
+                                                                        ? 'pointer'
+                                                                        : 'default',
+                                                                }
+                                                                : {
+                                                                    cursor: activeVisualField !== 'order_start_row'
+                                                                        ? 'pointer'
+                                                                        : 'default',
+                                                                },
+                                                            onClick: () => {
+                                                                if (activeVisualField === 'order_start_row') {
+                                                                    return;
+                                                                }
+                                                                setCustomerConfig(c => ({
+                                                                    ...c,
+                                                                    order_config: {
+                                                                        ...c.order_config,
+                                                                        [activeVisualField]: i + 1,
+                                                                    },
+                                                                }));
+                                                            },
+                                                        }),
+                                                        onCell: () => ({
+                                                            style: {
+                                                                whiteSpace: 'nowrap',
+                                                                overflow: 'hidden',
+                                                                textOverflow: 'ellipsis',
+                                                                lineHeight: 1.2,
+                                                                paddingTop: 4,
+                                                                paddingBottom: 4,
+                                                                ...(colHighlights[i + 1]
+                                                                    ? { background: colHighlights[i + 1] }
+                                                                    : {}),
+                                                            },
+                                                        }),
+                                                    })
+                                                )
+                                                : [];
+                                            const previewDataSource = attachmentPreview
+                                                ? attachmentPreview.rows.map((row, idx) => ({
+                                                    key: idx,
+                                                    ...Object.fromEntries(row.map((cell, ci) => [ci, cell])),
+                                                }))
+                                                : [];
+                                            const panelLabel = attachmentPreview
+                                                ? `Просмотр файла заказа (${attachmentPreview.filename})`
+                                                : 'Просмотр файла заказа';
+                                            return (
+                                                <Collapse
+                                                    defaultActiveKey={attachmentPreview ? ['preview'] : []}
+                                                    size="small"
+                                                    items={[{
+                                                        key: 'preview',
+                                                        label: panelLabel,
+                                                        children: loadingPreview ? (
+                                                            <div style={{ textAlign: 'center', padding: 16 }}>
+                                                                <Spin size="small" />
+                                                                <span style={{ marginLeft: 8, color: '#8c8c8c' }}>
+                                                                    Загрузка файла...
+                                                                </span>
+                                                            </div>
+                                                        ) : attachmentPreview ? (
+                                                            <>
+                                                                <div style={{ marginBottom: 6, fontSize: 12, color: '#8c8c8c' }}>
+                                                                    Показано {attachmentPreview.rows.length} из {attachmentPreview.total_rows} строк,
+                                                                    {attachmentPreview.columns} столбцов.
+                                                                    Выделение отражает текущие настройки столбцов ниже.
+                                                                    Клик по заголовку задаёт номер колонки для выбранного поля.
+                                                                    Клик по строке задаёт «Строка начала».
+                                                                </div>
+                                                                <Table
+                                                                    size="small"
+                                                                    tableLayout="fixed"
+                                                                    scroll={{ x: true, y: 360 }}
+                                                                    pagination={false}
+                                                                    dataSource={previewDataSource}
+                                                                    columns={previewColumns}
+                                                                    onRow={(_, rowIndex) => {
+                                                                        const index = (rowIndex ?? 0) + 1;
+                                                                        const isActiveStartRow = (
+                                                                            customerConfig.order_config?.order_start_row
+                                                                            === index
+                                                                        );
+                                                                        return {
+                                                                            onClick: () => {
+                                                                                setCustomerConfig(c => ({
+                                                                                    ...c,
+                                                                                    order_config: {
+                                                                                        ...c.order_config,
+                                                                                        order_start_row: index,
+                                                                                    },
+                                                                                }));
+                                                                            },
+                                                                            style: isActiveStartRow
+                                                                                ? { outline: '2px solid #40a9ff' }
+                                                                                : {
+                                                                                    cursor: 'pointer',
+                                                                                },
+                                                                        };
+                                                                    }}
+                                                                    bordered
+                                                                    style={{ fontSize: 12 }}
+                                                                />
+                                                            </>
+                                                        ) : null,
+                                                    }]}
+                                                />
+                                            );
+                                        })()}
+
+                                        {/* Сетка столбцов */}
+                                        <div style={{ background: '#fafafa', border: '1px solid #e8e8e8', borderRadius: 6, padding: 12 }}>
+                                            <div style={{ marginBottom: 8, fontWeight: 600, color: '#555' }}>
+                                                Номера столбцов в файле заказа (начиная с 1)
+                                            </div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                                                {[
+                                                    { key: 'order_start_row', label: 'Строка начала', required: false, min: 1 },
+                                                    { key: 'oem_col', label: 'OEM', required: true },
+                                                    { key: 'brand_col', label: 'Бренд', required: true },
+                                                    { key: 'qty_col', label: 'Кол-во', required: true },
+                                                    { key: 'name_col', label: 'Наименование', required: false },
+                                                    { key: 'price_col', label: 'Цена', required: false },
+                                                    { key: 'ship_qty_col', label: 'Отгружено', required: false },
+                                                    { key: 'reject_qty_col', label: 'Отказ', required: false },
+                                                ].map(({ key, label, required }) => (
+                                                    <div key={key}>
+                                                        <div style={{ marginBottom: 4, fontWeight: 500, fontSize: 12 }}>
+                                                            {label}{required && <Text type="danger"> *</Text>}
+                                                        </div>
+                                                        <InputNumber
+                                                            min={1}
+                                                            style={{ width: '100%' }}
+                                                            value={customerConfig.order_config?.[key]}
+                                                            onChange={(val) => setCustomerConfig(c => ({
+                                                                ...c,
+                                                                order_config: {
+                                                                    ...c.order_config,
+                                                                    [key]: val || null,
+                                                                },
+                                                            }))}
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+
                                 <div
                                     style={{
                                         padding: '10px 12px',
@@ -914,19 +2355,19 @@ const InboxPage = () => {
                                 >
                                     <input
                                         type="checkbox"
-                                        id="save-pattern"
+                                        id="save-pattern-step3"
                                         checked={savePattern}
                                         style={{ marginTop: 3 }}
                                         onChange={(e) => setSavePattern(e.target.checked)}
                                     />
-                                    <label htmlFor="save-pattern" style={{ cursor: 'pointer', margin: 0 }}>
+                                    <label htmlFor="save-pattern-step3" style={{ cursor: 'pointer', margin: 0 }}>
                                         <strong>Запомнить паттерн</strong> — система будет автоматически
                                         определять похожие письма и обрабатывать их без участия менеджера
                                     </label>
                                 </div>
 
                                 <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 8 }}>
-                                    <Button onClick={() => setWizardStep(0)}>← Назад</Button>
+                                    <Button onClick={() => setWizardStep(1)}>← Назад</Button>
                                     <Space>
                                         <Button onClick={() => setRuleModalOpen(false)}>Отмена</Button>
                                         <Button

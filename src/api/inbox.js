@@ -17,6 +17,17 @@ export const getInboxEmails = (params = {}) =>
     api.get('/inbox/emails', { params });
 
 /**
+ * Предпросмотр вложения письма (XLS/XLSX/CSV).
+ * @param {number} emailId
+ * @param {number} attachmentIndex  индекс вложения (0 = первое)
+ * @returns {{ filename, rows, total_rows, columns }}
+ */
+export const getAttachmentPreview = (emailId, attachmentIndex = 0) =>
+    api.get(`/inbox/emails/${emailId}/attachment-preview`, {
+        params: { attachment_index: attachmentIndex },
+    });
+
+/**
  * Детали одного письма.
  */
 export const getInboxEmailDetail = (emailId) =>
@@ -59,7 +70,15 @@ export const getSetupOptions = () =>
  * @param {string} data.rule_type
  * @param {boolean} data.save_pattern
  * @param {Object|null} data.provider_config  { provider_id, subject_pattern, filename_pattern }
- * @param {Object|null} data.customer_config  { customer_id, subject_pattern, filename_pattern }
+ * @param {Object|null} data.customer_config
+ *   {
+ *     customer_id,
+ *     config_mode: 'existing' | 'new',
+ *     config_id,
+ *     subject_pattern,
+ *     filename_pattern,
+ *     order_config
+ *   }
  */
 export const setupEmailRule = (emailId, data) =>
     api.post(`/inbox/emails/${emailId}/setup`, data);
@@ -67,6 +86,17 @@ export const setupEmailRule = (emailId, data) =>
 // ---------------------------------------------------------------------------
 // Паттерны правил
 // ---------------------------------------------------------------------------
+
+/**
+ * Конфигурации поставщика для мастера настройки.
+ * @param {number} providerId
+ * @param {string} ruleType  'price_list' | 'order_reply' | 'document'
+ * @returns {Array} список конфигураций
+ */
+export const getProviderConfigs = (providerId, ruleType) =>
+    api.get(`/inbox/provider/${providerId}/configs`, {
+        params: { rule_type: ruleType },
+    });
 
 /**
  * Список паттернов авто-разметки.

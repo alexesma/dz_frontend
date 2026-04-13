@@ -292,12 +292,27 @@ const CustomerOrderDetailPage = () => {
         let rejectedSum = 0;
         orderItems.forEach((item) => {
             const price = Number(item.requested_price ?? item.matched_price ?? 0);
-            const shipQty = Number(item.ship_qty ?? item.requested_qty ?? 0);
-            const rejectQty = Number(item.reject_qty ?? 0);
-            if (item.status === 'REJECTED') {
-                const qty = rejectQty || Number(item.requested_qty ?? 0);
-                rejectedSum += qty * price;
-            } else if (item.status === 'OWN_STOCK') {
+            const requestedQty = Number(item.requested_qty ?? 0);
+            let rejectQty = Number(item.reject_qty ?? 0);
+            if (!rejectQty && item.status === 'REJECTED') {
+                rejectQty = requestedQty;
+            }
+            if (rejectQty > 0) {
+                rejectedSum += rejectQty * price;
+            }
+
+            let shipQty = 0;
+            if (item.status === 'OWN_STOCK' || item.status === 'SUPPLIER') {
+                if (item.ship_qty != null) {
+                    shipQty = Number(item.ship_qty ?? 0);
+                } else if (rejectQty > 0) {
+                    shipQty = Math.max(requestedQty - rejectQty, 0);
+                } else {
+                    shipQty = requestedQty;
+                }
+            }
+
+            if (item.status === 'OWN_STOCK') {
                 stockSum += shipQty * price;
             } else if (item.status === 'SUPPLIER') {
                 supplierSum += shipQty * price;

@@ -48,7 +48,7 @@ import {
 import { getProviderConfigOptions } from '../api/providers';
 import { getEmailAccounts } from '../api/emailAccounts';
 import { testEmailAccount } from '../api/emailAccounts';
-import { lookupBrands } from '../api/brands';
+import { getBrands, lookupBrands } from '../api/brands';
 import { searchAutopartsByOem } from '../api/autoparts';
 import {
     processCustomerOrderConfigNow,
@@ -85,6 +85,8 @@ const CustomerPage = () => {
     const [orderInboxAccounts, setOrderInboxAccounts] = useState([]);
     const [priceOutAccounts, setPriceOutAccounts] = useState([]);
     const [brandFilterOptions, setBrandFilterOptions] = useState([]);
+    const [markupBrandOptions, setMarkupBrandOptions] = useState([]);
+    const [markupBrandLoading, setMarkupBrandLoading] = useState(false);
     const [brandFilterLoading, setBrandFilterLoading] = useState(false);
     const [autopartFilterOptions, setAutopartFilterOptions] = useState([]);
     const [autopartFilterLoading, setAutopartFilterLoading] = useState(false);
@@ -135,12 +137,51 @@ const CustomerPage = () => {
         return String(value);
     }, []);
 
+    const parseBrandMarkupsFromRows = useCallback((rows) => {
+        const result = {};
+        (rows || []).forEach((row) => {
+            const brand = String(row?.brand || '').trim().toUpperCase();
+            const numeric = Number(String(row?.markup ?? '').replace(',', '.'));
+            if (!brand || !Number.isFinite(numeric) || numeric <= 0) return;
+            result[brand] = numeric;
+        });
+        return result;
+    }, []);
+
+    const formatBrandMarkupsToRows = useCallback((value) => {
+        return Object.entries(value || {})
+            .map(([brand, markup]) => {
+                const numeric = Number(markup);
+                if (!Number.isFinite(numeric) || numeric <= 0) return null;
+                return {
+                    brand: String(brand || '').trim().toUpperCase(),
+                    markup: numeric,
+                };
+            })
+            .filter((item) => item?.brand);
+    }, []);
+
     const mapBrandLookupOptions = useCallback((brands = []) => (
         (brands || []).map((brand) => ({
             value: String(brand.id),
             label: `${brand.name} (ID: ${brand.id})`,
         }))
     ), []);
+
+    const mapMarkupBrandOptions = useCallback((brands = []) => {
+        const prepared = (brands || [])
+            .filter((brand) => brand?.name)
+            .map((brand) => ({
+                value: String(brand.name).toUpperCase(),
+                label: brand.name,
+                main_brand: Boolean(brand.main_brand),
+            }));
+        const hasMainBrands = prepared.some((item) => item.main_brand);
+        return prepared
+            .filter((item) => (hasMainBrands ? item.main_brand : true))
+            .map(({ value, label }) => ({ value, label }))
+            .sort((a, b) => a.label.localeCompare(b.label, 'ru'));
+    }, []);
 
     const mergeOptionsByValue = useCallback((current = [], incoming = []) => {
         const merged = new Map();
@@ -322,6 +363,28 @@ const CustomerPage = () => {
             mounted = false;
         };
     }, [mapBrandLookupOptions, mergeOptionsByValue]);
+
+    useEffect(() => {
+        let mounted = true;
+        const loadMarkupBrands = async () => {
+            setMarkupBrandLoading(true);
+            try {
+                const { data } = await getBrands();
+                if (!mounted) return;
+                setMarkupBrandOptions(mapMarkupBrandOptions(data || []));
+            } catch (err) {
+                console.error('Load markup brand options failed:', err);
+            } finally {
+                if (mounted) {
+                    setMarkupBrandLoading(false);
+                }
+            }
+        };
+        loadMarkupBrands();
+        return () => {
+            mounted = false;
+        };
+    }, [mapMarkupBrandOptions]);
 
     const handleBrandFilterSearch = useCallback((rawValue) => {
         const value = String(rawValue || '').trim();
@@ -1083,6 +1146,7 @@ const CustomerPage = () => {
             provider_config_id: values.provider_config_id,
             enabled: values.enabled ?? true,
             markup: normalizeSourceMarkup(values.markup),
+            brand_markups: parseBrandMarkupsFromRows(values.brand_markups),
             brand_filters: values.brand_filter_type
                 ? {
                     type: values.brand_filter_type,
@@ -1139,10 +1203,19 @@ const CustomerPage = () => {
     const handleEditSource = async (source) => {
         setEditingSource(source);
         await ensureBrandFilterOptionsByIds(source.brand_filters?.brands || []);
+        const brandMarkupsRows = formatBrandMarkupsToRows(source.brand_markups || {});
+        setMarkupBrandOptions((prev) => mergeOptionsByValue(
+            prev,
+            brandMarkupsRows.map((item) => ({
+                value: item.brand,
+                label: item.brand,
+            }))
+        ));
         sourceForm.setFieldsValue({
             provider_config_id: source.provider_config_id,
             enabled: source.enabled,
             markup: normalizeSourceMarkup(source.markup),
+            brand_markups: brandMarkupsRows,
             brand_filter_type: source.brand_filters?.type || null,
             brand_ids: (source.brand_filters?.brands || []).map((v) => String(v)),
             position_filter_type: source.position_filters?.type || null,
@@ -2119,7 +2192,23 @@ const CustomerPage = () => {
                                 title: 'Наценка',
                                 dataIndex: 'markup',
                                 key: 'markup',
-                                render: (value) => formatSourceMarkup(value),
+                                render: (value, record) => {
+                                    const brandEntries = Object.entries(
+                                        record?.brand_markups || {}
+                                    );
+                                    return (
+                                        <div>
+                                            <div>{formatSourceMarkup(value)}</div>
+                                            {brandEntries.length > 0 && (
+                                                <div style={{ fontSize: 12, color: '#666' }}>
+                                                    {brandEntries
+                                                        .map(([brand, markup]) => `${brand}=${markup}`)
+                                                        .join(', ')}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                },
                             },
                             {
                                 title: 'Статус',
@@ -2304,6 +2393,71 @@ const CustomerPage = () => {
                                 />
                             </Form.Item>
                         </div>
+
+                        <Divider>Наценка по брендам</Divider>
+                        <Form.List name="brand_markups">
+                            {(fields, { add, remove }) => (
+                                <>
+                                    {fields.map((field) => (
+                                        <div
+                                            key={field.key}
+                                            style={{
+                                                marginBottom: 10,
+                                                display: 'flex',
+                                                gap: 8,
+                                                alignItems: 'flex-end',
+                                                flexWrap: 'wrap',
+                                            }}
+                                        >
+                                            <Form.Item
+                                                name={[field.name, 'brand']}
+                                                label="Бренд"
+                                                rules={[{ required: true, message: 'Выберите бренд' }]}
+                                                style={{ marginBottom: 0, flex: '1 1 260px', minWidth: 220 }}
+                                            >
+                                                <Select
+                                                    showSearch
+                                                    optionFilterProp="label"
+                                                    placeholder="Бренд"
+                                                    options={markupBrandOptions}
+                                                    loading={markupBrandLoading}
+                                                    style={{ width: '100%' }}
+                                                />
+                                            </Form.Item>
+                                            <Form.Item
+                                                name={[field.name, 'markup']}
+                                                label="Нац."
+                                                rules={[{ required: true, message: 'Укажите наценку' }]}
+                                                style={{ marginBottom: 0, width: 140 }}
+                                            >
+                                                <InputNumber
+                                                    min={0.01}
+                                                    step={0.1}
+                                                    style={{ width: '100%' }}
+                                                    placeholder="10 / 1.1"
+                                                />
+                                            </Form.Item>
+                                            <Button
+                                                danger
+                                                size="small"
+                                                icon={<DeleteOutlined />}
+                                                onClick={() => remove(field.name)}
+                                            >
+                                                Удал.
+                                            </Button>
+                                        </div>
+                                    ))}
+                                    <Button type="dashed" onClick={() => add()}>
+                                        + Бренд
+                                    </Button>
+                                    <div>
+                                        <Text type="secondary">
+                                            Наценка применяется для выбранного бренда и его синонимов.
+                                        </Text>
+                                    </div>
+                                </>
+                            )}
+                        </Form.List>
 
                         <Form.Item>
                             <Space wrap>
