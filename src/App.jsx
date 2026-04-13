@@ -34,6 +34,7 @@ import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
 import AdminUsers from './components/AdminUsers';
 import WatchlistPage from './components/WatchlistPage';
+import InboxPage from './components/InboxPage';
 import { AuthProvider } from './context/AuthContext';
 import useAuth from './context/useAuth';
 
@@ -114,6 +115,7 @@ const AppRoutes = () => (
         <Route path="/admin/brands" element={<RequireAdmin><BrandManagementPage /></RequireAdmin>} />
         <Route path="/admin/order-status-mappings" element={<RequireAdmin><OrderStatusMappingsPage /></RequireAdmin>} />
         <Route path="/watchlist" element={<RequireAuth><WatchlistPage /></RequireAuth>} />
+        <Route path="/inbox" element={<RequireAuth><InboxPage /></RequireAuth>} />
     </Routes>
 );
 

@@ -15,6 +15,7 @@ import {
     DollarOutlined,
     MenuOutlined,
     TagsOutlined,
+    MailOutlined,
 } from '@ant-design/icons';
 import useAuth from '../context/useAuth';
 
@@ -62,6 +63,7 @@ const Sidebar = () => {
         if (path.startsWith('/admin/brands')) return 'admin-brands';
         if (path.startsWith('/admin/order-status-mappings')) return 'admin-order-status-mappings';
         if (path.startsWith('/admin/monitor')) return 'admin-monitor';
+        if (path.startsWith('/inbox')) return 'inbox';
         return '1';
     })();
 
@@ -140,6 +142,9 @@ const Sidebar = () => {
             </Menu.SubMenu>
             <Menu.Item key="watchlist" icon={<EyeOutlined />}>
                 <Link to="/watchlist">Отслеживание позиций</Link>
+            </Menu.Item>
+            <Menu.Item key="inbox" icon={<MailOutlined />}>
+                <Link to="/inbox">Входящие письма</Link>
             </Menu.Item>
             {user.role === 'admin' && (
                 <Menu.SubMenu
