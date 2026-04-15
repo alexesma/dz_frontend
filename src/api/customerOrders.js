@@ -39,6 +39,9 @@ export const createSupplierReceipt = (payload) =>
 export const getSupplierReceipts = (params) =>
     api.get('/customer-orders/supplier-receipts/list', { params });
 
+export const getSupplierReceipt = (receiptId) =>
+    api.get(`/customer-orders/supplier-receipts/${receiptId}`);
+
 export const postSupplierReceipt = (receiptId) =>
     api.post(`/customer-orders/supplier-receipts/${receiptId}/post`);
 
