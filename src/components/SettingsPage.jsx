@@ -85,6 +85,11 @@ const SettingsPage = () => {
             title: 'Проверка заказов клиентов',
             description: 'Проверяет входящую почту с заказами клиентов.',
         },
+        supplier_orders_send: {
+            title: 'Авто-отправка заказов поставщикам',
+            description:
+                'В выбранное время (МСК) отправляет новые заказы поставщикам из заказов клиентов. Укажите хотя бы одно время. Параллельно остается доступна ручная отправка.',
+        },
     };
 
     useEffect(() => {
@@ -448,7 +453,7 @@ const SettingsPage = () => {
                 </div>
             </Card>
 
-            <Card title="Расписание уведомлений" style={{ marginTop: 16 }}>
+            <Card title="Расписание регламентов" style={{ marginTop: 16 }}>
                 {schedulerLoading && (
                     <Text type="secondary">Загрузка настроек...</Text>
                 )}
