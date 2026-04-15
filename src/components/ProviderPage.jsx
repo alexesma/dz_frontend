@@ -1708,7 +1708,7 @@ const ProviderPage = () => {
                         name="is_vat_payer"
                         label="Плательщик НДС"
                         valuePropName="checked"
-                        extra="Если включено, НДС 20% будет применяться к документам поступления"
+                        extra="Если включено, НДС 22% будет применяться к документам поступления"
                     >
                         <Switch />
                     </Form.Item>

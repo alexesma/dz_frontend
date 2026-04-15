@@ -32,7 +32,7 @@ import {
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
-const VAT_RATE = 0.20;
+const VAT_RATE = 0.22;
 
 const getDefaultDateRange = () => {
     const today = dayjs();
@@ -378,7 +378,7 @@ const IncomingSupplierDocumentsPage = () => {
         },
         ...(isVatPayer ? [
             {
-                title: 'НДС 20%',
+                title: 'НДС 22%',
                 key: 'vat',
                 width: 110,
                 align: 'right',
@@ -634,7 +634,7 @@ const IncomingSupplierDocumentsPage = () => {
                                 </Descriptions.Item>
                                 <Descriptions.Item label="НДС">
                                     {isVatPayer
-                                        ? <Tag color="blue">20%</Tag>
+                                        ? <Tag color="blue">22%</Tag>
                                         : <Tag>Без НДС</Tag>}
                                 </Descriptions.Item>
                                 <Descriptions.Item label="Создан">
