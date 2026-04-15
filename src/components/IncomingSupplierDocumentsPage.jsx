@@ -3,6 +3,7 @@ import React, {
 } from 'react';
 import dayjs from 'dayjs';
 import {
+    AutoComplete,
     Button,
     Card,
     Col,
@@ -33,6 +34,7 @@ import {
     SaveOutlined,
 } from '@ant-design/icons';
 
+import { searchAutopartsByOem } from '../api/autoparts';
 import { getAllProviders } from '../api/providers';
 import {
     addSupplierReceiptItems,
@@ -195,6 +197,94 @@ const LabelModal = ({ open, receipt, onClose }) => {
                 </div>
             </Modal>
         </>
+    );
+};
+
+// ─── Article search cell ───────────────────────────────────────────────────────
+const ArticleSearchCell = ({ currentOem, currentBrand, currentName, onSelect }) => {
+    const [searching, setSearching] = useState(false);
+    const [query, setQuery] = useState('');
+    const [options, setOptions] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const debounceRef = useRef(null);
+
+    const handleSearch = useCallback((val) => {
+        setQuery(val);
+        clearTimeout(debounceRef.current);
+        if (!val || val.length < 2) { setOptions([]); return; }
+        debounceRef.current = setTimeout(async () => {
+            setLoading(true);
+            try {
+                const res = await searchAutopartsByOem(val, 20);
+                setOptions((res.data || []).map((part) => ({
+                    value: String(part.id),
+                    label: (
+                        <div style={{ lineHeight: 1.4 }}>
+                            <span style={{ fontWeight: 600, fontSize: 12 }}>{part.oem_number}</span>
+                            <span style={{ color: '#888', fontSize: 11, marginLeft: 6 }}>{part.brand}</span>
+                            <br />
+                            <span style={{ fontSize: 11, color: '#555' }}>{part.name || '—'}</span>
+                        </div>
+                    ),
+                    data: part,
+                })));
+            } catch {
+                setOptions([]);
+            } finally {
+                setLoading(false);
+            }
+        }, 300);
+    }, []);
+
+    const handleSelect = (_, option) => {
+        onSelect(option.data);
+        setSearching(false);
+        setQuery('');
+        setOptions([]);
+    };
+
+    if (searching) {
+        return (
+            <AutoComplete
+                autoFocus
+                size="small"
+                style={{ width: '100%', minWidth: 200 }}
+                options={options}
+                value={query}
+                placeholder="Введите артикул..."
+                onChange={handleSearch}
+                onSelect={handleSelect}
+                onBlur={() => { setSearching(false); setQuery(''); setOptions([]); }}
+                notFoundContent={loading
+                    ? <Spin size="small" />
+                    : query.length >= 2 ? 'Не найдено' : 'Введите от 2 символов'}
+                popupMatchSelectWidth={320}
+            />
+        );
+    }
+
+    return (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+            <div style={{ flex: 1, lineHeight: 1.3, minWidth: 0 }}>
+                <div style={{ fontWeight: 500, fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {currentOem || '—'}
+                    {currentBrand && (
+                        <span style={{ color: '#888', marginLeft: 6, fontSize: 11 }}>{currentBrand}</span>
+                    )}
+                </div>
+                <div style={{ fontSize: 11, color: '#555', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {currentName || '—'}
+                </div>
+            </div>
+            <Button
+                type="text"
+                size="small"
+                icon={<EditOutlined style={{ fontSize: 11 }} />}
+                onClick={() => setSearching(true)}
+                style={{ flexShrink: 0, padding: '0 2px' }}
+                title="Изменить позицию"
+            />
+        </div>
     );
 };
 
@@ -715,16 +805,19 @@ const IncomingSupplierDocumentsPage = () => {
         return [
             { title: '№', key: 'idx', width: 45, align: 'center', render: (_, __, i) => i + 1 },
             {
-                title: 'Артикул', key: 'oem', width: 120,
-                render: (_, row) => mkInput('oem_number', row.id, 'Артикул'),
-            },
-            {
-                title: 'Бренд', key: 'brand', width: 100,
-                render: (_, row) => mkInput('brand_name', row.id, 'Бренд'),
-            },
-            {
-                title: 'Наименование', key: 'name',
-                render: (_, row) => mkInput('autopart_name', row.id, 'Наименование'),
+                title: 'Позиция', key: 'position', width: 260,
+                render: (_, row) => (
+                    <ArticleSearchCell
+                        currentOem={editedItems[row.id]?.oem_number ?? row.oem_number}
+                        currentBrand={editedItems[row.id]?.brand_name ?? row.brand_name}
+                        currentName={editedItems[row.id]?.autopart_name ?? row.autopart_name}
+                        onSelect={(part) => {
+                            setItemField(row.id, 'oem_number', part.oem_number);
+                            setItemField(row.id, 'brand_name', part.brand);
+                            setItemField(row.id, 'autopart_name', part.name || '');
+                        }}
+                    />
+                ),
             },
             {
                 title: 'Кол-во', key: 'qty', width: 90,
@@ -771,27 +864,18 @@ const IncomingSupplierDocumentsPage = () => {
     const newItemColumns = (isVatPayer) => [
         { title: '№', key: 'idx', width: 45, align: 'center', render: () => <Text type="secondary">+</Text> },
         {
-            title: 'Артикул', key: 'oem', width: 120,
+            title: 'Позиция', key: 'position', width: 260,
             render: (_, row) => (
-                <Input size="small" value={row.oem_number}
-                    placeholder="Артикул"
-                    onChange={(e) => updateNewItem(row._key, 'oem_number', e.target.value)} />
-            ),
-        },
-        {
-            title: 'Бренд', key: 'brand', width: 100,
-            render: (_, row) => (
-                <Input size="small" value={row.brand_name}
-                    placeholder="Бренд"
-                    onChange={(e) => updateNewItem(row._key, 'brand_name', e.target.value)} />
-            ),
-        },
-        {
-            title: 'Наименование', key: 'name',
-            render: (_, row) => (
-                <Input size="small" value={row.autopart_name}
-                    placeholder="Наименование"
-                    onChange={(e) => updateNewItem(row._key, 'autopart_name', e.target.value)} />
+                <ArticleSearchCell
+                    currentOem={row.oem_number}
+                    currentBrand={row.brand_name}
+                    currentName={row.autopart_name}
+                    onSelect={(part) => {
+                        updateNewItem(row._key, 'oem_number', part.oem_number);
+                        updateNewItem(row._key, 'brand_name', part.brand);
+                        updateNewItem(row._key, 'autopart_name', part.name || '');
+                    }}
+                />
             ),
         },
         {
@@ -1052,23 +1136,26 @@ const IncomingSupplierDocumentsPage = () => {
                                 pagination={false}
                                 scroll={{ x: isVatPayer ? 1600 : 1400 }}
                                 bordered
-                                summary={() => (
-                                    <Table.Summary.Row style={{ fontWeight: 600 }}>
-                                        <Table.Summary.Cell index={0} colSpan={4} align="right">
-                                            Итого:
-                                        </Table.Summary.Cell>
-                                        <Table.Summary.Cell index={4} align="right">{qty}</Table.Summary.Cell>
-                                        <Table.Summary.Cell index={5} />
-                                        <Table.Summary.Cell index={6} align="right">{formatMoney(sum)}</Table.Summary.Cell>
-                                        {isVatPayer && (
-                                            <Table.Summary.Cell index={7} align="right">{formatMoney(vat)}</Table.Summary.Cell>
-                                        )}
-                                        <Table.Summary.Cell index={isVatPayer ? 8 : 7} align="right">
-                                            {formatMoney(total)}
-                                        </Table.Summary.Cell>
-                                        <Table.Summary.Cell index={colSpanBase} colSpan={editMode ? 4 : 3} />
-                                    </Table.Summary.Row>
-                                )}
+                                summary={() => {
+                                    if (editMode) return null;
+                                    return (
+                                        <Table.Summary.Row style={{ fontWeight: 600 }}>
+                                            <Table.Summary.Cell index={0} colSpan={4} align="right">
+                                                Итого:
+                                            </Table.Summary.Cell>
+                                            <Table.Summary.Cell index={4} align="right">{qty}</Table.Summary.Cell>
+                                            <Table.Summary.Cell index={5} />
+                                            <Table.Summary.Cell index={6} align="right">{formatMoney(sum)}</Table.Summary.Cell>
+                                            {isVatPayer && (
+                                                <Table.Summary.Cell index={7} align="right">{formatMoney(vat)}</Table.Summary.Cell>
+                                            )}
+                                            <Table.Summary.Cell index={isVatPayer ? 8 : 7} align="right">
+                                                {formatMoney(total)}
+                                            </Table.Summary.Cell>
+                                            <Table.Summary.Cell index={colSpanBase} colSpan={3} />
+                                        </Table.Summary.Row>
+                                    );
+                                }}
                             />
 
                             {/* New items in edit mode */}
