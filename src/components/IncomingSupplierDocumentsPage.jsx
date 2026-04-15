@@ -323,6 +323,24 @@ const IncomingSupplierDocumentsPage = () => {
     const [createVisible, setCreateVisible] = useState(false);
     const [createForm] = Form.useForm();
     const [createSaving, setCreateSaving] = useState(false);
+    const [createItems, setCreateItems] = useState([]);
+    const createItemKeyRef = useRef(0);
+
+    const addCreateItem = useCallback(() => {
+        setCreateItems((prev) => [...prev, {
+            _key: createItemKeyRef.current++,
+            autopart_id: null, oem_number: '', brand_name: '', autopart_name: '',
+            received_quantity: 1, price: null, comment: '',
+        }]);
+    }, []);
+
+    const updateCreateItem = useCallback((key, field, value) => {
+        setCreateItems((prev) => prev.map((it) => (it._key === key ? { ...it, [field]: value } : it)));
+    }, []);
+
+    const removeCreateItem = useCallback((key) => {
+        setCreateItems((prev) => prev.filter((it) => it._key !== key));
+    }, []);
 
     // ── load providers ──────────────────────────────────────────────────────
     useEffect(() => {
@@ -463,6 +481,7 @@ const IncomingSupplierDocumentsPage = () => {
             // save changed items
             for (const [idStr, fields] of Object.entries(editedItems)) {
                 await updateSupplierReceiptItem(Number(idStr), {
+                    autopart_id: fields.autopart_id ?? null,
                     oem_number: fields.oem_number || null,
                     brand_name: fields.brand_name || null,
                     autopart_name: fields.autopart_name || null,
@@ -482,6 +501,7 @@ const IncomingSupplierDocumentsPage = () => {
                     detailReceipt.id,
                     newItems.map((item) => ({
                         supplier_order_item_id: item.supplier_order_item_id ?? null,
+                        autopart_id: item.autopart_id ?? null,
                         oem_number: item.oem_number || null,
                         brand_name: item.brand_name || null,
                         autopart_name: item.autopart_name || null,
@@ -575,7 +595,8 @@ const IncomingSupplierDocumentsPage = () => {
         setCreateSaving(true);
         try {
             const values = await createForm.validateFields();
-            const items = (values.items || []).map((item) => ({
+            const items = createItems.map((item) => ({
+                autopart_id: item.autopart_id ?? null,
                 oem_number: item.oem_number || null,
                 brand_name: item.brand_name || null,
                 autopart_name: item.autopart_name || null,
@@ -595,6 +616,7 @@ const IncomingSupplierDocumentsPage = () => {
             const { data } = await createManualSupplierReceipt(payload);
             message.success(`Документ #${data.id} создан`);
             createForm.resetFields();
+            setCreateItems([]);
             setCreateVisible(false);
             fetchDocuments();
             handleOpenDetail(data.id);
@@ -812,6 +834,7 @@ const IncomingSupplierDocumentsPage = () => {
                         currentBrand={editedItems[row.id]?.brand_name ?? row.brand_name}
                         currentName={editedItems[row.id]?.autopart_name ?? row.autopart_name}
                         onSelect={(part) => {
+                            setItemField(row.id, 'autopart_id', part.id);
                             setItemField(row.id, 'oem_number', part.oem_number);
                             setItemField(row.id, 'brand_name', part.brand);
                             setItemField(row.id, 'autopart_name', part.name || '');
@@ -871,6 +894,7 @@ const IncomingSupplierDocumentsPage = () => {
                     currentBrand={row.brand_name}
                     currentName={row.autopart_name}
                     onSelect={(part) => {
+                        updateNewItem(row._key, 'autopart_id', part.id);
                         updateNewItem(row._key, 'oem_number', part.oem_number);
                         updateNewItem(row._key, 'brand_name', part.brand);
                         updateNewItem(row._key, 'autopart_name', part.name || '');
@@ -972,6 +996,7 @@ const IncomingSupplierDocumentsPage = () => {
                             icon={<PlusOutlined />}
                             onClick={() => {
                                 createForm.resetFields();
+                                setCreateItems([]);
                                 setCreateVisible(true);
                             }}
                         >
@@ -1256,7 +1281,7 @@ const IncomingSupplierDocumentsPage = () => {
             {/* ─── Create document modal ───────────────────────────────────── */}
             <Modal
                 open={createVisible}
-                onCancel={() => setCreateVisible(false)}
+                onCancel={() => { setCreateVisible(false); setCreateItems([]); }}
                 title="Создать документ поступления"
                 footer={
                     <Space>
@@ -1304,97 +1329,73 @@ const IncomingSupplierDocumentsPage = () => {
                     </Row>
 
                     <Text strong>Позиции:</Text>
-                    <Form.List name="items">
-                        {(fields, { add, remove }) => (
-                            <>
-                                {fields.length > 0 && (
-                                    <Table
-                                        size="small"
-                                        dataSource={fields.map((f) => ({ ...f, key: f.key }))}
-                                        pagination={false}
-                                        style={{ marginTop: 8 }}
-                                        scroll={{ x: 800 }}
-                                        columns={[
-                                            {
-                                                title: 'Артикул', key: 'oem', width: 130,
-                                                render: (_, f) => (
-                                                    <Form.Item name={[f.name, 'oem_number']}
-                                                        style={{ margin: 0 }}>
-                                                        <Input size="small" placeholder="Артикул" />
-                                                    </Form.Item>
-                                                ),
-                                            },
-                                            {
-                                                title: 'Бренд', key: 'brand', width: 110,
-                                                render: (_, f) => (
-                                                    <Form.Item name={[f.name, 'brand_name']}
-                                                        style={{ margin: 0 }}>
-                                                        <Input size="small" placeholder="Бренд" />
-                                                    </Form.Item>
-                                                ),
-                                            },
-                                            {
-                                                title: 'Наименование', key: 'name',
-                                                render: (_, f) => (
-                                                    <Form.Item name={[f.name, 'autopart_name']}
-                                                        style={{ margin: 0 }}>
-                                                        <Input size="small" placeholder="Наименование" />
-                                                    </Form.Item>
-                                                ),
-                                            },
-                                            {
-                                                title: 'Кол-во', key: 'qty', width: 90,
-                                                render: (_, f) => (
-                                                    <Form.Item name={[f.name, 'received_quantity']}
-                                                        style={{ margin: 0 }}
-                                                        rules={[{ required: true }]}>
-                                                        <InputNumber size="small" min={0}
-                                                            style={{ width: '100%' }} />
-                                                    </Form.Item>
-                                                ),
-                                            },
-                                            {
-                                                title: 'Цена', key: 'price', width: 100,
-                                                render: (_, f) => (
-                                                    <Form.Item name={[f.name, 'price']}
-                                                        style={{ margin: 0 }}>
-                                                        <InputNumber size="small" min={0}
-                                                            style={{ width: '100%' }} />
-                                                    </Form.Item>
-                                                ),
-                                            },
-                                            {
-                                                title: 'Примечание', key: 'comment', width: 150,
-                                                render: (_, f) => (
-                                                    <Form.Item name={[f.name, 'comment']}
-                                                        style={{ margin: 0 }}>
-                                                        <Input size="small" placeholder="Примечание" />
-                                                    </Form.Item>
-                                                ),
-                                            },
-                                            {
-                                                title: '', key: 'del', width: 40,
-                                                render: (_, f) => (
-                                                    <Button size="small" type="text" danger
-                                                        icon={<DeleteOutlined />}
-                                                        onClick={() => remove(f.name)} />
-                                                ),
-                                            },
-                                        ]}
-                                    />
-                                )}
-                                <Button
-                                    type="dashed"
-                                    block
-                                    icon={<PlusOutlined />}
-                                    onClick={() => add({ received_quantity: 1 })}
-                                    style={{ marginTop: 8 }}
-                                >
-                                    Добавить позицию
-                                </Button>
-                            </>
-                        )}
-                    </Form.List>
+                    {createItems.length > 0 && (
+                        <Table
+                            size="small"
+                            dataSource={createItems.map((r) => ({ ...r, key: r._key }))}
+                            pagination={false}
+                            style={{ marginTop: 8 }}
+                            scroll={{ x: 800 }}
+                            columns={[
+                                {
+                                    title: 'Позиция', key: 'position', width: 260,
+                                    render: (_, row) => (
+                                        <ArticleSearchCell
+                                            currentOem={row.oem_number}
+                                            currentBrand={row.brand_name}
+                                            currentName={row.autopart_name}
+                                            onSelect={(part) => {
+                                                updateCreateItem(row._key, 'autopart_id', part.id);
+                                                updateCreateItem(row._key, 'oem_number', part.oem_number);
+                                                updateCreateItem(row._key, 'brand_name', part.brand);
+                                                updateCreateItem(row._key, 'autopart_name', part.name || '');
+                                            }}
+                                        />
+                                    ),
+                                },
+                                {
+                                    title: 'Кол-во', key: 'qty', width: 90,
+                                    render: (_, row) => (
+                                        <InputNumber size="small" min={0} value={row.received_quantity}
+                                            onChange={(v) => updateCreateItem(row._key, 'received_quantity', v)}
+                                            style={{ width: '100%' }} />
+                                    ),
+                                },
+                                {
+                                    title: 'Цена', key: 'price', width: 100,
+                                    render: (_, row) => (
+                                        <InputNumber size="small" min={0} value={row.price}
+                                            onChange={(v) => updateCreateItem(row._key, 'price', v)}
+                                            style={{ width: '100%' }} />
+                                    ),
+                                },
+                                {
+                                    title: 'Примечание', key: 'comment', width: 150,
+                                    render: (_, row) => (
+                                        <Input size="small" value={row.comment} placeholder="Примечание"
+                                            onChange={(e) => updateCreateItem(row._key, 'comment', e.target.value)} />
+                                    ),
+                                },
+                                {
+                                    title: '', key: 'del', width: 40,
+                                    render: (_, row) => (
+                                        <Button size="small" type="text" danger
+                                            icon={<DeleteOutlined />}
+                                            onClick={() => removeCreateItem(row._key)} />
+                                    ),
+                                },
+                            ]}
+                        />
+                    )}
+                    <Button
+                        type="dashed"
+                        block
+                        icon={<PlusOutlined />}
+                        onClick={addCreateItem}
+                        style={{ marginTop: 8 }}
+                    >
+                        Добавить позицию
+                    </Button>
                 </Form>
             </Modal>
         </div>
