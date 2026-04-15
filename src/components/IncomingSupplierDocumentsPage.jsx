@@ -390,17 +390,18 @@ const IncomingSupplierDocumentsPage = () => {
             if (newItems.length > 0) {
                 await addSupplierReceiptItems(
                     detailReceipt.id,
-                    newItems.map(({ _key, ...rest }) => ({
-                        ...rest,
-                        oem_number: rest.oem_number || null,
-                        brand_name: rest.brand_name || null,
-                        autopart_name: rest.autopart_name || null,
-                        price: rest.price != null ? rest.price : null,
-                        total_price_with_vat: rest.total_price_with_vat != null
-                            ? rest.total_price_with_vat : null,
-                        gtd_code: rest.gtd_code || null,
-                        country_name: rest.country_name || null,
-                        comment: rest.comment || null,
+                    newItems.map((item) => ({
+                        supplier_order_item_id: item.supplier_order_item_id ?? null,
+                        oem_number: item.oem_number || null,
+                        brand_name: item.brand_name || null,
+                        autopart_name: item.autopart_name || null,
+                        received_quantity: item.received_quantity,
+                        price: item.price != null ? item.price : null,
+                        total_price_with_vat: item.total_price_with_vat != null
+                            ? item.total_price_with_vat : null,
+                        gtd_code: item.gtd_code || null,
+                        country_name: item.country_name || null,
+                        comment: item.comment || null,
                     })),
                 );
             }
@@ -478,16 +479,6 @@ const IncomingSupplierDocumentsPage = () => {
         }
     };
 
-    const confirmDeleteReceipt = (receiptId) => {
-        Modal.confirm({
-            title: 'Удалить документ?',
-            content: 'Это действие необратимо.',
-            okText: 'Удалить',
-            okButtonProps: { danger: true },
-            cancelText: 'Отмена',
-            onOk: () => performDelete(receiptId),
-        });
-    };
 
     // ── create manual receipt ───────────────────────────────────────────────
     const handleCreateSubmit = async () => {
