@@ -25,6 +25,7 @@ export const getInboxEmails = (params = {}) =>
 export const getAttachmentPreview = (emailId, attachmentIndex = 0) =>
     api.get(`/inbox/emails/${emailId}/attachment-preview`, {
         params: { attachment_index: attachmentIndex },
+        timeout: 120000,
     });
 
 /**
@@ -61,7 +62,7 @@ export const assignRule = (emailId, data) =>
  * @returns {{ providers: [{id, name, email}], customers: [{id, name}] }}
  */
 export const getSetupOptions = () =>
-    api.get('/inbox/setup-options');
+    api.get('/inbox/setup-options', { timeout: 120000 });
 
 /**
  * Мастер настройки: назначить правило + привязать к конфигам системы.
