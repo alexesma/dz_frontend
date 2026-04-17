@@ -54,6 +54,12 @@ const RegisterPage = () => {
                     scrollToFirstError
                 >
                     <Form.Item
+                        label="Имя"
+                        name="name"
+                    >
+                        <Input placeholder="Необязательно" />
+                    </Form.Item>
+                    <Form.Item
                         label="Email"
                         name="email"
                         rules={[{ required: true, message: 'Введите email' }]}
