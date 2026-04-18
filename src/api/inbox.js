@@ -53,6 +53,17 @@ export const fetchInboxEmails = (data) =>
 export const assignRule = (emailId, data) =>
     api.post(`/inbox/emails/${emailId}/rule`, data);
 
+/**
+ * Принудительно обработать письмо по уже назначенному правилу.
+ * @param {number} emailId
+ * @param {Object} data
+ * @param {boolean} data.allow_reprocess
+ */
+export const forceProcessInboxEmail = (emailId, data = {}) =>
+    api.post(`/inbox/emails/${emailId}/force-process`, {
+        allow_reprocess: data.allow_reprocess ?? true,
+    });
+
 // ---------------------------------------------------------------------------
 // Мастер настройки
 // ---------------------------------------------------------------------------

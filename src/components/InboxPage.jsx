@@ -37,6 +37,7 @@ import {
 } from '@ant-design/icons';
 import { getEmailAccounts } from '../api/emailAccounts';
 import {
+    forceProcessInboxEmail,
     fetchInboxEmails,
     getAttachmentPreview,
     getInboxEmailDetail,
@@ -154,6 +155,7 @@ const RULE_LABELS = Object.fromEntries(
 const RULES_WITH_PROVIDER = new Set(['price_list', 'order_reply', 'document', 'shipment_notice']);
 // Правила, требующие выбора клиента на шаге 2
 const RULES_WITH_CUSTOMER = new Set(['customer_order']);
+const FORCE_PROCESS_RULES = new Set(['order_reply', 'customer_order', 'document']);
 // Правила с расширенным шагом 2 (и те и другие)
 const RULES_NEEDS_CONFIG = new Set([...RULES_WITH_PROVIDER, ...RULES_WITH_CUSTOMER]);
 
@@ -210,6 +212,7 @@ const InboxPage = () => {
     const [ruleType, setRuleType] = useState('price_list');
     const [savePattern, setSavePattern] = useState(true);
     const [assigningRule, setAssigningRule] = useState(false);
+    const [forceProcessingIds, setForceProcessingIds] = useState({});
 
     // Данные для шага 2
     const [setupOptions, setSetupOptions] = useState({ providers: [], customers: [] });
@@ -564,6 +567,64 @@ const InboxPage = () => {
         }
     };
 
+    const handleForceProcess = async (email, e, allowReprocess) => {
+        e.stopPropagation();
+        if (!email?.id) return;
+        const mode = allowReprocess ? 'reprocess' : 'check';
+
+        setForceProcessingIds((prev) => ({ ...prev, [email.id]: mode }));
+        try {
+            const { data } = await forceProcessInboxEmail(email.id, {
+                allow_reprocess: allowReprocess,
+            });
+            const result = data?.processing_result || {};
+            const status = String(result.status || '');
+            const triggeredCount = (result.triggered_config_ids || []).length;
+            const failedCount = (result.failed_configs || []).length;
+            const reason = result.reason || result.note || '';
+            const missingConfig = status === 'missing_config';
+            const partial = status === 'partially_triggered';
+            const failed = status === 'failed';
+            const prefix = allowReprocess ? 'Повторная обработка' : 'Проверка';
+
+            if (data?.processing_error) {
+                message.warning(
+                    `${prefix}: выполнено с ошибками: ${data.processing_error}`
+                );
+            } else if (missingConfig) {
+                message.warning(
+                    reason || 'Не найден подходящий активный конфиг. Проверьте настройки.'
+                );
+            } else if (failed) {
+                message.error(
+                    reason || `${prefix}: не удалось выполнить обработку`
+                );
+            } else if (partial) {
+                message.warning(
+                    `${prefix}: частично выполнено: успешно ${triggeredCount}, `
+                    + `ошибок ${failedCount}`
+                );
+            } else {
+                message.success(
+                    `${prefix}: запущено по конфигурациям ${triggeredCount}`
+                );
+            }
+            await loadEmails(page, pageSize);
+            if (drawerOpen && selectedEmail?.id === email.id) {
+                const { data: detail } = await getInboxEmailDetail(email.id);
+                setSelectedEmail(detail);
+            }
+        } catch {
+            message.error('Ошибка принудительной обработки письма');
+        } finally {
+            setForceProcessingIds((prev) => {
+                const next = { ...prev };
+                delete next[email.id];
+                return next;
+            });
+        }
+    };
+
     // Навигация мастера по шагам
     const handleWizardNext = () => {
         if (wizardStep === 0) {
@@ -801,16 +862,49 @@ const InboxPage = () => {
         {
             title: 'Действие',
             key: 'action',
-            width: 130,
-            render: (_, record) => (
-                <Button
-                    size="small"
-                    type={record.rule_type ? 'default' : 'primary'}
-                    onClick={(e) => handleOpenRuleModal(record, e)}
-                >
-                    {record.rule_type ? 'Изменить правило' : 'Назначить правило'}
-                </Button>
-            ),
+            width: 360,
+            render: (_, record) => {
+                const mode = forceProcessingIds[record.id];
+                const loadingCheck = mode === 'check';
+                const loadingReprocess = mode === 'reprocess';
+                const loadingAny = Boolean(mode);
+                return (
+                    <Space size={8} wrap>
+                        <Button
+                            size="small"
+                            type={record.rule_type ? 'default' : 'primary'}
+                            onClick={(e) => handleOpenRuleModal(record, e)}
+                        >
+                            {record.rule_type ? 'Изменить правило' : 'Назначить правило'}
+                        </Button>
+                        {FORCE_PROCESS_RULES.has(record.rule_type) && (
+                            <>
+                                <Tooltip title="Запустить обработку без сброса дедупликации">
+                                    <Button
+                                        size="small"
+                                        loading={loadingCheck}
+                                        disabled={loadingAny}
+                                        onClick={(e) => handleForceProcess(record, e, false)}
+                                    >
+                                        Проверить
+                                    </Button>
+                                </Tooltip>
+                                <Tooltip title="Запустить повторную обработку со сбросом дедупликации">
+                                    <Button
+                                        size="small"
+                                        icon={<ReloadOutlined />}
+                                        loading={loadingReprocess}
+                                        disabled={loadingAny}
+                                        onClick={(e) => handleForceProcess(record, e, true)}
+                                    >
+                                        Повторно обработать
+                                    </Button>
+                                </Tooltip>
+                            </>
+                        )}
+                    </Space>
+                );
+            },
         },
     ];
 
