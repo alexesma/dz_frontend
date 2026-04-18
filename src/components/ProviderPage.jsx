@@ -535,6 +535,7 @@ const ProviderPage = () => {
                     auto_confirm_unmentioned_items: !!config.auto_confirm_unmentioned_items,
                     auto_confirm_after_minutes: config.auto_confirm_after_minutes ?? null,
                     sender_emails_text: (config.sender_emails || []).join(", "),
+                    subject_pattern: config.subject_pattern || "",
                     confirm_keywords_text: (config.confirm_keywords || []).join(", "),
                     reject_keywords_text: (config.reject_keywords || []).join(", "),
                 });
@@ -552,6 +553,7 @@ const ProviderPage = () => {
                 start_row: 1,
                 value_after_article_type: "both",
                 sender_emails_text: "",
+                subject_pattern: "",
                 confirm_keywords_text: "в наличии, есть, отгружаем, собрали, да",
                 reject_keywords_text: "нет, 0, отсутствует, не можем, снято с производства",
             });
@@ -1427,6 +1429,15 @@ const ProviderPage = () => {
             },
         },
         {
+            title: "Тема (regex)",
+            dataIndex: "subject_pattern",
+            key: "subject_pattern",
+            render: (value) =>
+                value
+                    ? value
+                    : <span style={{ color: "#999" }}>Любая</span>,
+        },
+        {
             title: "Тип",
             dataIndex: "response_type",
             key: "response_type",
@@ -2274,6 +2285,14 @@ const ProviderPage = () => {
                         extra="Допустимо несколько адресов: supplier@a.ru, orders@a.ru"
                     >
                         <Input placeholder="supplier@example.com, orders@example.com" />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="subject_pattern"
+                        label="subject_pattern (regex, опционально)"
+                        extra="Если задано, тема письма должна соответствовать шаблону."
+                    >
+                        <Input placeholder="Например: Заказ\\s+поставщику\\s+#?\\d+" />
                     </Form.Item>
 
                     <Alert
