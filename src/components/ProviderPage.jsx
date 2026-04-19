@@ -2728,133 +2728,149 @@ const ProviderPage = () => {
                                 loading={responseMessagesLoading}
                                 dataSource={responseMessages}
                                 pagination={{ pageSize: 8 }}
-                                scroll={{ x: 980 }}
                                 locale={{
                                     emptyText: "Писем в реестре пока нет",
                                 }}
                                 columns={[
                                     {
-                                        title: "Дата",
-                                        dataIndex: "received_at",
-                                        width: 160,
-                                        render: (value) => formatMoscow(value),
-                                    },
-                                    {
-                                        title: "Письмо",
-                                        dataIndex: "subject",
+                                        title: "Письмо / Обработка",
+                                        dataIndex: "id",
                                         render: (_, row) => (
                                             <div>
-                                                <div><b>{row?.sender_email || "—"}</b></div>
-                                                <div>{row?.subject || "—"}</div>
-                                                {row?.subject_raw && row?.subject_raw !== row?.subject && (
-                                                    <Text type="secondary">raw: {row.subject_raw}</Text>
-                                                )}
-                                                {(row?.account_email || row?.account_name) && (
-                                                    <div>
-                                                        <Text type="secondary">
-                                                            Ящик: {
-                                                                row?.account_name
-                                                                    ? `${row.account_name} (${row.account_email || "—"})`
-                                                                    : row?.account_email
-                                                            }
-                                                        </Text>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ),
-                                    },
-                                    {
-                                        title: "Классификация",
-                                        dataIndex: "message_type",
-                                        width: 280,
-                                        render: (_, row) => (
-                                            <div>
-                                                <Tag color={supplierResponseMessageTypeColor(row?.message_type)}>
-                                                    {supplierResponseMessageTypeLabel(row?.message_type)}
-                                                </Tag>
-                                                {row?.suggested_message_type && (
-                                                    <div>
-                                                        <Text type="secondary">
-                                                            Подсказка: {supplierResponseMessageTypeLabel(row.suggested_message_type)}
-                                                        </Text>
-                                                    </div>
-                                                )}
-                                                {row?.suggested_source && (
-                                                    <div>
-                                                        <Text type="secondary">
-                                                            Источник подсказки: {
-                                                                row.suggested_source === "ai"
-                                                                    ? "AI"
-                                                                    : "Правила"
-                                                            }
-                                                        </Text>
-                                                    </div>
-                                                )}
-                                                {formatSuggestionConfidence(row?.suggested_confidence) && (
-                                                    <div>
-                                                        <Text type="secondary">
-                                                            Уверенность: {formatSuggestionConfidence(row?.suggested_confidence)}
-                                                        </Text>
-                                                    </div>
-                                                )}
-                                                {row?.suggested_explanation && (
-                                                    <div>
-                                                        <Text type="secondary">
-                                                            Почему: {row.suggested_explanation}
-                                                        </Text>
-                                                    </div>
-                                                )}
-                                                {row?.import_error_details && (
-                                                    <div>
-                                                        <Text type="secondary">
-                                                            Ошибка: {row.import_error_details}
-                                                        </Text>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ),
-                                    },
-                                    {
-                                        title: "Вложения",
-                                        dataIndex: "attachment_details",
-                                        width: 260,
-                                        render: (_, row) => (
-                                            (row?.attachment_details || []).length > 0
-                                                ? (
-                                                    <div>
-                                                        {(row.attachment_details || []).map((item, idx) => (
-                                                            <div key={`${row.id}_msg_att_${idx}`}>{item}</div>
-                                                        ))}
-                                                    </div>
-                                                )
-                                                : "—"
-                                        ),
-                                    },
-                                    {
-                                        title: "Действия",
-                                        key: "actions",
-                                        width: 280,
-                                        render: (_, row) => (
-                                            <Space direction="vertical" size={6}>
-                                                <Select
-                                                    size="small"
-                                                    style={{ width: 250 }}
-                                                    value={row?.message_type || "UNKNOWN"}
-                                                    options={supplierResponseMessageTypeOptions}
-                                                    loading={!!responseMessageActionLoadingById[row.id]}
-                                                    onChange={(value) => (
-                                                        handleClassifyResponseMessage(row.id, value)
-                                                    )}
-                                                />
-                                                <Button
-                                                    size="small"
-                                                    loading={!!responseMessageActionLoadingById[row.id]}
-                                                    onClick={() => handleRetryResponseMessage(row.id)}
-                                                    disabled={!row?.can_retry}
+                                                <div
+                                                    style={{
+                                                        display: "flex",
+                                                        flexWrap: "wrap",
+                                                        gap: "8px 16px",
+                                                        marginBottom: 8,
+                                                    }}
                                                 >
-                                                    Перепроверить это письмо
-                                                </Button>
-                                            </Space>
+                                                    <div style={{ minWidth: 160, flex: "1 1 160px" }}>
+                                                        <Text type="secondary">Дата</Text>
+                                                        <div>{formatMoscow(row?.received_at)}</div>
+                                                    </div>
+                                                    <div style={{ minWidth: 320, flex: "2 1 320px" }}>
+                                                        <Text type="secondary">Адрес письма</Text>
+                                                        <div><b>{row?.sender_email || "—"}</b></div>
+                                                        {(row?.account_email || row?.account_name) && (
+                                                            <div>
+                                                                <Text type="secondary">
+                                                                    Ящик: {
+                                                                        row?.account_name
+                                                                            ? `${row.account_name} (${row.account_email || "—"})`
+                                                                            : row?.account_email
+                                                                    }
+                                                                </Text>
+                                                            </div>
+                                                        )}
+                                                        {row?.subject && (
+                                                            <div>
+                                                                <Text type="secondary">
+                                                                    Тема: {row.subject}
+                                                                </Text>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div style={{ minWidth: 260, flex: "1 1 260px" }}>
+                                                        <Text type="secondary">Вложения</Text>
+                                                        {(row?.attachment_details || []).length > 0
+                                                            ? (
+                                                                <div>
+                                                                    {(row.attachment_details || []).map((item, idx) => (
+                                                                        <div key={`${row.id}_msg_att_${idx}`}>{item}</div>
+                                                                    ))}
+                                                                </div>
+                                                            )
+                                                            : "—"}
+                                                    </div>
+                                                </div>
+
+                                                <div
+                                                    style={{
+                                                        borderTop: "1px solid #f0f0f0",
+                                                        paddingTop: 8,
+                                                        display: "flex",
+                                                        flexWrap: "wrap",
+                                                        gap: "10px 16px",
+                                                        alignItems: "flex-start",
+                                                    }}
+                                                >
+                                                    <div style={{ minWidth: 320, flex: "2 1 320px" }}>
+                                                        <Text type="secondary">Классификация</Text>
+                                                        <div style={{ marginTop: 4 }}>
+                                                            <Tag color={supplierResponseMessageTypeColor(row?.message_type)}>
+                                                                {supplierResponseMessageTypeLabel(row?.message_type)}
+                                                            </Tag>
+                                                        </div>
+                                                        {row?.suggested_message_type && (
+                                                            <div>
+                                                                <Text type="secondary">
+                                                                    Подсказка: {supplierResponseMessageTypeLabel(row.suggested_message_type)}
+                                                                </Text>
+                                                            </div>
+                                                        )}
+                                                        {row?.suggested_source && (
+                                                            <div>
+                                                                <Text type="secondary">
+                                                                    Источник подсказки: {
+                                                                        row.suggested_source === "ai"
+                                                                            ? "AI"
+                                                                            : "Правила"
+                                                                    }
+                                                                </Text>
+                                                            </div>
+                                                        )}
+                                                        {formatSuggestionConfidence(row?.suggested_confidence) && (
+                                                            <div>
+                                                                <Text type="secondary">
+                                                                    Уверенность: {formatSuggestionConfidence(row?.suggested_confidence)}
+                                                                </Text>
+                                                            </div>
+                                                        )}
+                                                        {row?.suggested_explanation && (
+                                                            <div>
+                                                                <Text type="secondary">
+                                                                    Почему: {row.suggested_explanation}
+                                                                </Text>
+                                                            </div>
+                                                        )}
+                                                        {row?.import_error_details && (
+                                                            <div>
+                                                                <Text type="secondary">
+                                                                    Ошибка: {row.import_error_details}
+                                                                </Text>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div style={{ minWidth: 280, flex: "1 1 280px" }}>
+                                                        <Text type="secondary">Действия</Text>
+                                                        <Space
+                                                            direction="vertical"
+                                                            size={6}
+                                                            style={{ marginTop: 4 }}
+                                                        >
+                                                            <Select
+                                                                size="small"
+                                                                style={{ width: 260 }}
+                                                                value={row?.message_type || "UNKNOWN"}
+                                                                options={supplierResponseMessageTypeOptions}
+                                                                loading={!!responseMessageActionLoadingById[row.id]}
+                                                                onChange={(value) => (
+                                                                    handleClassifyResponseMessage(row.id, value)
+                                                                )}
+                                                            />
+                                                            <Button
+                                                                size="small"
+                                                                loading={!!responseMessageActionLoadingById[row.id]}
+                                                                onClick={() => handleRetryResponseMessage(row.id)}
+                                                                disabled={!row?.can_retry}
+                                                            >
+                                                                Перепроверить это письмо
+                                                            </Button>
+                                                        </Space>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         ),
                                     },
                                 ]}
