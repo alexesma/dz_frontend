@@ -2564,126 +2564,136 @@ const ProviderPage = () => {
                                 }}
                                 columns={[
                                     {
-                                        title: "Дата",
-                                        dataIndex: "received_at",
-                                        width: 160,
-                                        render: (value) => formatMoscow(value),
-                                    },
-                                    {
-                                        title: "Отправитель",
-                                        dataIndex: "sender_email",
-                                        width: 220,
+                                        title: "Письмо / Ошибка",
+                                        dataIndex: "id",
                                         render: (_, row) => (
                                             <div>
-                                                <div>{row?.sender_email || "—"}</div>
-                                                {(row?.account_email || row?.account_name) && (
-                                                    <Text type="secondary">
-                                                        Ящик: {
-                                                            row?.account_name
-                                                                ? `${row.account_name} (${row.account_email || "—"})`
-                                                                : row?.account_email
-                                                        }
-                                                    </Text>
-                                                )}
-                                                {(row?.source_folder || row?.source_message_uid) && (
-                                                    <div>
-                                                        <Text type="secondary">
-                                                            {[
-                                                                row?.source_folder
-                                                                    ? `папка: ${row.source_folder}`
-                                                                    : null,
-                                                                row?.source_message_uid
-                                                                    ? `UID: ${row.source_message_uid}`
-                                                                    : null,
-                                                            ].filter(Boolean).join(", ")}
-                                                        </Text>
+                                                <div
+                                                    style={{
+                                                        display: "flex",
+                                                        flexWrap: "wrap",
+                                                        gap: "8px 16px",
+                                                        marginBottom: 8,
+                                                    }}
+                                                >
+                                                    <div style={{ minWidth: 160, flex: "1 1 160px" }}>
+                                                        <Text type="secondary">Дата</Text>
+                                                        <div>{formatMoscow(row?.received_at)}</div>
                                                     </div>
-                                                )}
-                                            </div>
-                                        ),
-                                    },
-                                    {
-                                        title: "Тема (как прочитана)",
-                                        dataIndex: "subject",
-                                        width: 320,
-                                        render: (_, row) => (
-                                            <div>
-                                                <div>{row?.subject || "—"}</div>
-                                                {row?.subject_raw && row?.subject_raw !== row?.subject && (
-                                                    <Text type="secondary">
-                                                        raw: {row.subject_raw}
-                                                    </Text>
-                                                )}
-                                            </div>
-                                        ),
-                                    },
-                                    {
-                                        title: "Ошибка",
-                                        dataIndex: "import_error_details",
-                                        render: (_, row) => (
-                                            <div>
-                                                <div>
-                                                    {row?.import_error_details
-                                                        || "Не удалось обработать по текущим настройкам"}
+                                                    <div style={{ minWidth: 220, flex: "1 1 220px" }}>
+                                                        <Text type="secondary">Отправитель</Text>
+                                                        <div>{row?.sender_email || "—"}</div>
+                                                        {(row?.account_email || row?.account_name) && (
+                                                            <div>
+                                                                <Text type="secondary">
+                                                                    Ящик: {
+                                                                        row?.account_name
+                                                                            ? `${row.account_name} (${row.account_email || "—"})`
+                                                                            : row?.account_email
+                                                                    }
+                                                                </Text>
+                                                            </div>
+                                                        )}
+                                                        {(row?.source_folder || row?.source_message_uid) && (
+                                                            <div>
+                                                                <Text type="secondary">
+                                                                    {[
+                                                                        row?.source_folder
+                                                                            ? `папка: ${row.source_folder}`
+                                                                            : null,
+                                                                        row?.source_message_uid
+                                                                            ? `UID: ${row.source_message_uid}`
+                                                                            : null,
+                                                                    ].filter(Boolean).join(", ")}
+                                                                </Text>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div style={{ minWidth: 280, flex: "2 1 320px" }}>
+                                                        <Text type="secondary">Тема (как прочитана)</Text>
+                                                        <div>{row?.subject || "—"}</div>
+                                                        {row?.subject_raw && row?.subject_raw !== row?.subject && (
+                                                            <div>
+                                                                <Text type="secondary">
+                                                                    raw: {row.subject_raw}
+                                                                </Text>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div style={{ minWidth: 220, flex: "1 1 220px" }}>
+                                                        <Text type="secondary">Вложения</Text>
+                                                        {(() => {
+                                                            const details = row?.attachment_details || [];
+                                                            if (details.length > 0) {
+                                                                return (
+                                                                    <div>
+                                                                        {details.map((item, idx) => (
+                                                                            <div key={`${row.id}_att_${idx}`}>
+                                                                                {item}
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                );
+                                                            }
+                                                            const names = row?.attachment_filenames || [];
+                                                            return names.length > 0
+                                                                ? names.join(", ")
+                                                                : "—";
+                                                        })()}
+                                                    </div>
                                                 </div>
-                                                {(row?.import_error_reasons || []).length > 0 && (
-                                                    <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
-                                                        {(row.import_error_reasons || []).map((item, idx) => (
-                                                            <li key={`${row.id}_reason_${idx}`}>{item}</li>
-                                                        ))}
-                                                    </ul>
-                                                )}
-                                                {(row?.config_expectations || []).length > 0 && (
-                                                    <div style={{ marginTop: 6 }}>
-                                                        <Text type="secondary">Ожидалось по конфигу:</Text>
-                                                        <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
-                                                            {(row.config_expectations || []).map((item, idx) => (
-                                                                <li key={`${row.id}_expect_${idx}`}>
-                                                                    <Text type="secondary">{item}</Text>
-                                                                </li>
+                                                <div
+                                                    style={{
+                                                        borderTop: "1px solid #f0f0f0",
+                                                        paddingTop: 8,
+                                                    }}
+                                                >
+                                                    <div>
+                                                        <b>Ошибка:</b>{" "}
+                                                        {row?.import_error_details
+                                                            || "Не удалось обработать по текущим настройкам"}
+                                                    </div>
+                                                    {(row?.import_error_reasons || []).length > 0 && (
+                                                        <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                                                            {(row.import_error_reasons || []).map((item, idx) => (
+                                                                <li key={`${row.id}_reason_${idx}`}>{item}</li>
                                                             ))}
                                                         </ul>
-                                                    </div>
-                                                )}
-                                                {(row?.manager_hints || []).length > 0 && (
-                                                    <div style={{ marginTop: 6 }}>
-                                                        <Text type="secondary">Что проверить:</Text>
-                                                        <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
-                                                            {(row.manager_hints || []).map((item, idx) => (
-                                                                <li key={`${row.id}_hint_${idx}`}>
-                                                                    <Text type="secondary">{item}</Text>
-                                                                </li>
-                                                            ))}
-                                                        </ul>
-                                                    </div>
-                                                )}
-                                                {row?.body_preview && (
-                                                    <div style={{ marginTop: 6 }}>
-                                                        <Text type="secondary">
-                                                            Текст письма (фрагмент): {row.body_preview}
-                                                        </Text>
-                                                    </div>
-                                                )}
+                                                    )}
+                                                    {(row?.config_expectations || []).length > 0 && (
+                                                        <div style={{ marginTop: 6 }}>
+                                                            <Text type="secondary">Ожидалось по конфигу:</Text>
+                                                            <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                                                                {(row.config_expectations || []).map((item, idx) => (
+                                                                    <li key={`${row.id}_expect_${idx}`}>
+                                                                        <Text type="secondary">{item}</Text>
+                                                                    </li>
+                                                                ))}
+                                                            </ul>
+                                                        </div>
+                                                    )}
+                                                    {(row?.manager_hints || []).length > 0 && (
+                                                        <div style={{ marginTop: 6 }}>
+                                                            <Text type="secondary">Что проверить:</Text>
+                                                            <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                                                                {(row.manager_hints || []).map((item, idx) => (
+                                                                    <li key={`${row.id}_hint_${idx}`}>
+                                                                        <Text type="secondary">{item}</Text>
+                                                                    </li>
+                                                                ))}
+                                                            </ul>
+                                                        </div>
+                                                    )}
+                                                    {row?.body_preview && (
+                                                        <div style={{ marginTop: 6 }}>
+                                                            <Text type="secondary">
+                                                                Текст письма (фрагмент): {row.body_preview}
+                                                            </Text>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         ),
-                                    },
-                                    {
-                                        title: "Вложения",
-                                        dataIndex: "attachment_filenames",
-                                        width: 220,
-                                        render: (_, row) => {
-                                            const details = row?.attachment_details || [];
-                                            if (details.length > 0) {
-                                                return (
-                                                    <div>
-                                                        {details.map((item, idx) => (
-                                                            <div key={`${row.id}_att_${idx}`}>{item}</div>
-                                                        ))}
-                                                    </div>
-                                                );
-                                            }
-                                            return (row?.attachment_filenames || []).join(", ");
-                                        },
                                     },
                                 ]}
                             />
