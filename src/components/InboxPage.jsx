@@ -233,12 +233,12 @@ const InboxPage = () => {
         qty_col: null,
         price_col: null,
         brand_col: null,
+        multiplicity_col: null,
         name_col: null,
         status_col: null,
         comment_col: null,
         document_number_col: null,
         document_date_col: null,
-        min_quantity: null,
     });
     const [customerConfig, setCustomerConfig] = useState({
         customer_id: null,
@@ -375,12 +375,12 @@ const InboxPage = () => {
                     qty_col: cfg.qty_col || null,
                     price_col: cfg.price_col || null,
                     brand_col: cfg.brand_col || null,
+                    multiplicity_col: cfg.multiplicity_col || null,
                     name_col: cfg.name_col || null,
                     status_col: cfg.status_col || null,
                     comment_col: cfg.comment_col || null,
                     document_number_col: cfg.document_number_col || null,
                     document_date_col: cfg.document_date_col || null,
-                    min_quantity: cfg.min_quantity ?? null,
                 }));
             } else if (configs.length > 1) {
                 // При нескольких конфигах просим выбрать конкретный,
@@ -390,7 +390,7 @@ const InboxPage = () => {
                     config_mode: 'existing',
                     config_id: null,
                     config_name: '',
-                    min_quantity: null,
+                    multiplicity_col: null,
                 }));
             } else if (configs.length === 0) {
                 setProviderConfig(p => ({
@@ -403,7 +403,7 @@ const InboxPage = () => {
                     confirm_keywords_text: DEFAULT_CONFIRM_KEYWORDS_TEXT,
                     reject_keywords_text: DEFAULT_REJECT_KEYWORDS_TEXT,
                     value_after_article_type: 'both',
-                    min_quantity: null,
+                    multiplicity_col: null,
                 }));
             }
         } catch {
@@ -548,12 +548,12 @@ const InboxPage = () => {
             qty_col: null,
             price_col: null,
             brand_col: null,
+            multiplicity_col: null,
             name_col: null,
             status_col: null,
             comment_col: null,
             document_number_col: null,
             document_date_col: null,
-            min_quantity: null,
         });
         setProviderConfigs([]);
         setCustomerConfig({
@@ -680,6 +680,21 @@ const InboxPage = () => {
                 message.warning('Выберите поставщика');
                 return;
             }
+            if (ruleType === 'price_list') {
+                if (loadingProviderConfigs) {
+                    message.warning(
+                        'Подождите, загружаются конфигурации поставщика'
+                    );
+                    return;
+                }
+                if (providerConfig.config_mode === 'skip') {
+                    message.warning(
+                        'Для прайс-листа выберите режим: '
+                        + '«Обновить готовую» или «Создать новую»'
+                    );
+                    return;
+                }
+            }
             if (['price_list', 'order_reply', 'document'].includes(ruleType)) {
                 if (
                     providerConfig.config_mode === 'existing'
@@ -708,15 +723,6 @@ const InboxPage = () => {
                         );
                         return;
                     }
-                }
-                if (
-                    ruleType === 'price_list'
-                    && providerConfig.min_quantity !== null
-                    && providerConfig.min_quantity !== undefined
-                    && Number(providerConfig.min_quantity) < 0
-                ) {
-                    message.warning('Минимальное количество должно быть >= 0');
-                    return;
                 }
             }
         }
@@ -763,11 +769,6 @@ const InboxPage = () => {
                     subject_pattern: String(providerConfig.subject_pattern || '').trim() || null,
                     filename_pattern: String(providerConfig.filename_pattern || '').trim() || null,
                     config_name: String(providerConfig.config_name || '').trim() || null,
-                    min_quantity:
-                        providerConfig.min_quantity === null
-                        || providerConfig.min_quantity === undefined
-                            ? null
-                            : Number(providerConfig.min_quantity),
                 };
                 if (ruleType === 'order_reply') {
                     payloadProviderConfig.confirm_keywords = parseCommaSeparated(
@@ -1348,7 +1349,7 @@ const InboxPage = () => {
                                                         confirm_keywords_text: DEFAULT_CONFIRM_KEYWORDS_TEXT,
                                                         reject_keywords_text: DEFAULT_REJECT_KEYWORDS_TEXT,
                                                         value_after_article_type: 'both',
-                                                        min_quantity: null,
+                                                        multiplicity_col: null,
                                                     }));
                                                     loadProviderConfigs(val, ruleType);
                                                 }}
@@ -1495,6 +1496,8 @@ const InboxPage = () => {
                                                                     qty_col: cfg?.qty_col || null,
                                                                     price_col: cfg?.price_col || null,
                                                                     brand_col: cfg?.brand_col || null,
+                                                                    multiplicity_col:
+                                                                        cfg?.multiplicity_col || null,
                                                                     name_col: cfg?.name_col || null,
                                                                     status_col: cfg?.status_col || null,
                                                                     comment_col: cfg?.comment_col || null,
@@ -1502,8 +1505,6 @@ const InboxPage = () => {
                                                                         cfg?.document_number_col || null,
                                                                     document_date_col:
                                                                         cfg?.document_date_col || null,
-                                                                    min_quantity:
-                                                                        cfg?.min_quantity ?? null,
                                                                 }));
                                                             }}
                                                             options={providerConfigs.map(cfg => ({
@@ -1538,26 +1539,6 @@ const InboxPage = () => {
                                                                     ? 'например: Прайс-лист AVTEK (XLS)'
                                                                     : 'например: Ответ на заказ — основной'
                                                             }
-                                                        />
-                                                    </div>
-                                                )}
-
-                                                {ruleType === 'price_list' && (
-                                                    <div>
-                                                        <div style={{ marginBottom: 4, fontWeight: 500 }}>
-                                                            Минимальное количество
-                                                        </div>
-                                                        <InputNumber
-                                                            min={0}
-                                                            precision={0}
-                                                            step={1}
-                                                            style={{ width: '100%' }}
-                                                            value={providerConfig.min_quantity}
-                                                            onChange={(val) => setProviderConfig(p => ({
-                                                                ...p,
-                                                                min_quantity: val ?? null,
-                                                            }))}
-                                                            placeholder="например: 1"
                                                         />
                                                     </div>
                                                 )}
@@ -1643,6 +1624,10 @@ const InboxPage = () => {
                                                         { key: 'start_row', label: 'Строка начала' },
                                                         { key: 'oem_col', label: 'OEM' },
                                                         { key: 'brand_col', label: 'Бренд' },
+                                                        {
+                                                            key: 'multiplicity_col',
+                                                            label: 'Кратность',
+                                                        },
                                                         { key: 'qty_col', label: 'Кол-во' },
                                                         { key: 'price_col', label: 'Цена' },
                                                     ];
@@ -1671,6 +1656,7 @@ const InboxPage = () => {
                                                     [
                                                         [pc.oem_col, '#e6fffb'],
                                                         [pc.brand_col, '#f6ffed'],
+                                                        [pc.multiplicity_col, '#fff1f0'],
                                                         [pc.qty_col, '#fff7e6'],
                                                         [pc.price_col, '#f9f0ff'],
                                                         [pc.name_col, '#fff2e8'],
