@@ -12,6 +12,10 @@ import api from '../api.js';
  * @param {number} params.page
  * @param {number} params.page_size
  * @param {boolean} params.only_unprocessed
+ * @param {string} params.subject_contains
+ * @param {string} params.sender_contains
+ * @param {number} params.customer_id
+ * @param {number} params.provider_id
  */
 export const getInboxEmails = (params = {}) =>
     api.get('/inbox/emails', { params });

@@ -193,6 +193,10 @@ const InboxPage = () => {
     const [accounts, setAccounts] = useState([]);
     const [selectedAccountId, setSelectedAccountId] = useState(null);
     const [days, setDays] = useState(DEFAULT_DAYS);
+    const [subjectContains, setSubjectContains] = useState('');
+    const [senderContains, setSenderContains] = useState('');
+    const [selectedCustomerId, setSelectedCustomerId] = useState(null);
+    const [selectedProviderId, setSelectedProviderId] = useState(null);
     const [emails, setEmails] = useState([]);
     const [total, setTotal] = useState(0);
     const [page, setPage] = useState(1);
@@ -265,18 +269,39 @@ const InboxPage = () => {
         getEmailAccounts()
             .then(({ data }) => setAccounts(data || []))
             .catch(() => message.error('Не удалось загрузить список ящиков'));
+
+        setLoadingOptions(true);
+        getSetupOptions()
+            .then(({ data }) => {
+                setSetupOptions(data || { providers: [], customers: [] });
+            })
+            .catch(() => {
+                // Для страницы это не критично: можно загрузить позже из мастера.
+            })
+            .finally(() => setLoadingOptions(false));
     }, []);
 
     // Загрузка писем
     const loadEmails = useCallback(
-        async (nextPage = 1, nextSize = pageSize) => {
+        async (nextPage = 1, nextSize = pageSize, overrides = {}) => {
             setLoadingEmails(true);
             try {
+                const effectiveSubject =
+                    overrides.subjectContains ?? subjectContains;
+                const effectiveSender = overrides.senderContains ?? senderContains;
+                const effectiveCustomerId =
+                    overrides.selectedCustomerId ?? selectedCustomerId;
+                const effectiveProviderId =
+                    overrides.selectedProviderId ?? selectedProviderId;
                 const { data } = await getInboxEmails({
                     email_account_id: selectedAccountId ?? undefined,
                     days,
                     page: nextPage,
                     page_size: nextSize,
+                    subject_contains: effectiveSubject.trim() || undefined,
+                    sender_contains: effectiveSender.trim() || undefined,
+                    customer_id: effectiveCustomerId ?? undefined,
+                    provider_id: effectiveProviderId ?? undefined,
                 });
                 setEmails(data.items || []);
                 setTotal(data.total || 0);
@@ -286,13 +311,40 @@ const InboxPage = () => {
                 setLoadingEmails(false);
             }
         },
-        [selectedAccountId, days, pageSize]
+        [
+            selectedAccountId,
+            days,
+            pageSize,
+            subjectContains,
+            senderContains,
+            selectedCustomerId,
+            selectedProviderId,
+        ]
     );
 
     useEffect(() => {
         setPage(1);
         loadEmails(1, pageSize);
     }, [selectedAccountId, days]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const handleApplySearchFilters = () => {
+        setPage(1);
+        loadEmails(1, pageSize);
+    };
+
+    const handleResetSearchFilters = () => {
+        setSubjectContains('');
+        setSenderContains('');
+        setSelectedCustomerId(null);
+        setSelectedProviderId(null);
+        setPage(1);
+        loadEmails(1, pageSize, {
+            subjectContains: '',
+            senderContains: '',
+            selectedCustomerId: null,
+            selectedProviderId: null,
+        });
+    };
 
     const loadCustomerSetupConfigs = async (customerId) => {
         if (!customerId) {
@@ -987,6 +1039,14 @@ const InboxPage = () => {
             label: `${a.name} (${a.email})`,
         })),
     ];
+    const providerFilterOptions = setupOptions.providers.map((p) => ({
+        value: p.id,
+        label: p.email ? `${p.name} (${p.email})` : p.name,
+    }));
+    const customerFilterOptions = setupOptions.customers.map((c) => ({
+        value: c.id,
+        label: c.name,
+    }));
 
     return (
         <div style={{ padding: '0 0 24px 0' }}>
@@ -1045,6 +1105,83 @@ const InboxPage = () => {
                     >
                         Загрузить с сервера
                     </Button>
+                </div>
+
+                <div
+                    style={{
+                        marginTop: 12,
+                        display: 'flex',
+                        gap: 12,
+                        flexWrap: 'wrap',
+                        alignItems: 'flex-end',
+                    }}
+                >
+                    <div style={{ minWidth: 220, flex: '1 1 280px' }}>
+                        <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>
+                            Тема содержит
+                        </div>
+                        <Input
+                            allowClear
+                            value={subjectContains}
+                            placeholder="Например: заказ, прайс, ответ"
+                            onChange={(e) => setSubjectContains(e.target.value)}
+                            onPressEnter={handleApplySearchFilters}
+                        />
+                    </div>
+
+                    <div style={{ minWidth: 220, flex: '1 1 260px' }}>
+                        <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>
+                            Адрес отправителя
+                        </div>
+                        <Input
+                            allowClear
+                            value={senderContains}
+                            placeholder="Например: @yandex.ru"
+                            onChange={(e) => setSenderContains(e.target.value)}
+                            onPressEnter={handleApplySearchFilters}
+                        />
+                    </div>
+
+                    <div style={{ minWidth: 220, flex: '1 1 260px' }}>
+                        <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>
+                            Клиент
+                        </div>
+                        <Select
+                            allowClear
+                            showSearch
+                            optionFilterProp="label"
+                            loading={loadingOptions}
+                            value={selectedCustomerId}
+                            placeholder="Любой клиент"
+                            options={customerFilterOptions}
+                            onChange={(val) => setSelectedCustomerId(val)}
+                        />
+                    </div>
+
+                    <div style={{ minWidth: 220, flex: '1 1 300px' }}>
+                        <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>
+                            Поставщик
+                        </div>
+                        <Select
+                            allowClear
+                            showSearch
+                            optionFilterProp="label"
+                            loading={loadingOptions}
+                            value={selectedProviderId}
+                            placeholder="Любой поставщик"
+                            options={providerFilterOptions}
+                            onChange={(val) => setSelectedProviderId(val)}
+                        />
+                    </div>
+
+                    <Space>
+                        <Button type="primary" onClick={handleApplySearchFilters}>
+                            Найти
+                        </Button>
+                        <Button onClick={handleResetSearchFilters}>
+                            Сбросить
+                        </Button>
+                    </Space>
                 </div>
             </Card>
 
