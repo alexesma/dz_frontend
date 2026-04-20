@@ -22,13 +22,11 @@ import {
 } from '../api/customerOrders';
 import { getAutopartLookupByOem } from '../api/autoparts';
 import { getProviders } from '../api/providers';
-import { getCustomersSummary } from '../api/customers';
 
 const { Title } = Typography;
 const { RangePicker } = DatePicker;
 
 const DEFAULT_FILTERS = {
-    customerId: null,
     dateRange: null,
     totalSumMin: null,
     totalSumMax: null,
@@ -47,7 +45,6 @@ const CustomerSupplierOrdersPage = () => {
     const navigate = useNavigate();
     const [orders, setOrders] = useState([]);
     const [providers, setProviders] = useState([]);
-    const [customers, setCustomers] = useState([]);
     const [loading, setLoading] = useState(false);
     const [sendingSelected, setSendingSelected] = useState(false);
     const [sendingScheduled, setSendingScheduled] = useState(false);
@@ -73,9 +70,6 @@ const CustomerSupplierOrdersPage = () => {
         setLoading(true);
         try {
             const params = {};
-            if (activeFilters.customerId) {
-                params.customer_id = activeFilters.customerId;
-            }
             if (activeFilters.dateRange?.length === 2) {
                 params.date_from = activeFilters.dateRange[0];
                 params.date_to = activeFilters.dateRange[1];
@@ -98,11 +92,6 @@ const CustomerSupplierOrdersPage = () => {
             ]);
             setOrders(ordersResp.data || []);
             setProviders(providersResp.data?.items || []);
-            const customersResp = await getCustomersSummary({
-                page: 1,
-                page_size: 200,
-            });
-            setCustomers(customersResp.data?.items || []);
         } catch {
             message.error('Не удалось загрузить заказы поставщикам');
         } finally {
@@ -143,16 +132,10 @@ const CustomerSupplierOrdersPage = () => {
         },
         {
             title: '№ заказа',
-            dataIndex: 'customer_order_number',
-            key: 'customer_order_number',
-            width: 140,
-            render: (value, record) => value || record.customer_order_id || record.id || '—',
-        },
-        {
-            title: 'Клиент',
-            dataIndex: 'customer_name',
-            key: 'customer_name',
-            width: 180,
+            dataIndex: 'id',
+            key: 'id',
+            width: 100,
+            render: (value) => `#${value}`,
         },
         {
             title: 'Кол-во заказов',
@@ -186,11 +169,15 @@ const CustomerSupplierOrdersPage = () => {
             },
         },
         {
-            title: 'Сумма отказа',
+            title: 'Отказ поставщика',
             dataIndex: 'rejected_sum',
             key: 'rejected_sum',
             width: 140,
-            render: formatMoney,
+            render: (value) => {
+                const num = Number(value);
+                if (!num) return <span style={{ color: '#aaa' }}>—</span>;
+                return <span style={{ color: '#cf1322' }}>{num.toFixed(2)}</span>;
+            },
         },
     ];
 
@@ -440,19 +427,6 @@ const CustomerSupplierOrdersPage = () => {
                         }));
                     }}
                     placeholder={['Дата от', 'Дата до']}
-                />
-                <Select
-                    allowClear
-                    style={{ minWidth: 220 }}
-                    placeholder="Клиент"
-                    value={filters.customerId}
-                    onChange={(value) =>
-                        setFilters((prev) => ({ ...prev, customerId: value || null }))
-                    }
-                    options={(customers || []).map((customer) => ({
-                        value: customer.id,
-                        label: customer.name,
-                    }))}
                 />
                 <InputNumber
                     placeholder="Сумма от"
