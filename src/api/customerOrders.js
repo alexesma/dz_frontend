@@ -30,6 +30,9 @@ export const getSupplierOrders = (params) =>
 export const getSupplierReceiptCandidates = (params) =>
     api.get('/customer-orders/supplier-receipts/candidates', { params });
 
+export const getSupplierReceiptProviders = (params) =>
+    api.get('/customer-orders/supplier-receipts/providers', { params });
+
 export const processSupplierResponses = (params) =>
     api.post('/customer-orders/supplier/process-responses', null, { params });
 

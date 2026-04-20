@@ -21,10 +21,10 @@ import {
 import { MinusOutlined, PlusOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 
-import { getAllProviders } from '../api/providers';
 import {
     createSupplierReceipt,
     getSupplierReceiptCandidates,
+    getSupplierReceiptProviders,
     processSupplierResponses,
 } from '../api/customerOrders';
 
@@ -54,6 +54,7 @@ const getRowState = (row, draft) => {
 const SupplierReceiptsPage = () => {
     const navigate = useNavigate();
     const [providers, setProviders] = useState([]);
+    const [providersLoading, setProvidersLoading] = useState(false);
     const [loading, setLoading] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [rows, setRows] = useState([]);
@@ -67,11 +68,35 @@ const SupplierReceiptsPage = () => {
     const [documentDate, setDocumentDate] = useState(dayjs());
     const [comment, setComment] = useState('');
 
-    useEffect(() => {
-        getAllProviders({ sort_by: 'name', sort_dir: 'asc' })
-            .then((items) => setProviders(items || []))
-            .catch(() => message.error('Не удалось загрузить поставщиков'));
-    }, []);
+    const fetchProviders = useCallback(async () => {
+        setProvidersLoading(true);
+        try {
+            const params = {};
+            if (filters.dateRange?.length === 2) {
+                params.date_from = filters.dateRange[0].format('YYYY-MM-DD');
+                params.date_to = filters.dateRange[1].format('YYYY-MM-DD');
+            }
+            const response = await getSupplierReceiptProviders(params);
+            const options = response.data || [];
+            setProviders(options);
+            setFilters((prev) => {
+                if (!prev.providerId) return prev;
+                const exists = options.some(
+                    (opt) => Number(opt.provider_id) === Number(prev.providerId)
+                );
+                if (exists) return prev;
+                return { ...prev, providerId: null };
+            });
+        } catch {
+            message.error('Не удалось загрузить поставщиков для выбранного периода');
+            setProviders([]);
+            setFilters((prev) => ({ ...prev, providerId: null }));
+        } finally {
+            setProvidersLoading(false);
+        }
+    }, [filters.dateRange]);
+
+    useEffect(() => { fetchProviders(); }, [fetchProviders]);
 
     const fetchRows = useCallback(async () => {
         if (!filters.providerId) { setRows([]); return; }
@@ -373,11 +398,15 @@ const SupplierReceiptsPage = () => {
                         <Select
                             showSearch
                             allowClear
+                            loading={providersLoading}
                             placeholder="Поставщик"
                             style={{ width: '100%' }}
                             value={filters.providerId}
                             onChange={(value) => setFilters((prev) => ({ ...prev, providerId: value || null }))}
-                            options={providers.map((p) => ({ value: p.id, label: p.name }))}
+                            options={providers.map((p) => ({
+                                value: p.provider_id,
+                                label: `${p.provider_name || `#${p.provider_id}`} (${p.orders_count || 0})`,
+                            }))}
                             filterOption={(input, option) =>
                                 (option?.label || '').toLowerCase().includes(input.toLowerCase())
                             }

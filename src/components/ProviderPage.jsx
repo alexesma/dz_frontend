@@ -531,6 +531,7 @@ const ProviderPage = () => {
         if (config) {
                 responseConfigForm.setFieldsValue({
                     ...config,
+                    response_type: config.response_type || "file",
                     file_payload_type: config.file_payload_type || "response",
                     auto_confirm_unmentioned_items: !!config.auto_confirm_unmentioned_items,
                     auto_confirm_after_minutes: config.auto_confirm_after_minutes ?? null,
@@ -598,6 +599,8 @@ const ProviderPage = () => {
                     values.brand_priority_list_text
                 ),
             };
+            payload.response_type = payload.response_type || "file";
+            payload.file_payload_type = payload.file_payload_type || "response";
             payload.auto_confirm_after_minutes =
                 payload.auto_confirm_after_minutes || null;
             payload.fixed_brand_name = payload.fixed_brand_name || null;

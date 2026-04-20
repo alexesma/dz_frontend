@@ -97,7 +97,9 @@ export const getSetupOptions = () =>
  *   }
  */
 export const setupEmailRule = (emailId, data) =>
-    api.post(`/inbox/emails/${emailId}/setup`, data);
+    api.post(`/inbox/emails/${emailId}/setup`, data, {
+        timeout: 120000,
+    });
 
 // ---------------------------------------------------------------------------
 // Паттерны правил

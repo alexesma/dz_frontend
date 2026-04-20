@@ -746,12 +746,26 @@ const IncomingSupplierDocumentsPage = () => {
             },
             {
                 title: 'Цена', dataIndex: 'price', key: 'price',
-                width: 100, align: 'right', render: formatMoney,
+                width: 100, align: 'right',
+                render: (v, row) => {
+                    // If total_price_with_vat is stored, derive price-without-VAT
+                    // to avoid showing a WITH-VAT price in the "Цена" column
+                    if (row.total_price_with_vat != null && row.received_quantity) {
+                        return formatMoney(
+                            Number(row.total_price_with_vat) / Number(row.received_quantity) / (1 + VAT_RATE),
+                        );
+                    }
+                    return formatMoney(v);
+                },
             },
             {
                 title: 'Сумма', key: 'sum', width: 110, align: 'right',
                 render: (_, row) => {
                     const q = Number(row.received_quantity || 0);
+                    if (row.total_price_with_vat != null) {
+                        const baseSum = Number(row.total_price_with_vat) / (1 + VAT_RATE);
+                        return baseSum > 0 ? formatMoney(baseSum) : '—';
+                    }
                     const p = Number(row.price || 0);
                     return q && p ? formatMoney(q * p) : '—';
                 },
@@ -762,6 +776,10 @@ const IncomingSupplierDocumentsPage = () => {
             {
                 title: 'НДС 22%', key: 'vat', width: 110, align: 'right',
                 render: (_, row) => {
+                    if (row.total_price_with_vat != null) {
+                        const total = Number(row.total_price_with_vat);
+                        return total > 0 ? formatMoney(total - total / (1 + VAT_RATE)) : '—';
+                    }
                     const q = Number(row.received_quantity || 0);
                     const p = Number(row.price || 0);
                     return q && p ? formatMoney(q * p * VAT_RATE) : '—';
@@ -983,19 +1001,29 @@ const IncomingSupplierDocumentsPage = () => {
         let qty = 0, sum = 0, vat = 0, total = 0;
         (items || []).forEach((item) => {
             const q = Number(item.received_quantity || 0);
-            const p = Number(item.price || 0);
             qty += q;
-            const lineSum = q * p;
-            sum += lineSum;
-            if (isVatPayer) {
-                const lineTotal = item.total_price_with_vat != null
-                    ? Number(item.total_price_with_vat)
-                    : lineSum * (1 + VAT_RATE);
-                vat += lineTotal - lineSum;
-                total += lineTotal;
+            if (item.total_price_with_vat != null) {
+                // total_price_with_vat is the authoritative total WITH VAT
+                const lineTotal = Number(item.total_price_with_vat);
+                const lineBase = lineTotal / (1 + VAT_RATE);
+                sum += lineBase;
+                if (isVatPayer) {
+                    vat += lineTotal - lineBase;
+                    total += lineTotal;
+                } else {
+                    total += lineBase;
+                }
             } else {
-                total += item.total_price_with_vat != null
-                    ? Number(item.total_price_with_vat) : lineSum;
+                const p = Number(item.price || 0);
+                const lineSum = q * p;
+                sum += lineSum;
+                if (isVatPayer) {
+                    const lineTotal = lineSum * (1 + VAT_RATE);
+                    vat += lineTotal - lineSum;
+                    total += lineTotal;
+                } else {
+                    total += lineSum;
+                }
             }
         });
         return { qty, sum, vat, total };

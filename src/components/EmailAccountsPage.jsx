@@ -287,7 +287,12 @@ const EmailAccountsPage = () => {
             title: 'Доп. папки',
             dataIndex: 'imap_additional_folders',
             key: 'imap_additional_folders',
-            render: (value) => (value || []).join(', ') || '—',
+            render: (value) => {
+                const folders = value || [];
+                if (folders.length === 0) return '—';
+                if (folders.length > 3) return `${folders.length} папок`;
+                return folders.join(', ');
+            },
         },
         {
             title: 'Транспорт',
