@@ -538,6 +538,14 @@ const ProviderPage = () => {
                     subject_pattern: config.subject_pattern || "",
                     confirm_keywords_text: (config.confirm_keywords || []).join(", "),
                     reject_keywords_text: (config.reject_keywords || []).join(", "),
+                    fixed_brand_name: config.fixed_brand_name || "",
+                    brand_priority_list_text: (
+                        config.brand_priority_list || []
+                    ).join(", "),
+                    brand_from_name_regex: config.brand_from_name_regex || "",
+                    document_number_cell: config.document_number_cell || "",
+                    document_date_cell: config.document_date_cell || "",
+                    document_meta_cell: config.document_meta_cell || "",
                 });
         } else {
             responseConfigForm.resetFields();
@@ -556,6 +564,12 @@ const ProviderPage = () => {
                 subject_pattern: "",
                 confirm_keywords_text: "в наличии, есть, отгружаем, собрали, да",
                 reject_keywords_text: "нет, 0, отсутствует, не можем, снято с производства",
+                fixed_brand_name: "",
+                brand_priority_list_text: "",
+                brand_from_name_regex: "",
+                document_number_cell: "",
+                document_date_cell: "",
+                document_meta_cell: "",
             });
             setResponseImportErrors([]);
             setResponseMessages([]);
@@ -580,33 +594,52 @@ const ProviderPage = () => {
                 sender_emails: parseSenderEmails(values.sender_emails_text),
                 confirm_keywords: parseStringList(values.confirm_keywords_text),
                 reject_keywords: parseStringList(values.reject_keywords_text),
+                brand_priority_list: parseStringList(
+                    values.brand_priority_list_text
+                ),
             };
             payload.auto_confirm_after_minutes =
                 payload.auto_confirm_after_minutes || null;
+            payload.fixed_brand_name = payload.fixed_brand_name || null;
+            payload.brand_from_name_regex = payload.brand_from_name_regex || null;
+            payload.document_number_cell = payload.document_number_cell || null;
+            payload.document_date_cell = payload.document_date_cell || null;
+            payload.document_meta_cell = payload.document_meta_cell || null;
             delete payload.sender_emails_text;
             delete payload.confirm_keywords_text;
             delete payload.reject_keywords_text;
+            delete payload.brand_priority_list_text;
             if (payload.response_type !== "file") {
                 payload.file_format = null;
                 payload.file_payload_type = "response";
                 payload.start_row = 1;
                 payload.oem_col = null;
                 payload.brand_col = null;
+                payload.name_col = null;
                 payload.qty_col = null;
                 payload.status_col = null;
                 payload.comment_col = null;
                 payload.price_col = null;
                 payload.document_number_col = null;
                 payload.document_date_col = null;
+                payload.document_number_cell = null;
+                payload.document_date_cell = null;
+                payload.document_meta_cell = null;
                 payload.gtd_col = null;
                 payload.country_code_col = null;
                 payload.country_name_col = null;
                 payload.total_price_with_vat_col = null;
+                payload.fixed_brand_name = null;
+                payload.brand_priority_list = [];
+                payload.brand_from_name_regex = null;
                 payload.filename_pattern = null;
             }
             if (payload.response_type === "file" && payload.file_payload_type !== "document") {
                 payload.document_number_col = null;
                 payload.document_date_col = null;
+                payload.document_number_cell = null;
+                payload.document_date_cell = null;
+                payload.document_meta_cell = null;
                 payload.gtd_col = null;
                 payload.country_code_col = null;
                 payload.country_name_col = null;
@@ -2399,6 +2432,13 @@ const ProviderPage = () => {
                                             <InputNumber min={1} style={{ width: "100%" }} />
                                         </Form.Item>
                                         <Form.Item
+                                            name="name_col"
+                                            label="Наименование (опционально)"
+                                            extra="Используется для извлечения бренда, если колонка бренда не заполнена."
+                                        >
+                                            <InputNumber min={1} style={{ width: "100%" }} />
+                                        </Form.Item>
+                                        <Form.Item
                                             name="qty_col"
                                             label="Количество"
                                             rules={[{ required: true, message: "Укажите колонку количества" }]}
@@ -2413,6 +2453,30 @@ const ProviderPage = () => {
                                         </Form.Item>
                                         <Form.Item name="price_col" label="Цена (опционально)">
                                             <InputNumber min={1} style={{ width: "100%" }} />
+                                        </Form.Item>
+                                    </div>
+                                    <Divider>Правила бренда</Divider>
+                                    <div className="responsive-form-grid-compact">
+                                        <Form.Item
+                                            name="fixed_brand_name"
+                                            label="Фиксированный бренд (опционально)"
+                                            extra="Если задан, применяется ко всем строкам документа."
+                                        >
+                                            <Input placeholder="Например: Dragonzap" />
+                                        </Form.Item>
+                                        <Form.Item
+                                            name="brand_priority_list_text"
+                                            label="Приоритет брендов (через запятую)"
+                                            extra="Если один OEM есть под несколькими брендами, берется первый подходящий."
+                                        >
+                                            <Input placeholder="Dragonzap, Hot-parts" />
+                                        </Form.Item>
+                                        <Form.Item
+                                            name="brand_from_name_regex"
+                                            label="Regex бренда из наименования (опционально)"
+                                            extra="Используется с колонкой «Наименование». Группа 1 = бренд."
+                                        >
+                                            <Input placeholder="^[^ ]+\\s+([^ ]+)" />
                                         </Form.Item>
                                     </div>
                                     <Form.Item noStyle shouldUpdate>
@@ -2434,6 +2498,27 @@ const ProviderPage = () => {
                                                             label="Дата документа"
                                                         >
                                                             <InputNumber min={1} style={{ width: "100%" }} />
+                                                        </Form.Item>
+                                                        <Form.Item
+                                                            name="document_number_cell"
+                                                            label="Ячейка номера документа"
+                                                            extra="Формат A1, например B2."
+                                                        >
+                                                            <Input placeholder="B2" />
+                                                        </Form.Item>
+                                                        <Form.Item
+                                                            name="document_date_cell"
+                                                            label="Ячейка даты документа"
+                                                            extra="Формат A1, например C2."
+                                                        >
+                                                            <Input placeholder="C2" />
+                                                        </Form.Item>
+                                                        <Form.Item
+                                                            name="document_meta_cell"
+                                                            label="Ячейка «№ и дата» (общая)"
+                                                            extra="Если № и дата в одной ячейке: «УПД №1679 от 20 апреля 2026 г.»"
+                                                        >
+                                                            <Input placeholder="A2" />
                                                         </Form.Item>
                                                         <Form.Item
                                                             name="gtd_col"

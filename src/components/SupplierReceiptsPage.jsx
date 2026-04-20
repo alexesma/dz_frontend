@@ -8,14 +8,18 @@ import {
     Empty,
     Input,
     InputNumber,
+    Modal,
     Row,
     Select,
     Space,
     Table,
     Tag,
+    Tooltip,
     Typography,
     message,
 } from 'antd';
+import { MinusOutlined, PlusOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 
 import { getAllProviders } from '../api/providers';
 import {
@@ -27,7 +31,7 @@ import {
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
-const getDefaultSupplierDateRange = () => {
+const getDefaultDateRange = () => {
     const today = dayjs();
     const start = today.day() === 1
         ? today.subtract(3, 'day').startOf('day')
@@ -35,24 +39,20 @@ const getDefaultSupplierDateRange = () => {
     return [start, today.endOf('day')];
 };
 
-const getReceiptRowState = (row, draft) => {
+// Row state: complete / partial / rejected / idle
+const getRowState = (row, draft) => {
     const expected = Number(row.confirmed_quantity ?? row.ordered_quantity ?? 0);
     const alreadyReceived = Number(row.already_received_quantity || 0);
     const currentDraft = draft?.touched ? Number(draft.received_quantity || 0) : 0;
     const totalAfter = alreadyReceived + currentDraft;
-    if (draft?.touched && currentDraft === 0 && alreadyReceived === 0) {
-        return 'rejected';
-    }
-    if (totalAfter >= expected && expected > 0) {
-        return 'complete';
-    }
-    if (totalAfter > 0) {
-        return 'partial';
-    }
+    if (draft?.touched && currentDraft === 0 && alreadyReceived === 0) return 'rejected';
+    if (totalAfter >= expected && expected > 0) return 'complete';
+    if (totalAfter > 0) return 'partial';
     return 'idle';
 };
 
 const SupplierReceiptsPage = () => {
+    const navigate = useNavigate();
     const [providers, setProviders] = useState([]);
     const [loading, setLoading] = useState(false);
     const [submitting, setSubmitting] = useState(false);
@@ -60,7 +60,7 @@ const SupplierReceiptsPage = () => {
     const [syncingResponses, setSyncingResponses] = useState(false);
     const [filters, setFilters] = useState({
         providerId: null,
-        dateRange: getDefaultSupplierDateRange(),
+        dateRange: getDefaultDateRange(),
     });
     const [drafts, setDrafts] = useState({});
     const [documentNumber, setDocumentNumber] = useState('');
@@ -68,92 +68,106 @@ const SupplierReceiptsPage = () => {
     const [comment, setComment] = useState('');
 
     useEffect(() => {
-        const fetchProviders = async () => {
-            try {
-                const items = await getAllProviders({
-                    sort_by: 'name',
-                    sort_dir: 'asc',
-                });
-                setProviders(items);
-            } catch (err) {
-                console.error('Failed to fetch providers', err);
-                message.error('Не удалось загрузить поставщиков');
-            }
-        };
-        fetchProviders();
+        getAllProviders({ sort_by: 'name', sort_dir: 'asc' })
+            .then((items) => setProviders(items || []))
+            .catch(() => message.error('Не удалось загрузить поставщиков'));
     }, []);
 
     const fetchRows = useCallback(async () => {
-        if (!filters.providerId) {
-            setRows([]);
-            return;
-        }
+        if (!filters.providerId) { setRows([]); return; }
         setLoading(true);
         try {
-            const params = {
-                provider_id: filters.providerId,
-            };
+            const params = { provider_id: filters.providerId };
             if (filters.dateRange?.length === 2) {
                 params.date_from = filters.dateRange[0].format('YYYY-MM-DD');
                 params.date_to = filters.dateRange[1].format('YYYY-MM-DD');
             }
             const response = await getSupplierReceiptCandidates(params);
             setRows(response.data || []);
-        } catch (err) {
-            console.error('Failed to fetch supplier receipt candidates', err);
+            setDrafts({});
+        } catch {
             message.error('Не удалось загрузить строки для поступления');
         } finally {
             setLoading(false);
         }
     }, [filters]);
 
-    useEffect(() => {
-        fetchRows();
-    }, [fetchRows]);
+    useEffect(() => { fetchRows(); }, [fetchRows]);
 
-    const touchedRows = useMemo(() => (
-        rows.filter((row) => drafts[row.supplier_order_item_id]?.touched)
-    ), [drafts, rows]);
-
-    const updateDraft = (row, receivedQuantity, nextComment = undefined) => {
+    // ── draft helpers ──────────────────────────────────────────────────────────
+    const updateDraft = useCallback((row, receivedQuantity) => {
         setDrafts((prev) => ({
             ...prev,
             [row.supplier_order_item_id]: {
                 touched: true,
-                received_quantity: receivedQuantity,
-                comment: nextComment === undefined
-                    ? prev[row.supplier_order_item_id]?.comment || ''
-                    : nextComment,
+                received_quantity: Math.max(0, receivedQuantity ?? 0),
+                comment: prev[row.supplier_order_item_id]?.comment || '',
             },
         }));
-    };
+    }, []);
 
-    const resetDraft = (row) => {
+    const resetDraft = useCallback((id) => {
         setDrafts((prev) => {
             const next = { ...prev };
-            delete next[row.supplier_order_item_id];
+            delete next[id];
             return next;
         });
+    }, []);
+
+    const stepDraft = useCallback((row, delta) => {
+        const current = Number(drafts[row.supplier_order_item_id]?.received_quantity || 0);
+        const next = Math.max(0, Math.min(row.pending_quantity, current + delta));
+        updateDraft(row, next);
+    }, [drafts, updateDraft]);
+
+    // ── checkbox selection: check = mark all arrived ───────────────────────────
+    const checkedKeys = useMemo(() => (
+        rows
+            .filter((row) => {
+                const draft = drafts[row.supplier_order_item_id];
+                if (!draft?.touched) return false;
+                const expected = Number(row.confirmed_quantity ?? row.ordered_quantity ?? 0);
+                return Number(draft.received_quantity || 0) >= expected && expected > 0;
+            })
+            .map((row) => row.supplier_order_item_id)
+    ), [rows, drafts]);
+
+    const rowSelection = {
+        selectedRowKeys: checkedKeys,
+        onSelect: (record, selected) => {
+            if (selected) {
+                const expected = Number(record.confirmed_quantity ?? record.ordered_quantity ?? 0);
+                updateDraft(record, expected || record.pending_quantity);
+            } else {
+                resetDraft(record.supplier_order_item_id);
+            }
+        },
+        onSelectAll: (selected, _selectedRows, changeRows) => {
+            if (selected) {
+                changeRows.forEach((row) => {
+                    const expected = Number(row.confirmed_quantity ?? row.ordered_quantity ?? 0);
+                    updateDraft(row, expected || row.pending_quantity);
+                });
+            } else {
+                changeRows.forEach((row) => resetDraft(row.supplier_order_item_id));
+            }
+        },
     };
 
+    // ── touched rows (have a draft entry) ─────────────────────────────────────
+    const touchedRows = useMemo(() => (
+        rows.filter((row) => drafts[row.supplier_order_item_id]?.touched)
+    ), [drafts, rows]);
+
+    // ── create receipt ─────────────────────────────────────────────────────────
     const handleCreateReceipt = async () => {
-        if (!filters.providerId) {
-            message.warning('Сначала выберите поставщика');
-            return;
-        }
-        const items = rows
-            .filter((row) => drafts[row.supplier_order_item_id]?.touched)
-            .map((row) => ({
-                supplier_order_item_id: row.supplier_order_item_id,
-                received_quantity: Number(
-                    drafts[row.supplier_order_item_id]?.received_quantity || 0
-                ),
-                comment: drafts[row.supplier_order_item_id]?.comment || undefined,
-            }));
-        if (!items.length) {
-            message.warning('Отметьте хотя бы одну строку для поступления');
-            return;
-        }
+        if (!filters.providerId) { message.warning('Сначала выберите поставщика'); return; }
+        const items = touchedRows.map((row) => ({
+            supplier_order_item_id: row.supplier_order_item_id,
+            received_quantity: Number(drafts[row.supplier_order_item_id]?.received_quantity || 0),
+            comment: drafts[row.supplier_order_item_id]?.comment || undefined,
+        }));
+        if (!items.length) { message.warning('Отметьте хотя бы одну строку'); return; }
         setSubmitting(true);
         try {
             const payload = {
@@ -165,17 +179,17 @@ const SupplierReceiptsPage = () => {
                 items,
             };
             const response = await createSupplierReceipt(payload);
-            message.success(
-                `Черновик поступления #${response.data.id} создан по ${response.data.items.length} строкам`
-            );
+            const receiptId = response.data.id;
+            message.success(`Документ #${receiptId} создан (${response.data.items.length} строк)`);
             setDrafts({});
             setDocumentNumber('');
             setComment('');
             setDocumentDate(dayjs());
             fetchRows();
+            // Redirect to incoming documents and auto-open this receipt
+            navigate(`/documents/incoming?openId=${receiptId}`);
         } catch (err) {
-            console.error('Failed to create supplier receipt', err);
-            message.error(err?.response?.data?.detail || 'Не удалось сформировать поступление');
+            message.error(err?.response?.data?.detail || 'Не удалось создать документ');
         } finally {
             setSubmitting(false);
         }
@@ -185,153 +199,177 @@ const SupplierReceiptsPage = () => {
         setSyncingResponses(true);
         try {
             const params = {};
-            if (filters.providerId) {
-                params.provider_id = filters.providerId;
-            }
+            if (filters.providerId) params.provider_id = filters.providerId;
             if (filters.dateRange?.length === 2) {
                 params.date_from = filters.dateRange[0].format('YYYY-MM-DD');
                 params.date_to = filters.dateRange[1].format('YYYY-MM-DD');
             }
-            const response = await processSupplierResponses(params);
-            const payload = response.data || {};
+            const res = await processSupplierResponses(params);
+            const p = res.data || {};
             message.success(
-                `Проверено писем: ${payload.fetched_messages || 0}, ` +
-                `обработано: ${payload.processed_messages || 0}, ` +
-                `обновлено строк: ${payload.updated_items || 0}`
+                `Проверено: ${p.fetched_messages || 0}, обработано: ${p.processed_messages || 0}, строк: ${p.updated_items || 0}`
             );
             fetchRows();
         } catch (err) {
-            console.error('Failed to process supplier responses', err);
-            message.error(
-                err?.response?.data?.detail || 'Не удалось проверить ответы поставщиков'
-            );
+            message.error(err?.response?.data?.detail || 'Не удалось проверить ответы');
         } finally {
             setSyncingResponses(false);
         }
     };
 
+    // ── table columns ──────────────────────────────────────────────────────────
     const columns = [
         {
-            title: 'Дата заказа',
-            dataIndex: 'supplier_order_created_at',
-            key: 'supplier_order_created_at',
-            width: 128,
-            render: (value) => (value ? dayjs(value).format('DD.MM.YY HH:mm') : '—'),
+            title: '№',
+            key: 'order_id',
+            width: 62,
+            render: (_, row) => (
+                <Text style={{ fontSize: 13, fontWeight: 600 }}>
+                    #{row.supplier_order_id}
+                </Text>
+            ),
         },
         {
-            title: 'Заказ / клиент',
-            key: 'order',
-            width: 190,
+            title: 'Артикул / Бренд',
+            key: 'article',
+            ellipsis: true,
             render: (_, row) => (
-                <div>
-                    <div>#{row.supplier_order_id}</div>
-                    <Text type="secondary">{row.customer_name || '—'}</Text>
+                <div style={{ lineHeight: 1.3 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>{row.oem_number || '—'}</div>
+                    <div style={{ fontSize: 12, color: '#555' }}>{row.brand_name || '—'}</div>
+                    {row.autopart_name && (
+                        <Tooltip title={row.autopart_name}>
+                            <div style={{ fontSize: 11, color: '#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>
+                                {row.autopart_name}
+                            </div>
+                        </Tooltip>
+                    )}
                 </div>
             ),
         },
         {
-            title: 'OEM',
-            dataIndex: 'oem_number',
-            key: 'oem_number',
-            width: 140,
-            ellipsis: true,
-        },
-        {
-            title: 'Бренд',
-            dataIndex: 'brand_name',
-            key: 'brand_name',
-            width: 100,
-            ellipsis: true,
-        },
-        {
             title: 'Заказано',
             dataIndex: 'ordered_quantity',
-            key: 'ordered_quantity',
-            width: 82,
-            align: 'right',
+            key: 'ordered',
+            width: 76,
+            align: 'center',
+            render: (v) => <Text style={{ fontSize: 13, fontWeight: 600 }}>{v ?? '—'}</Text>,
         },
         {
             title: 'Подтв.',
             dataIndex: 'confirmed_quantity',
-            key: 'confirmed_quantity',
-            width: 82,
-            align: 'right',
-            render: (value, row) => value ?? row.ordered_quantity,
+            key: 'confirmed',
+            width: 68,
+            align: 'center',
+            render: (v, row) => (
+                <Text style={{ fontSize: 13, fontWeight: 600 }}>
+                    {v ?? row.ordered_quantity ?? '—'}
+                </Text>
+            ),
         },
         {
             title: 'Получено',
             dataIndex: 'already_received_quantity',
-            key: 'already_received_quantity',
-            width: 88,
-            align: 'right',
+            key: 'received',
+            width: 76,
+            align: 'center',
+            render: (v) => <Text style={{ fontSize: 13, fontWeight: 600 }}>{v ?? 0}</Text>,
         },
         {
-            title: 'Сейчас',
-            key: 'received_quantity',
-            width: 200,
-            render: (_, row) => (
-                <Space size={4} wrap>
-                    <InputNumber
-                        min={0}
-                        max={row.pending_quantity}
-                        value={drafts[row.supplier_order_item_id]?.received_quantity}
-                        onChange={(value) => updateDraft(row, value ?? 0)}
-                        style={{ width: 84 }}
-                        disabled={row.pending_quantity <= 0}
-                    />
-                    <Button
-                        size="small"
-                        onClick={() => updateDraft(row, row.pending_quantity)}
-                        disabled={row.pending_quantity <= 0}
-                    >
-                        Всё
-                    </Button>
-                    <Button
-                        size="small"
-                        danger
-                        onClick={() => updateDraft(row, 0)}
-                    >
-                        0
-                    </Button>
-                    <Button size="small" onClick={() => resetDraft(row)}>
-                        Сброс
-                    </Button>
-                </Space>
+            title: 'К приёму',
+            dataIndex: 'pending_quantity',
+            key: 'pending',
+            width: 72,
+            align: 'center',
+            render: (v) => (
+                <Text style={{ fontSize: 13, fontWeight: 600, color: v > 0 ? '#1677ff' : '#aaa' }}>
+                    {v ?? 0}
+                </Text>
             ),
         },
         {
-            title: 'Остаток',
-            dataIndex: 'pending_quantity',
-            key: 'pending_quantity',
-            width: 86,
-            align: 'right',
-        },
-        {
-            title: 'Ответ',
-            key: 'response_status_raw',
-            width: 160,
-            ellipsis: true,
-            render: (_, row) => row.response_status_raw || row.response_comment || '—',
+            title: 'Принять',
+            key: 'accept',
+            width: 168,
+            render: (_, row) => {
+                const draft = drafts[row.supplier_order_item_id];
+                const current = draft?.touched ? Number(draft.received_quantity ?? 0) : undefined;
+                const disabled = row.pending_quantity <= 0;
+                return (
+                    <Space size={3}>
+                        <Button
+                            size="small"
+                            icon={<MinusOutlined />}
+                            onClick={() => stepDraft(row, -1)}
+                            disabled={disabled || !current}
+                            style={{ width: 28, padding: 0 }}
+                        />
+                        <InputNumber
+                            size="small"
+                            min={0}
+                            max={row.pending_quantity}
+                            value={current}
+                            onChange={(v) => updateDraft(row, v ?? 0)}
+                            disabled={disabled}
+                            style={{ width: 56 }}
+                            controls={false}
+                        />
+                        <Button
+                            size="small"
+                            icon={<PlusOutlined />}
+                            onClick={() => stepDraft(row, 1)}
+                            disabled={disabled || current >= row.pending_quantity}
+                            style={{ width: 28, padding: 0 }}
+                        />
+                        <Button
+                            size="small"
+                            danger
+                            onClick={() => updateDraft(row, 0)}
+                            style={{ width: 28, padding: 0, fontWeight: 700 }}
+                            title="Отказ (0)"
+                        >
+                            0
+                        </Button>
+                    </Space>
+                );
+            },
         },
     ];
 
     const rowClassName = (record) => {
-        const state = getReceiptRowState(
-            record,
-            drafts[record.supplier_order_item_id]
-        );
+        const state = getRowState(record, drafts[record.supplier_order_item_id]);
         if (state === 'complete') return 'supplier-receipt-row-complete';
         if (state === 'partial') return 'supplier-receipt-row-partial';
         if (state === 'rejected') return 'supplier-receipt-row-rejected';
         return '';
     };
 
+    // ── legend tags ────────────────────────────────────────────────────────────
+    const legend = (
+        <Space size={8}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 12, height: 12, borderRadius: 2, background: '#b7eb8f', display: 'inline-block' }} />
+                <Text type="secondary" style={{ fontSize: 12 }}>Всё принято</Text>
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 12, height: 12, borderRadius: 2, background: '#ffe58f', display: 'inline-block' }} />
+                <Text type="secondary" style={{ fontSize: 12 }}>Частично</Text>
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 12, height: 12, borderRadius: 2, background: '#ffccc7', display: 'inline-block' }} />
+                <Text type="secondary" style={{ fontSize: 12 }}>Отказ</Text>
+            </span>
+        </Space>
+    );
+
     return (
         <div className="page-shell">
             <Card>
-                <Title level={3}>Поступления от поставщиков</Title>
-                <Row gutter={12} style={{ marginBottom: 16 }}>
-                    <Col xs={24} md={8}>
+                <Title level={3} style={{ marginBottom: 16 }}>Поступления от поставщиков</Title>
+
+                {/* Filters */}
+                <Row gutter={12} style={{ marginBottom: 12 }}>
+                    <Col xs={24} md={9}>
                         <Select
                             showSearch
                             allowClear
@@ -339,45 +377,48 @@ const SupplierReceiptsPage = () => {
                             style={{ width: '100%' }}
                             value={filters.providerId}
                             onChange={(value) => setFilters((prev) => ({ ...prev, providerId: value || null }))}
-                            options={providers.map((provider) => ({
-                                value: provider.id,
-                                label: provider.name,
-                            }))}
+                            options={providers.map((p) => ({ value: p.id, label: p.name }))}
+                            filterOption={(input, option) =>
+                                (option?.label || '').toLowerCase().includes(input.toLowerCase())
+                            }
                         />
                     </Col>
-                    <Col xs={24} md={8}>
+                    <Col xs={24} md={9}>
                         <RangePicker
                             style={{ width: '100%' }}
                             value={filters.dateRange}
                             onChange={(value) => setFilters((prev) => ({
                                 ...prev,
-                                dateRange: value || getDefaultSupplierDateRange(),
+                                dateRange: value || getDefaultDateRange(),
                             }))}
                             format="DD.MM.YY"
                         />
                     </Col>
-                    <Col xs={24} md={8}>
-                        <Space wrap style={{ width: '100%' }}>
+                    <Col xs={24} md={6}>
+                        <Space>
                             <Button type="primary" onClick={fetchRows} loading={loading}>
                                 Обновить
                             </Button>
                             <Button onClick={handleProcessResponses} loading={syncingResponses}>
                                 Проверить почту
                             </Button>
-                            <Tag color="green">зелёный: закрыто</Tag>
-                            <Tag color="gold">жёлтый: частично</Tag>
-                            <Tag color="red">красный: отказ</Tag>
                         </Space>
                     </Col>
                 </Row>
 
-                <Card size="small" style={{ marginBottom: 16 }}>
-                    <Row gutter={12}>
-                        <Col xs={24} md={6}>
+                {/* Document header + create button */}
+                <Card
+                    size="small"
+                    style={{ marginBottom: 16, background: '#fafafa' }}
+                    styles={{ body: { padding: '10px 12px' } }}
+                >
+                    <Row gutter={10} align="middle">
+                        <Col xs={24} md={5}>
                             <Input
                                 placeholder="Номер документа"
                                 value={documentNumber}
-                                onChange={(event) => setDocumentNumber(event.target.value)}
+                                onChange={(e) => setDocumentNumber(e.target.value)}
+                                size="middle"
                             />
                         </Col>
                         <Col xs={24} md={4}>
@@ -386,29 +427,34 @@ const SupplierReceiptsPage = () => {
                                 value={documentDate}
                                 onChange={setDocumentDate}
                                 format="DD.MM.YYYY"
+                                size="middle"
                             />
                         </Col>
-                        <Col xs={24} md={10}>
+                        <Col xs={24} md={9}>
                             <Input
-                                placeholder="Комментарий"
+                                placeholder="Комментарий к документу"
                                 value={comment}
-                                onChange={(event) => setComment(event.target.value)}
+                                onChange={(e) => setComment(e.target.value)}
+                                size="middle"
                             />
                         </Col>
-                        <Col xs={24} md={4}>
+                        <Col xs={24} md={6}>
                             <Button
                                 type="primary"
                                 block
                                 onClick={handleCreateReceipt}
                                 loading={submitting}
+                                disabled={!touchedRows.length}
                             >
-                                Сформировать черновик
+                                Создать документ{touchedRows.length ? ` (${touchedRows.length})` : ''}
                             </Button>
                         </Col>
                     </Row>
-                    <div style={{ marginTop: 12 }}>
-                        <Text type="secondary">
-                            Подготовлено строк: {touchedRows.length}
+                    <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 16 }}>
+                        {legend}
+                        <Text type="secondary" style={{ fontSize: 12, marginLeft: 'auto' }}>
+                            Отмечено строк: <strong>{touchedRows.length}</strong>
+                            {checkedKeys.length > 0 && ` · Полностью принято: ${checkedKeys.length}`}
                         </Text>
                     </div>
                 </Card>
@@ -420,11 +466,13 @@ const SupplierReceiptsPage = () => {
                         className="supplier-receipts-table"
                         size="small"
                         loading={loading}
+                        rowSelection={rowSelection}
                         dataSource={rows.map((row) => ({ ...row, key: row.supplier_order_item_id }))}
                         columns={columns}
                         rowClassName={rowClassName}
                         pagination={{ pageSize: 50, showSizeChanger: true }}
-                        scroll={{ x: 1220 }}
+                        scroll={{ x: false }}
+                        tableLayout="auto"
                     />
                 )}
             </Card>

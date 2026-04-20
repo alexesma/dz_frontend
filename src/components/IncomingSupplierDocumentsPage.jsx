@@ -1,6 +1,7 @@
 import React, {
     useCallback, useEffect, useRef, useState,
 } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import {
     AutoComplete,
@@ -290,6 +291,7 @@ const ArticleSearchCell = ({ currentOem, currentBrand, currentName, onSelect }) 
 
 // ─── Main page ─────────────────────────────────────────────────────────────────
 const IncomingSupplierDocumentsPage = () => {
+    const [searchParams, setSearchParams] = useSearchParams();
     const [providers, setProviders] = useState([]);
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -373,6 +375,15 @@ const IncomingSupplierDocumentsPage = () => {
     useEffect(() => {
         fetchDocuments();
     }, [fetchDocuments]);
+
+    // ── auto-open receipt from ?openId= URL param (redirect from SupplierReceiptsPage) ──
+    useEffect(() => {
+        const openId = searchParams.get('openId');
+        if (!openId) return;
+        // Remove the param so it doesn't re-trigger on re-render
+        setSearchParams({}, { replace: true });
+        handleOpenDetail(Number(openId));
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ── open detail ─────────────────────────────────────────────────────────
     const handleOpenDetail = useCallback(async (receiptId) => {
@@ -553,6 +564,14 @@ const IncomingSupplierDocumentsPage = () => {
             message.success(`Документ #${receiptId} проведен`);
             fetchDocuments();
             if (detailReceipt?.id === receiptId) await reloadDetail(receiptId);
+            // Offer to print labels after posting
+            Modal.confirm({
+                title: 'Документ проведён',
+                content: 'Распечатать этикетки для полученных позиций?',
+                okText: 'Печать',
+                cancelText: 'Пропустить',
+                onOk: () => setLabelVisible(true),
+            });
         } catch (err) {
             message.error(err?.response?.data?.detail || 'Не удалось провести документ');
         } finally {
@@ -642,7 +661,7 @@ const IncomingSupplierDocumentsPage = () => {
             title: 'Статус', key: 'status', width: 110,
             render: (_, row) => row.posted_at
                 ? <Tag color="green">Проведен</Tag>
-                : <Tag color="gold">Черновик</Tag>,
+                : <Tag color="gold">Документ</Tag>,
         },
         {
             title: 'Документ', key: 'document', width: 200,
@@ -1027,7 +1046,7 @@ const IncomingSupplierDocumentsPage = () => {
                             onChange={(v) => setFilters((p) => ({ ...p, status: v }))}
                             options={[
                                 { value: 'all', label: 'Все' },
-                                { value: 'draft', label: 'Черновики' },
+                                { value: 'draft', label: "Документы (чернов.)" },
                                 { value: 'posted', label: 'Проведенные' },
                             ]}
                         />
@@ -1076,7 +1095,7 @@ const IncomingSupplierDocumentsPage = () => {
                             <span>Документ поступления #{detailReceipt.id}</span>
                             {detailReceipt.posted_at
                                 ? <Tag color="green">Проведен</Tag>
-                                : <Tag color="gold">Черновик</Tag>}
+                                : <Tag color="gold">Документ</Tag>}
                         </Space>
                     ) : 'Документ поступления'
                 }

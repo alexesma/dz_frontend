@@ -163,6 +163,11 @@ const DEFAULT_DAYS = 3;
 const DEFAULT_PAGE_SIZE = 50;
 const DEFAULT_CONFIRM_KEYWORDS_TEXT = 'в наличии, есть, отгружаем, собрали, да';
 const DEFAULT_REJECT_KEYWORDS_TEXT = 'нет, 0, отсутствует, не можем, снято с производства';
+const DOCUMENT_CELL_FIELDS = [
+    'document_number_cell',
+    'document_date_cell',
+    'document_meta_cell',
+];
 const DEFAULT_NEW_ORDER_CONFIG = {
     pricelist_config_id: null,
     order_start_row: 1,
@@ -187,6 +192,28 @@ const DEFAULT_NEW_ORDER_CONFIG = {
     price_tolerance_pct: 2,
     price_warning_pct: 5,
     is_active: true,
+};
+
+const toExcelColumn = (columnIndexZeroBased) => {
+    let index = Number(columnIndexZeroBased);
+    if (!Number.isInteger(index) || index < 0) {
+        return '';
+    }
+    let result = '';
+    while (index >= 0) {
+        result = String.fromCharCode((index % 26) + 65) + result;
+        index = Math.floor(index / 26) - 1;
+    }
+    return result;
+};
+
+const toCellReference = (rowIndexZeroBased, columnIndexZeroBased) => {
+    const rowNumber = Number(rowIndexZeroBased) + 1;
+    const letters = toExcelColumn(columnIndexZeroBased);
+    if (!letters || !Number.isInteger(rowNumber) || rowNumber < 1) {
+        return '';
+    }
+    return `${letters}${rowNumber}`;
 };
 
 const InboxPage = () => {
@@ -237,12 +264,18 @@ const InboxPage = () => {
         qty_col: null,
         price_col: null,
         brand_col: null,
-        multiplicity_col: null,
         name_col: null,
+        multiplicity_col: null,
         status_col: null,
         comment_col: null,
         document_number_col: null,
         document_date_col: null,
+        document_number_cell: '',
+        document_date_cell: '',
+        document_meta_cell: '',
+        fixed_brand_name: '',
+        brand_priority_list_text: '',
+        brand_from_name_regex: '',
     });
     const [customerConfig, setCustomerConfig] = useState({
         customer_id: null,
@@ -427,12 +460,20 @@ const InboxPage = () => {
                     qty_col: cfg.qty_col || null,
                     price_col: cfg.price_col || null,
                     brand_col: cfg.brand_col || null,
-                    multiplicity_col: cfg.multiplicity_col || null,
                     name_col: cfg.name_col || null,
+                    multiplicity_col: cfg.multiplicity_col || null,
                     status_col: cfg.status_col || null,
                     comment_col: cfg.comment_col || null,
                     document_number_col: cfg.document_number_col || null,
                     document_date_col: cfg.document_date_col || null,
+                    document_number_cell: cfg.document_number_cell || '',
+                    document_date_cell: cfg.document_date_cell || '',
+                    document_meta_cell: cfg.document_meta_cell || '',
+                    fixed_brand_name: cfg.fixed_brand_name || '',
+                    brand_priority_list_text: (
+                        cfg.brand_priority_list || []
+                    ).join(', '),
+                    brand_from_name_regex: cfg.brand_from_name_regex || '',
                 }));
             } else if (configs.length > 1) {
                 // При нескольких конфигах просим выбрать конкретный,
@@ -443,6 +484,12 @@ const InboxPage = () => {
                     config_id: null,
                     config_name: '',
                     multiplicity_col: null,
+                    fixed_brand_name: '',
+                    brand_priority_list_text: '',
+                    brand_from_name_regex: '',
+                    document_number_cell: '',
+                    document_date_cell: '',
+                    document_meta_cell: '',
                 }));
             } else if (configs.length === 0) {
                 setProviderConfig(p => ({
@@ -456,6 +503,15 @@ const InboxPage = () => {
                     reject_keywords_text: DEFAULT_REJECT_KEYWORDS_TEXT,
                     value_after_article_type: 'both',
                     multiplicity_col: null,
+                    name_col: null,
+                    fixed_brand_name: '',
+                    brand_priority_list_text: '',
+                    brand_from_name_regex: '',
+                    document_number_col: null,
+                    document_date_col: null,
+                    document_number_cell: '',
+                    document_date_cell: '',
+                    document_meta_cell: '',
                 }));
             }
         } catch {
@@ -600,12 +656,18 @@ const InboxPage = () => {
             qty_col: null,
             price_col: null,
             brand_col: null,
-            multiplicity_col: null,
             name_col: null,
+            multiplicity_col: null,
             status_col: null,
             comment_col: null,
             document_number_col: null,
             document_date_col: null,
+            document_number_cell: '',
+            document_date_cell: '',
+            document_meta_cell: '',
+            fixed_brand_name: '',
+            brand_priority_list_text: '',
+            brand_from_name_regex: '',
         });
         setProviderConfigs([]);
         setCustomerConfig({
@@ -816,11 +878,32 @@ const InboxPage = () => {
             }
             let payloadProviderConfig = providerConfig;
             if (RULES_WITH_PROVIDER.has(ruleType)) {
+                const normalizeCellRef = (value) => (
+                    String(value || '').trim().toUpperCase() || null
+                );
                 payloadProviderConfig = {
                     ...providerConfig,
                     subject_pattern: String(providerConfig.subject_pattern || '').trim() || null,
                     filename_pattern: String(providerConfig.filename_pattern || '').trim() || null,
                     config_name: String(providerConfig.config_name || '').trim() || null,
+                    fixed_brand_name: String(
+                        providerConfig.fixed_brand_name || ''
+                    ).trim() || null,
+                    brand_priority_list: parseCommaSeparated(
+                        providerConfig.brand_priority_list_text
+                    ),
+                    brand_from_name_regex: String(
+                        providerConfig.brand_from_name_regex || ''
+                    ).trim() || null,
+                    document_number_cell: normalizeCellRef(
+                        providerConfig.document_number_cell
+                    ),
+                    document_date_cell: normalizeCellRef(
+                        providerConfig.document_date_cell
+                    ),
+                    document_meta_cell: normalizeCellRef(
+                        providerConfig.document_meta_cell
+                    ),
                 };
                 if (ruleType === 'order_reply') {
                     payloadProviderConfig.confirm_keywords = parseCommaSeparated(
@@ -835,6 +918,41 @@ const InboxPage = () => {
                 }
                 delete payloadProviderConfig.confirm_keywords_text;
                 delete payloadProviderConfig.reject_keywords_text;
+                delete payloadProviderConfig.brand_priority_list_text;
+                if (
+                    ruleType !== 'order_reply'
+                    || payloadProviderConfig.response_type !== 'text'
+                ) {
+                    payloadProviderConfig.confirm_keywords = [];
+                    payloadProviderConfig.reject_keywords = [];
+                    payloadProviderConfig.value_after_article_type = 'both';
+                }
+                if (payloadProviderConfig.response_type === 'text') {
+                    payloadProviderConfig.filename_pattern = null;
+                    payloadProviderConfig.start_row = 1;
+                    payloadProviderConfig.oem_col = null;
+                    payloadProviderConfig.qty_col = null;
+                    payloadProviderConfig.price_col = null;
+                    payloadProviderConfig.brand_col = null;
+                    payloadProviderConfig.name_col = null;
+                    payloadProviderConfig.status_col = null;
+                    payloadProviderConfig.comment_col = null;
+                    payloadProviderConfig.document_number_col = null;
+                    payloadProviderConfig.document_date_col = null;
+                    payloadProviderConfig.document_number_cell = null;
+                    payloadProviderConfig.document_date_cell = null;
+                    payloadProviderConfig.document_meta_cell = null;
+                    payloadProviderConfig.fixed_brand_name = null;
+                    payloadProviderConfig.brand_priority_list = [];
+                    payloadProviderConfig.brand_from_name_regex = null;
+                }
+                if (ruleType !== 'document') {
+                    payloadProviderConfig.document_number_col = null;
+                    payloadProviderConfig.document_date_col = null;
+                    payloadProviderConfig.document_number_cell = null;
+                    payloadProviderConfig.document_date_cell = null;
+                    payloadProviderConfig.document_meta_cell = null;
+                }
             }
             const payload = {
                 rule_type: ruleType,
@@ -1487,6 +1605,12 @@ const InboxPage = () => {
                                                         reject_keywords_text: DEFAULT_REJECT_KEYWORDS_TEXT,
                                                         value_after_article_type: 'both',
                                                         multiplicity_col: null,
+                                                        fixed_brand_name: '',
+                                                        brand_priority_list_text: '',
+                                                        brand_from_name_regex: '',
+                                                        document_number_cell: '',
+                                                        document_date_cell: '',
+                                                        document_meta_cell: '',
                                                     }));
                                                     loadProviderConfigs(val, ruleType);
                                                 }}
@@ -1642,6 +1766,19 @@ const InboxPage = () => {
                                                                         cfg?.document_number_col || null,
                                                                     document_date_col:
                                                                         cfg?.document_date_col || null,
+                                                                    document_number_cell:
+                                                                        cfg?.document_number_cell || '',
+                                                                    document_date_cell:
+                                                                        cfg?.document_date_cell || '',
+                                                                    document_meta_cell:
+                                                                        cfg?.document_meta_cell || '',
+                                                                    fixed_brand_name:
+                                                                        cfg?.fixed_brand_name || '',
+                                                                    brand_priority_list_text: (
+                                                                        cfg?.brand_priority_list || []
+                                                                    ).join(', '),
+                                                                    brand_from_name_regex:
+                                                                        cfg?.brand_from_name_regex || '',
                                                                 }));
                                                             }}
                                                             options={providerConfigs.map(cfg => ({
@@ -1761,21 +1898,30 @@ const InboxPage = () => {
                                                         { key: 'start_row', label: 'Строка начала' },
                                                         { key: 'oem_col', label: 'OEM' },
                                                         { key: 'brand_col', label: 'Бренд' },
-                                                        {
-                                                            key: 'multiplicity_col',
-                                                            label: 'Кратность',
-                                                        },
                                                         { key: 'qty_col', label: 'Кол-во' },
                                                         { key: 'price_col', label: 'Цена' },
                                                     ];
                                                     const extraFields = ruleType === 'price_list'
-                                                        ? [{ key: 'name_col', label: 'Наименование' }]
+                                                        ? [
+                                                            {
+                                                                key: 'multiplicity_col',
+                                                                label: 'Кратность',
+                                                            },
+                                                            {
+                                                                key: 'name_col',
+                                                                label: 'Наименование',
+                                                            },
+                                                        ]
                                                         : ruleType === 'order_reply'
                                                             ? [
                                                                 { key: 'status_col', label: 'Статус' },
                                                                 { key: 'comment_col', label: 'Коммент' },
                                                             ]
                                                             : [
+                                                                {
+                                                                    key: 'name_col',
+                                                                    label: 'Наименование',
+                                                                },
                                                                 {
                                                                     key: 'document_number_col',
                                                                     label: '№ документа',
@@ -1786,6 +1932,26 @@ const InboxPage = () => {
                                                                 },
                                                             ];
                                                     const allFields = [...baseFields, ...extraFields];
+                                                    const documentCellFields = ruleType === 'document'
+                                                        ? [
+                                                            {
+                                                                key: 'document_number_cell',
+                                                                label: 'Ячейка №',
+                                                            },
+                                                            {
+                                                                key: 'document_date_cell',
+                                                                label: 'Ячейка даты',
+                                                            },
+                                                            {
+                                                                key: 'document_meta_cell',
+                                                                label: 'Ячейка №+дата',
+                                                            },
+                                                        ]
+                                                        : [];
+                                                    const allVisualFields = [
+                                                        ...allFields,
+                                                        ...documentCellFields,
+                                                    ];
 
                                                     // Подсветки столбцов
                                                     const pc = providerConfig;
@@ -1837,34 +2003,68 @@ const InboxPage = () => {
                                                                         ? {
                                                                             background: colHL[i + 1],
                                                                             fontWeight: 700,
-                                                                            cursor: activeVisualField !== 'start_row'
+                                                                            cursor: (
+                                                                                activeVisualField !== 'start_row'
+                                                                                && !DOCUMENT_CELL_FIELDS.includes(activeVisualField)
+                                                                            )
                                                                                 ? 'pointer' : 'default',
                                                                         }
                                                                         : {
-                                                                            cursor: activeVisualField !== 'start_row'
+                                                                            cursor: (
+                                                                                activeVisualField !== 'start_row'
+                                                                                && !DOCUMENT_CELL_FIELDS.includes(activeVisualField)
+                                                                            )
                                                                                 ? 'pointer' : 'default',
                                                                         },
                                                                     onClick: () => {
-                                                                        if (activeVisualField === 'start_row') return;
+                                                                        if (
+                                                                            activeVisualField === 'start_row'
+                                                                            || DOCUMENT_CELL_FIELDS.includes(activeVisualField)
+                                                                        ) {
+                                                                            return;
+                                                                        }
                                                                         setProviderConfig(p => ({
                                                                             ...p,
                                                                             [activeVisualField]: i + 1,
                                                                         }));
                                                                     },
                                                                 }),
-                                                                onCell: () => ({
-                                                                    style: {
-                                                                        whiteSpace: 'nowrap',
-                                                                        overflow: 'hidden',
-                                                                        textOverflow: 'ellipsis',
-                                                                        lineHeight: 1.2,
-                                                                        paddingTop: 4,
-                                                                        paddingBottom: 4,
-                                                                        ...(colHL[i + 1]
-                                                                            ? { background: colHL[i + 1] }
-                                                                            : {}),
-                                                                    },
-                                                                }),
+                                                                onCell: (_, rowIndex) => {
+                                                                    const isCellMode = (
+                                                                        DOCUMENT_CELL_FIELDS.includes(activeVisualField)
+                                                                    );
+                                                                    return {
+                                                                        style: {
+                                                                            whiteSpace: 'nowrap',
+                                                                            overflow: 'hidden',
+                                                                            textOverflow: 'ellipsis',
+                                                                            lineHeight: 1.2,
+                                                                            paddingTop: 4,
+                                                                            paddingBottom: 4,
+                                                                            cursor: isCellMode ? 'pointer' : 'default',
+                                                                            ...(colHL[i + 1]
+                                                                                ? { background: colHL[i + 1] }
+                                                                                : {}),
+                                                                        },
+                                                                        onClick: (event) => {
+                                                                            if (!isCellMode) {
+                                                                                return;
+                                                                            }
+                                                                            event.stopPropagation();
+                                                                            const cellRef = toCellReference(
+                                                                                rowIndex ?? 0,
+                                                                                i,
+                                                                            );
+                                                                            if (!cellRef) {
+                                                                                return;
+                                                                            }
+                                                                            setProviderConfig(p => ({
+                                                                                ...p,
+                                                                                [activeVisualField]: cellRef,
+                                                                            }));
+                                                                        },
+                                                                    };
+                                                                },
                                                             })
                                                         )
                                                         : [];
@@ -1905,8 +2105,8 @@ const InboxPage = () => {
                                                                     }}>
                                                                         Выберите поле → кликните
                                                                         по заголовку колонки в таблице.
-                                                                        Для строки начала — кликните
-                                                                        по нужной строке.
+                                                                        Для «Строка начала» кликните по строке.
+                                                                        Для «Ячейка ...» кликните по нужной ячейке.
                                                                     </div>
                                                                     <Radio.Group
                                                                         value={activeVisualField}
@@ -1920,7 +2120,7 @@ const InboxPage = () => {
                                                                             gap: 6,
                                                                         }}
                                                                     >
-                                                                        {allFields.map(f => (
+                                                                        {allVisualFields.map(f => (
                                                                             <Radio.Button
                                                                                 key={f.key}
                                                                                 value={f.key}
@@ -1985,8 +2185,14 @@ const InboxPage = () => {
                                                                                             providerConfig.start_row
                                                                                             === idx
                                                                                         );
+                                                                                        const startRowMode = (
+                                                                                            activeVisualField === 'start_row'
+                                                                                        );
                                                                                         return {
                                                                                             onClick: () => {
+                                                                                                if (!startRowMode) {
+                                                                                                    return;
+                                                                                                }
                                                                                                 setProviderConfig(
                                                                                                     p => ({
                                                                                                         ...p,
@@ -1994,11 +2200,15 @@ const InboxPage = () => {
                                                                                                     })
                                                                                                 );
                                                                                             },
-                                                                                            style: isStart
+                                                                                            style: isStart && startRowMode
                                                                                                 ? {
                                                                                                     outline: '2px solid #40a9ff',
                                                                                                 }
-                                                                                                : { cursor: 'pointer' },
+                                                                                                : {
+                                                                                                    cursor: startRowMode
+                                                                                                        ? 'pointer'
+                                                                                                        : 'default',
+                                                                                                },
                                                                                         };
                                                                                     }}
                                                                                     bordered
@@ -2022,7 +2232,7 @@ const InboxPage = () => {
                                                                     fontWeight: 600,
                                                                     color: '#555',
                                                                 }}>
-                                                                    Номера столбцов (начиная с 1)
+                                                                    Номера столбцов (начиная с 1, бренд — опционально)
                                                                 </div>
                                                                 <div style={{
                                                                     display: 'grid',
@@ -2053,6 +2263,156 @@ const InboxPage = () => {
                                                                     ))}
                                                                 </div>
                                                             </div>
+                                                            {ruleType === 'document' && (
+                                                                <div style={{
+                                                                    background: '#fafafa',
+                                                                    border: '1px solid #e8e8e8',
+                                                                    borderRadius: 6,
+                                                                    padding: 12,
+                                                                }}>
+                                                                    <div style={{
+                                                                        marginBottom: 8,
+                                                                        fontWeight: 600,
+                                                                        color: '#555',
+                                                                    }}>
+                                                                        Ячейки номера и даты документа (формат A1)
+                                                                    </div>
+                                                                    <div style={{
+                                                                        display: 'grid',
+                                                                        gridTemplateColumns: '1fr 1fr 1fr',
+                                                                        gap: 8,
+                                                                    }}>
+                                                                        {[
+                                                                            {
+                                                                                key: 'document_number_cell',
+                                                                                label: 'Ячейка № документа',
+                                                                                placeholder: 'B2',
+                                                                            },
+                                                                            {
+                                                                                key: 'document_date_cell',
+                                                                                label: 'Ячейка даты',
+                                                                                placeholder: 'C2',
+                                                                            },
+                                                                            {
+                                                                                key: 'document_meta_cell',
+                                                                                label: 'Одна ячейка №+дата',
+                                                                                placeholder: 'A2',
+                                                                            },
+                                                                        ].map(({ key, label, placeholder }) => (
+                                                                            <div key={key}>
+                                                                                <div style={{
+                                                                                    marginBottom: 4,
+                                                                                    fontWeight: 500,
+                                                                                    fontSize: 12,
+                                                                                }}>
+                                                                                    {label}
+                                                                                </div>
+                                                                                <Input
+                                                                                    value={providerConfig[key] || ''}
+                                                                                    placeholder={placeholder}
+                                                                                    onChange={(e) => setProviderConfig(
+                                                                                        p => ({
+                                                                                            ...p,
+                                                                                            [key]: e.target.value,
+                                                                                        })
+                                                                                    )}
+                                                                                />
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            {(ruleType === 'document'
+                                                                || (
+                                                                    ruleType === 'order_reply'
+                                                                    && providerConfig.response_type === 'file'
+                                                                )) && (
+                                                                <div style={{
+                                                                    background: '#fafafa',
+                                                                    border: '1px solid #e8e8e8',
+                                                                    borderRadius: 6,
+                                                                    padding: 12,
+                                                                }}>
+                                                                    <div style={{
+                                                                        marginBottom: 8,
+                                                                        fontWeight: 600,
+                                                                        color: '#555',
+                                                                    }}>
+                                                                        Правила определения бренда (опционально)
+                                                                    </div>
+                                                                    <div style={{
+                                                                        display: 'grid',
+                                                                        gridTemplateColumns: '1fr 1fr 1fr',
+                                                                        gap: 8,
+                                                                    }}>
+                                                                        <div>
+                                                                            <div style={{
+                                                                                marginBottom: 4,
+                                                                                fontWeight: 500,
+                                                                                fontSize: 12,
+                                                                            }}>
+                                                                                Фиксированный бренд
+                                                                            </div>
+                                                                            <Input
+                                                                                value={
+                                                                                    providerConfig.fixed_brand_name
+                                                                                }
+                                                                                placeholder="Например: Dragonzap"
+                                                                                onChange={(e) => setProviderConfig(
+                                                                                    p => ({
+                                                                                        ...p,
+                                                                                        fixed_brand_name: e.target.value,
+                                                                                    })
+                                                                                )}
+                                                                            />
+                                                                        </div>
+                                                                        <div>
+                                                                            <div style={{
+                                                                                marginBottom: 4,
+                                                                                fontWeight: 500,
+                                                                                fontSize: 12,
+                                                                            }}>
+                                                                                Приоритет брендов
+                                                                            </div>
+                                                                            <Input
+                                                                                value={
+                                                                                    providerConfig.brand_priority_list_text
+                                                                                }
+                                                                                placeholder="Dragonzap, Hot-parts"
+                                                                                onChange={(e) => setProviderConfig(
+                                                                                    p => ({
+                                                                                        ...p,
+                                                                                        brand_priority_list_text:
+                                                                                            e.target.value,
+                                                                                    })
+                                                                                )}
+                                                                            />
+                                                                        </div>
+                                                                        <div>
+                                                                            <div style={{
+                                                                                marginBottom: 4,
+                                                                                fontWeight: 500,
+                                                                                fontSize: 12,
+                                                                            }}>
+                                                                                Regex бренда из наименования
+                                                                            </div>
+                                                                            <Input
+                                                                                value={
+                                                                                    providerConfig.brand_from_name_regex
+                                                                                }
+                                                                                placeholder="^[^ ]+\\s+([^ ]+)"
+                                                                                onChange={(e) => setProviderConfig(
+                                                                                    p => ({
+                                                                                        ...p,
+                                                                                        brand_from_name_regex:
+                                                                                            e.target.value,
+                                                                                    })
+                                                                                )}
+                                                                            />
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            )}
                                                         </>
                                                     );
                                                 })()}
