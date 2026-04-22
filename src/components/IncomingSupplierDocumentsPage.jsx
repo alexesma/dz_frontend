@@ -748,26 +748,28 @@ const IncomingSupplierDocumentsPage = () => {
                 title: 'Цена', dataIndex: 'price', key: 'price',
                 width: 100, align: 'right',
                 render: (v, row) => {
-                    // If total_price_with_vat is stored, derive price-without-VAT
-                    // to avoid showing a WITH-VAT price in the "Цена" column
+                    // All prices in the DB are stored WITH VAT.
+                    // Derive unit price as total_with_vat / qty (no VAT division).
                     if (row.total_price_with_vat != null && row.received_quantity) {
                         return formatMoney(
-                            Number(row.total_price_with_vat) / Number(row.received_quantity) / (1 + VAT_RATE),
+                            Number(row.total_price_with_vat) / Number(row.received_quantity),
                         );
                     }
-                    return formatMoney(v);
+                    return formatMoney(v); // price is already WITH VAT
                 },
             },
             {
                 title: 'Сумма', key: 'sum', width: 110, align: 'right',
                 render: (_, row) => {
+                    // "Сумма" = total WITHOUT VAT (base amount for accounting)
                     const q = Number(row.received_quantity || 0);
                     if (row.total_price_with_vat != null) {
                         const baseSum = Number(row.total_price_with_vat) / (1 + VAT_RATE);
                         return baseSum > 0 ? formatMoney(baseSum) : '—';
                     }
+                    // price is WITH VAT → divide by (1+VAT) to get base sum
                     const p = Number(row.price || 0);
-                    return q && p ? formatMoney(q * p) : '—';
+                    return q && p ? formatMoney(q * p / (1 + VAT_RATE)) : '—';
                 },
             },
         ];
@@ -780,17 +782,20 @@ const IncomingSupplierDocumentsPage = () => {
                         const total = Number(row.total_price_with_vat);
                         return total > 0 ? formatMoney(total - total / (1 + VAT_RATE)) : '—';
                     }
+                    // price is WITH VAT → VAT amount = total - total/(1+VAT)
                     const q = Number(row.received_quantity || 0);
                     const p = Number(row.price || 0);
-                    return q && p ? formatMoney(q * p * VAT_RATE) : '—';
+                    const lineTotal = q * p;
+                    return lineTotal > 0 ? formatMoney(lineTotal - lineTotal / (1 + VAT_RATE)) : '—';
                 },
             },
             {
                 title: 'С НДС', key: 'total_vat', width: 120, align: 'right',
                 render: (_, row) => {
+                    // price is stored WITH VAT → total = price × qty (no ×1.22)
                     const val = row.total_price_with_vat != null
                         ? Number(row.total_price_with_vat)
-                        : (Number(row.received_quantity || 0) * Number(row.price || 0) * (1 + VAT_RATE));
+                        : (Number(row.received_quantity || 0) * Number(row.price || 0));
                     return <Text strong>{formatMoney(val)}</Text>;
                 },
             },
@@ -1014,15 +1019,16 @@ const IncomingSupplierDocumentsPage = () => {
                     total += lineBase;
                 }
             } else {
+                // price is stored WITH VAT → lineTotal = price × qty
                 const p = Number(item.price || 0);
-                const lineSum = q * p;
-                sum += lineSum;
+                const lineTotal = q * p;
+                const lineBase = lineTotal / (1 + VAT_RATE);
+                sum += lineBase;
                 if (isVatPayer) {
-                    const lineTotal = lineSum * (1 + VAT_RATE);
-                    vat += lineTotal - lineSum;
+                    vat += lineTotal - lineBase;
                     total += lineTotal;
                 } else {
-                    total += lineSum;
+                    total += lineBase;
                 }
             }
         });
