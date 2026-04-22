@@ -600,25 +600,7 @@ const ProviderPage = () => {
                 ),
             };
             payload.response_type = payload.response_type || "file";
-            // Auto-detect: if any document-specific field is set → "document", else → "response"
-            {
-                const docFields = [
-                    payload.document_number_col,
-                    payload.document_date_col,
-                    payload.document_number_cell,
-                    payload.document_date_cell,
-                    payload.document_meta_cell,
-                    payload.total_price_with_vat_col,
-                    payload.gtd_col,
-                    payload.country_code_col,
-                    payload.country_name_col,
-                ];
-                payload.file_payload_type =
-                    payload.response_type === "file" &&
-                    docFields.some((v) => v !== null && v !== undefined && v !== "")
-                        ? "document"
-                        : "response";
-            }
+            payload.file_payload_type = payload.file_payload_type || "response";
             payload.auto_confirm_after_minutes =
                 payload.auto_confirm_after_minutes || null;
             payload.fixed_brand_name = payload.fixed_brand_name || null;
@@ -655,7 +637,17 @@ const ProviderPage = () => {
                 payload.brand_from_name_regex = null;
                 payload.filename_pattern = null;
             }
-            // Document fields are kept as-is; file_payload_type is derived automatically above.
+            if (payload.response_type === "file" && payload.file_payload_type !== "document") {
+                payload.document_number_col = null;
+                payload.document_date_col = null;
+                payload.document_number_cell = null;
+                payload.document_date_cell = null;
+                payload.document_meta_cell = null;
+                payload.gtd_col = null;
+                payload.country_code_col = null;
+                payload.country_name_col = null;
+                payload.total_price_with_vat_col = null;
+            }
             if (payload.response_type !== "text") {
                 payload.confirm_keywords = [];
                 payload.reject_keywords = [];
@@ -2409,6 +2401,16 @@ const ProviderPage = () => {
                                         </Radio.Group>
                                     </Form.Item>
                                     <Form.Item
+                                        name="file_payload_type"
+                                        label="Что приходит в файле"
+                                        rules={[{ required: true, message: "Выберите тип файла" }]}
+                                    >
+                                        <Radio.Group>
+                                            <Radio.Button value="response">Ответ</Radio.Button>
+                                            <Radio.Button value="document">Документ (УПД/накладная)</Radio.Button>
+                                        </Radio.Group>
+                                    </Form.Item>
+                                    <Form.Item
                                         name="filename_pattern"
                                         label="Шаблон имени файла (regex)"
                                     >
@@ -2480,67 +2482,77 @@ const ProviderPage = () => {
                                             <Input placeholder="^[^ ]+\\s+([^ ]+)" />
                                         </Form.Item>
                                     </div>
-                                    <Divider>Поля документа (УПД/накладная — опционально)</Divider>
-                                    <div className="responsive-form-grid-compact">
-                                        <Form.Item
-                                            name="document_number_col"
-                                            label="Номер документа"
-                                        >
-                                            <InputNumber min={1} style={{ width: "100%" }} />
-                                        </Form.Item>
-                                        <Form.Item
-                                            name="document_date_col"
-                                            label="Дата документа"
-                                        >
-                                            <InputNumber min={1} style={{ width: "100%" }} />
-                                        </Form.Item>
-                                        <Form.Item
-                                            name="document_number_cell"
-                                            label="Ячейка номера документа"
-                                            extra="Формат A1, например B2."
-                                        >
-                                            <Input placeholder="B2" />
-                                        </Form.Item>
-                                        <Form.Item
-                                            name="document_date_cell"
-                                            label="Ячейка даты документа"
-                                            extra="Формат A1, например C2."
-                                        >
-                                            <Input placeholder="C2" />
-                                        </Form.Item>
-                                        <Form.Item
-                                            name="document_meta_cell"
-                                            label="Ячейка «№ и дата» (общая)"
-                                            extra="Если № и дата в одной ячейке: «УПД №1679 от 20 апреля 2026 г.»"
-                                        >
-                                            <Input placeholder="A2" />
-                                        </Form.Item>
-                                        <Form.Item
-                                            name="gtd_col"
-                                            label="ГТД"
-                                        >
-                                            <InputNumber min={1} style={{ width: "100%" }} />
-                                        </Form.Item>
-                                        <Form.Item
-                                            name="country_code_col"
-                                            label="Код страны"
-                                        >
-                                            <InputNumber min={1} style={{ width: "100%" }} />
-                                        </Form.Item>
-                                        <Form.Item
-                                            name="country_name_col"
-                                            label="Название страны"
-                                        >
-                                            <InputNumber min={1} style={{ width: "100%" }} />
-                                        </Form.Item>
-                                        <Form.Item
-                                            name="total_price_with_vat_col"
-                                            label="Сумма с НДС"
-                                            extra="Если цена не заполнена, она вычисляется как (Сумма с НДС / Количество)."
-                                        >
-                                            <InputNumber min={1} style={{ width: "100%" }} />
-                                        </Form.Item>
-                                    </div>
+                                    <Form.Item noStyle shouldUpdate>
+                                        {({ getFieldValue }) => {
+                                            const payloadType = getFieldValue("file_payload_type");
+                                            if (payloadType !== "document") return null;
+                                            return (
+                                                <>
+                                                    <Divider>Поля документа (опционально)</Divider>
+                                                    <div className="responsive-form-grid-compact">
+                                                        <Form.Item
+                                                            name="document_number_col"
+                                                            label="Номер документа"
+                                                        >
+                                                            <InputNumber min={1} style={{ width: "100%" }} />
+                                                        </Form.Item>
+                                                        <Form.Item
+                                                            name="document_date_col"
+                                                            label="Дата документа"
+                                                        >
+                                                            <InputNumber min={1} style={{ width: "100%" }} />
+                                                        </Form.Item>
+                                                        <Form.Item
+                                                            name="document_number_cell"
+                                                            label="Ячейка номера документа"
+                                                            extra="Формат A1, например B2."
+                                                        >
+                                                            <Input placeholder="B2" />
+                                                        </Form.Item>
+                                                        <Form.Item
+                                                            name="document_date_cell"
+                                                            label="Ячейка даты документа"
+                                                            extra="Формат A1, например C2."
+                                                        >
+                                                            <Input placeholder="C2" />
+                                                        </Form.Item>
+                                                        <Form.Item
+                                                            name="document_meta_cell"
+                                                            label="Ячейка «№ и дата» (общая)"
+                                                            extra="Если № и дата в одной ячейке: «УПД №1679 от 20 апреля 2026 г.»"
+                                                        >
+                                                            <Input placeholder="A2" />
+                                                        </Form.Item>
+                                                        <Form.Item
+                                                            name="gtd_col"
+                                                            label="ГТД"
+                                                        >
+                                                            <InputNumber min={1} style={{ width: "100%" }} />
+                                                        </Form.Item>
+                                                        <Form.Item
+                                                            name="country_code_col"
+                                                            label="Код страны"
+                                                        >
+                                                            <InputNumber min={1} style={{ width: "100%" }} />
+                                                        </Form.Item>
+                                                        <Form.Item
+                                                            name="country_name_col"
+                                                            label="Название страны"
+                                                        >
+                                                            <InputNumber min={1} style={{ width: "100%" }} />
+                                                        </Form.Item>
+                                                        <Form.Item
+                                                            name="total_price_with_vat_col"
+                                                            label="Сумма с НДС"
+                                                            extra="Если цена не заполнена, она вычисляется как (Сумма с НДС / Количество)."
+                                                        >
+                                                            <InputNumber min={1} style={{ width: "100%" }} />
+                                                        </Form.Item>
+                                                    </div>
+                                                </>
+                                            );
+                                        }}
+                                    </Form.Item>
                                 </>
                             );
                         }}
