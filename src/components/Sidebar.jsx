@@ -16,6 +16,7 @@ import {
     MenuOutlined,
     TagsOutlined,
     MailOutlined,
+    ClockCircleOutlined,
 } from '@ant-design/icons';
 import useAuth from '../context/useAuth';
 
@@ -63,6 +64,7 @@ const Sidebar = () => {
         if (path.startsWith('/admin/brands')) return 'admin-brands';
         if (path.startsWith('/admin/order-status-mappings')) return 'admin-order-status-mappings';
         if (path.startsWith('/admin/monitor')) return 'admin-monitor';
+        if (path.startsWith('/admin/order-windows')) return 'admin-order-windows';
         if (path.startsWith('/inbox')) return 'inbox';
         return '1';
     })();
@@ -172,6 +174,9 @@ const Sidebar = () => {
                     </Menu.Item>
                     <Menu.Item key="admin-monitor" icon={<BarChartOutlined />}>
                         <Link to="/admin/monitor">Мониторинг</Link>
+                    </Menu.Item>
+                    <Menu.Item key="admin-order-windows" icon={<ClockCircleOutlined />}>
+                        <Link to="/admin/order-windows">Окна заказов</Link>
                     </Menu.Item>
                 </Menu.SubMenu>
             )}
