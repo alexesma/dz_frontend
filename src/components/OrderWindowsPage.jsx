@@ -8,10 +8,11 @@ import axios from 'axios';
 const { Title, Text } = Typography;
 
 const STATUS_CONFIG = {
-    received: { color: 'success', text: 'Получен', bg: '#f6ffed', border: '#b7eb8f' },
-    pending:  { color: 'default', text: 'Ожидаем', bg: '#ffffff', border: '#d9d9d9' },
+    received: { color: 'success', text: 'Получен',              bg: '#f6ffed', border: '#b7eb8f' },
+    pending:  { color: 'default', text: 'Ожидаем',              bg: '#ffffff', border: '#d9d9d9' },
+    partial:  { color: 'orange',  text: 'Получен частично',     bg: '#fff7e6', border: '#ffd591' },
     grace:    { color: 'warning', text: 'Просрочен (ждём ещё)', bg: '#fffbe6', border: '#ffe58f' },
-    overdue:  { color: 'error',   text: 'Не получен', bg: '#fff2f0', border: '#ffccc7' },
+    overdue:  { color: 'error',   text: 'Не получен',           bg: '#fff2f0', border: '#ffccc7' },
 };
 
 const OrderWindowsPage = () => {
@@ -70,23 +71,36 @@ const OrderWindowsPage = () => {
             title: 'Статус',
             dataIndex: 'status',
             key: 'status',
-            render: (status) => {
+            render: (status, record) => {
                 const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.pending;
-                return <Tag color={cfg.color}>{cfg.text}</Tag>;
+                const received = record.received_count ?? 0;
+                const expected = record.expected_order_count ?? 1;
+                const showCount = expected > 1 || received > 0;
+                return (
+                    <Space>
+                        <Tag color={cfg.color}>{cfg.text}</Tag>
+                        {showCount && (
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                {received} / {expected}
+                            </Text>
+                        )}
+                    </Space>
+                );
             },
         },
         {
             title: 'Получен в',
-            dataIndex: 'order_received_at',
             key: 'order_received_at',
-            render: (val) => {
-                if (!val) return <Text type="secondary">—</Text>;
-                const d = new Date(val);
-                return (
-                    <Text>
-                        {d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                    </Text>
-                );
+            render: (_, record) => {
+                const first = record.first_order_received_at;
+                const last = record.last_order_received_at;
+                if (!first) return <Text type="secondary">—</Text>;
+                const fmt = (iso) =>
+                    new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+                if (last && last !== first) {
+                    return <Text>{fmt(first)} – {fmt(last)}</Text>;
+                }
+                return <Text>{fmt(first)}</Text>;
             },
         },
     ];
@@ -99,6 +113,7 @@ const OrderWindowsPage = () => {
     const counts = {
         received: data.filter(d => d.status === 'received').length,
         pending:  data.filter(d => d.status === 'pending').length,
+        partial:  data.filter(d => d.status === 'partial').length,
         grace:    data.filter(d => d.status === 'grace').length,
         overdue:  data.filter(d => d.status === 'overdue').length,
     };
@@ -122,10 +137,13 @@ const OrderWindowsPage = () => {
             </div>
 
             <Space size="middle" style={{ marginBottom: 16 }}>
-                <Badge color="green" text={`Получено: ${counts.received}`} />
-                <Badge color="grey" text={`Ожидаем: ${counts.pending}`} />
-                <Badge color="gold" text={`Ожидаем (просроч.): ${counts.grace}`} />
-                <Badge color="red" text={`Не получено: ${counts.overdue}`} />
+                <Badge color="green"  text={`Получено: ${counts.received}`} />
+                <Badge color="grey"   text={`Ожидаем: ${counts.pending}`} />
+                {counts.partial > 0 && (
+                    <Badge color="orange" text={`Частично: ${counts.partial}`} />
+                )}
+                <Badge color="gold"  text={`Ожидаем (просроч.): ${counts.grace}`} />
+                <Badge color="red"   text={`Не получено: ${counts.overdue}`} />
             </Space>
 
             {data.length === 0 && !loading ? (
