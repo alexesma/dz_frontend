@@ -557,7 +557,7 @@ const ProviderPage = () => {
                     process_shipping_docs: true,
                     auto_confirm_unmentioned_items: false,
                     auto_confirm_after_minutes: null,
-                    file_format: "excel",
+                    file_format: null,
                     file_payload_type: "response",
                 start_row: 1,
                 value_after_article_type: "both",
@@ -2393,9 +2393,10 @@ const ProviderPage = () => {
                                     <Form.Item
                                         name="file_format"
                                         label="Формат файла"
-                                        rules={[{ required: true, message: "Выберите формат" }]}
+                                        extra="Оставьте «Авто» — программа примет Excel и CSV автоматически."
                                     >
                                         <Radio.Group>
+                                            <Radio.Button value={null}>Авто</Radio.Button>
                                             <Radio.Button value="excel">Excel</Radio.Button>
                                             <Radio.Button value="csv">CSV</Radio.Button>
                                         </Radio.Group>
