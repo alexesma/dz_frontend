@@ -94,8 +94,6 @@ const CustomerPage = () => {
     const [orderInboxTestLoading, setOrderInboxTestLoading] = useState(false);
     const [orderProcessNowLoading, setOrderProcessNowLoading] = useState(false);
     const [orderRetryErrorsLoading, setOrderRetryErrorsLoading] = useState(false);
-    const brandSearchRequestRef = useRef(0);
-    const brandSearchTimerRef = useRef(null);
     const autopartSearchRequestRef = useRef(0);
     const autopartSearchTimerRef = useRef(null);
 
@@ -343,73 +341,35 @@ const CustomerPage = () => {
 
     useEffect(() => {
         let mounted = true;
-        const loadBrandOptions = async (query = '') => {
+        const loadBrands = async () => {
+            setMarkupBrandLoading(true);
             setBrandFilterLoading(true);
             try {
-                const { data } = await lookupBrands(query, 100);
+                const { data } = await getBrands();
                 if (!mounted) return;
-                const options = mapBrandLookupOptions(data || []);
-                setBrandFilterOptions((prev) => mergeOptionsByValue(prev, options));
+                const brands = data || [];
+                setMarkupBrandOptions(mapMarkupBrandOptions(brands));
+                setBrandFilterOptions(mapBrandLookupOptions(brands));
             } catch (err) {
                 console.error('Load brand options failed:', err);
             } finally {
                 if (mounted) {
-                    setBrandFilterLoading(false);
-                }
-            }
-        };
-        loadBrandOptions();
-        return () => {
-            mounted = false;
-        };
-    }, [mapBrandLookupOptions, mergeOptionsByValue]);
-
-    useEffect(() => {
-        let mounted = true;
-        const loadMarkupBrands = async () => {
-            setMarkupBrandLoading(true);
-            try {
-                const { data } = await getBrands();
-                if (!mounted) return;
-                setMarkupBrandOptions(mapMarkupBrandOptions(data || []));
-            } catch (err) {
-                console.error('Load markup brand options failed:', err);
-            } finally {
-                if (mounted) {
                     setMarkupBrandLoading(false);
-                }
-            }
-        };
-        loadMarkupBrands();
-        return () => {
-            mounted = false;
-        };
-    }, [mapMarkupBrandOptions]);
-
-    const handleBrandFilterSearch = useCallback((rawValue) => {
-        const value = String(rawValue || '').trim();
-        if (brandSearchTimerRef.current) {
-            clearTimeout(brandSearchTimerRef.current);
-        }
-        brandSearchTimerRef.current = setTimeout(async () => {
-            const requestId = brandSearchRequestRef.current + 1;
-            brandSearchRequestRef.current = requestId;
-            setBrandFilterLoading(true);
-            try {
-                const { data } = await lookupBrands(value, 100);
-                if (brandSearchRequestRef.current !== requestId) return;
-                const options = mapBrandLookupOptions(data || []);
-                setBrandFilterOptions((prev) => mergeOptionsByValue(prev, options));
-            } catch (err) {
-                if (brandSearchRequestRef.current !== requestId) return;
-                console.error('Brand lookup failed:', err);
-            } finally {
-                if (brandSearchRequestRef.current === requestId) {
                     setBrandFilterLoading(false);
                 }
             }
-        }, 250);
-    }, [mapBrandLookupOptions, mergeOptionsByValue]);
+        };
+        loadBrands();
+        return () => {
+            mounted = false;
+        };
+    }, [mapBrandLookupOptions, mapMarkupBrandOptions]);
+
+    const brandSelectFilterOption = useCallback((input, option) => {
+        const normalizedInput = String(input || '').trim().toLowerCase();
+        const normalizedLabel = String(option?.label || '').toLowerCase();
+        return normalizedLabel.includes(normalizedInput);
+    }, []);
 
     const handleAutopartFilterSearch = useCallback((rawValue) => {
         const value = String(rawValue || '').trim();
@@ -446,9 +406,6 @@ const CustomerPage = () => {
 
     useEffect(() => {
         return () => {
-            if (brandSearchTimerRef.current) {
-                clearTimeout(brandSearchTimerRef.current);
-            }
             if (autopartSearchTimerRef.current) {
                 clearTimeout(autopartSearchTimerRef.current);
             }
@@ -598,8 +555,8 @@ const CustomerPage = () => {
                         <Select
                             mode="multiple"
                             showSearch
-                            filterOption={false}
-                            onSearch={handleBrandFilterSearch}
+                            optionFilterProp="label"
+                            filterOption={brandSelectFilterOption}
                             notFoundContent={
                                 brandFilterLoading ? <Spin size="small" /> : null
                             }
@@ -2353,8 +2310,8 @@ const CustomerPage = () => {
                                 <Select
                                     mode="multiple"
                                     showSearch
-                                    filterOption={false}
-                                    onSearch={handleBrandFilterSearch}
+                                    optionFilterProp="label"
+                                    filterOption={brandSelectFilterOption}
                                     notFoundContent={
                                         brandFilterLoading ? <Spin size="small" /> : null
                                     }
