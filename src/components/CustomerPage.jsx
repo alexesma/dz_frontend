@@ -1120,6 +1120,9 @@ const CustomerPage = () => {
             max_price: normalizeOptionalPositive(values.max_price),
             min_quantity: normalizeOptionalPositive(values.min_quantity),
             max_quantity: normalizeOptionalPositive(values.max_quantity),
+            additional_filters: {
+                DZ_EXPAND_BRANDS: !!values.dz_expand_brands,
+            },
         };
 
         try {
@@ -1185,6 +1188,7 @@ const CustomerPage = () => {
                 : null,
             min_quantity: source.min_quantity ?? null,
             max_quantity: source.max_quantity ?? null,
+            dz_expand_brands: !!(source.additional_filters?.DZ_EXPAND_BRANDS),
         });
     };
 
@@ -1776,17 +1780,6 @@ const CustomerPage = () => {
                         <Switch />
                     </Form.Item>
 
-                    <Divider>Дополнительные функции</Divider>
-
-                    <Form.Item
-                        name={['additional_filters', 'DZ_EXPAND_BRANDS']}
-                        label="Разворачивать бренды DZ"
-                        valuePropName="checked"
-                        tooltip="Позиции DRAGONZAP автоматически разворачиваются в отдельные строки по брендам (Haval, Geely, Chery и т.д.). Наименования остаются без изменений."
-                    >
-                        <Switch />
-                    </Form.Item>
-
                     <Form.Item>
                         <Space wrap>
                             <Button
@@ -2301,6 +2294,15 @@ const CustomerPage = () => {
                                 <Switch />
                             </Form.Item>
                         </div>
+
+                        <Form.Item
+                            name="dz_expand_brands"
+                            label="Разворачивать бренды DZ"
+                            valuePropName="checked"
+                            tooltip="Позиции DRAGONZAP разворачиваются в отдельные строки по брендам (Haval, Geely, Chery…) до применения фильтров. Наименования не изменяются."
+                        >
+                            <Switch />
+                        </Form.Item>
 
                         <Divider>Фильтры по брендам</Divider>
                         <div className="responsive-form-grid-key">
