@@ -30,3 +30,13 @@ export const createMonitorSnapshot = () =>
 
 export const getMonitorSnapshots = (params = {}) =>
     api.get("/settings/monitor/snapshots", { params });
+
+// Holiday calendar
+export const getHolidays = (year) =>
+    api.get("/settings/holidays", { params: year ? { year } : {} });
+
+export const createHoliday = (data) =>
+    api.post("/settings/holidays", data);
+
+export const deleteHoliday = (id) =>
+    api.delete(`/settings/holidays/${id}`);

@@ -147,6 +147,18 @@ const CustomerSupplierOrderDetailPage = () => {
             width: 90,
             render: (value) => value ?? '—',
         },
+        {
+            title: 'Авто-отказ',
+            dataIndex: 'auto_refused_at',
+            key: 'auto_refused_at',
+            width: 140,
+            render: (value) =>
+                value ? (
+                    <Tag color="orange" title={`Авто-отказ: ${formatDateTime(value)}`}>
+                        Авто-отказ
+                    </Tag>
+                ) : null,
+        },
     ];
 
     return (
@@ -206,6 +218,9 @@ const CustomerSupplierOrderDetailPage = () => {
                             pagination={false}
                             size="small"
                             scroll={{ x: 'max-content' }}
+                            rowClassName={(record) =>
+                                record.auto_refused_at ? 'row-auto-refused' : ''
+                            }
                         />
                     </>
                 ) : (

@@ -2,15 +2,20 @@ import React, { useEffect, useState } from 'react';
 import {
     Button,
     Card,
+    DatePicker,
     Form,
     Input,
     InputNumber,
     Modal,
+    Popconfirm,
     Select,
     Switch,
+    Table,
+    Tag,
     Typography,
     message,
 } from 'antd';
+import dayjs from 'dayjs';
 import {
     getPriceCheckLogs,
     getPriceCheckSchedule,
@@ -19,6 +24,9 @@ import {
     updateCustomerOrderInboxSettings,
     updatePriceCheckSchedule,
     updateSchedulerSetting,
+    getHolidays,
+    createHoliday,
+    deleteHoliday,
 } from '../api/settings';
 import { formatMoscow } from '../utils/time';
 
@@ -36,6 +44,14 @@ const SettingsPage = () => {
     const [orderInboxSettings, setOrderInboxSettings] = useState(null);
     const [orderInboxLoading, setOrderInboxLoading] = useState(false);
     const [orderInboxSaving, setOrderInboxSaving] = useState(false);
+
+    // Holiday calendar
+    const [holidayYear, setHolidayYear] = useState(new Date().getFullYear());
+    const [holidays, setHolidays] = useState([]);
+    const [holidaysLoading, setHolidaysLoading] = useState(false);
+    const [addHolidayOpen, setAddHolidayOpen] = useState(false);
+    const [addHolidayForm] = Form.useForm();
+    const [addHolidaySaving, setAddHolidaySaving] = useState(false);
 
     const dayOptions = [
         { label: 'Пн', value: 'mon' },
@@ -153,6 +169,127 @@ const SettingsPage = () => {
             }
         })();
     }, []);
+
+    // Holiday calendar
+    const fetchHolidays = async (year) => {
+        setHolidaysLoading(true);
+        try {
+            const { data } = await getHolidays(year);
+            setHolidays(data || []);
+        } catch {
+            message.error('Не удалось загрузить календарь праздников');
+        } finally {
+            setHolidaysLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchHolidays(holidayYear);
+    }, [holidayYear]);
+
+    const handleAddHoliday = async () => {
+        let values;
+        try {
+            values = await addHolidayForm.validateFields();
+        } catch {
+            return;
+        }
+        setAddHolidaySaving(true);
+        try {
+            await createHoliday({
+                date: values.date.format('YYYY-MM-DD'),
+                description: values.description || null,
+                is_working_day: values.is_working_day ?? false,
+            });
+            message.success('Запись добавлена');
+            setAddHolidayOpen(false);
+            addHolidayForm.resetFields();
+            fetchHolidays(holidayYear);
+        } catch (err) {
+            const detail = err?.response?.data?.detail || 'Ошибка сохранения';
+            message.error(detail);
+        } finally {
+            setAddHolidaySaving(false);
+        }
+    };
+
+    const handleDeleteHoliday = async (id) => {
+        try {
+            await deleteHoliday(id);
+            message.success('Удалено');
+            fetchHolidays(holidayYear);
+        } catch {
+            message.error('Ошибка удаления');
+        }
+    };
+
+    const holidayColumns = [
+        {
+            title: 'Дата',
+            dataIndex: 'date',
+            key: 'date',
+            width: 120,
+            render: (v) => dayjs(v).format('DD.MM.YYYY'),
+        },
+        {
+            title: 'День недели',
+            dataIndex: 'date',
+            key: 'weekday',
+            width: 120,
+            render: (v) => {
+                const days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+                return days[dayjs(v).day() === 0 ? 6 : dayjs(v).day() - 1];
+            },
+        },
+        {
+            title: 'Описание',
+            dataIndex: 'description',
+            key: 'description',
+            render: (v) => v || '—',
+        },
+        {
+            title: 'Тип',
+            dataIndex: 'is_working_day',
+            key: 'is_working_day',
+            width: 150,
+            render: (v) =>
+                v ? (
+                    <Tag color="green">Рабочий день</Tag>
+                ) : (
+                    <Tag color="red">Нерабочий день</Tag>
+                ),
+        },
+        {
+            title: 'Источник',
+            dataIndex: 'source',
+            key: 'source',
+            width: 100,
+            render: (v) =>
+                v === 'auto' ? (
+                    <Tag color="blue">Авто</Tag>
+                ) : (
+                    <Tag color="orange">Ручной</Tag>
+                ),
+        },
+        {
+            title: '',
+            key: 'actions',
+            width: 80,
+            render: (_, record) =>
+                record.source === 'manual' ? (
+                    <Popconfirm
+                        title="Удалить запись?"
+                        onConfirm={() => handleDeleteHoliday(record.id)}
+                        okText="Да"
+                        cancelText="Нет"
+                    >
+                        <Button size="small" danger>
+                            Удалить
+                        </Button>
+                    </Popconfirm>
+                ) : null,
+        },
+    ];
 
     const handleOrderInboxSave = async () => {
         if (!orderInboxSettings) return;
@@ -524,6 +661,93 @@ const SettingsPage = () => {
                             );
                         })}
             </Card>
+
+            {/* ── Календарь праздников ── */}
+            <Card
+                title="Календарь нерабочих дней (авто-отказ поставщиков)"
+                style={{ marginTop: 24 }}
+                extra={
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <DatePicker
+                            picker="year"
+                            value={dayjs().year(holidayYear)}
+                            onChange={(d) => d && setHolidayYear(d.year())}
+                            allowClear={false}
+                        />
+                        <Button
+                            type="primary"
+                            onClick={() => {
+                                addHolidayForm.resetFields();
+                                setAddHolidayOpen(true);
+                            }}
+                        >
+                            + Добавить
+                        </Button>
+                    </div>
+                }
+            >
+                <Table
+                    rowKey={(r) => `${r.source}-${r.date}`}
+                    dataSource={holidays}
+                    columns={holidayColumns}
+                    loading={holidaysLoading}
+                    pagination={false}
+                    size="small"
+                    rowClassName={(r) =>
+                        r.is_working_day
+                            ? 'holiday-row-workday'
+                            : r.source === 'auto'
+                              ? 'holiday-row-auto'
+                              : 'holiday-row-manual'
+                    }
+                    scroll={{ x: 'max-content' }}
+                />
+            </Card>
+
+            {/* Модалка добавления */}
+            <Modal
+                open={addHolidayOpen}
+                title="Добавить запись в календарь"
+                onCancel={() => setAddHolidayOpen(false)}
+                onOk={handleAddHoliday}
+                okText="Сохранить"
+                cancelText="Отмена"
+                confirmLoading={addHolidaySaving}
+                destroyOnClose
+            >
+                <Form
+                    form={addHolidayForm}
+                    layout="vertical"
+                    initialValues={{ is_working_day: false }}
+                >
+                    <Form.Item
+                        name="date"
+                        label="Дата"
+                        rules={[{ required: true, message: 'Укажите дату' }]}
+                    >
+                        <DatePicker style={{ width: '100%' }} format="DD.MM.YYYY" />
+                    </Form.Item>
+                    <Form.Item name="description" label="Описание (необязательно)">
+                        <Input placeholder="Например: Перенос с 4 ноября" />
+                    </Form.Item>
+                    <Form.Item
+                        name="is_working_day"
+                        label="Тип"
+                        valuePropName="checked"
+                    >
+                        <Switch
+                            checkedChildren="Рабочий день (переноc)"
+                            unCheckedChildren="Нерабочий день (праздник)"
+                        />
+                    </Form.Item>
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        «Нерабочий день» — добавляет дату в календарь праздников
+                        (даже если библиотека её не знает).
+                        «Рабочий день» — отменяет автоматически определённый праздник
+                        или помечает субботу как рабочую.
+                    </Typography.Text>
+                </Form>
+            </Modal>
         </>
     );
 };

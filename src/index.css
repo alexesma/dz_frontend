@@ -725,3 +725,19 @@ body {
 .supplier-receipt-row-rejected td {
   background: #fff1f0 !important;
 }
+
+.row-auto-refused td {
+  background: #fff7e6 !important;
+}
+
+.holiday-row-auto td {
+  background: #f0f5ff !important;
+}
+
+.holiday-row-manual td {
+  background: #fff1f0 !important;
+}
+
+.holiday-row-workday td {
+  background: #f6ffed !important;
+}
