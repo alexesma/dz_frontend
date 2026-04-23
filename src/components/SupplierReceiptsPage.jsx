@@ -291,18 +291,6 @@ const SupplierReceiptsPage = () => {
             render: (v) => <Text style={{ fontSize: 13, fontWeight: 600 }}>{v ?? '—'}</Text>,
         },
         {
-            title: 'Подтв.',
-            dataIndex: 'confirmed_quantity',
-            key: 'confirmed',
-            width: 68,
-            align: 'center',
-            render: (v, row) => (
-                <Text style={{ fontSize: 13, fontWeight: 600 }}>
-                    {v ?? row.ordered_quantity ?? '—'}
-                </Text>
-            ),
-        },
-        {
             title: 'Получено',
             dataIndex: 'already_received_quantity',
             key: 'received',
