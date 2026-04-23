@@ -971,7 +971,10 @@ const CustomerPage = () => {
             });
         } else {
             configForm.resetFields();
-            configForm.setFieldsValue({ export_file_format: 'xlsx' });
+            configForm.setFieldsValue({
+                export_file_format: 'xlsx',
+                collapse_duplicates_by_min_price: true,
+            });
         }
         setConfigModalVisible(true);
     };
@@ -1540,6 +1543,7 @@ const CustomerPage = () => {
                         own_price_list_markup: 1.0,
                         third_party_markup: 1.0,
                         export_file_format: 'xlsx',
+                        collapse_duplicates_by_min_price: true,
                         schedule_days: [],
                         schedule_times: [],
                         emails: [],
@@ -1771,6 +1775,19 @@ const CustomerPage = () => {
                             <Input placeholder="По умолчанию по формату" />
                         </Form.Item>
                     </div>
+
+                    <Form.Item
+                        name="collapse_duplicates_by_min_price"
+                        label="Сворачивать дубли по минимальной цене"
+                        valuePropName="checked"
+                        extra={
+                            "Если для одного бренда и артикула есть "
+                            + "несколько строк, останется строка с "
+                            + "минимальной ценой."
+                        }
+                    >
+                        <Switch />
+                    </Form.Item>
 
                     <Form.Item
                         name="is_active"
