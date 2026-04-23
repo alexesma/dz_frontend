@@ -1776,6 +1776,17 @@ const CustomerPage = () => {
                         <Switch />
                     </Form.Item>
 
+                    <Divider>Дополнительные функции</Divider>
+
+                    <Form.Item
+                        name={['additional_filters', 'DZ_EXPAND_BRANDS']}
+                        label="Разворачивать бренды DZ"
+                        valuePropName="checked"
+                        tooltip="Позиции DRAGONZAP автоматически разворачиваются в отдельные строки по брендам (Haval, Geely, Chery и т.д.). Наименования остаются без изменений."
+                    >
+                        <Switch />
+                    </Form.Item>
+
                     <Form.Item>
                         <Space wrap>
                             <Button
