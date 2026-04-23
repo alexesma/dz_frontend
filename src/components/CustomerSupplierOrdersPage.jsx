@@ -138,12 +138,6 @@ const CustomerSupplierOrdersPage = () => {
             render: (value) => `#${value}`,
         },
         {
-            title: 'Кол-во заказов',
-            dataIndex: 'customer_orders_count',
-            key: 'customer_orders_count',
-            width: 130,
-        },
-        {
             title: 'Поставщик',
             dataIndex: 'provider_id',
             key: 'provider_id',
@@ -169,14 +163,15 @@ const CustomerSupplierOrdersPage = () => {
             },
         },
         {
-            title: 'Отказ поставщика',
-            dataIndex: 'rejected_sum',
-            key: 'rejected_sum',
-            width: 140,
+            title: 'Отказ, %',
+            dataIndex: 'rejected_pct',
+            key: 'rejected_pct',
+            width: 100,
             render: (value) => {
                 const num = Number(value);
                 if (!num) return <span style={{ color: '#aaa' }}>—</span>;
-                return <span style={{ color: '#cf1322' }}>{num.toFixed(2)}</span>;
+                const color = num >= 50 ? '#cf1322' : num >= 20 ? '#d46b08' : '#595959';
+                return <span style={{ color, fontWeight: 600 }}>{num.toFixed(1)}%</span>;
             },
         },
     ];

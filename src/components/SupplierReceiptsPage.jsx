@@ -392,6 +392,35 @@ const SupplierReceiptsPage = () => {
                 );
             },
         },
+        {
+            title: 'Клиент / Заказ',
+            key: 'customer_info',
+            width: 160,
+            render: (_, row) => {
+                const sentAt = row.supplier_order_sent_at || row.supplier_order_created_at;
+                const dateStr = sentAt
+                    ? new Date(sentAt).toLocaleString('ru-RU', {
+                        day: '2-digit', month: '2-digit',
+                        hour: '2-digit', minute: '2-digit',
+                    })
+                    : null;
+                return (
+                    <div style={{ lineHeight: 1.4 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>
+                            {row.customer_name || <span style={{ color: '#aaa' }}>—</span>}
+                        </div>
+                        {row.customer_order_number && (
+                            <div style={{ fontSize: 12, color: '#555' }}>
+                                №{row.customer_order_number}
+                            </div>
+                        )}
+                        {dateStr && (
+                            <div style={{ fontSize: 11, color: '#888' }}>{dateStr}</div>
+                        )}
+                    </div>
+                );
+            },
+        },
     ];
 
     const rowClassName = (record) => {
