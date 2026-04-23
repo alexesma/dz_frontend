@@ -184,6 +184,16 @@ const SupplierReceiptsPage = () => {
         rows.filter((row) => drafts[row.supplier_order_item_id]?.touched)
     ), [drafts, rows]);
 
+    // ── total sum of touched (checked) rows ────────────────────────────────────
+    const selectedTotal = useMemo(() => {
+        return touchedRows.reduce((sum, row) => {
+            const draft = drafts[row.supplier_order_item_id];
+            const qty = Number(draft?.received_quantity || 0);
+            const price = Number(row.response_price ?? row.price ?? 0);
+            return sum + qty * price;
+        }, 0);
+    }, [touchedRows, drafts]);
+
     // ── create receipt ─────────────────────────────────────────────────────────
     const handleCreateReceipt = async () => {
         if (!filters.providerId) { message.warning('Сначала выберите поставщика'); return; }
@@ -311,6 +321,41 @@ const SupplierReceiptsPage = () => {
                     {v ?? 0}
                 </Text>
             ),
+        },
+        {
+            title: 'Цена',
+            key: 'price',
+            width: 80,
+            align: 'right',
+            render: (_, row) => {
+                const price = row.response_price ?? row.price;
+                if (price == null) return <Text type="secondary">—</Text>;
+                return (
+                    <Text style={{ fontSize: 13, fontWeight: 600 }}>
+                        {Number(price).toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                    </Text>
+                );
+            },
+        },
+        {
+            title: 'Сумма',
+            key: 'sum',
+            width: 90,
+            align: 'right',
+            render: (_, row) => {
+                const draft = drafts[row.supplier_order_item_id];
+                const qty = draft?.touched
+                    ? Number(draft.received_quantity || 0)
+                    : Number(row.pending_quantity || 0);
+                const price = Number(row.response_price ?? row.price ?? 0);
+                const sum = qty * price;
+                if (!price) return <Text type="secondary">—</Text>;
+                return (
+                    <Text style={{ fontSize: 13, fontWeight: 600, color: draft?.touched ? '#1677ff' : undefined }}>
+                        {sum.toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                    </Text>
+                );
+            },
         },
         {
             title: 'Принять',
@@ -479,12 +524,22 @@ const SupplierReceiptsPage = () => {
                             </Button>
                         </Col>
                     </Row>
-                    <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
                         {legend}
-                        <Text type="secondary" style={{ fontSize: 12, marginLeft: 'auto' }}>
-                            Отмечено строк: <strong>{touchedRows.length}</strong>
-                            {checkedKeys.length > 0 && ` · Полностью принято: ${checkedKeys.length}`}
-                        </Text>
+                        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
+                            {touchedRows.length > 0 && (
+                                <div style={{ textAlign: 'right' }}>
+                                    <div style={{ fontSize: 12, color: '#888', lineHeight: 1.2 }}>Сумма выбранных</div>
+                                    <div style={{ fontSize: 22, fontWeight: 700, color: '#1677ff', lineHeight: 1.2 }}>
+                                        {selectedTotal.toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ₽
+                                    </div>
+                                </div>
+                            )}
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                Отмечено строк: <strong>{touchedRows.length}</strong>
+                                {checkedKeys.length > 0 && ` · Полностью принято: ${checkedKeys.length}`}
+                            </Text>
+                        </div>
                     </div>
                 </Card>
 
