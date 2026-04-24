@@ -302,6 +302,11 @@ const SettingsPage = () => {
                     orderInboxSettings.error_file_retention_days,
                 supplier_response_lookback_days:
                     orderInboxSettings.supplier_response_lookback_days,
+                supplier_response_auto_close_stale_enabled:
+                    orderInboxSettings
+                        .supplier_response_auto_close_stale_enabled,
+                supplier_response_stale_days:
+                    orderInboxSettings.supplier_response_stale_days,
                 supplier_order_stub_enabled:
                     orderInboxSettings.supplier_order_stub_enabled,
                 supplier_order_stub_email:
@@ -431,6 +436,50 @@ const SettingsPage = () => {
                                         setOrderInboxSettings((prev) => ({
                                             ...(prev || {}),
                                             supplier_response_lookback_days: value ?? 14,
+                                        }))
+                                    }
+                                    disabled={orderInboxLoading}
+                                />
+                            </div>
+                        </div>
+                        <div>
+                            <Text strong>Автозакрытие хвостов ошибок</Text>
+                            <div style={{ marginTop: 8 }}>
+                                <Switch
+                                    checked={
+                                        orderInboxSettings
+                                            ?.supplier_response_auto_close_stale_enabled
+                                        ?? true
+                                    }
+                                    onChange={(checked) =>
+                                        setOrderInboxSettings((prev) => ({
+                                            ...(prev || {}),
+                                            supplier_response_auto_close_stale_enabled:
+                                                checked,
+                                        }))
+                                    }
+                                    disabled={orderInboxLoading}
+                                />
+                            </div>
+                        </div>
+                        <div>
+                            <Text strong>
+                                Через сколько дней закрывать ошибки
+                            </Text>
+                            <div style={{ marginTop: 8 }}>
+                                <InputNumber
+                                    min={1}
+                                    max={60}
+                                    value={
+                                        orderInboxSettings
+                                            ?.supplier_response_stale_days
+                                        ?? 7
+                                    }
+                                    onChange={(value) =>
+                                        setOrderInboxSettings((prev) => ({
+                                            ...(prev || {}),
+                                            supplier_response_stale_days:
+                                                value ?? 7,
                                         }))
                                     }
                                     disabled={orderInboxLoading}
