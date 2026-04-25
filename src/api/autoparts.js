@@ -49,3 +49,32 @@ export const deleteAutopartCross = (crossId) =>
 // Storage locations list
 export const getStorageLocations = () =>
     api.get('/autoparts/storage-locations/');
+
+// Categories (global list)
+export const getCategories = () =>
+    api.get('/categories/');
+
+// ── Честный знак ─────────────────────────────────────────────────────────────
+
+export const getHonestSignCategories = () =>
+    api.get('/honest-sign-categories/');
+
+export const createHonestSignCategory = (data) =>
+    api.post('/honest-sign-categories/', data);
+
+export const assignHonestSignCategories = (autopartId, categoryIds) =>
+    api.post(`/autoparts/${autopartId}/honest-sign-categories/`, categoryIds);
+
+// ── Применимость ─────────────────────────────────────────────────────────────
+
+export const getApplicabilityNodes = (parentId = null) =>
+    api.get('/applicability-nodes/', { params: parentId !== null ? { parent_id: parentId } : {} });
+
+export const getAllApplicabilityNodes = () =>
+    api.get('/applicability-nodes/all/');
+
+export const createApplicabilityNode = (data) =>
+    api.post('/applicability-nodes/', data);
+
+export const assignApplicabilityNodes = (autopartId, nodeIds) =>
+    api.post(`/autoparts/${autopartId}/applicability-nodes/`, nodeIds);
