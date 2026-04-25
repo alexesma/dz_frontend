@@ -174,6 +174,7 @@ const AutopartOffers = () => {
     const [showCrosses, setShowCrosses] = useState(false);
     const [partialSearch, setPartialSearch] = useState(false);
     const [currentOem, setCurrentOem] = useState('');
+    const [nomenclatureInfo, setNomenclatureInfo] = useState(null); // { in_nomenclature, id, brand, name }
     const [oemInput, setOemInput] = useState('');
     const [lookupLoading, setLookupLoading] = useState(false);
     const [lookupResults, setLookupResults] = useState([]);
@@ -634,6 +635,12 @@ const AutopartOffers = () => {
             });
             setOffers(sortedByPrice);
             setHistoricalOffers(sortedHistorical);
+            setNomenclatureInfo({
+                in_nomenclature: data?.in_nomenclature ?? false,
+                id: data?.nomenclature_autopart_id ?? null,
+                brand: data?.nomenclature_brand_name ?? null,
+                name: data?.nomenclature_name ?? null,
+            });
             setCurrentOem(oemValue);
             setOemInput(oemValue);
             pushOemHistory(oemValue);
@@ -1559,6 +1566,50 @@ const AutopartOffers = () => {
                     Подсказка бренда: <strong>{selectedBrand}</strong>
                 </div>
             ) : null}
+
+            {/* Nomenclature status banner */}
+            {nomenclatureInfo && !partialSearch && (
+                <div style={{ marginBottom: 12 }}>
+                    {nomenclatureInfo.in_nomenclature ? (
+                        <div style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 8,
+                            background: '#f6ffed', border: '1px solid #b7eb8f',
+                            borderRadius: 6, padding: '4px 12px', fontSize: 13,
+                        }}>
+                            <span style={{ color: '#52c41a', fontWeight: 600 }}>✔ В номенклатуре:</span>
+                            <span style={{ fontWeight: 500 }}>
+                                {nomenclatureInfo.brand} — {nomenclatureInfo.name}
+                            </span>
+                            <Button
+                                size="small"
+                                type="link"
+                                style={{ padding: 0 }}
+                                onClick={() => navigate(`/autoparts/nomenclature?q=${currentOem}`)}
+                            >
+                                Открыть
+                            </Button>
+                        </div>
+                    ) : (
+                        currentOem && (
+                            <div style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 8,
+                                background: '#fff7e6', border: '1px solid #ffd591',
+                                borderRadius: 6, padding: '4px 12px', fontSize: 13,
+                            }}>
+                                <span style={{ color: '#fa8c16', fontWeight: 600 }}>⚠ Нет в номенклатуре</span>
+                                <Button
+                                    size="small"
+                                    type="link"
+                                    style={{ padding: 0 }}
+                                    onClick={() => navigate(`/autoparts/nomenclature?create=1&oem=${currentOem}`)}
+                                >
+                                    + Создать позицию
+                                </Button>
+                            </div>
+                        )
+                    )}
+                </div>
+            )}
 
             <Space wrap style={{ marginBottom: 12 }}>
                 <AutoComplete

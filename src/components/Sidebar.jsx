@@ -55,6 +55,7 @@ const Sidebar = () => {
         if (path.startsWith('/customers')) return 'customers';
         if (path.startsWith('/substitutions')) return 'substitutions';
         if (path.startsWith('/autoparts/offers')) return 'autopart-offers';
+        if (path.startsWith('/autoparts/nomenclature')) return 'autopart-nomenclature';
         if (path.startsWith('/watchlist')) return 'watchlist';
         if (path.startsWith('/autoparts/price-history')) return 'autopart-price-history';
         if (path.startsWith('/admin/users')) return 'admin-users';
@@ -127,8 +128,11 @@ const Sidebar = () => {
             <Menu.SubMenu
                 key="autopart-search"
                 icon={<SearchOutlined />}
-                title="Поиск позиций по артикулу"
+                title="Запчасти"
             >
+                <Menu.Item key="autopart-nomenclature">
+                    <Link to="/autoparts/nomenclature">Номенклатура</Link>
+                </Menu.Item>
                 <Menu.Item key="autopart-offers">
                     <Link to="/autoparts/offers">Прайсы по артикулу</Link>
                 </Menu.Item>

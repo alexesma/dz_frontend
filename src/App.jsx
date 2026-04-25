@@ -14,6 +14,7 @@ import SubstitutionPage from './components/SubstitutionPage';
 import CustomersList from './components/CustomersList';
 import CustomerPage from './components/CustomerPage';
 import AutopartOffers from './components/AutopartOffers';
+import NomenclaturePage from './components/NomenclaturePage';
 import PriceHistoryPlot from './components/PriceHistoryPlot';
 import OrdersTrackingPage from './components/OrdersTrackingPage';
 import StockOrdersPage from './components/StockOrdersPage';
@@ -103,6 +104,9 @@ const AppRoutes = () => (
 
         {/* Autoparts offers */}
         <Route path="/autoparts/offers" element={<RequireAuth><AutopartOffers /></RequireAuth>} />
+
+        {/* Nomenclature catalog */}
+        <Route path="/autoparts/nomenclature" element={<RequireAuth><NomenclaturePage /></RequireAuth>} />
 
         {/* Autopart price history */}
         <Route path="/autoparts/price-history" element={<RequireAuth><PriceHistoryPlot /></RequireAuth>} />
