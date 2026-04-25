@@ -22,13 +22,12 @@ import {
     DeleteOutlined,
     SearchOutlined,
 } from '@ant-design/icons';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import {
     getCatalog,
     getAutopartDetail,
     updateAutopart,
     createAutopartCatalog,
-    getAutopartCrosses,
     addAutopartCross,
     deleteAutopartCross,
     getStorageLocations,
@@ -46,8 +45,7 @@ const fmtPrice = (v) =>
 // ─── component ───────────────────────────────────────────────────────────────
 
 const NomenclaturePage = () => {
-    const [searchParams, setSearchParams] = useSearchParams();
-    const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
 
     // ── list state ────────────────────────────────────────────────────────────
     const [items, setItems] = useState([]);
