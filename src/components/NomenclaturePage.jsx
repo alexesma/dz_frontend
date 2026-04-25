@@ -81,6 +81,9 @@ function buildTree(nodes) {
     return roots;
 }
 
+const makePendingCrossId = () =>
+    `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
 // ─── NomenclaturePage ─────────────────────────────────────────────────────────
 
 const NomenclaturePage = () => {
@@ -146,6 +149,7 @@ const NomenclaturePage = () => {
         const oem = searchParams.get('oem');
         if (q) {
             setQOem(q);
+            fetchList(q, '', '', 1);
         }
         if (create === '1') {
             openCreate();
@@ -233,6 +237,7 @@ const NomenclaturePage = () => {
     const openCreate = () => {
         setEditingId(null);
         form.resetFields();
+        crossForm.resetFields();
         setCrosses([]);
         setSelectedHsIds([]);
         setSelectedApplicIds([]);
@@ -301,6 +306,17 @@ const NomenclaturePage = () => {
                 partId = data.id;
                 setEditingId(partId);
             }
+            await assignHonestSignCategories(partId, selectedHsIds);
+            await assignApplicabilityNodes(partId, selectedApplicIds);
+            const pendingCrosses = crosses.filter((cross) => cross._pending);
+            for (const cross of pendingCrosses) {
+                await addAutopartCross(partId, {
+                    cross_brand_id: cross.cross_brand_id,
+                    cross_oem_number: cross.cross_oem_number,
+                    priority: cross.priority,
+                    comment: cross.comment,
+                });
+            }
             message.success(editingId ? 'Сохранено' : 'Позиция создана');
             setDrawerOpen(false);
             fetchList(qOem, qName, qBrand, page);
@@ -319,7 +335,10 @@ const NomenclaturePage = () => {
 
     // ── save ЧЗ ──────────────────────────────────────────────────────────────
     const handleSaveHs = async () => {
-        if (!editingId) return;
+        if (!editingId) {
+            message.info('Категории ЧЗ сохранятся вместе с новой позицией');
+            return;
+        }
         setSavingHs(true);
         try {
             await assignHonestSignCategories(editingId, selectedHsIds);
@@ -353,7 +372,10 @@ const NomenclaturePage = () => {
 
     // ── save Применимость ─────────────────────────────────────────────────────
     const handleSaveApplic = async () => {
-        if (!editingId) return;
+        if (!editingId) {
+            message.info('Применимость сохранится вместе с новой позицией');
+            return;
+        }
         setSavingApplic(true);
         try {
             await assignApplicabilityNodes(editingId, selectedApplicIds);
@@ -387,9 +409,26 @@ const NomenclaturePage = () => {
 
     // ── crosses ───────────────────────────────────────────────────────────────
     const handleAddCross = async () => {
-        if (!editingId) return;
         let values;
         try { values = await crossForm.validateFields(); } catch { return; }
+        if (!editingId) {
+            const brand = brands.find((item) => item.value === values.cross_brand_id);
+            setCrosses((prev) => [
+                ...prev,
+                {
+                    id: makePendingCrossId(),
+                    cross_brand_id: values.cross_brand_id,
+                    cross_brand_name: brand?.label,
+                    cross_oem_number: values.cross_oem_number,
+                    priority: values.priority ?? 100,
+                    comment: values.comment,
+                    _pending: true,
+                },
+            ]);
+            crossForm.resetFields();
+            message.success('Кросс-номер будет сохранён вместе с позицией');
+            return;
+        }
         setAddingCross(true);
         try {
             const { data } = await addAutopartCross(editingId, values);
@@ -405,6 +444,11 @@ const NomenclaturePage = () => {
     };
 
     const handleDeleteCross = async (crossId) => {
+        const cross = crosses.find((item) => item.id === crossId);
+        if (cross?._pending) {
+            setCrosses((prev) => prev.filter((c) => c.id !== crossId));
+            return;
+        }
         try {
             await deleteAutopartCross(crossId);
             setCrosses((prev) => prev.filter((c) => c.id !== crossId));
@@ -884,47 +928,40 @@ const NomenclaturePage = () => {
                             {
                                 key: 'hs',
                                 label: 'Честный знак',
-                                disabled: !editingId,
                                 children: (
                                     <div>
-                                        {!editingId ? (
-                                            <Text type="secondary">Сначала сохраните позицию.</Text>
-                                        ) : (
-                                            <>
-                                                <div style={{ marginBottom: 12 }}>
-                                                    <Text type="secondary" style={{ fontSize: 12 }}>
-                                                        Выберите категории маркировки «Честный знак» для данной запчасти.
-                                                        Несколько категорий допустимо.
-                                                    </Text>
-                                                </div>
-                                                <Select
-                                                    mode="multiple"
-                                                    style={{ width: '100%', marginBottom: 12 }}
-                                                    placeholder="Выберите категории ЧЗ"
-                                                    value={selectedHsIds}
-                                                    onChange={setSelectedHsIds}
-                                                    options={hsCategories}
-                                                    optionFilterProp="label"
-                                                    showSearch
-                                                    allowClear
-                                                />
-                                                <Space>
-                                                    <Button
-                                                        type="primary"
-                                                        onClick={handleSaveHs}
-                                                        loading={savingHs}
-                                                    >
-                                                        Сохранить ЧЗ
-                                                    </Button>
-                                                    <Button
-                                                        icon={<PlusOutlined />}
-                                                        onClick={() => setHsModalOpen(true)}
-                                                    >
-                                                        Новая категория ЧЗ
-                                                    </Button>
-                                                </Space>
-                                            </>
-                                        )}
+                                        <div style={{ marginBottom: 12 }}>
+                                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                                Выберите категории маркировки «Честный знак» для данной запчасти.
+                                                В новой позиции они сохранятся вместе с основной карточкой.
+                                            </Text>
+                                        </div>
+                                        <Select
+                                            mode="multiple"
+                                            style={{ width: '100%', marginBottom: 12 }}
+                                            placeholder="Выберите категории ЧЗ"
+                                            value={selectedHsIds}
+                                            onChange={setSelectedHsIds}
+                                            options={hsCategories}
+                                            optionFilterProp="label"
+                                            showSearch
+                                            allowClear
+                                        />
+                                        <Space>
+                                            <Button
+                                                type="primary"
+                                                onClick={handleSaveHs}
+                                                loading={savingHs}
+                                            >
+                                                {editingId ? 'Сохранить ЧЗ' : 'Сохранить вместе с позицией'}
+                                            </Button>
+                                            <Button
+                                                icon={<PlusOutlined />}
+                                                onClick={() => setHsModalOpen(true)}
+                                            >
+                                                Новая категория ЧЗ
+                                            </Button>
+                                        </Space>
                                     </div>
                                 ),
                             },
@@ -932,49 +969,42 @@ const NomenclaturePage = () => {
                             {
                                 key: 'applic',
                                 label: 'Применимость',
-                                disabled: !editingId,
                                 children: (
                                     <div>
-                                        {!editingId ? (
-                                            <Text type="secondary">Сначала сохраните позицию.</Text>
-                                        ) : (
-                                            <>
-                                                <div style={{ marginBottom: 12 }}>
-                                                    <Text type="secondary" style={{ fontSize: 12 }}>
-                                                        Выберите узлы применимости (автомобили, типо-размеры).
-                                                        Используйте дерево или поиск.
-                                                    </Text>
-                                                </div>
-                                                <TreeSelect
-                                                    treeData={applicTreeData}
-                                                    value={selectedApplicIds}
-                                                    onChange={setSelectedApplicIds}
-                                                    treeCheckable
-                                                    showCheckedStrategy={TreeSelect.SHOW_ALL}
-                                                    placeholder="Выберите применимость"
-                                                    style={{ width: '100%', marginBottom: 12 }}
-                                                    treeNodeFilterProp="title"
-                                                    showSearch
-                                                    allowClear
-                                                    maxTagCount={8}
-                                                />
-                                                <Space>
-                                                    <Button
-                                                        type="primary"
-                                                        onClick={handleSaveApplic}
-                                                        loading={savingApplic}
-                                                    >
-                                                        Сохранить применимость
-                                                    </Button>
-                                                    <Button
-                                                        icon={<PlusOutlined />}
-                                                        onClick={() => setApplicModalOpen(true)}
-                                                    >
-                                                        Создать узел
-                                                    </Button>
-                                                </Space>
-                                            </>
-                                        )}
+                                        <div style={{ marginBottom: 12 }}>
+                                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                                Выберите узлы применимости (автомобили, типо-размеры).
+                                                В новой позиции они сохранятся вместе с основной карточкой.
+                                            </Text>
+                                        </div>
+                                        <TreeSelect
+                                            treeData={applicTreeData}
+                                            value={selectedApplicIds}
+                                            onChange={setSelectedApplicIds}
+                                            treeCheckable
+                                            showCheckedStrategy={TreeSelect.SHOW_ALL}
+                                            placeholder="Выберите применимость"
+                                            style={{ width: '100%', marginBottom: 12 }}
+                                            treeNodeFilterProp="title"
+                                            showSearch
+                                            allowClear
+                                            maxTagCount={8}
+                                        />
+                                        <Space>
+                                            <Button
+                                                type="primary"
+                                                onClick={handleSaveApplic}
+                                                loading={savingApplic}
+                                            >
+                                                {editingId ? 'Сохранить применимость' : 'Сохранить вместе с позицией'}
+                                            </Button>
+                                            <Button
+                                                icon={<PlusOutlined />}
+                                                onClick={() => setApplicModalOpen(true)}
+                                            >
+                                                Создать узел
+                                            </Button>
+                                        </Space>
                                     </div>
                                 ),
                             },
@@ -982,68 +1012,64 @@ const NomenclaturePage = () => {
                             {
                                 key: 'crosses',
                                 label: 'Кросс-номера',
-                                disabled: !editingId,
                                 children: (
                                     <>
-                                        {!editingId ? (
-                                            <Text type="secondary">
-                                                Сначала сохраните позицию, затем добавьте кросс-номера.
+                                        {!editingId && (
+                                            <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+                                                Кросс-номера сохранятся вместе с новой позицией.
                                             </Text>
-                                        ) : (
-                                            <>
-                                                <Table
-                                                    rowKey="id"
-                                                    dataSource={crosses}
-                                                    columns={crossColumns}
-                                                    size="small"
-                                                    pagination={false}
-                                                    style={{ marginBottom: 16 }}
-                                                    locale={{ emptyText: 'Нет кросс-номеров' }}
-                                                />
-                                                <Form
-                                                    form={crossForm}
-                                                    layout="inline"
-                                                    style={{ flexWrap: 'wrap', gap: 8 }}
-                                                >
-                                                    <Form.Item
-                                                        name="cross_brand_id"
-                                                        rules={[{ required: true, message: 'Выберите бренд' }]}
-                                                    >
-                                                        <Select
-                                                            showSearch
-                                                            optionFilterProp="label"
-                                                            options={brands}
-                                                            placeholder="Бренд"
-                                                            style={{ width: 160 }}
-                                                        />
-                                                    </Form.Item>
-                                                    <Form.Item
-                                                        name="cross_oem_number"
-                                                        rules={[{ required: true, message: 'Введите артикул' }]}
-                                                    >
-                                                        <Input placeholder="Артикул" style={{ width: 160 }} />
-                                                    </Form.Item>
-                                                    <Form.Item name="priority" initialValue={100}>
-                                                        <InputNumber
-                                                            min={1}
-                                                            placeholder="Приоритет"
-                                                            style={{ width: 100 }}
-                                                        />
-                                                    </Form.Item>
-                                                    <Form.Item name="comment">
-                                                        <Input placeholder="Комментарий" style={{ width: 160 }} />
-                                                    </Form.Item>
-                                                    <Button
-                                                        type="primary"
-                                                        onClick={handleAddCross}
-                                                        loading={addingCross}
-                                                        icon={<PlusOutlined />}
-                                                    >
-                                                        Добавить
-                                                    </Button>
-                                                </Form>
-                                            </>
                                         )}
+                                        <Table
+                                            rowKey="id"
+                                            dataSource={crosses}
+                                            columns={crossColumns}
+                                            size="small"
+                                            pagination={false}
+                                            style={{ marginBottom: 16 }}
+                                            locale={{ emptyText: 'Нет кросс-номеров' }}
+                                        />
+                                        <Form
+                                            form={crossForm}
+                                            layout="inline"
+                                            style={{ flexWrap: 'wrap', gap: 8 }}
+                                        >
+                                            <Form.Item
+                                                name="cross_brand_id"
+                                                rules={[{ required: true, message: 'Выберите бренд' }]}
+                                            >
+                                                <Select
+                                                    showSearch
+                                                    optionFilterProp="label"
+                                                    options={brands}
+                                                    placeholder="Бренд"
+                                                    style={{ width: 160 }}
+                                                />
+                                            </Form.Item>
+                                            <Form.Item
+                                                name="cross_oem_number"
+                                                rules={[{ required: true, message: 'Введите артикул' }]}
+                                            >
+                                                <Input placeholder="Артикул" style={{ width: 160 }} />
+                                            </Form.Item>
+                                            <Form.Item name="priority" initialValue={100}>
+                                                <InputNumber
+                                                    min={1}
+                                                    placeholder="Приоритет"
+                                                    style={{ width: 100 }}
+                                                />
+                                            </Form.Item>
+                                            <Form.Item name="comment">
+                                                <Input placeholder="Комментарий" style={{ width: 160 }} />
+                                            </Form.Item>
+                                            <Button
+                                                type="primary"
+                                                onClick={handleAddCross}
+                                                loading={addingCross}
+                                                icon={<PlusOutlined />}
+                                            >
+                                                Добавить
+                                            </Button>
+                                        </Form>
                                     </>
                                 ),
                             },
