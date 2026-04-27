@@ -17,6 +17,8 @@ import {
     TagsOutlined,
     MailOutlined,
     ClockCircleOutlined,
+    DatabaseOutlined,
+    AuditOutlined,
 } from '@ant-design/icons';
 import useAuth from '../context/useAuth';
 
@@ -125,6 +127,18 @@ const Sidebar = () => {
             <Menu.Item key="substitutions" icon={<SwapOutlined />}>
                 <Link to="/substitutions">Подмены</Link>
             </Menu.Item>
+            <Menu.SubMenu
+                key="warehouse"
+                icon={<DatabaseOutlined />}
+                title="Склад"
+            >
+                <Menu.Item key="warehouse-storage" icon={<DatabaseOutlined />}>
+                    <Link to="/warehouse/storage">Места хранения</Link>
+                </Menu.Item>
+                <Menu.Item key="warehouse-inventory" icon={<AuditOutlined />}>
+                    <Link to="/warehouse/inventory">Инвентаризация</Link>
+                </Menu.Item>
+            </Menu.SubMenu>
             <Menu.SubMenu
                 key="autopart-search"
                 icon={<SearchOutlined />}

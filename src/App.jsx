@@ -37,6 +37,8 @@ import AdminUsers from './components/AdminUsers';
 import WatchlistPage from './components/WatchlistPage';
 import InboxPage from './components/InboxPage';
 import OrderWindowsPage from './components/OrderWindowsPage';
+import StorageLocationsPage from './components/StorageLocationsPage';
+import InventoryPage from './components/InventoryPage';
 import { AuthProvider } from './context/AuthContext';
 import useAuth from './context/useAuth';
 
@@ -107,6 +109,10 @@ const AppRoutes = () => (
 
         {/* Nomenclature catalog */}
         <Route path="/autoparts/nomenclature" element={<RequireAuth><NomenclaturePage /></RequireAuth>} />
+
+        {/* Warehouse */}
+        <Route path="/warehouse/storage" element={<RequireAuth><StorageLocationsPage /></RequireAuth>} />
+        <Route path="/warehouse/inventory" element={<RequireAuth><InventoryPage /></RequireAuth>} />
 
         {/* Autopart price history */}
         <Route path="/autoparts/price-history" element={<RequireAuth><PriceHistoryPlot /></RequireAuth>} />
