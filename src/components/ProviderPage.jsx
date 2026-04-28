@@ -69,6 +69,9 @@ const providerPriceTypeOptions = [
     { value: "Retail", label: "Цена без НДС" },
     { value: "Cash", label: "Цена за наличные" },
 ];
+
+const deriveVatPayerFromPriceType = (typePrice) => typePrice === "Wholesale";
+
 const deliveryMethodOptions = [
     { value: "Delivered", label: "Привозят" },
     { value: "Self pickup", label: "Забираем сами" },
@@ -266,7 +269,7 @@ const ProviderPage = () => {
                 type_prices: "Wholesale",
                 default_delivery_method: "Delivered",
                 is_own_price: false,
-                is_vat_payer: false,
+                is_vat_payer: true,
                 order_schedule_enabled: false,
                 order_schedule_days: [],
                 order_schedule_times: [],
@@ -297,7 +300,9 @@ const ProviderPage = () => {
                     comment: data.provider.comment,
                     is_virtual: data.provider.is_virtual,
                     is_own_price: data.provider.is_own_price,
-                    is_vat_payer: data.provider.is_vat_payer ?? false,
+                    is_vat_payer: deriveVatPayerFromPriceType(
+                        data.provider.type_prices
+                    ),
                     default_delivery_method:
                         data.provider.default_delivery_method || "Delivered",
                     order_schedule_days: data.provider.order_schedule_days || [],
@@ -376,15 +381,19 @@ const ProviderPage = () => {
 
 
     const handleProviderSubmit = async (values) => {
+        const normalizedValues = {
+            ...values,
+            is_vat_payer: deriveVatPayerFromPriceType(values.type_prices),
+        };
         setSaving(true);
         try {
             if (isNew) {
-                const { data } = await createProvider(values);
+                const { data } = await createProvider(normalizedValues);
                 message.success("Поставщик успешно создан");
                 // после создания переходим на страницу редактирования созданного поставщика
                 navigate(`/providers/${data.id}/edit`);
             } else {
-                await updateProvider(providerId, values);
+                await updateProvider(providerId, normalizedValues);
                 message.success("Данные поставщика обновлены");
                 await refreshProviderData();
             }
@@ -1701,6 +1710,13 @@ const ProviderPage = () => {
                         <Select
                             options={providerPriceTypeOptions}
                             placeholder="Выберите тип цен"
+                            onChange={(value) => {
+                                providerForm.setFieldsValue({
+                                    is_vat_payer: deriveVatPayerFromPriceType(
+                                        value
+                                    ),
+                                });
+                            }}
                         />
                     </Form.Item>
 
@@ -1755,9 +1771,9 @@ const ProviderPage = () => {
                         name="is_vat_payer"
                         label="Плательщик НДС"
                         valuePropName="checked"
-                        extra="Если включено, НДС 22% будет применяться к документам поступления"
+                        extra="Заполняется автоматически по типу цены поставщика."
                     >
-                        <Switch />
+                        <Switch disabled />
                     </Form.Item>
 
                     <Divider>Расписание отправки заказов</Divider>

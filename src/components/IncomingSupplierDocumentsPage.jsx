@@ -68,6 +68,17 @@ const formatMoney = (value) => {
     return num.toFixed(2);
 };
 
+const getLineTotalWithVat = (row) => {
+    if (row?.total_price_with_vat != null) {
+        const total = Number(row.total_price_with_vat);
+        return total > 0 ? total : null;
+    }
+    const quantity = Number(row?.received_quantity || 0);
+    const price = Number(row?.price || 0);
+    const total = quantity * price;
+    return total > 0 ? total : null;
+};
+
 // ─── Label print styles injected once ────────────────────────────────────────
 const LABEL_STYLE_ID = 'label-print-style';
 function ensureLabelPrintStyle() {
@@ -761,15 +772,9 @@ const IncomingSupplierDocumentsPage = () => {
             {
                 title: 'Сумма', key: 'sum', width: 110, align: 'right',
                 render: (_, row) => {
-                    // "Сумма" = total WITHOUT VAT (base amount for accounting)
-                    const q = Number(row.received_quantity || 0);
-                    if (row.total_price_with_vat != null) {
-                        const baseSum = Number(row.total_price_with_vat) / (1 + VAT_RATE);
-                        return baseSum > 0 ? formatMoney(baseSum) : '—';
-                    }
-                    // price is WITH VAT → divide by (1+VAT) to get base sum
-                    const p = Number(row.price || 0);
-                    return q && p ? formatMoney(q * p / (1 + VAT_RATE)) : '—';
+                    const lineTotal = getLineTotalWithVat(row);
+                    if (lineTotal == null) return '—';
+                    return formatMoney(lineTotal);
                 },
             },
         ];
@@ -1007,30 +1012,14 @@ const IncomingSupplierDocumentsPage = () => {
         (items || []).forEach((item) => {
             const q = Number(item.received_quantity || 0);
             qty += q;
-            if (item.total_price_with_vat != null) {
-                // total_price_with_vat is the authoritative total WITH VAT
-                const lineTotal = Number(item.total_price_with_vat);
-                const lineBase = lineTotal / (1 + VAT_RATE);
-                sum += lineBase;
-                if (isVatPayer) {
-                    vat += lineTotal - lineBase;
-                    total += lineTotal;
-                } else {
-                    total += lineBase;
-                }
-            } else {
-                // price is stored WITH VAT → lineTotal = price × qty
-                const p = Number(item.price || 0);
-                const lineTotal = q * p;
-                const lineBase = lineTotal / (1 + VAT_RATE);
-                sum += lineBase;
-                if (isVatPayer) {
-                    vat += lineTotal - lineBase;
-                    total += lineTotal;
-                } else {
-                    total += lineBase;
-                }
+            const lineTotal = getLineTotalWithVat(item);
+            if (lineTotal == null) return;
+            const lineBase = lineTotal / (1 + VAT_RATE);
+            sum += lineTotal;
+            if (isVatPayer) {
+                vat += lineTotal - lineBase;
             }
+            total += lineTotal;
         });
         return { qty, sum, vat, total };
     };
@@ -1227,10 +1216,15 @@ const IncomingSupplierDocumentsPage = () => {
                                             {isVatPayer && (
                                                 <Table.Summary.Cell index={7} align="right">{formatMoney(vat)}</Table.Summary.Cell>
                                             )}
-                                            <Table.Summary.Cell index={isVatPayer ? 8 : 7} align="right">
-                                                {formatMoney(total)}
-                                            </Table.Summary.Cell>
-                                            <Table.Summary.Cell index={colSpanBase} colSpan={3} />
+                                            {isVatPayer ? (
+                                                <Table.Summary.Cell index={8} align="right">
+                                                    {formatMoney(total)}
+                                                </Table.Summary.Cell>
+                                            ) : null}
+                                            <Table.Summary.Cell
+                                                index={colSpanBase}
+                                                colSpan={isVatPayer ? 3 : 4}
+                                            />
                                         </Table.Summary.Row>
                                     );
                                 }}
