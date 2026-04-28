@@ -312,15 +312,9 @@ const CustomerPage = () => {
                     if (!account?.is_active) return false;
                     return (account.purposes || []).includes('orders_in');
                 });
-                const priceOutFiltered = (data || []).filter((account) => {
-                    if (!account?.is_active) return false;
-                    const purposes = account.purposes || [];
-                    return (
-                        purposes.includes('prices_out') ||
-                        purposes.includes('orders_out') ||
-                        purposes.includes('orders_in')
-                    );
-                });
+                const priceOutFiltered = (data || []).filter(
+                    (account) => account?.is_active
+                );
                 if (mounted) {
                     setOrderInboxAccounts(orderInFiltered);
                     setPriceOutAccounts(priceOutFiltered);
