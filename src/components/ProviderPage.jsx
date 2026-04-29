@@ -67,6 +67,7 @@ import { updateCustomerPricelistSource } from "../api/customers";
 import { getBrands } from "../api/brands";
 import { getEmailAccounts } from "../api/emailAccounts";
 import { getPriceStaleAlerts } from "../api/settings";
+import { getWarehouses } from "../api/storage";
 import { formatMoscow } from '../utils/time';
 import ProviderPricelistAnalyticsSection from "./ProviderPricelistAnalyticsSection";
 
@@ -151,6 +152,7 @@ const ProviderPage = () => {
     const [sourceUsageSaving, setSourceUsageSaving] = useState(false);
     const [markupBrandOptions, setMarkupBrandOptions] = useState([]);
     const [markupBrandLoading, setMarkupBrandLoading] = useState(false);
+    const [warehouseOptions, setWarehouseOptions] = useState([]);
     const [uploadForm] = Form.useForm();
     const [sourceUsageForm] = Form.useForm();
     const [configNumberingFromOne, setConfigNumberingFromOne] = useState(true);
@@ -282,6 +284,12 @@ const ProviderPage = () => {
 
     // --- загрузка данных при редактировании ---
     useEffect(() => {
+        getWarehouses({ include_inactive: true })
+            .then(({ data }) => setWarehouseOptions(data || []))
+            .catch(() => setWarehouseOptions([]));
+    }, []);
+
+    useEffect(() => {
         if (isNew) {
             // режим создания — чистая форма
             providerForm.resetFields();
@@ -293,6 +301,7 @@ const ProviderPage = () => {
                 order_schedule_enabled: false,
                 order_schedule_days: [],
                 order_schedule_times: [],
+                default_warehouse_id: undefined,
             });
             setProviderData(null);
             setLoading(false);
@@ -323,6 +332,7 @@ const ProviderPage = () => {
                     is_vat_payer: deriveVatPayerFromPriceType(
                         data.provider.type_prices
                     ),
+                    default_warehouse_id: data.provider.default_warehouse_id,
                     default_delivery_method:
                         data.provider.default_delivery_method || "Delivered",
                     order_schedule_days: data.provider.order_schedule_days || [],
@@ -337,6 +347,18 @@ const ProviderPage = () => {
             }
         })();
     }, [isNew, providerId, providerForm, navigate]);
+
+    useEffect(() => {
+        if (!isNew || !warehouseOptions.length) return;
+        const currentWarehouseId = providerForm.getFieldValue(
+            "default_warehouse_id"
+        );
+        if (currentWarehouseId) return;
+        providerForm.setFieldValue(
+            "default_warehouse_id",
+            warehouseOptions[0]?.id ?? undefined
+        );
+    }, [isNew, providerForm, warehouseOptions]);
 
     useEffect(() => {
         if (!providerId || isNew) return;
@@ -1932,6 +1954,21 @@ const ProviderPage = () => {
                         <Select
                             options={deliveryMethodOptions}
                             placeholder="Выберите способ доставки"
+                        />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="default_warehouse_id"
+                        label="Склад по умолчанию"
+                        rules={[{ required: true, message: "Выберите склад по умолчанию" }]}
+                        extra="Используется для входящих документов и первичного размещения товара."
+                    >
+                        <Select
+                            placeholder="Выберите склад"
+                            options={warehouseOptions.map((warehouse) => ({
+                                value: warehouse.id,
+                                label: warehouse.name,
+                            }))}
                         />
                     </Form.Item>
 

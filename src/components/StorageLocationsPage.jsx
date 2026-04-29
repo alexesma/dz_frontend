@@ -19,6 +19,7 @@ import {
     Select,
     Space,
     Spin,
+    Switch,
     Table,
     Tag,
     Tooltip,
@@ -32,6 +33,7 @@ import {
     DeleteOutlined,
     EditOutlined,
     EyeOutlined,
+    HomeOutlined,
     PlusOutlined,
     PrinterOutlined,
     RetweetOutlined,
@@ -42,10 +44,13 @@ import Barcode from 'react-barcode';
 import dayjs from 'dayjs';
 
 import {
+    createWarehouse,
     createStorageLocation,
     deleteStorageLocation,
+    getWarehouses,
     getStorageAutoparts,
     getStorageLocations,
+    updateWarehouse,
     updateStorageLocation,
 } from '../api/storage';
 import {
@@ -506,6 +511,8 @@ function LocationAutopartsDrawer({ location, allLocations, open, onClose, onChan
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function StorageLocationsPage() {
+    const [warehouses, setWarehouses] = useState([]);
+    const [selectedWarehouseId, setSelectedWarehouseId] = useState(null);
     const [locations, setLocations] = useState([]);
     const [loading, setLoading] = useState(false);
     const [search, setSearch] = useState('');
@@ -517,17 +524,36 @@ export default function StorageLocationsPage() {
     const [editingLocation, setEditingLocation] = useState(null);
     const [form] = Form.useForm();
     const [saving, setSaving] = useState(false);
+    const [warehouseModalOpen, setWarehouseModalOpen] = useState(false);
+    const [editingWarehouse, setEditingWarehouse] = useState(null);
+    const [warehouseForm] = Form.useForm();
+    const [warehouseSaving, setWarehouseSaving] = useState(false);
 
     // Subsidiary drawers/modals
     const [labelLocation, setLabelLocation] = useState(null);
     const [viewLocation, setViewLocation] = useState(null);
     const [historyLocation, setHistoryLocation] = useState(null);
 
-    const fetchLocations = useCallback(async () => {
+    const fetchWarehousesAndLocations = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await getStorageLocations(0, 500);
-            setLocations(res.data);
+            const [warehousesRes, locationsRes] = await Promise.all([
+                getWarehouses({ include_inactive: true }),
+                getStorageLocations({ skip: 0, limit: 500 }),
+            ]);
+            const warehouseRows = warehousesRes.data || [];
+            const locationRows = locationsRes.data || [];
+            setWarehouses(warehouseRows);
+            setLocations(locationRows);
+            setSelectedWarehouseId((current) => {
+                if (
+                    current
+                    && warehouseRows.some((warehouse) => warehouse.id === current)
+                ) {
+                    return current;
+                }
+                return warehouseRows[0]?.id ?? null;
+            });
         } catch {
             message.error('Ошибка загрузки');
         } finally {
@@ -535,7 +561,7 @@ export default function StorageLocationsPage() {
         }
     }, []);
 
-    useEffect(() => { fetchLocations(); }, [fetchLocations]);
+    useEffect(() => { fetchWarehousesAndLocations(); }, [fetchWarehousesAndLocations]);
 
     // ── Barcode scanner: fast keyboard → Enter ────────────────────────────────
     const handleScan = (e) => {
@@ -551,7 +577,8 @@ export default function StorageLocationsPage() {
 
     // ── filter & group ────────────────────────────────────────────────────────
     const filtered = locations.filter((l) =>
-        l.name.toUpperCase().includes(search.toUpperCase())
+        (selectedWarehouseId == null || l.warehouse_id === selectedWarehouseId)
+        && l.name.toUpperCase().includes(search.toUpperCase())
     );
     const shelves = groupByShelf(filtered);
     const shelfKeys = Object.keys(shelves).sort();
@@ -560,6 +587,9 @@ export default function StorageLocationsPage() {
     const openCreate = () => {
         setEditingLocation(null);
         form.resetFields();
+        form.setFieldsValue({
+            warehouse_id: selectedWarehouseId ?? warehouses[0]?.id ?? null,
+        });
         setModalOpen(true);
     };
 
@@ -569,8 +599,28 @@ export default function StorageLocationsPage() {
             name: loc.name,
             location_type: loc.location_type ?? undefined,
             capacity: loc.capacity ?? undefined,
+            warehouse_id: loc.warehouse_id ?? undefined,
         });
         setModalOpen(true);
+    };
+
+    const openCreateWarehouse = () => {
+        setEditingWarehouse(null);
+        warehouseForm.resetFields();
+        warehouseForm.setFieldsValue({
+            is_active: true,
+        });
+        setWarehouseModalOpen(true);
+    };
+
+    const openEditWarehouse = (warehouse) => {
+        setEditingWarehouse(warehouse);
+        warehouseForm.setFieldsValue({
+            name: warehouse.name,
+            comment: warehouse.comment || '',
+            is_active: warehouse.is_active !== false,
+        });
+        setWarehouseModalOpen(true);
     };
 
     const handleSave = async () => {
@@ -582,6 +632,7 @@ export default function StorageLocationsPage() {
                 name: values.name,
                 location_type: values.location_type || null,
                 capacity: values.capacity || null,
+                warehouse_id: values.warehouse_id || null,
             };
             if (editingLocation) {
                 await updateStorageLocation(editingLocation.id, payload);
@@ -591,7 +642,7 @@ export default function StorageLocationsPage() {
                 message.success('Создано');
             }
             setModalOpen(false);
-            await fetchLocations();
+            await fetchWarehousesAndLocations();
         } catch (err) {
             message.error(err.response?.data?.detail || 'Ошибка сохранения');
         } finally {
@@ -599,11 +650,37 @@ export default function StorageLocationsPage() {
         }
     };
 
+    const handleSaveWarehouse = async () => {
+        let values;
+        try { values = await warehouseForm.validateFields(); } catch { return; }
+        setWarehouseSaving(true);
+        try {
+            const payload = {
+                name: values.name?.trim(),
+                comment: values.comment || null,
+                is_active: !!values.is_active,
+            };
+            if (editingWarehouse) {
+                await updateWarehouse(editingWarehouse.id, payload);
+                message.success('Склад обновлён');
+            } else {
+                await createWarehouse(payload);
+                message.success('Склад создан');
+            }
+            setWarehouseModalOpen(false);
+            await fetchWarehousesAndLocations();
+        } catch (err) {
+            message.error(err.response?.data?.detail || 'Ошибка сохранения склада');
+        } finally {
+            setWarehouseSaving(false);
+        }
+    };
+
     const handleDelete = async (loc) => {
         try {
             await deleteStorageLocation(loc.id);
             message.success(`«${loc.name}» удалено`);
-            await fetchLocations();
+            await fetchWarehousesAndLocations();
         } catch (err) {
             message.error(err.response?.data?.detail || 'Ошибка удаления');
         }
@@ -685,11 +762,81 @@ export default function StorageLocationsPage() {
         },
     ];
 
+    const warehouseColumns = [
+        {
+            title: 'Склад',
+            dataIndex: 'name',
+            key: 'name',
+            render: (_, warehouse) => (
+                <Space>
+                    <Text strong>{warehouse.name}</Text>
+                    {selectedWarehouseId === warehouse.id && (
+                        <Tag color="blue">Текущий</Tag>
+                    )}
+                </Space>
+            ),
+        },
+        {
+            title: 'Мест хранения',
+            dataIndex: 'locations_count',
+            key: 'locations_count',
+            width: 130,
+            align: 'right',
+            render: (value) => value ?? 0,
+        },
+        {
+            title: 'Статус',
+            dataIndex: 'is_active',
+            key: 'is_active',
+            width: 120,
+            render: (value) => (
+                <Tag color={value ? 'green' : 'default'}>
+                    {value ? 'Активен' : 'Отключен'}
+                </Tag>
+            ),
+        },
+        {
+            title: 'Комментарий',
+            dataIndex: 'comment',
+            key: 'comment',
+            ellipsis: true,
+            render: (value) => value || '—',
+        },
+        {
+            title: 'Действия',
+            key: 'actions',
+            width: 140,
+            render: (_, warehouse) => (
+                <Space size={4}>
+                    <Tooltip title="Открыть склад">
+                        <Button
+                            size="small"
+                            icon={<HomeOutlined />}
+                            type={selectedWarehouseId === warehouse.id ? 'primary' : 'default'}
+                            onClick={() => setSelectedWarehouseId(warehouse.id)}
+                        />
+                    </Tooltip>
+                    <Tooltip title="Редактировать склад">
+                        <Button
+                            size="small"
+                            icon={<EditOutlined />}
+                            onClick={() => openEditWarehouse(warehouse)}
+                        />
+                    </Tooltip>
+                </Space>
+            ),
+        },
+    ];
+
+    const selectedWarehouse = warehouses.find(
+        (warehouse) => warehouse.id === selectedWarehouseId
+    ) || null;
+
     return (
         <div style={{ padding: 24 }}>
             <Row align="middle" justify="space-between" style={{ marginBottom: 16 }}>
                 <Col>
-                    <Title level={3} style={{ margin: 0 }}>Места хранения</Title>
+                    <Title level={3} style={{ margin: 0 }}>Склады и места хранения</Title>
                 </Col>
                 <Col>
                     <Space>
@@ -714,6 +861,9 @@ export default function StorageLocationsPage() {
                             allowClear
                             style={{ width: 180 }}
                         />
+                        <Button icon={<PlusOutlined />} onClick={openCreateWarehouse}>
+                            Добавить склад
+                        </Button>
                         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
                             Добавить место
                         </Button>
@@ -721,10 +871,37 @@ export default function StorageLocationsPage() {
                 </Col>
             </Row>
 
+            <Card
+                title="Склады"
+                style={{ marginBottom: 16 }}
+                extra={selectedWarehouse ? (
+                    <Text type="secondary">
+                        Выбран: <Text strong>{selectedWarehouse.name}</Text>
+                    </Text>
+                ) : null}
+            >
+                <Table
+                    rowKey="id"
+                    columns={warehouseColumns}
+                    dataSource={warehouses}
+                    size="small"
+                    pagination={false}
+                    locale={{ emptyText: 'Склады пока не созданы' }}
+                />
+            </Card>
+
             {loading ? (
                 <Spin size="large" style={{ display: 'block', margin: '60px auto' }} />
             ) : shelfKeys.length === 0 ? (
-                <Alert message="Места хранения не найдены" type="info" showIcon />
+                <Alert
+                    message={
+                        selectedWarehouse
+                            ? `Для склада «${selectedWarehouse.name}» места хранения не найдены`
+                            : 'Места хранения не найдены'
+                    }
+                    type="info"
+                    showIcon
+                />
             ) : (
                 <Collapse defaultActiveKey={shelfKeys.slice(0, 5)}>
                     {shelfKeys.map((shelf) => {
@@ -773,6 +950,19 @@ export default function StorageLocationsPage() {
             >
                 <Form form={form} layout="vertical">
                     <Form.Item
+                        name="warehouse_id"
+                        label="Склад"
+                        rules={[{ required: true, message: 'Выберите склад' }]}
+                    >
+                        <Select
+                            placeholder="Выберите склад"
+                            options={warehouses.map((warehouse) => ({
+                                value: warehouse.id,
+                                label: warehouse.name,
+                            }))}
+                        />
+                    </Form.Item>
+                    <Form.Item
                         name="name"
                         label="Название / код ячейки"
                         rules={[
@@ -812,6 +1002,40 @@ export default function StorageLocationsPage() {
                 </Form>
             </Modal>
 
+            <Modal
+                open={warehouseModalOpen}
+                title={editingWarehouse ? `Редактировать склад «${editingWarehouse.name}»` : 'Новый склад'}
+                onOk={handleSaveWarehouse}
+                onCancel={() => setWarehouseModalOpen(false)}
+                confirmLoading={warehouseSaving}
+                okText="Сохранить"
+                cancelText="Отмена"
+                destroyOnClose
+            >
+                <Form form={warehouseForm} layout="vertical">
+                    <Form.Item
+                        name="name"
+                        label="Название склада"
+                        rules={[
+                            { required: true, message: 'Введите название склада' },
+                            { min: 2, message: 'Минимум 2 символа' },
+                        ]}
+                    >
+                        <Input placeholder="Например: Основной склад" />
+                    </Form.Item>
+                    <Form.Item name="comment" label="Комментарий">
+                        <Input.TextArea rows={3} placeholder="Необязательно" />
+                    </Form.Item>
+                    <Form.Item
+                        name="is_active"
+                        label="Склад активен"
+                        valuePropName="checked"
+                    >
+                        <Switch />
+                    </Form.Item>
+                </Form>
+            </Modal>
+
             {/* ── Label modal ──────────────────────────────────────────────── */}
             <Modal
                 open={!!labelLocation}
@@ -835,7 +1059,7 @@ export default function StorageLocationsPage() {
                 allLocations={locations}
                 open={!!viewLocation}
                 onClose={() => setViewLocation(null)}
-                onChanged={fetchLocations}
+                onChanged={fetchWarehousesAndLocations}
             />
 
             {/* ── Movements history drawer ──────────────────────────────────── */}

@@ -1,7 +1,15 @@
 import api from '../api';
 
-export const getStorageLocations = (skip = 0, limit = 200) =>
-    api.get('/storage/', { params: { skip, limit } });
+export const getStorageLocations = (skipOrParams = 0, limit = 200) => {
+    if (
+        skipOrParams
+        && typeof skipOrParams === 'object'
+        && !Array.isArray(skipOrParams)
+    ) {
+        return api.get('/storage/', { params: skipOrParams });
+    }
+    return api.get('/storage/', { params: { skip: skipOrParams, limit } });
+};
 
 export const getStorageLocation = (id) =>
     api.get(`/storage/${id}/`);
@@ -20,3 +28,15 @@ export const getStorageAutoparts = (id) =>
 
 export const createStoragesBulk = (items) =>
     api.post('/storage/bulk/', items);
+
+export const getWarehouses = (params = {}) =>
+    api.get('/warehouses/', { params });
+
+export const getWarehouse = (id) =>
+    api.get(`/warehouses/${id}/`);
+
+export const createWarehouse = (data) =>
+    api.post('/warehouses/', data);
+
+export const updateWarehouse = (id, data) =>
+    api.patch(`/warehouses/${id}/`, data);

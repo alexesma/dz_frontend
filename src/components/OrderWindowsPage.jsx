@@ -47,6 +47,11 @@ const OrderWindowsPage = () => {
             render: (name, record) => (
                 <Space>
                     <Text strong>{name}</Text>
+                    {record.window_label && (
+                        <Tag color={record.window_index === 0 ? 'blue' : 'purple'} style={{ fontSize: 11 }}>
+                            {record.window_label}
+                        </Tag>
+                    )}
                     {record.sample_count && (
                         <Tooltip title={`На основе ${record.sample_count} заказов за 4 недели`}>
                             <Text type="secondary" style={{ fontSize: 11 }}>
@@ -157,7 +162,7 @@ const OrderWindowsPage = () => {
                 <Table
                     dataSource={data}
                     columns={columns}
-                    rowKey="customer_id"
+                    rowKey={(record) => `${record.customer_id}-${record.window_index}`}
                     loading={loading}
                     pagination={false}
                     onRow={(record) => ({ style: rowStyle(record) })}

@@ -133,7 +133,7 @@ const Sidebar = () => {
                 title="Склад"
             >
                 <Menu.Item key="warehouse-storage" icon={<DatabaseOutlined />}>
-                    <Link to="/warehouse/storage">Места хранения</Link>
+                    <Link to="/warehouse/storage">Склады и ячейки</Link>
                 </Menu.Item>
                 <Menu.Item key="warehouse-inventory" icon={<AuditOutlined />}>
                     <Link to="/warehouse/inventory">Инвентаризация</Link>

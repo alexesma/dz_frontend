@@ -39,7 +39,7 @@ import {
     createManualSupplierOrder,
     sendSupplierOrders,
 } from '../api/customerOrders';
-import { getTrackingOrderItems } from '../api/orderTracking';
+import { getTrackingOrderItems, updateTrackingOrderItem } from '../api/orderTracking';
 import TrackingOrderHistoryTable from './TrackingOrderHistoryTable';
 
 const OEM_HISTORY_KEY = 'autopart_oem_history_v1';
@@ -195,6 +195,20 @@ const AutopartOffers = () => {
     const [searchParams] = useSearchParams();
     const lookupRequestIdRef = useRef(0);
     const autoSearchKeyRef = useRef('');
+
+    const replaceItemId = searchParams.get('replace_item_id');
+    const replaceSource = searchParams.get('replace_source');
+
+    const markReplacedItemRemoved = useCallback(async () => {
+        if (!replaceItemId || !replaceSource) return;
+        try {
+            await updateTrackingOrderItem(replaceSource, Number(replaceItemId), {
+                status: 'REMOVED',
+            });
+        } catch {
+            // non-critical — order was placed, just couldn't update old status
+        }
+    }, [replaceItemId, replaceSource]);
     const activeLookupQuery = String(oemInput || '').trim();
 
     const brandOptions = useMemo(() => {
@@ -1017,6 +1031,7 @@ const AutopartOffers = () => {
 
             if (processedKeys.length) {
                 clearCartItems(processedKeys);
+                await markReplacedItemRemoved();
             }
         } catch (error) {
             const detail =
@@ -1151,6 +1166,7 @@ const AutopartOffers = () => {
 
             if (processedKeys.length) {
                 clearCartItems(processedKeys);
+                await markReplacedItemRemoved();
             }
             if (failedSuppliers.length) {
                 message.error(

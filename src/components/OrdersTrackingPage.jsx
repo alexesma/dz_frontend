@@ -3,6 +3,7 @@ import {
     Button,
     Card,
     DatePicker,
+    Divider,
     Form,
     Input,
     Select,
@@ -12,6 +13,7 @@ import {
 } from 'antd';
 import dayjs from 'dayjs';
 import { ReloadOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { getTrackingOrderItems } from '../api/orderTracking';
 import { getAllProviders } from '../api/providers';
 import TrackingOrderHistoryTable from './TrackingOrderHistoryTable';
@@ -20,32 +22,35 @@ const { RangePicker } = DatePicker;
 const { Title, Text } = Typography;
 
 const STATUS_OPTIONS = [
-    'NEW',
-    'SCHEDULED',
-    'SENT',
-    'ERROR',
-    'ORDERED',
-    'PROCESSING',
-    'CONFIRMED',
-    'TRANSIT',
-    'ACCEPTED',
-    'ARRIVED',
-    'SHIPPED',
-    'REFUSAL',
-    'RETURNED',
-    'REMOVED',
-].map((value) => ({
-    value,
-    label: value,
-}));
+    { value: 'NEW',        label: 'Новый' },
+    { value: 'SCHEDULED',  label: 'Запланирован' },
+    { value: 'SENT',       label: 'Отправлен' },
+    { value: 'ERROR',      label: 'Ошибка' },
+    { value: 'ORDERED',    label: 'В заказе' },
+    { value: 'PROCESSING', label: 'Обрабатывается' },
+    { value: 'CONFIRMED',  label: 'Подтвержден' },
+    { value: 'TRANSIT',    label: 'В пути' },
+    { value: 'ACCEPTED',   label: 'Принят' },
+    { value: 'ARRIVED',    label: 'Прибыл' },
+    { value: 'SHIPPED',    label: 'Выдан' },
+    { value: 'REFUSAL',    label: 'Отказ' },
+    { value: 'RETURNED',   label: 'Возврат' },
+    { value: 'REMOVED',    label: 'Снят' },
+    { value: 'FAILED',     label: 'Ошибка' },
+    { value: 'DELIVERED',  label: 'Получено' },
+    { value: 'CANCELLED',  label: 'Отменен' },
+];
 
 const defaultRange = () => [dayjs().subtract(1, 'year').startOf('day'), dayjs().endOf('day')];
+
+const REFUSAL_STATUSES = new Set(['REFUSAL', 'ERROR', 'FAILED', 'CANCELLED']);
 
 const OrdersTrackingPage = () => {
     const [form] = Form.useForm();
     const [rows, setRows] = useState([]);
     const [providers, setProviders] = useState([]);
     const [loading, setLoading] = useState(false);
+    const navigate = useNavigate();
 
     const fetchRows = useCallback(async (values) => {
         const nextValues = values || form.getFieldsValue();
@@ -106,6 +111,24 @@ const OrdersTrackingPage = () => {
         })),
         [providers]
     );
+
+    const refusalRows = useMemo(
+        () => rows.filter((r) => REFUSAL_STATUSES.has(r.current_status)),
+        [rows]
+    );
+
+    const handleReorder = useCallback((record) => {
+        const params = new URLSearchParams({
+            oem: record.oem_number || '',
+            auto: '1',
+            replace_item_id: record.item_id,
+            replace_source: record.source_type,
+        });
+        if (record.brand_name) {
+            params.set('brand', record.brand_name);
+        }
+        navigate(`/autoparts/offers?${params.toString()}`);
+    }, [navigate]);
 
     return (
         <Card style={{ margin: 16 }}>
@@ -184,6 +207,29 @@ const OrdersTrackingPage = () => {
                     allowEdit
                     onUpdated={() => fetchRows()}
                 />
+
+                {refusalRows.length > 0 && (
+                    <>
+                        <Divider orientation="left" style={{ marginTop: 24 }}>
+                            <Typography.Text type="danger" strong>
+                                Отказы ({refusalRows.length})
+                            </Typography.Text>
+                        </Divider>
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                            Позиции со статусом «Отказ» / «Ошибка» / «Отменен».
+                            Нажмите «Перезаказать» — откроется поиск по артикулу,
+                            а позиция будет помечена как снятая.
+                        </Typography.Text>
+                        <TrackingOrderHistoryTable
+                            rows={refusalRows}
+                            loading={loading}
+                            compact
+                            allowEdit={false}
+                            onReorder={handleReorder}
+                            emptyText="Отказов нет"
+                        />
+                    </>
+                )}
             </Space>
         </Card>
     );

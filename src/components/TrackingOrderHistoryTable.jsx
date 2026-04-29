@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
+    Button,
     InputNumber,
     Select,
     Table,
@@ -8,6 +9,7 @@ import {
     Typography,
     message,
 } from 'antd';
+import { RedoOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { updateTrackingOrderItem } from '../api/orderTracking';
 
@@ -169,10 +171,12 @@ const TrackingOrderHistoryTable = ({
     showOem = true,
     allowEdit = false,
     onUpdated,
+    onReorder,
     emptyText = 'История заказов пока пуста',
 }) => {
     const [drafts, setDrafts] = useState({});
     const [savingKey, setSavingKey] = useState(null);
+    const [reorderingKey, setReorderingKey] = useState(null);
 
     const updateDraft = useCallback((rowKey, patch) => {
         setDrafts((prev) => ({
@@ -488,12 +492,43 @@ const TrackingOrderHistoryTable = ({
             }
         );
 
+        if (onReorder) {
+            baseColumns.push({
+                title: '',
+                key: 'reorder_action',
+                width: compact ? 120 : 140,
+                render: (_, record) => {
+                    const rowKey = `${record.source_type}:${record.item_id}`;
+                    return (
+                        <Button
+                            size="small"
+                            type="primary"
+                            icon={<RedoOutlined />}
+                            loading={reorderingKey === rowKey}
+                            onClick={async () => {
+                                setReorderingKey(rowKey);
+                                try {
+                                    await onReorder(record);
+                                } finally {
+                                    setReorderingKey(null);
+                                }
+                            }}
+                        >
+                            Перезаказать
+                        </Button>
+                    );
+                },
+            });
+        }
+
         return baseColumns;
     }, [
         allowEdit,
         compact,
         drafts,
         handleSave,
+        onReorder,
+        reorderingKey,
         savingKey,
         showOem,
         updateDraft,

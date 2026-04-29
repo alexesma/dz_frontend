@@ -37,6 +37,7 @@ import {
 
 import { searchAutopartsByOem } from '../api/autoparts';
 import { getAllProviders } from '../api/providers';
+import { getWarehouses } from '../api/storage';
 import {
     addSupplierReceiptItems,
     createManualSupplierReceipt,
@@ -304,6 +305,7 @@ const ArticleSearchCell = ({ currentOem, currentBrand, currentName, onSelect }) 
 const IncomingSupplierDocumentsPage = () => {
     const [searchParams, setSearchParams] = useSearchParams();
     const [providers, setProviders] = useState([]);
+    const [warehouses, setWarehouses] = useState([]);
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(false);
     const [postingId, setPostingId] = useState(null);
@@ -355,11 +357,20 @@ const IncomingSupplierDocumentsPage = () => {
         setCreateItems((prev) => prev.filter((it) => it._key !== key));
     }, []);
 
+    const getProviderDefaultWarehouseId = useCallback((providerId) => {
+        if (!providerId) return null;
+        const provider = providers.find((item) => item.id === providerId);
+        return provider?.default_warehouse_id || null;
+    }, [providers]);
+
     // ── load providers ──────────────────────────────────────────────────────
     useEffect(() => {
         getAllProviders({ sort_by: 'name', sort_dir: 'asc' })
             .then((items) => setProviders(items || []))
             .catch(() => message.error('Не удалось загрузить поставщиков'));
+        getWarehouses({ include_inactive: true })
+            .then(({ data }) => setWarehouses(data || []))
+            .catch(() => message.error('Не удалось загрузить склады'));
     }, []);
 
     // ── fetch list ──────────────────────────────────────────────────────────
@@ -430,6 +441,7 @@ const IncomingSupplierDocumentsPage = () => {
     const enterEditMode = () => {
         if (!detailReceipt) return;
         headerForm.setFieldsValue({
+            warehouse_id: detailReceipt.warehouse_id ?? undefined,
             document_number: detailReceipt.document_number || '',
             document_date: detailReceipt.document_date
                 ? dayjs(detailReceipt.document_date) : null,
@@ -494,6 +506,7 @@ const IncomingSupplierDocumentsPage = () => {
             const headerVals = await headerForm.validateFields();
             // save header
             await updateSupplierReceipt(detailReceipt.id, {
+                warehouse_id: headerVals.warehouse_id || null,
                 document_number: headerVals.document_number || null,
                 document_date: headerVals.document_date
                     ? headerVals.document_date.format('YYYY-MM-DD') : null,
@@ -636,6 +649,7 @@ const IncomingSupplierDocumentsPage = () => {
             }));
             const payload = {
                 provider_id: values.provider_id,
+                warehouse_id: values.warehouse_id || null,
                 document_number: values.document_number || null,
                 document_date: values.document_date
                     ? values.document_date.format('YYYY-MM-DD') : null,
@@ -669,6 +683,10 @@ const IncomingSupplierDocumentsPage = () => {
             width: 200, ellipsis: true, render: (v) => v || '—',
         },
         {
+            title: 'Склад', dataIndex: 'warehouse_name', key: 'warehouse_name',
+            width: 160, ellipsis: true, render: (v) => v || '—',
+        },
+        {
             title: 'Статус', key: 'status', width: 110,
             render: (_, row) => row.posted_at
                 ? <Tag color="green">Проведен</Tag>
@@ -691,10 +709,14 @@ const IncomingSupplierDocumentsPage = () => {
             render: (_, row) => row.items?.length || 0,
         },
         {
-            title: 'Кол-во', key: 'qty', width: 70, align: 'right',
-            render: (_, row) => (row.items || []).reduce(
-                (s, i) => s + Number(i.received_quantity || 0), 0
-            ),
+            title: 'Сумма', key: 'total_sum', width: 110, align: 'right',
+            render: (_, row) => {
+                const sum = (row.items || []).reduce((s, item) => {
+                    const lineTotal = getLineTotalWithVat(item);
+                    return s + (lineTotal ?? 0);
+                }, 0);
+                return sum > 0 ? formatMoney(sum) : '—';
+            },
         },
         {
             title: 'Действия', key: 'actions', width: 280,
@@ -1038,6 +1060,9 @@ const IncomingSupplierDocumentsPage = () => {
                             icon={<PlusOutlined />}
                             onClick={() => {
                                 createForm.resetFields();
+                                createForm.setFieldsValue({
+                                    warehouse_id: warehouses[0]?.id ?? null,
+                                });
                                 setCreateItems([]);
                                 setCreateVisible(true);
                             }}
@@ -1147,6 +1172,9 @@ const IncomingSupplierDocumentsPage = () => {
                                         <Text strong>{detailReceipt.provider_name || '—'}</Text>
                                         {isVatPayer && <Tag color="blue" style={{ marginLeft: 8 }}>Плательщик НДС</Tag>}
                                     </Descriptions.Item>
+                                    <Descriptions.Item label="Склад">
+                                        {detailReceipt.warehouse_name || '—'}
+                                    </Descriptions.Item>
                                     <Descriptions.Item label="Номер УПД">
                                         {detailReceipt.document_number || '—'}
                                     </Descriptions.Item>
@@ -1174,6 +1202,21 @@ const IncomingSupplierDocumentsPage = () => {
                                 <Form form={headerForm} layout="vertical" style={{ marginBottom: 12 }}>
                                     <Row gutter={12}>
                                         <Col span={6}>
+                                            <Form.Item
+                                                name="warehouse_id"
+                                                label="Склад"
+                                                rules={[{ required: true, message: 'Выберите склад' }]}
+                                            >
+                                                <Select
+                                                    placeholder="Выберите склад"
+                                                    options={warehouses.map((warehouse) => ({
+                                                        value: warehouse.id,
+                                                        label: warehouse.name,
+                                                    }))}
+                                                />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col span={6}>
                                             <Form.Item name="document_number" label="Номер УПД">
                                                 <Input placeholder="Номер документа" />
                                             </Form.Item>
@@ -1183,7 +1226,7 @@ const IncomingSupplierDocumentsPage = () => {
                                                 <DatePicker style={{ width: '100%' }} format="DD.MM.YYYY" />
                                             </Form.Item>
                                         </Col>
-                                        <Col span={12}>
+                                        <Col span={6}>
                                             <Form.Item name="comment" label="Комментарий к документу">
                                                 <TextArea rows={1} placeholder="Комментарий" />
                                             </Form.Item>
@@ -1352,6 +1395,32 @@ const IncomingSupplierDocumentsPage = () => {
                                 <Select showSearch placeholder="Выберите поставщика"
                                     options={providers.map((pr) => ({
                                         value: pr.id, label: pr.name,
+                                    }))}
+                                    onChange={(value) => {
+                                        createForm.setFieldValue(
+                                            'warehouse_id',
+                                            getProviderDefaultWarehouseId(value)
+                                                || warehouses[0]?.id
+                                                || null
+                                        );
+                                    }}
+                                    filterOption={(input, opt) =>
+                                        opt.label.toLowerCase().includes(input.toLowerCase())}
+                                />
+                            </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                            <Form.Item
+                                name="warehouse_id"
+                                label="Склад"
+                                rules={[{ required: true, message: 'Выберите склад' }]}
+                            >
+                                <Select
+                                    showSearch
+                                    placeholder="Выберите склад"
+                                    options={warehouses.map((warehouse) => ({
+                                        value: warehouse.id,
+                                        label: warehouse.name,
                                     }))}
                                     filterOption={(input, opt) =>
                                         opt.label.toLowerCase().includes(input.toLowerCase())}
