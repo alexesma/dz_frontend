@@ -28,12 +28,15 @@ import {
     EditOutlined,
     DeleteOutlined,
     ArrowLeftOutlined,
+    LinkOutlined,
+    SwapOutlined,
     UploadOutlined,
     CloudDownloadOutlined,
 } from "@ant-design/icons";
 
 import {
     getProviderFullById,
+    getAllProviders,
     createProvider,
     updateProvider,
     deleteProviderApi,
@@ -43,6 +46,10 @@ import {
     createAbbreviation,
     updateAbbreviation,
     deleteAbbreviation,
+    createProviderExternalReference,
+    updateProviderExternalReference,
+    deleteProviderExternalReference,
+    mergeProviderInto,
     downloadProviderPricelist,
     uploadProviderPricelist,
     parseProviderExcludePositions,
@@ -90,6 +97,10 @@ const supplierResponseMessageTypeOptions = [
     { value: "RETRY_PENDING", label: "Ожидает перепроверки" },
 ];
 
+const externalSourceOptions = [
+    { value: "DRAGONZAP", label: "DRAGONZAP" },
+];
+
 const ProviderPage = () => {
     const { providerId: providerIdParam } = useParams();
     const navigate = useNavigate();
@@ -113,6 +124,13 @@ const ProviderPage = () => {
 
     const [abbrModalVisible, setAbbrModalVisible] = useState(false);
     const [editingAbbr, setEditingAbbr] = useState(null);
+    const [externalRefModalVisible, setExternalRefModalVisible] = useState(false);
+    const [editingExternalRef, setEditingExternalRef] = useState(null);
+    const [externalRefSaving, setExternalRefSaving] = useState(false);
+    const [mergeModalVisible, setMergeModalVisible] = useState(false);
+    const [mergeCandidatesLoading, setMergeCandidatesLoading] = useState(false);
+    const [mergeCandidates, setMergeCandidates] = useState([]);
+    const [mergeSaving, setMergeSaving] = useState(false);
 
     const [uploadModalVisible, setUploadModalVisible] = useState(false);
     const [uploadingForConfigId, setUploadingForConfigId] = useState(null);
@@ -143,6 +161,8 @@ const ProviderPage = () => {
     const [configForm] = Form.useForm();
     const [responseConfigForm] = Form.useForm();
     const [abbrForm] = Form.useForm();
+    const [externalRefForm] = Form.useForm();
+    const [mergeForm] = Form.useForm();
 
     const refreshAnalytics = () => {
         setAnalyticsRefreshKey((prev) => prev + 1);
@@ -989,6 +1009,132 @@ const ProviderPage = () => {
         }
     };
 
+    const openExternalRefModal = (reference = null) => {
+        setEditingExternalRef(reference);
+        if (reference) {
+            externalRefForm.setFieldsValue({
+                source_system: reference.source_system || "DRAGONZAP",
+                external_supplier_id: reference.external_supplier_id ?? null,
+                external_supplier_name: reference.external_supplier_name || "",
+                is_active: reference.is_active ?? true,
+            });
+        } else {
+            externalRefForm.resetFields();
+            externalRefForm.setFieldsValue({
+                source_system: "DRAGONZAP",
+                external_supplier_id: null,
+                external_supplier_name: "",
+                is_active: true,
+            });
+        }
+        setExternalRefModalVisible(true);
+    };
+
+    const handleExternalRefSubmit = async (values) => {
+        if (!providerId) return;
+        setExternalRefSaving(true);
+        try {
+            const payload = {
+                ...values,
+                source_system: String(values.source_system || "DRAGONZAP").trim().toUpperCase(),
+                external_supplier_id:
+                    values.external_supplier_id === null
+                    || values.external_supplier_id === undefined
+                    || values.external_supplier_id === ""
+                        ? null
+                        : Number(values.external_supplier_id),
+                external_supplier_name: values.external_supplier_name?.trim() || null,
+                is_active: values.is_active ?? true,
+            };
+            if (editingExternalRef) {
+                await updateProviderExternalReference(
+                    providerId,
+                    editingExternalRef.id,
+                    payload
+                );
+                message.success("Внешняя связка обновлена");
+            } else {
+                await createProviderExternalReference(providerId, payload);
+                message.success("Внешняя связка добавлена");
+            }
+            setExternalRefModalVisible(false);
+            setEditingExternalRef(null);
+            externalRefForm.resetFields();
+            await refreshProviderData();
+        } catch (err) {
+            console.error(err);
+            message.error(
+                err?.response?.data?.detail || "Ошибка сохранения внешней связки"
+            );
+        } finally {
+            setExternalRefSaving(false);
+        }
+    };
+
+    const handleDeleteExternalRef = async (referenceId) => {
+        if (!providerId) return;
+        try {
+            await new Promise((resolve, reject) => {
+                Modal.confirm({
+                    title: "Удалить внешнюю связку?",
+                    content: "Связка с сайтом будет удалена у этого поставщика.",
+                    okText: "Удалить",
+                    cancelText: "Отмена",
+                    onOk: resolve,
+                    onCancel: () => reject(new Error("cancel")),
+                });
+            });
+            await deleteProviderExternalReference(providerId, referenceId);
+            message.success("Внешняя связка удалена");
+            await refreshProviderData();
+        } catch (err) {
+            if (err?.message === "cancel") return;
+            console.error(err);
+            message.error(
+                err?.response?.data?.detail || "Ошибка удаления внешней связки"
+            );
+        }
+    };
+
+    const openMergeModal = async () => {
+        if (!providerId) return;
+        setMergeModalVisible(true);
+        mergeForm.resetFields();
+        setMergeCandidatesLoading(true);
+        try {
+            const providers = await getAllProviders({ page_size: 100 });
+            const candidates = (providers || []).filter(
+                (item) => Number(item.id) !== Number(providerId)
+            );
+            setMergeCandidates(candidates);
+        } catch (err) {
+            console.error(err);
+            setMergeCandidates([]);
+            message.error("Не удалось загрузить список поставщиков для объединения");
+        } finally {
+            setMergeCandidatesLoading(false);
+        }
+    };
+
+    const handleMergeSubmit = async (values) => {
+        if (!providerId) return;
+        setMergeSaving(true);
+        try {
+            await mergeProviderInto(providerId, Number(values.source_provider_id));
+            message.success("Дубль поставщика объединен с текущим");
+            setMergeModalVisible(false);
+            mergeForm.resetFields();
+            await refreshProviderData();
+        } catch (err) {
+            console.error(err);
+            message.error(
+                err?.response?.data?.detail || "Не удалось объединить поставщиков"
+            );
+        } finally {
+            setMergeSaving(false);
+        }
+    };
+
     // --------- Загрузка прайс-листа по конфигу ----------
     const handleDownloadPricelist = async (configId) => {
         if (!providerId) return;
@@ -1622,6 +1768,60 @@ const ProviderPage = () => {
         },
     ];
 
+    const externalReferenceColumns = [
+        {
+            title: "Источник",
+            dataIndex: "source_system",
+            key: "source_system",
+            width: 140,
+            render: (value) => <Tag color="geekblue">{value || "—"}</Tag>,
+        },
+        {
+            title: "External supplier_id",
+            dataIndex: "external_supplier_id",
+            key: "external_supplier_id",
+            width: 180,
+            render: (value) => value ?? <Text type="secondary">Не задан</Text>,
+        },
+        {
+            title: "Имя / линия качества",
+            dataIndex: "external_supplier_name",
+            key: "external_supplier_name",
+            render: (value) => value || <Text type="secondary">Не задано</Text>,
+        },
+        {
+            title: "Статус",
+            dataIndex: "is_active",
+            key: "is_active",
+            width: 120,
+            render: (value) => (
+                <Tag color={value ? "green" : "default"}>
+                    {value ? "Активна" : "Отключена"}
+                </Tag>
+            ),
+        },
+        {
+            title: "Действия",
+            key: "actions",
+            width: 140,
+            render: (_, record) => (
+                <Space size="small">
+                    <Button
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={() => openExternalRefModal(record)}
+                    />
+                    <Button
+                        danger
+                        size="small"
+                        icon={<DeleteOutlined />}
+                        onClick={() => handleDeleteExternalRef(record.id)}
+                    />
+                </Space>
+            ),
+        },
+    ];
+
     if (loading) {
         return (
             <div style={{ display: "flex", justifyContent: "center", padding: 50 }}>
@@ -1872,6 +2072,45 @@ const ProviderPage = () => {
                                 <Text type="secondary">Аббревиатуры не добавлены</Text>
                             )}
                         </div>
+                    </Card>
+
+                    <Card
+                        title="Внешние связки сайта"
+                        extra={
+                            <Space wrap>
+                                <Button
+                                    icon={<SwapOutlined />}
+                                    onClick={openMergeModal}
+                                >
+                                    Объединить дубль
+                                </Button>
+                                <Button
+                                    type="primary"
+                                    icon={<LinkOutlined />}
+                                    onClick={() => openExternalRefModal()}
+                                >
+                                    Добавить связку
+                                </Button>
+                            </Space>
+                        }
+                        style={{ marginBottom: 20 }}
+                    >
+                        <Alert
+                            type="info"
+                            showIcon
+                            style={{ marginBottom: 16 }}
+                            message="Здесь связывается локальный поставщик с внешним supplier_id/линией с сайта."
+                            description="Используйте этот блок, когда заказы с сайта и ручной поставщик по факту один и тот же контрагент. Это помогает автосопоставлять tracking, приходы и документы."
+                        />
+                        <Table
+                            rowKey="id"
+                            columns={externalReferenceColumns}
+                            dataSource={providerData.external_references || []}
+                            pagination={false}
+                            size="middle"
+                            locale={{ emptyText: "Внешние связки не настроены" }}
+                            scroll={{ x: "max-content" }}
+                        />
                     </Card>
 
                     {/* Конфигурации прайс-листов */}
@@ -3237,6 +3476,169 @@ const ProviderPage = () => {
                                     setSourceUsageModalVisible(false);
                                     setEditingSourceUsage(null);
                                     sourceUsageForm.resetFields();
+                                }}
+                            >
+                                Отмена
+                            </Button>
+                        </Space>
+                    </Form.Item>
+                </Form>
+            </Modal>
+
+            <Modal
+                title={
+                    editingExternalRef
+                        ? "Редактирование внешней связки"
+                        : "Добавление внешней связки"
+                }
+                open={externalRefModalVisible}
+                onCancel={() => {
+                    setExternalRefModalVisible(false);
+                    setEditingExternalRef(null);
+                    externalRefForm.resetFields();
+                }}
+                footer={null}
+                destroyOnClose
+            >
+                <Form
+                    form={externalRefForm}
+                    layout="vertical"
+                    onFinish={handleExternalRefSubmit}
+                    scrollToFirstError
+                >
+                    <Form.Item
+                        name="source_system"
+                        label="Источник"
+                        rules={[{ required: true, message: "Выберите источник" }]}
+                    >
+                        <Select
+                            options={externalSourceOptions}
+                            placeholder="Например: DRAGONZAP"
+                        />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="external_supplier_id"
+                        label="External supplier_id"
+                        tooltip="Если сайт передает стабильный supplier_id, лучше хранить именно его."
+                    >
+                        <InputNumber min={1} style={{ width: "100%" }} />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="external_supplier_name"
+                        label="Имя / линия качества"
+                        tooltip="Например supplier_name или понятное имя линии качества."
+                        rules={[
+                            ({ getFieldValue }) => ({
+                                validator(_, value) {
+                                    const hasId = getFieldValue("external_supplier_id");
+                                    const hasName = String(value || "").trim();
+                                    if (hasId || hasName) {
+                                        return Promise.resolve();
+                                    }
+                                    return Promise.reject(
+                                        new Error("Нужно указать supplier_id или имя линии")
+                                    );
+                                },
+                            }),
+                        ]}
+                    >
+                        <Input placeholder='Например: Ivers Premium / "Максимум"' />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="is_active"
+                        label="Связка активна"
+                        valuePropName="checked"
+                    >
+                        <Switch />
+                    </Form.Item>
+
+                    <Form.Item>
+                        <Space wrap>
+                            <Button
+                                type="primary"
+                                htmlType="submit"
+                                icon={<SaveOutlined />}
+                                loading={externalRefSaving}
+                            >
+                                {editingExternalRef ? "Сохранить" : "Добавить"}
+                            </Button>
+                            <Button
+                                onClick={() => {
+                                    setExternalRefModalVisible(false);
+                                    setEditingExternalRef(null);
+                                    externalRefForm.resetFields();
+                                }}
+                            >
+                                Отмена
+                            </Button>
+                        </Space>
+                    </Form.Item>
+                </Form>
+            </Modal>
+
+            <Modal
+                title="Объединить дубль поставщика"
+                open={mergeModalVisible}
+                onCancel={() => {
+                    setMergeModalVisible(false);
+                    mergeForm.resetFields();
+                }}
+                footer={null}
+                destroyOnClose
+            >
+                <Alert
+                    type="warning"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                    message="Будьте внимательны"
+                    description="Все заказы, документы, поступления и внешние связки будут перенесены с выбранного дубля в текущего поставщика. Исходный дубль после объединения будет удален."
+                />
+                <Form
+                    form={mergeForm}
+                    layout="vertical"
+                    onFinish={handleMergeSubmit}
+                    scrollToFirstError
+                >
+                    <Form.Item
+                        name="source_provider_id"
+                        label="Какого поставщика объединяем в текущего"
+                        rules={[
+                            {
+                                required: true,
+                                message: "Выберите дубль поставщика",
+                            },
+                        ]}
+                    >
+                        <Select
+                            showSearch
+                            loading={mergeCandidatesLoading}
+                            placeholder="Выберите дубль поставщика"
+                            optionFilterProp="label"
+                            options={mergeCandidates.map((item) => ({
+                                value: item.id,
+                                label: `${item.name} · ID ${item.id}${item.is_virtual ? " · virtual" : ""}`,
+                            }))}
+                        />
+                    </Form.Item>
+
+                    <Form.Item>
+                        <Space wrap>
+                            <Button
+                                type="primary"
+                                danger
+                                htmlType="submit"
+                                icon={<SwapOutlined />}
+                                loading={mergeSaving}
+                            >
+                                Объединить
+                            </Button>
+                            <Button
+                                onClick={() => {
+                                    setMergeModalVisible(false);
+                                    mergeForm.resetFields();
                                 }}
                             >
                                 Отмена

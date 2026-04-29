@@ -175,6 +175,36 @@ export const deleteAbbreviation = async (providerId, abbrId) => {
     return api.delete(`/providers/${providerId}/abbreviations/${abbrId}`);
 };
 
+export const createProviderExternalReference = async (providerId, data) => {
+    return api.post(`/providers/${providerId}/external-references`, data);
+};
+
+export const updateProviderExternalReference = async (
+    providerId,
+    referenceId,
+    data
+) => {
+    return api.patch(
+        `/providers/${providerId}/external-references/${referenceId}`,
+        data
+    );
+};
+
+export const deleteProviderExternalReference = async (
+    providerId,
+    referenceId
+) => {
+    return api.delete(
+        `/providers/${providerId}/external-references/${referenceId}`
+    );
+};
+
+export const mergeProviderInto = async (providerId, sourceProviderId) => {
+    return api.post(`/providers/${providerId}/merge`, {
+        source_provider_id: sourceProviderId,
+    });
+};
+
 export const uploadProviderPricelist = async (
     providerId,
     configId,
