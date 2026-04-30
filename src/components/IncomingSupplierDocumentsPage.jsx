@@ -326,7 +326,7 @@ const IncomingSupplierDocumentsPage = () => {
     const [editMode, setEditMode] = useState(false);
     const [saving, setSaving] = useState(false);
     const [headerForm] = Form.useForm();
-    // editedItems: { [itemId]: { price, received_quantity, comment, gtd_code, country_name, oem_number, brand_name, autopart_name } }
+    // editedItems: { [itemId]: { price, received_quantity, comment, gtd_code, country_name, oem_number, brand_name, autopart_name, warehouse_id } }
     const [editedItems, setEditedItems] = useState({});
     const [newItems, setNewItems] = useState([]); // rows being added
     const newItemKeyRef = useRef(0);
@@ -345,7 +345,7 @@ const IncomingSupplierDocumentsPage = () => {
         setCreateItems((prev) => [...prev, {
             _key: createItemKeyRef.current++,
             autopart_id: null, oem_number: '', brand_name: '', autopart_name: '',
-            received_quantity: 1, price: null, comment: '',
+            received_quantity: 1, price: null, comment: '', warehouse_id: null,
         }]);
     }, []);
 
@@ -460,6 +460,7 @@ const IncomingSupplierDocumentsPage = () => {
                 gtd_code: item.gtd_code || '',
                 country_name: item.country_name || '',
                 comment: item.comment || '',
+                warehouse_id: item.warehouse_id ?? null,
             };
         });
         setEditedItems(initItems);
@@ -487,6 +488,7 @@ const IncomingSupplierDocumentsPage = () => {
             oem_number: '', brand_name: '', autopart_name: '',
             received_quantity: 1, price: null, total_price_with_vat: null,
             gtd_code: '', country_name: '', comment: '',
+            warehouse_id: null,
         }]);
     };
 
@@ -527,6 +529,7 @@ const IncomingSupplierDocumentsPage = () => {
                     gtd_code: fields.gtd_code || null,
                     country_name: fields.country_name || null,
                     comment: fields.comment || null,
+                    warehouse_id: fields.warehouse_id ?? null,
                 });
             }
 
@@ -547,6 +550,7 @@ const IncomingSupplierDocumentsPage = () => {
                         gtd_code: item.gtd_code || null,
                         country_name: item.country_name || null,
                         comment: item.comment || null,
+                        warehouse_id: item.warehouse_id ?? null,
                     })),
                 );
             }
@@ -646,6 +650,7 @@ const IncomingSupplierDocumentsPage = () => {
                 received_quantity: item.received_quantity || 0,
                 price: item.price != null ? item.price : null,
                 comment: item.comment || null,
+                warehouse_id: item.warehouse_id ?? null,
             }));
             const payload = {
                 provider_id: values.provider_id,
@@ -830,6 +835,19 @@ const IncomingSupplierDocumentsPage = () => {
 
         const extraCols = [
             {
+                title: 'Склад позиции', key: 'item_warehouse', width: 130, ellipsis: true,
+                render: (_, row) => {
+                    if (!row.warehouse_id) return null;
+                    // Show only when differs from document warehouse
+                    if (row.warehouse_id === detailReceipt.warehouse_id) return null;
+                    return (
+                        <Tag color="blue" style={{ fontSize: 11 }}>
+                            {row.warehouse_name || `#${row.warehouse_id}`}
+                        </Tag>
+                    );
+                },
+            },
+            {
                 title: 'ГТД', dataIndex: 'gtd_code', key: 'gtd', width: 130,
                 ellipsis: true, render: (v) => v || '—',
             },
@@ -936,6 +954,20 @@ const IncomingSupplierDocumentsPage = () => {
                 render: (_, row) => mkInput('comment', row.id, 'Примечание'),
             },
             {
+                title: 'Склад', key: 'item_warehouse', width: 160,
+                render: (_, row) => (
+                    <Select
+                        size="small"
+                        allowClear
+                        placeholder="Как в документе"
+                        style={{ width: '100%' }}
+                        value={editedItems[row.id]?.warehouse_id ?? null}
+                        onChange={(v) => setItemField(row.id, 'warehouse_id', v ?? null)}
+                        options={warehouses.map((wh) => ({ value: wh.id, label: wh.name }))}
+                    />
+                ),
+            },
+            {
                 title: '',
                 key: 'del',
                 width: 40,
@@ -1017,6 +1049,20 @@ const IncomingSupplierDocumentsPage = () => {
                 <Input size="small" value={row.comment}
                     placeholder="Примечание"
                     onChange={(e) => updateNewItem(row._key, 'comment', e.target.value)} />
+            ),
+        },
+        {
+            title: 'Склад', key: 'item_warehouse', width: 160,
+            render: (_, row) => (
+                <Select
+                    size="small"
+                    allowClear
+                    placeholder="Как в документе"
+                    style={{ width: '100%' }}
+                    value={row.warehouse_id ?? null}
+                    onChange={(v) => updateNewItem(row._key, 'warehouse_id', v ?? null)}
+                    options={warehouses.map((wh) => ({ value: wh.id, label: wh.name }))}
+                />
             ),
         },
         {
@@ -1490,6 +1536,20 @@ const IncomingSupplierDocumentsPage = () => {
                                     render: (_, row) => (
                                         <Input size="small" value={row.comment} placeholder="Примечание"
                                             onChange={(e) => updateCreateItem(row._key, 'comment', e.target.value)} />
+                                    ),
+                                },
+                                {
+                                    title: 'Склад позиции', key: 'item_warehouse', width: 160,
+                                    render: (_, row) => (
+                                        <Select
+                                            size="small"
+                                            allowClear
+                                            placeholder="Как в документе"
+                                            style={{ width: '100%' }}
+                                            value={row.warehouse_id ?? null}
+                                            onChange={(v) => updateCreateItem(row._key, 'warehouse_id', v ?? null)}
+                                            options={warehouses.map((wh) => ({ value: wh.id, label: wh.name }))}
+                                        />
                                     ),
                                 },
                                 {
