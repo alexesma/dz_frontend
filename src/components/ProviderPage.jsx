@@ -595,6 +595,7 @@ const ProviderPage = () => {
                         config.brand_priority_list || []
                     ).join(", "),
                     brand_from_name_regex: config.brand_from_name_regex || "",
+                    oem_col_regex: config.oem_col_regex || "",
                     document_number_cell: config.document_number_cell || "",
                     document_date_cell: config.document_date_cell || "",
                     document_meta_cell: config.document_meta_cell || "",
@@ -619,6 +620,7 @@ const ProviderPage = () => {
                 fixed_brand_name: "",
                 brand_priority_list_text: "",
                 brand_from_name_regex: "",
+                oem_col_regex: "",
                 document_number_cell: "",
                 document_date_cell: "",
                 document_meta_cell: "",
@@ -656,6 +658,7 @@ const ProviderPage = () => {
                 payload.auto_confirm_after_minutes || null;
             payload.fixed_brand_name = payload.fixed_brand_name || null;
             payload.brand_from_name_regex = payload.brand_from_name_regex || null;
+            payload.oem_col_regex = payload.oem_col_regex || null;
             payload.document_number_cell = payload.document_number_cell || null;
             payload.document_date_cell = payload.document_date_cell || null;
             payload.document_meta_cell = payload.document_meta_cell || null;
@@ -668,6 +671,7 @@ const ProviderPage = () => {
                 payload.file_payload_type = "response";
                 payload.start_row = 1;
                 payload.oem_col = null;
+                payload.oem_col_regex = null;
                 payload.brand_col = null;
                 payload.name_col = null;
                 payload.qty_col = null;
@@ -2723,6 +2727,13 @@ const ProviderPage = () => {
                                             rules={[{ required: true, message: "Укажите колонку OEM" }]}
                                         >
                                             <InputNumber min={1} style={{ width: "100%" }} />
+                                        </Form.Item>
+                                        <Form.Item
+                                            name="oem_col_regex"
+                                            label="Regex для артикула (опционально)"
+                                            extra="Если артикул нужно извлечь из ячейки по шаблону. Группа 1 = артикул. Пример: ^(\S+) — берёт первое слово."
+                                        >
+                                            <Input placeholder="^(\S+)" />
                                         </Form.Item>
                                         <Form.Item name="brand_col" label="Бренд (опционально)">
                                             <InputNumber min={1} style={{ width: "100%" }} />
