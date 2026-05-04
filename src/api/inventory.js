@@ -46,3 +46,51 @@ export const createStockMovement = (data) =>
 
 export const transferAutopart = (data) =>
     api.post('/inventory/transfer/', data);
+
+// ── StockLots ─────────────────────────────────────────────────────────────────
+
+export const listStockLots = (params = {}) =>
+    api.get('/inventory/lots', { params });
+
+export const getStockLot = (id) =>
+    api.get(`/inventory/lots/${id}`);
+
+export const getAutopartLots = (autopartId, params = {}) =>
+    api.get(`/inventory/autoparts/${autopartId}/lots`, { params });
+
+// ── StockDocument ─────────────────────────────────────────────────────────────
+
+export const listStockDocuments = (params = {}) =>
+    api.get('/inventory/documents/', { params });
+
+export const getStockDocument = (id) =>
+    api.get(`/inventory/documents/${id}`);
+
+export const createStockDocument = (data) =>
+    api.post('/inventory/documents/', data);
+
+export const updateStockDocument = (id, data) =>
+    api.patch(`/inventory/documents/${id}`, data);
+
+export const deleteStockDocument = (id) =>
+    api.delete(`/inventory/documents/${id}`);
+
+export const postStockDocument = (id) =>
+    api.post(`/inventory/documents/${id}/post`);
+
+export const unpostStockDocument = (id) =>
+    api.post(`/inventory/documents/${id}/unpost`);
+
+export const addDocumentItem = (docId, data) =>
+    api.post(`/inventory/documents/${docId}/items`, data);
+
+export const updateDocumentItem = (docId, itemId, data) =>
+    api.patch(`/inventory/documents/${docId}/items/${itemId}`, data);
+
+export const deleteDocumentItem = (docId, itemId) =>
+    api.delete(`/inventory/documents/${docId}/items/${itemId}`);
+
+// ── Backfill ──────────────────────────────────────────────────────────────────
+
+export const runBackfillLots = () =>
+    api.post('/inventory/admin/backfill-lots');

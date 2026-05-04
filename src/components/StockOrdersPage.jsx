@@ -27,11 +27,13 @@ import {
     ClearOutlined,
     PlusOutlined,
     ScanOutlined,
+    SendOutlined,
 } from '@ant-design/icons';
 
 import api from '../api';
 import { getCustomersSummary } from '../api/customers';
 import {
+    dispatchStockOrder,
     getStockOrders,
     updateStockOrderItemPick,
 } from '../api/customerOrders';
@@ -720,31 +722,73 @@ const StockOrdersPage = () => {
         { label: 'Собрано', value: 'complete' },
     ];
 
-    const renderActionButtons = (row) => (
-        <Space size={4} wrap>
-            <Tooltip title="+1 к собранному">
-                <Button
-                    size="small"
-                    icon={<PlusOutlined />}
-                    onClick={() => handlePickUpdate(row, { increment: 1 })}
-                />
-            </Tooltip>
-            <Tooltip title="Собрать всё">
-                <Button
-                    size="small"
-                    icon={<CheckOutlined />}
-                    onClick={() => handlePickUpdate(row, { picked_quantity: row.quantity })}
-                />
-            </Tooltip>
-            <Tooltip title="Сбросить сборку">
-                <Button
-                    size="small"
-                    icon={<ClearOutlined />}
-                    onClick={() => handlePickUpdate(row, { picked_quantity: 0 })}
-                />
-            </Tooltip>
-        </Space>
-    );
+    const handleDispatch = useCallback(async (orderId) => {
+        try {
+            await dispatchStockOrder(orderId);
+            message.success(`Заказ #${orderId} отгружен — остатки списаны по FIFO`);
+            setOrders((prev) =>
+                prev.map((o) =>
+                    o.id === orderId ? { ...o, status: 'DISPATCHED' } : o
+                )
+            );
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail || `Не удалось отгрузить заказ #${orderId}`
+            );
+        }
+    }, []);
+
+    const statusTag = (status) => {
+        if (status === 'DISPATCHED') return <Tag color="blue">Отгружен</Tag>;
+        if (status === 'COMPLETED') return <Tag color="green">Собран</Tag>;
+        return null;
+    };
+
+    const renderActionButtons = (row) => {
+        const isDispatched = row.stockOrderStatus === 'DISPATCHED';
+        return (
+            <Space size={4} wrap>
+                {!isDispatched && (
+                    <>
+                        <Tooltip title="+1 к собранному">
+                            <Button
+                                size="small"
+                                icon={<PlusOutlined />}
+                                onClick={() => handlePickUpdate(row, { increment: 1 })}
+                            />
+                        </Tooltip>
+                        <Tooltip title="Собрать всё">
+                            <Button
+                                size="small"
+                                icon={<CheckOutlined />}
+                                onClick={() => handlePickUpdate(row, { picked_quantity: row.quantity })}
+                            />
+                        </Tooltip>
+                        <Tooltip title="Сбросить сборку">
+                            <Button
+                                size="small"
+                                icon={<ClearOutlined />}
+                                onClick={() => handlePickUpdate(row, { picked_quantity: 0 })}
+                            />
+                        </Tooltip>
+                    </>
+                )}
+                {row.stockOrderStatus === 'COMPLETED' && (
+                    <Tooltip title="Отгрузить заказ — списать с остатков по ГТД/FIFO">
+                        <Button
+                            size="small"
+                            type="primary"
+                            icon={<SendOutlined />}
+                            onClick={() => handleDispatch(row.orderId)}
+                        >
+                            Отгрузить
+                        </Button>
+                    </Tooltip>
+                )}
+                {isDispatched && <Tag color="blue">Отгружен</Tag>}
+            </Space>
+        );
+    };
 
     const columns = [
         {

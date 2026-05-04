@@ -19,6 +19,7 @@ import {
     ClockCircleOutlined,
     DatabaseOutlined,
     AuditOutlined,
+    FileAddOutlined,
 } from '@ant-design/icons';
 import useAuth from '../context/useAuth';
 
@@ -69,6 +70,7 @@ const Sidebar = () => {
         if (path.startsWith('/admin/monitor')) return 'admin-monitor';
         if (path.startsWith('/admin/order-windows')) return 'admin-order-windows';
         if (path.startsWith('/inbox')) return 'inbox';
+        if (path.startsWith('/warehouse/stock-documents')) return 'warehouse-stock-documents';
         return '1';
     })();
 
@@ -137,6 +139,9 @@ const Sidebar = () => {
                 </Menu.Item>
                 <Menu.Item key="warehouse-inventory" icon={<AuditOutlined />}>
                     <Link to="/warehouse/inventory">Инвентаризация</Link>
+                </Menu.Item>
+                <Menu.Item key="warehouse-stock-documents" icon={<FileAddOutlined />}>
+                    <Link to="/warehouse/stock-documents">Оприходование / Списание</Link>
                 </Menu.Item>
             </Menu.SubMenu>
             <Menu.SubMenu

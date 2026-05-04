@@ -6,6 +6,9 @@ export const getStockOrders = (params) =>
 export const updateStockOrderItemPick = (itemId, payload) =>
     api.patch(`/customer-orders/stock/items/${itemId}/pick`, payload);
 
+export const dispatchStockOrder = (orderId) =>
+    api.post(`/customer-orders/stock/orders/${orderId}/dispatch`);
+
 export const getCustomerOrders = (params) =>
     api.get('/customer-orders/', { params });
 

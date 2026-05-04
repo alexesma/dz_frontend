@@ -39,6 +39,8 @@ import InboxPage from './components/InboxPage';
 import OrderWindowsPage from './components/OrderWindowsPage';
 import StorageLocationsPage from './components/StorageLocationsPage';
 import InventoryPage from './components/InventoryPage';
+import StockDocumentsPage from './components/StockDocumentsPage';
+import StockDocumentDetailPage from './components/StockDocumentDetailPage';
 import { AuthProvider } from './context/AuthContext';
 import useAuth from './context/useAuth';
 
@@ -113,6 +115,8 @@ const AppRoutes = () => (
         {/* Warehouse */}
         <Route path="/warehouse/storage" element={<RequireAuth><StorageLocationsPage /></RequireAuth>} />
         <Route path="/warehouse/inventory" element={<RequireAuth><InventoryPage /></RequireAuth>} />
+        <Route path="/warehouse/stock-documents" element={<RequireAuth><StockDocumentsPage /></RequireAuth>} />
+        <Route path="/warehouse/stock-documents/:id" element={<RequireAuth><StockDocumentDetailPage /></RequireAuth>} />
 
         {/* Autopart price history */}
         <Route path="/autoparts/price-history" element={<RequireAuth><PriceHistoryPlot /></RequireAuth>} />
