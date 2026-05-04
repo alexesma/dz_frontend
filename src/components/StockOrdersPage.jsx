@@ -738,11 +738,7 @@ const StockOrdersPage = () => {
         }
     }, []);
 
-    const statusTag = (status) => {
-        if (status === 'DISPATCHED') return <Tag color="blue">Отгружен</Tag>;
-        if (status === 'COMPLETED') return <Tag color="green">Собран</Tag>;
-        return null;
-    };
+
 
     const renderActionButtons = (row) => {
         const isDispatched = row.stockOrderStatus === 'DISPATCHED';
