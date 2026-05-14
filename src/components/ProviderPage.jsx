@@ -69,7 +69,9 @@ import { getEmailAccounts } from "../api/emailAccounts";
 import { getPriceStaleAlerts } from "../api/settings";
 import { getWarehouses } from "../api/storage";
 import { formatMoscow } from '../utils/time';
+import useAuth from '../context/useAuth';
 import ProviderPricelistAnalyticsSection from "./ProviderPricelistAnalyticsSection";
+import DiadocBindingCard from './DiadocBindingCard';
 
 const { Title, Text } = Typography;
 const providerPriceTypeOptions = [
@@ -100,9 +102,12 @@ const supplierResponseMessageTypeOptions = [
 
 const externalSourceOptions = [
     { value: "DRAGONZAP", label: "DRAGONZAP" },
+    { value: "DIADOC_COUNTERAGENT_BOX", label: "DIADOC_COUNTERAGENT_BOX" },
+    { value: "DIADOC_BOX", label: "DIADOC_BOX" },
 ];
 
 const ProviderPage = () => {
+    const { user } = useAuth();
     const { providerId: providerIdParam } = useParams();
     const navigate = useNavigate();
 
@@ -2114,6 +2119,22 @@ const ProviderPage = () => {
                             )}
                         </div>
                     </Card>
+
+                    {user?.role === 'admin' && (
+                        <Card
+                            title="Диадок"
+                            style={{ marginBottom: 20 }}
+                        >
+                            <DiadocBindingCard
+                                title="Диадок поставщика"
+                                targetType="provider"
+                                targetId={providerId}
+                                entityName={providerData.provider?.name || providerData.provider?.provider || 'Поставщик'}
+                                bindings={providerData.external_references || []}
+                                onBound={refreshProviderData}
+                            />
+                        </Card>
+                    )}
 
                     <Card
                         title="Внешние связки сайта"

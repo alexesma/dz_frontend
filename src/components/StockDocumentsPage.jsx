@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+    Badge,
     Button,
     Card,
     Col,
@@ -16,15 +17,19 @@ import {
 import {
     ArrowUpOutlined,
     ArrowDownOutlined,
-    PlusOutlined,
+    CheckCircleOutlined,
+    ExportOutlined,
     ReloadOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 
 import {
+    bulkSyncDocuments,
     createStockDocument,
+    exportDocuments1c,
     listStockDocuments,
+    syncDocument,
 } from '../api/inventory';
 
 const { Title, Text } = Typography;
@@ -56,13 +61,18 @@ const STATUS_COLORS = {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+const SYNC_COLORS = { pending: 'warning', synced: 'success', error: 'error' };
+const SYNC_LABELS = { pending: 'Ожидает', synced: 'Синхр.', error: 'Ошибка' };
+
 const StockDocumentsPage = () => {
     const navigate = useNavigate();
-    const [docs, setDocs] = useState([]);
-    const [loading, setLoading] = useState(false);
-    const [creating, setCreating] = useState(false);
-    const [filterType, setFilterType] = useState(null);
+    const [docs, setDocs]               = useState([]);
+    const [loading, setLoading]         = useState(false);
+    const [creating, setCreating]       = useState(false);
+    const [filterType, setFilterType]   = useState(null);
     const [filterStatus, setFilterStatus] = useState(null);
+    const [selectedRows, setSelectedRows] = useState([]);
+    const [syncing, setSyncing]         = useState({});
 
     const fetchDocs = useCallback(async () => {
         setLoading(true);
@@ -80,6 +90,51 @@ const StockDocumentsPage = () => {
     }, [filterType, filterStatus]);
 
     useEffect(() => { fetchDocs(); }, [fetchDocs]);
+
+    const handleSyncOne = async (record) => {
+        setSyncing((prev) => ({ ...prev, [record.id]: true }));
+        try {
+            await syncDocument(record.id, { sync_status: 'synced' });
+            message.success('Синхронизировано');
+            fetchDocs();
+        } catch (err) {
+            message.error(err?.response?.data?.detail || 'Ошибка');
+        } finally {
+            setSyncing((prev) => ({ ...prev, [record.id]: false }));
+        }
+    };
+
+    const handleBulkSync = async () => {
+        if (!selectedRows.length) { message.warning('Выберите строки'); return; }
+        try {
+            const res = await bulkSyncDocuments({
+                items: selectedRows.map((id) => ({ document_id: id, sync_status: 'synced' })),
+            });
+            message.success(`Обновлено: ${res.data.updated ?? selectedRows.length}`);
+            setSelectedRows([]);
+            fetchDocs();
+        } catch (err) {
+            message.error(err?.response?.data?.detail || 'Ошибка');
+        }
+    };
+
+    const handleExport1c = async () => {
+        try {
+            const res = await exportDocuments1c({ sync_status: 'pending', limit: 500 });
+            const items = res.data?.items || res.data || [];
+            const json = JSON.stringify(items, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href     = url;
+            a.download = `documents_export_${dayjs().format('YYYYMMDD_HHmm')}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            message.success(`Экспортировано: ${items.length} документов`);
+        } catch {
+            message.error('Ошибка экспорта');
+        }
+    };
 
     const handleCreate = async (docType) => {
         setCreating(true);
@@ -157,13 +212,35 @@ const StockDocumentsPage = () => {
             render: (v) => v ? dayjs(v).format('DD.MM.YYYY HH:mm') : <Text type="secondary">—</Text>,
         },
         {
+            title: '1С',
+            dataIndex: 'sync_status',
+            width: 110,
+            render: (status, row) => status ? (
+                <Space size={4}>
+                    <Badge status={SYNC_COLORS[status] || 'default'} />
+                    <Text style={{ fontSize: 12 }}>{SYNC_LABELS[status] || status}</Text>
+                    {status !== 'synced' && (
+                        <Tooltip title="Отметить синхронизованным">
+                            <Button
+                                type="link"
+                                size="small"
+                                loading={syncing[row.id]}
+                                icon={<CheckCircleOutlined />}
+                                onClick={(e) => { e.stopPropagation(); handleSyncOne(row); }}
+                            />
+                        </Tooltip>
+                    )}
+                </Space>
+            ) : null,
+        },
+        {
             title: '',
             key: 'action',
-            width: 100,
+            width: 80,
             render: (_, rec) => (
                 <Button
                     size="small"
-                    onClick={() => navigate(`/warehouse/stock-documents/${rec.id}`)}
+                    onClick={(e) => { e.stopPropagation(); navigate(`/warehouse/stock-documents/${rec.id}`); }}
                 >
                     Открыть
                 </Button>
@@ -185,12 +262,16 @@ const StockDocumentsPage = () => {
                 <Col>
                     <Space>
                         <Tooltip title="Обновить">
-                            <Button
-                                icon={<ReloadOutlined />}
-                                onClick={fetchDocs}
-                                loading={loading}
-                            />
+                            <Button icon={<ReloadOutlined />} onClick={fetchDocs} loading={loading} />
                         </Tooltip>
+                        <Button icon={<ExportOutlined />} onClick={handleExport1c}>
+                            Экспорт 1С
+                        </Button>
+                        {selectedRows.length > 0 && (
+                            <Button icon={<CheckCircleOutlined />} onClick={handleBulkSync}>
+                                Синхр. ({selectedRows.length})
+                            </Button>
+                        )}
                         <Button
                             type="primary"
                             icon={<ArrowUpOutlined />}
@@ -245,8 +326,14 @@ const StockDocumentsPage = () => {
                     dataSource={docs}
                     columns={columns}
                     loading={loading}
+                    rowSelection={{
+                        selectedRowKeys: selectedRows,
+                        onChange: setSelectedRows,
+                        getCheckboxProps: (r) => ({ disabled: r.sync_status === 'synced' }),
+                    }}
                     pagination={{ pageSize: 50, showSizeChanger: true }}
                     size="small"
+                    scroll={{ x: 1100 }}
                     locale={{ emptyText: <Empty description="Документов нет" /> }}
                     onRow={(rec) => ({
                         onClick: () => navigate(`/warehouse/stock-documents/${rec.id}`),

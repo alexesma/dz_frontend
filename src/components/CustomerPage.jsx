@@ -54,8 +54,11 @@ import {
     processCustomerOrderConfigNow,
     retryCustomerOrderErrorsForConfig,
 } from '../api/customerOrders';
+import DiadocBindingCard from './DiadocBindingCard';
+import useAuth from '../context/useAuth';
 
 const CustomerPage = () => {
+    const { user } = useAuth();
     const { customerId: customerIdParam } = useParams();
     const navigate = useNavigate();
 
@@ -711,6 +714,10 @@ const CustomerPage = () => {
                     name: customer.name,
                     email_contact: customer.email_contact,
                     email_outgoing_price: customer.email_outgoing_price,
+                    inn: customer.inn,
+                    kpp: customer.kpp,
+                    legal_address: customer.legal_address,
+                    postal_address: customer.postal_address,
                     type_prices: customer.type_prices,
                     description: customer.description,
                     comment: customer.comment,
@@ -1444,6 +1451,32 @@ const CustomerPage = () => {
                         <Input placeholder="prices@customer.com" />
                     </Form.Item>
 
+                    <Divider orientation="left">Юридические реквизиты</Divider>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+                        <Form.Item
+                            name="inn"
+                            label="ИНН"
+                        >
+                            <Input placeholder="7701234567" />
+                        </Form.Item>
+
+                        <Form.Item
+                            name="kpp"
+                            label="КПП"
+                        >
+                            <Input placeholder="770101001" />
+                        </Form.Item>
+                    </div>
+
+                    <Form.Item name="legal_address" label="Юридический адрес">
+                        <Input.TextArea rows={2} placeholder="Юридический адрес клиента" />
+                    </Form.Item>
+
+                    <Form.Item name="postal_address" label="Почтовый адрес">
+                        <Input.TextArea rows={2} placeholder="Почтовый адрес клиента" />
+                    </Form.Item>
+
                     <Form.Item name="description" label="Описание">
                         <Input.TextArea rows={3} placeholder="Описание клиента" />
                     </Form.Item>
@@ -1464,6 +1497,21 @@ const CustomerPage = () => {
                     </Form.Item>
                 </Form>
             </Card>
+
+            {!isNew && customerData?.customer && user?.role === 'admin' && (
+                <Card title="Диадок" style={{ marginBottom: 20 }}>
+                    <DiadocBindingCard
+                        title="Диадок клиента"
+                        targetType="customer"
+                        targetId={customerId}
+                        entityName={customerData.customer?.name || 'Клиент'}
+                        bindings={customerData.customer?.external_references || []}
+                        onBound={async () => {
+                            setLoadVersion((prev) => prev + 1);
+                        }}
+                    />
+                </Card>
+            )}
 
             {/* Конфигурации прайс-листов */}
             {!isNew && customerData && (

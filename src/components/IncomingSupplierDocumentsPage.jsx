@@ -1,7 +1,7 @@
 import React, {
     useCallback, useEffect, useRef, useState,
 } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import {
     AutoComplete,
@@ -30,8 +30,10 @@ import {
     DeleteOutlined,
     EditOutlined,
     FileTextOutlined,
+    LinkOutlined,
     PlusOutlined,
     PrinterOutlined,
+    RollbackOutlined,
     SaveOutlined,
 } from '@ant-design/icons';
 
@@ -50,6 +52,8 @@ import {
     updateSupplierReceipt,
     updateSupplierReceiptItem,
 } from '../api/customerOrders';
+import { listDiadocInboundDocuments } from '../api/diadoc';
+import useAuth from '../context/useAuth';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -67,6 +71,20 @@ const formatMoney = (value) => {
     const num = Number(value);
     if (Number.isNaN(num)) return '—';
     return num.toFixed(2);
+};
+
+const DIADOC_STATUS_COLORS = {
+    synced: 'blue',
+    registered: 'processing',
+    processed: 'success',
+    error: 'error',
+};
+
+const DIADOC_STATUS_LABELS = {
+    synced: 'Синхронизирован',
+    registered: 'Зарегистрирован',
+    processed: 'Обработан',
+    error: 'Ошибка',
 };
 
 const getLineTotalWithVat = (row) => {
@@ -303,11 +321,15 @@ const ArticleSearchCell = ({ currentOem, currentBrand, currentName, onSelect }) 
 
 // ─── Main page ─────────────────────────────────────────────────────────────────
 const IncomingSupplierDocumentsPage = () => {
+    const { user } = useAuth();
+    const canUseDiadoc = user?.role === 'admin';
+    const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
     const [providers, setProviders] = useState([]);
     const [warehouses, setWarehouses] = useState([]);
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [diadocByReceiptId, setDiadocByReceiptId] = useState({});
     const [postingId, setPostingId] = useState(null);
     const [unpostingId, setUnpostingId] = useState(null);
     const [deletingId, setDeletingId] = useState(null);
@@ -363,6 +385,38 @@ const IncomingSupplierDocumentsPage = () => {
         return provider?.default_warehouse_id || null;
     }, [providers]);
 
+    const loadDiadocReceiptLinks = useCallback(async (receiptRows = []) => {
+        if (!canUseDiadoc) {
+            setDiadocByReceiptId({});
+            return;
+        }
+        const receiptIds = new Set(
+            (receiptRows || [])
+                .map((row) => Number(row?.id))
+                .filter((value) => Number.isFinite(value))
+        );
+        if (!receiptIds.size) {
+            setDiadocByReceiptId({});
+            return;
+        }
+        try {
+            const response = await listDiadocInboundDocuments({
+                registered_only: true,
+                limit: 300,
+            });
+            const mapping = {};
+            (response.data || []).forEach((doc) => {
+                (doc.supplier_receipt_ids || []).forEach((receiptId) => {
+                    if (!receiptIds.has(receiptId) || mapping[receiptId]) return;
+                    mapping[receiptId] = doc;
+                });
+            });
+            setDiadocByReceiptId(mapping);
+        } catch (err) {
+            console.error('Failed to load Diadoc inbound links for receipts', err);
+        }
+    }, [canUseDiadoc]);
+
     // ── load providers ──────────────────────────────────────────────────────
     useEffect(() => {
         getAllProviders({ sort_by: 'name', sort_dir: 'asc' })
@@ -386,13 +440,15 @@ const IncomingSupplierDocumentsPage = () => {
             if (filters.status === 'draft') params.posted = false;
             else if (filters.status === 'posted') params.posted = true;
             const response = await getSupplierReceipts(params);
-            setRows(response.data || []);
+            const receiptRows = response.data || [];
+            setRows(receiptRows);
+            loadDiadocReceiptLinks(receiptRows);
         } catch {
             message.error('Не удалось загрузить документы поступления');
         } finally {
             setLoading(false);
         }
-    }, [filters]);
+    }, [filters, loadDiadocReceiptLinks]);
 
     useEffect(() => {
         fetchDocuments();
@@ -705,6 +761,31 @@ const IncomingSupplierDocumentsPage = () => {
                 return `${num} · ${dt}`;
             },
         },
+        ...(canUseDiadoc ? [{
+            title: 'Источник', key: 'source', width: 180,
+            render: (_, row) => {
+                const doc = diadocByReceiptId[row.id];
+                if (!doc) {
+                    return <Text type="secondary">Почта / вручную</Text>;
+                }
+                return (
+                    <Space size={[4, 4]} wrap>
+                        <Tag color="blue">Диадок</Tag>
+                        <Tag color={DIADOC_STATUS_COLORS[doc.status] || 'default'}>
+                            {DIADOC_STATUS_LABELS[doc.status] || doc.status}
+                        </Tag>
+                        <Button
+                            type="link"
+                            size="small"
+                            style={{ padding: 0 }}
+                            onClick={() => navigate(`/documents/diadoc?tab=inbound&incomingId=${doc.id}`)}
+                        >
+                            #{doc.id}
+                        </Button>
+                    </Space>
+                );
+            },
+        }] : []),
         {
             title: 'Создан', dataIndex: 'created_at', key: 'created_at', width: 130,
             render: (v) => v ? dayjs(v).format('DD.MM.YY HH:mm') : '—',
@@ -1203,6 +1284,7 @@ const IncomingSupplierDocumentsPage = () => {
                     const isVatPayer = detailReceipt.provider_is_vat_payer;
                     const isDraft = !detailReceipt.posted_at;
                     const items = detailReceipt.items || [];
+                    const diadocDoc = diadocByReceiptId[detailReceipt.id];
                     const { qty, sum, vat, total } = calcTotals(items, isVatPayer);
                     const itemCols = buildItemColumns(isVatPayer, isDraft);
                     const colSpanBase = isVatPayer ? 9 : 8;
@@ -1232,6 +1314,28 @@ const IncomingSupplierDocumentsPage = () => {
                                     <Descriptions.Item label="НДС">
                                         {isVatPayer ? <Tag color="blue">22%</Tag> : <Tag>Без НДС</Tag>}
                                     </Descriptions.Item>
+                                    {canUseDiadoc && (
+                                        <Descriptions.Item label="Источник">
+                                            {diadocDoc ? (
+                                                <Space size={[4, 4]} wrap>
+                                                    <Tag color="blue">Диадок</Tag>
+                                                    <Tag color={DIADOC_STATUS_COLORS[diadocDoc.status] || 'default'}>
+                                                        {DIADOC_STATUS_LABELS[diadocDoc.status] || diadocDoc.status}
+                                                    </Tag>
+                                                    <Button
+                                                        type="link"
+                                                        size="small"
+                                                        icon={<LinkOutlined />}
+                                                        onClick={() => navigate(`/documents/diadoc?tab=inbound&incomingId=${diadocDoc.id}`)}
+                                                    >
+                                                        Документ #{diadocDoc.id}
+                                                    </Button>
+                                                </Space>
+                                            ) : (
+                                                <Text type="secondary">Почта / вручную</Text>
+                                            )}
+                                        </Descriptions.Item>
+                                    )}
                                     <Descriptions.Item label="Создан">
                                         {dayjs(detailReceipt.created_at).format('DD.MM.YYYY HH:mm')}
                                     </Descriptions.Item>
@@ -1364,6 +1468,20 @@ const IncomingSupplierDocumentsPage = () => {
                                             <Button icon={<PrinterOutlined />}
                                                 onClick={() => setLabelVisible(true)}>
                                                 Этикетки
+                                            </Button>
+                                        )}
+                                        {!editMode && !isDraft && (
+                                            <Button
+                                                icon={<RollbackOutlined />}
+                                                onClick={() => navigate(
+                                                    `/warehouse/returns?tab=supplier&create=1&supplierReceiptId=${detailReceipt.id}${
+                                                        detailReceipt.provider_id
+                                                            ? `&providerId=${detailReceipt.provider_id}`
+                                                            : ''
+                                                    }`
+                                                )}
+                                            >
+                                                Возврат поставщику
                                             </Button>
                                         )}
                                         {!editMode && isDraft && (

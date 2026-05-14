@@ -21,6 +21,7 @@ import StockOrdersPage from './components/StockOrdersPage';
 import SupplierReceiptsPage from './components/SupplierReceiptsPage';
 import IncomingSupplierDocumentsPage from './components/IncomingSupplierDocumentsPage';
 import OutgoingCustomerDocumentsPage from './components/OutgoingCustomerDocumentsPage';
+import DiadocPage from './components/DiadocPage';
 import CustomerOrdersPage from './components/CustomerOrdersPage';
 import CustomerOrderDetailPage from './components/CustomerOrderDetailPage';
 import CustomerSupplierOrdersPage from './components/CustomerSupplierOrdersPage';
@@ -41,6 +42,17 @@ import StorageLocationsPage from './components/StorageLocationsPage';
 import InventoryPage from './components/InventoryPage';
 import StockDocumentsPage from './components/StockDocumentsPage';
 import StockDocumentDetailPage from './components/StockDocumentDetailPage';
+import StockMovementsPage from './components/StockMovementsPage';
+import ReservesPage from './components/ReservesPage';
+import ShipmentsPage from './components/ShipmentsPage';
+import ShipmentDetailPage from './components/ShipmentDetailPage';
+import ReturnsPage from './components/ReturnsPage';
+import ReturnDetailPage from './components/ReturnDetailPage';
+import StockLotsPage from './components/StockLotsPage';
+import TransferPage from './components/TransferPage';
+import StockOverviewPage from './components/StockOverviewPage';
+import FinancePage from './components/FinancePage';
+import InvoiceDetailPage from './components/InvoiceDetailPage';
 import { AuthProvider } from './context/AuthContext';
 import useAuth from './context/useAuth';
 
@@ -89,6 +101,7 @@ const AppRoutes = () => (
         <Route path="/customer-orders/suppliers/:orderId" element={<RequireAuth><CustomerSupplierOrderDetailPage /></RequireAuth>} />
         <Route path="/documents/incoming" element={<RequireAuth><IncomingSupplierDocumentsPage /></RequireAuth>} />
         <Route path="/documents/outgoing" element={<RequireAuth><OutgoingCustomerDocumentsPage /></RequireAuth>} />
+        <Route path="/documents/diadoc" element={<RequireAdmin><DiadocPage /></RequireAdmin>} />
 
         {/* Providers */}
         <Route path="/providers" element={<RequireAuth><ProvidersList /></RequireAuth>} />
@@ -117,6 +130,22 @@ const AppRoutes = () => (
         <Route path="/warehouse/inventory" element={<RequireAuth><InventoryPage /></RequireAuth>} />
         <Route path="/warehouse/stock-documents" element={<RequireAuth><StockDocumentsPage /></RequireAuth>} />
         <Route path="/warehouse/stock-documents/:id" element={<RequireAuth><StockDocumentDetailPage /></RequireAuth>} />
+        <Route path="/warehouse/overview" element={<RequireAuth><StockOverviewPage /></RequireAuth>} />
+        <Route path="/warehouse/movements" element={<RequireAuth><StockMovementsPage /></RequireAuth>} />
+        <Route path="/warehouse/reserves" element={<RequireAuth><ReservesPage /></RequireAuth>} />
+        <Route path="/warehouse/shipments" element={<RequireAuth><ShipmentsPage /></RequireAuth>} />
+        <Route path="/warehouse/shipments/:id" element={<RequireAuth><ShipmentDetailPage /></RequireAuth>} />
+        <Route path="/warehouse/returns" element={<RequireAuth><ReturnsPage /></RequireAuth>} />
+        <Route
+            path="/warehouse/returns/customer/:id"
+            element={<RequireAuth><ReturnDetailPage kind="customer" /></RequireAuth>}
+        />
+        <Route
+            path="/warehouse/returns/supplier/:id"
+            element={<RequireAuth><ReturnDetailPage kind="supplier" /></RequireAuth>}
+        />
+        <Route path="/warehouse/lots" element={<RequireAuth><StockLotsPage /></RequireAuth>} />
+        <Route path="/warehouse/transfer" element={<RequireAuth><TransferPage /></RequireAuth>} />
 
         {/* Autopart price history */}
         <Route path="/autoparts/price-history" element={<RequireAuth><PriceHistoryPlot /></RequireAuth>} />
@@ -132,6 +161,10 @@ const AppRoutes = () => (
         <Route path="/admin/order-windows" element={<RequireAdmin><OrderWindowsPage /></RequireAdmin>} />
         <Route path="/watchlist" element={<RequireAuth><WatchlistPage /></RequireAuth>} />
         <Route path="/inbox" element={<RequireAuth><InboxPage /></RequireAuth>} />
+
+        {/* Finance */}
+        <Route path="/finance" element={<RequireAuth><FinancePage /></RequireAuth>} />
+        <Route path="/finance/invoices/:invoiceId" element={<RequireAuth><InvoiceDetailPage /></RequireAuth>} />
     </Routes>
 );
 

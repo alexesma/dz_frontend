@@ -77,6 +77,8 @@ const LOCATION_TYPES = {
 const MOVEMENT_LABELS = {
     receipt:      { label: 'Приход',       color: 'green' },
     shipment:     { label: 'Отгрузка',     color: 'red' },
+    customer_return: { label: 'Возврат от клиента', color: 'geekblue' },
+    supplier_return: { label: 'Возврат поставщику', color: 'magenta' },
     transfer_in:  { label: 'Перемещение ←', color: 'blue' },
     transfer_out: { label: 'Перемещение →', color: 'orange' },
     inventory:    { label: 'Инвентаризация', color: 'purple' },

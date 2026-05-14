@@ -20,6 +20,12 @@ import {
     DatabaseOutlined,
     AuditOutlined,
     FileAddOutlined,
+    RetweetOutlined,
+    LockOutlined,
+    FileDoneOutlined,
+    UnorderedListOutlined,
+    TableOutlined,
+    CloudSyncOutlined,
 } from '@ant-design/icons';
 import useAuth from '../context/useAuth';
 
@@ -53,6 +59,7 @@ const Sidebar = () => {
         if (path.startsWith('/customer-orders/stock')) return 'stock-orders';
         if (path.startsWith('/documents/incoming')) return 'documents-incoming';
         if (path.startsWith('/documents/outgoing')) return 'documents-outgoing';
+        if (path.startsWith('/documents/diadoc')) return 'documents-diadoc';
         if (path.startsWith('/customer-orders')) return 'customer-orders';
         if (path.startsWith('/providers') || path.startsWith('/provider-configs')) return '4';
         if (path.startsWith('/customers')) return 'customers';
@@ -71,6 +78,13 @@ const Sidebar = () => {
         if (path.startsWith('/admin/order-windows')) return 'admin-order-windows';
         if (path.startsWith('/inbox')) return 'inbox';
         if (path.startsWith('/warehouse/stock-documents')) return 'warehouse-stock-documents';
+        if (path.startsWith('/warehouse/movements')) return 'warehouse-movements';
+        if (path.startsWith('/warehouse/reserves')) return 'warehouse-reserves';
+        if (path.startsWith('/warehouse/shipments')) return 'warehouse-shipments';
+        if (path.startsWith('/warehouse/returns')) return 'warehouse-returns';
+        if (path.startsWith('/warehouse/lots')) return 'warehouse-lots';
+        if (path.startsWith('/warehouse/transfer')) return 'warehouse-transfer';
+        if (path.startsWith('/warehouse/overview')) return 'warehouse-overview';
         return '1';
     })();
 
@@ -119,6 +133,11 @@ const Sidebar = () => {
                 <Menu.Item key="documents-outgoing" icon={<SendOutlined />}>
                     <Link to="/documents/outgoing">Исходящие</Link>
                 </Menu.Item>
+                {user.role === 'admin' && (
+                    <Menu.Item key="documents-diadoc" icon={<CloudSyncOutlined />}>
+                        <Link to="/documents/diadoc">Диадок</Link>
+                    </Menu.Item>
+                )}
             </Menu.SubMenu>
             <Menu.Item key="4">
                 <Link to="/providers">Поставщики</Link>
@@ -142,6 +161,27 @@ const Sidebar = () => {
                 </Menu.Item>
                 <Menu.Item key="warehouse-stock-documents" icon={<FileAddOutlined />}>
                     <Link to="/warehouse/stock-documents">Оприходование / Списание</Link>
+                </Menu.Item>
+                <Menu.Item key="warehouse-overview" icon={<TableOutlined />}>
+                    <Link to="/warehouse/overview">Остатки (обзор)</Link>
+                </Menu.Item>
+                <Menu.Item key="warehouse-movements" icon={<RetweetOutlined />}>
+                    <Link to="/warehouse/movements">Движения товаров</Link>
+                </Menu.Item>
+                <Menu.Item key="warehouse-reserves" icon={<LockOutlined />}>
+                    <Link to="/warehouse/reserves">Резервы</Link>
+                </Menu.Item>
+                <Menu.Item key="warehouse-shipments" icon={<FileDoneOutlined />}>
+                    <Link to="/warehouse/shipments">Накладные на отгрузку</Link>
+                </Menu.Item>
+                <Menu.Item key="warehouse-returns" icon={<RollbackOutlined />}>
+                    <Link to="/warehouse/returns">Возвраты</Link>
+                </Menu.Item>
+                <Menu.Item key="warehouse-lots" icon={<UnorderedListOutlined />}>
+                    <Link to="/warehouse/lots">Партии / ГТД</Link>
+                </Menu.Item>
+                <Menu.Item key="warehouse-transfer" icon={<SwapOutlined />}>
+                    <Link to="/warehouse/transfer">Перемещение</Link>
                 </Menu.Item>
             </Menu.SubMenu>
             <Menu.SubMenu
@@ -170,6 +210,9 @@ const Sidebar = () => {
             </Menu.Item>
             <Menu.Item key="inbox" icon={<MailOutlined />}>
                 <Link to="/inbox">Входящие письма</Link>
+            </Menu.Item>
+            <Menu.Item key="finance" icon={<DollarOutlined />}>
+                <Link to="/finance">Финансы</Link>
             </Menu.Item>
             {user.role === 'admin' && (
                 <Menu.SubMenu
