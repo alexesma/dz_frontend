@@ -21,6 +21,7 @@ import {
     AuditOutlined,
     FileAddOutlined,
     RetweetOutlined,
+    RollbackOutlined,
     LockOutlined,
     FileDoneOutlined,
     UnorderedListOutlined,
