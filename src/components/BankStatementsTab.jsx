@@ -69,7 +69,6 @@ const autoMatchStmt    = (id)          => api.post(`/finance/bank-statements/${i
 const matchTransaction = (stmtId, txnId, data) =>
     api.patch(`/finance/bank-statements/${stmtId}/transactions/${txnId}`, data);
 const listBankAccounts = ()            => api.get('/finance/bank-accounts');
-const createBankAccount = (data)       => api.post('/finance/bank-accounts', data);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -339,7 +338,7 @@ const TransactionsDrawer = ({ open, onClose, statement }) => {
             const res = await autoMatchStmt(statement.id);
             message.success(`Разнесено: ${res.data.matched}, пропущено: ${res.data.skipped}`);
             load();
-        } catch (err) {
+        } catch {
             message.error('Ошибка авторазноски');
         }
     };

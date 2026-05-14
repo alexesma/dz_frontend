@@ -48,7 +48,6 @@ import {
     listInvoices,
     listSupplierPayments,
     sendInvoiceEmail,
-    updateInvoice,
 } from '../api/finance';
 import { getCustomers } from '../api/customers';
 import { getProviders } from '../api/providers';
@@ -408,16 +407,6 @@ const InvoicesTab = ({ customers }) => {
         }
     };
 
-    const handleStatusChange = async (invoice, newStatus) => {
-        try {
-            await updateInvoice(invoice.id, { status: newStatus });
-            message.success('Статус обновлён');
-            load();
-        } catch (err) {
-            message.error(err?.response?.data?.detail || 'Ошибка');
-        }
-    };
-
     const columns = [
         {
             title: '№ счёта',
@@ -713,7 +702,7 @@ const SupplierPaymentsTab = ({ providers }) => {
 
 // ── Debtors tab ───────────────────────────────────────────────────────────────
 
-const DebtorsTab = ({ customers }) => {
+const DebtorsTab = () => {
     const [debtors,     setDebtors]     = useState([]);
     const [loading,     setLoading]     = useState(false);
     const [onlyOverdue, setOnlyOverdue] = useState(false);
@@ -965,7 +954,7 @@ const FinancePage = () => {
         {
             key:      'debtors',
             label:    <span><WarningOutlined style={{ color: '#c0392b' }} /> Дебиторка</span>,
-            children: <DebtorsTab customers={customers} />,
+            children: <DebtorsTab />,
         },
         {
             key:      'creditors',
