@@ -3,6 +3,7 @@ import { Layout } from 'antd';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import NotificationCenter from './components/NotificationCenter';
+import AppErrorBoundary from './components/AppErrorBoundary';
 import RestockOffers from './components/RestockOffers';
 import OrdersList from './components/OrdersList';
 import Dashboard from './components/Dashboard';
@@ -170,19 +171,21 @@ const AppRoutes = () => (
 
 const App = () => (
     <AuthProvider>
-        <Router>
-            <Layout className="app-shell">
-                <Sidebar />
-                <Layout className="app-main-layout">
-                    <Content className="app-content">
-                        <div className="app-content-inner">
-                            <AppRoutes />
-                        </div>
-                    </Content>
+        <AppErrorBoundary>
+            <Router>
+                <Layout className="app-shell">
+                    <Sidebar />
+                    <Layout className="app-main-layout">
+                        <Content className="app-content">
+                            <div className="app-content-inner">
+                                <AppRoutes />
+                            </div>
+                        </Content>
+                    </Layout>
+                    <NotificationCenter />
                 </Layout>
-                <NotificationCenter />
-            </Layout>
-        </Router>
+            </Router>
+        </AppErrorBoundary>
     </AuthProvider>
 );
 
