@@ -44,6 +44,7 @@ import TrackingOrderHistoryTable from './TrackingOrderHistoryTable';
 
 const OEM_HISTORY_KEY = 'autopart_oem_history_v1';
 const STATE_STORAGE_KEY = 'autopart_offers_state_v2';
+const MAX_PERSISTED_CART_ITEMS = 200;
 
 const buildCartKey = (sourceType, record) => {
     if (sourceType === 'supplier') {
@@ -123,6 +124,73 @@ const safeJsonParse = (value, fallback) => {
         return fallback;
     }
 };
+
+const safeStorageGet = (key) => {
+    try {
+        return window.localStorage.getItem(key);
+    } catch (error) {
+        console.warn(`Failed to read localStorage key "${key}"`, error);
+        return null;
+    }
+};
+
+const safeStorageSet = (key, value) => {
+    try {
+        window.localStorage.setItem(key, value);
+        return true;
+    } catch (error) {
+        console.warn(`Failed to persist localStorage key "${key}"`, error);
+        return false;
+    }
+};
+
+const buildPersistedCartItems = (items) => {
+    if (!Array.isArray(items)) {
+        return [];
+    }
+    return items.slice(0, MAX_PERSISTED_CART_ITEMS).map((item) => ({
+        cart_key: item.cart_key,
+        source_type: item.source_type,
+        autopart_id: item.autopart_id ?? null,
+        provider_id: item.provider_id ?? null,
+        provider_name: item.provider_name ?? null,
+        provider_config_id: item.provider_config_id ?? null,
+        provider_config_name: item.provider_config_name ?? null,
+        supplier_id: item.supplier_id ?? null,
+        supplier_name: item.supplier_name ?? null,
+        oem_number: item.oem_number ?? null,
+        brand_name: item.brand_name ?? null,
+        name: item.name ?? null,
+        price: item.price ?? 0,
+        available_qty: item.available_qty ?? 0,
+        order_qty: item.order_qty ?? 1,
+        min_delivery_day: item.min_delivery_day ?? null,
+        max_delivery_day: item.max_delivery_day ?? null,
+        is_own_price: Boolean(item.is_own_price),
+        hash_key: item.hash_key ?? null,
+        system_hash: item.system_hash ?? null,
+    }));
+};
+
+const buildPersistedOffersState = ({
+    currentOem,
+    selectedBrand,
+    selectedCustomerId,
+    showCrosses,
+    partialSearch,
+    cartItems,
+    selectedCartKeys,
+}) => ({
+    currentOem,
+    selectedBrand,
+    selectedCustomerId,
+    showCrosses,
+    partialSearch,
+    cartItems: buildPersistedCartItems(cartItems),
+    selectedCartKeys: Array.isArray(selectedCartKeys)
+        ? selectedCartKeys.slice(0, MAX_PERSISTED_CART_ITEMS)
+        : [],
+});
 
 const renderHighlightedOem = (value, query) => {
     const source = String(value || '');
@@ -285,7 +353,7 @@ const AutopartOffers = () => {
 
     useEffect(() => {
         const storedHistory = safeJsonParse(
-            localStorage.getItem(OEM_HISTORY_KEY),
+            safeStorageGet(OEM_HISTORY_KEY),
             []
         );
         if (Array.isArray(storedHistory)) {
@@ -298,27 +366,15 @@ const AutopartOffers = () => {
         }
 
         const storedState = safeJsonParse(
-            localStorage.getItem(STATE_STORAGE_KEY),
+            safeStorageGet(STATE_STORAGE_KEY),
             null
         );
         if (storedState && typeof storedState === 'object') {
-            if (Array.isArray(storedState.offers)) {
-                setOffers(storedState.offers);
-            }
-            if (Array.isArray(storedState.historicalOffers)) {
-                setHistoricalOffers(storedState.historicalOffers);
-            }
             if (Array.isArray(storedState.cartItems)) {
                 setCartItems(storedState.cartItems);
             }
             if (Array.isArray(storedState.selectedCartKeys)) {
                 setSelectedCartKeys(storedState.selectedCartKeys);
-            }
-            if (Array.isArray(storedState.remoteOffers)) {
-                setRemoteOffers(storedState.remoteOffers);
-            }
-            if (storedState.remoteMeta) {
-                setRemoteMeta(storedState.remoteMeta);
             }
             setShowCrosses(Boolean(storedState.showCrosses));
             setPartialSearch(Boolean(storedState.partialSearch));
@@ -383,32 +439,24 @@ const AutopartOffers = () => {
     }, []);
 
     useEffect(() => {
-        const payload = {
+        const payload = buildPersistedOffersState({
             currentOem,
             selectedBrand,
             selectedCustomerId,
             showCrosses,
             partialSearch,
-            offers,
-            historicalOffers,
             cartItems,
             selectedCartKeys,
-            remoteOffers,
-            remoteMeta,
-        };
-        localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(payload));
+        });
+        safeStorageSet(STATE_STORAGE_KEY, JSON.stringify(payload));
     }, [
         currentOem,
         selectedBrand,
         selectedCustomerId,
         showCrosses,
         partialSearch,
-        offers,
-        historicalOffers,
         cartItems,
         selectedCartKeys,
-        remoteOffers,
-        remoteMeta,
     ]);
 
     useEffect(() => {
@@ -457,7 +505,7 @@ const AutopartOffers = () => {
                 (item) => item.toLowerCase() !== normalized.toLowerCase()
             );
             const next = [normalized, ...deduped].slice(0, 10);
-            localStorage.setItem(OEM_HISTORY_KEY, JSON.stringify(next));
+            safeStorageSet(OEM_HISTORY_KEY, JSON.stringify(next));
             return next;
         });
     }, []);
