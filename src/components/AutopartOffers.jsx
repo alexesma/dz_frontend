@@ -1186,8 +1186,17 @@ const AutopartOffers = () => {
                         );
                     }
                     if ((data?.failed_items || 0) > 0) {
+                        const resultErrors = Array.isArray(data?.results)
+                            ? data.results
+                                .filter((result) => result?.status !== 'success')
+                                .map((result) => String(result?.message || '').trim())
+                                .filter(Boolean)
+                            : [];
+                        const uniqueErrors = [...new Set(resultErrors)].slice(0, 3);
                         failedSuppliers.push(
-                            items[0]?.provider_name || `#${supplierId}`
+                            uniqueErrors.length
+                                ? `${items[0]?.provider_name || `#${supplierId}`}: ${uniqueErrors.join(' | ')}`
+                                : items[0]?.provider_name || `#${supplierId}`
                         );
                     }
                 } catch (error) {
