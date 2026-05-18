@@ -6,5 +6,8 @@ export const getWatchItems = (params = {}) =>
 export const createWatchItem = (data) =>
     api.post("/watchlist", data);
 
+export const updateWatchItem = (id, data) =>
+    api.patch(`/watchlist/${id}`, data);
+
 export const deleteWatchItem = (id) =>
     api.delete(`/watchlist/${id}`);

@@ -33,6 +33,7 @@ const SOUND_ENABLED_KEY = 'notification_center_sound_enabled_v1';
 const VIBRATION_ENABLED_KEY = 'notification_center_vibration_enabled_v1';
 const DND_ENABLED_KEY = 'notification_center_dnd_enabled_v1';
 const IMPORTANT_ONLY_KEY = 'notification_center_important_only_v1';
+const WATCHLIST_ONLY_KEY = 'notification_center_watchlist_only_v1';
 
 const levelColorMap = {
     info: 'blue',
@@ -47,6 +48,8 @@ const levelLabelMap = {
     warning: 'Внимание',
     error: 'Ошибка',
 };
+
+const WATCHLIST_PRICE_PREFIX = 'Подходящая цена:';
 
 const supportsBrowserNotifications = () => (
     typeof window !== 'undefined' && 'Notification' in window
@@ -82,6 +85,38 @@ const loadBooleanPreference = (key, fallback = true) => {
     return rawValue === '1';
 };
 
+const isWatchlistPriceNotification = (item) => (
+    Boolean(item)
+    && item.link === '/watchlist'
+    && String(item.title || '').startsWith(WATCHLIST_PRICE_PREFIX)
+);
+
+const getNotificationPriority = (item) => {
+    if (isWatchlistPriceNotification(item)) {
+        return 2;
+    }
+    if (item?.level === 'error' || item?.level === 'warning') {
+        return 1;
+    }
+    return 0;
+};
+
+const compareNotifications = (left, right) => {
+    const priorityDiff = getNotificationPriority(right) - getNotificationPriority(left);
+    if (priorityDiff !== 0) {
+        return priorityDiff;
+    }
+    const unreadDiff = Number(!right?.read_at) - Number(!left?.read_at);
+    if (unreadDiff !== 0) {
+        return unreadDiff;
+    }
+    const createdDiff = dayjs(right?.created_at).valueOf() - dayjs(left?.created_at).valueOf();
+    if (createdDiff !== 0) {
+        return createdDiff;
+    }
+    return Number(right?.id || 0) - Number(left?.id || 0);
+};
+
 const NotificationCenter = () => {
     const { user, loading } = useAuth();
     const navigate = useNavigate();
@@ -96,6 +131,7 @@ const NotificationCenter = () => {
     const [vibrationEnabled, setVibrationEnabled] = useState(() => loadBooleanPreference(VIBRATION_ENABLED_KEY, true));
     const [dndEnabled, setDndEnabled] = useState(() => loadBooleanPreference(DND_ENABLED_KEY, false));
     const [importantOnlyEnabled, setImportantOnlyEnabled] = useState(() => loadBooleanPreference(IMPORTANT_ONLY_KEY, false));
+    const [watchlistOnlyEnabled, setWatchlistOnlyEnabled] = useState(() => loadBooleanPreference(WATCHLIST_ONLY_KEY, false));
     const initializedRef = useRef(false);
     const seenIdsRef = useRef(new Set());
     const titleFlashIntervalRef = useRef(null);
@@ -255,7 +291,14 @@ const NotificationCenter = () => {
     const showInAppNotification = useCallback((item) => {
         notificationApi.open({
             key: `app-notification-${item.id}`,
-            message: item.title,
+            message: (
+                <Space wrap size={8}>
+                    <Typography.Text strong>{item.title}</Typography.Text>
+                    {isWatchlistPriceNotification(item) && (
+                        <Tag color="magenta">Подходящая цена</Tag>
+                    )}
+                </Space>
+            ),
             description: (
                 <div className="notification-center-toast-body">
                     <Typography.Text>{item.message}</Typography.Text>
@@ -294,7 +337,7 @@ const NotificationCenter = () => {
 
             const newItems = nextItems
                 .filter((item) => !seenIdsRef.current.has(item.id))
-                .sort((left, right) => dayjs(left.created_at).valueOf() - dayjs(right.created_at).valueOf());
+                .sort(compareNotifications);
 
             const activeItems = newItems.filter(shouldActivelyNotify);
 
@@ -399,6 +442,16 @@ const NotificationCenter = () => {
     }, [importantOnlyEnabled]);
 
     useEffect(() => {
+        if (typeof window === 'undefined') {
+            return;
+        }
+        window.localStorage.setItem(
+            WATCHLIST_ONLY_KEY,
+            watchlistOnlyEnabled ? '1' : '0'
+        );
+    }, [watchlistOnlyEnabled]);
+
+    useEffect(() => {
         if (!isAuthenticated) {
             initializedRef.current = false;
             seenIdsRef.current = new Set();
@@ -442,6 +495,15 @@ const NotificationCenter = () => {
     }, [dndEnabled, stopTitleFlash]);
 
     const unreadItems = useMemo(() => items.filter((item) => !item.read_at).length, [items]);
+    const sortedItems = useMemo(() => [...items].sort(compareNotifications), [items]);
+    const filteredItems = useMemo(
+        () => (
+            watchlistOnlyEnabled
+                ? sortedItems.filter(isWatchlistPriceNotification)
+                : sortedItems
+        ),
+        [sortedItems, watchlistOnlyEnabled]
+    );
 
     if (!isAuthenticated) {
         return null;
@@ -526,6 +588,16 @@ const NotificationCenter = () => {
                         </Space>
                         <Space size={6}>
                             <Typography.Text type="secondary">
+                                Только подходящая цена
+                            </Typography.Text>
+                            <Switch
+                                size="small"
+                                checked={watchlistOnlyEnabled}
+                                onChange={setWatchlistOnlyEnabled}
+                            />
+                        </Space>
+                        <Space size={6}>
+                            <Typography.Text type="secondary">
                                 Звук
                             </Typography.Text>
                             <Switch
@@ -557,7 +629,7 @@ const NotificationCenter = () => {
                 </div>
                 <List
                     loading={fetching}
-                    dataSource={items}
+                    dataSource={filteredItems}
                     locale={{
                         emptyText: <Empty description="Пока сообщений нет" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
                     }}
@@ -566,7 +638,13 @@ const NotificationCenter = () => {
                         const isUnread = !item.read_at;
                         return (
                             <List.Item
-                                className={isUnread ? 'notification-center-item notification-center-item-unread' : 'notification-center-item'}
+                                className={[
+                                    'notification-center-item',
+                                    isUnread ? 'notification-center-item-unread' : '',
+                                    isWatchlistPriceNotification(item)
+                                        ? 'notification-center-item-priority'
+                                        : '',
+                                ].filter(Boolean).join(' ')}
                                 actions={[
                                     <Button
                                         key="open"
@@ -587,6 +665,9 @@ const NotificationCenter = () => {
                                             <Tag color={levelColorMap[item.level] || 'default'}>
                                                 {levelLabelMap[item.level] || item.level}
                                             </Tag>
+                                            {isWatchlistPriceNotification(item) && (
+                                                <Tag color="magenta">Подходящая цена</Tag>
+                                            )}
                                             {isUnread && <Tag color="processing">Новое</Tag>}
                                         </Space>
                                     )}

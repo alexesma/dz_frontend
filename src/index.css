@@ -329,6 +329,13 @@ body {
   background: rgba(22, 119, 255, 0.05);
 }
 
+.notification-center-item-priority {
+  border-color: rgba(235, 47, 150, 0.28);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 240, 246, 0.96) 100%);
+  box-shadow: 0 12px 24px rgba(235, 47, 150, 0.08);
+}
+
 .notification-center-item-body {
   display: grid;
   gap: 6px;
