@@ -40,7 +40,11 @@ import {
     createManualSupplierOrder,
     sendSupplierOrders,
 } from '../api/customerOrders';
-import { getTrackingOrderItems, updateTrackingOrderItem } from '../api/orderTracking';
+import {
+    getTrackingOrderInsights,
+    getTrackingOrderItems,
+    updateTrackingOrderItem,
+} from '../api/orderTracking';
 import TrackingOrderHistoryTable from './TrackingOrderHistoryTable';
 
 const OEM_HISTORY_KEY = 'autopart_oem_history_v1';
@@ -114,6 +118,106 @@ const formatShortDate = (value) => {
         year: '2-digit',
     });
 };
+
+const formatInsightMoney = (value) => {
+    if (value === null || value === undefined || value === '') {
+        return '—';
+    }
+    const number = Number(value);
+    if (!Number.isFinite(number)) {
+        return '—';
+    }
+    return number.toLocaleString('ru-RU', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    });
+};
+
+const formatInsightDateTime = (value) => {
+    if (!value) {
+        return '—';
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return '—';
+    }
+    return date.toLocaleDateString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        year: '2-digit',
+    });
+};
+
+const formatInsightDelivery = (minDeliveryDay, maxDeliveryDay) => {
+    if (
+        minDeliveryDay !== null &&
+        minDeliveryDay !== undefined &&
+        maxDeliveryDay !== null &&
+        maxDeliveryDay !== undefined
+    ) {
+        return `${minDeliveryDay}-${maxDeliveryDay} дн`;
+    }
+    if (minDeliveryDay !== null && minDeliveryDay !== undefined) {
+        return `от ${minDeliveryDay} дн`;
+    }
+    if (maxDeliveryDay !== null && maxDeliveryDay !== undefined) {
+        return `до ${maxDeliveryDay} дн`;
+    }
+    return 'срок не указан';
+};
+
+const INSIGHT_TONE_STYLES = {
+    blue: {
+        background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
+        border: '1px solid #bfdbfe',
+    },
+    green: {
+        background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
+        border: '1px solid #a7f3d0',
+    },
+    amber: {
+        background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+        border: '1px solid #fcd34d',
+    },
+    rose: {
+        background: 'linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%)',
+        border: '1px solid #fecdd3',
+    },
+    slate: {
+        background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
+        border: '1px solid #cbd5e1',
+    },
+};
+
+const InsightTile = ({ tone = 'blue', title, value, subtitle, extra }) => (
+    <div
+        style={{
+            ...INSIGHT_TONE_STYLES[tone],
+            borderRadius: 16,
+            padding: 16,
+            minHeight: 128,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            boxShadow: '0 10px 30px rgba(15, 23, 42, 0.05)',
+        }}
+    >
+        <div style={{ color: '#475569', fontSize: 13, fontWeight: 600 }}>
+            {title}
+        </div>
+        <div style={{ color: '#0f172a', fontSize: 28, fontWeight: 800 }}>
+            {value}
+        </div>
+        <div style={{ color: '#334155', fontSize: 13, lineHeight: 1.45 }}>
+            {subtitle}
+        </div>
+        {extra ? (
+            <div style={{ color: '#64748b', fontSize: 12, marginTop: 8 }}>
+                {extra}
+            </div>
+        ) : null}
+    </div>
+);
 
 const safeJsonParse = (value, fallback) => {
     if (!value) {
@@ -263,6 +367,9 @@ const AutopartOffers = () => {
     const [historicalOffers, setHistoricalOffers] = useState([]);
     const [trackingHistory, setTrackingHistory] = useState([]);
     const [trackingHistoryLoading, setTrackingHistoryLoading] = useState(false);
+    const [trackingInsights, setTrackingInsights] = useState(null);
+    const [trackingInsightsLoading, setTrackingInsightsLoading] = useState(false);
+    const [selectedOwnPriceConfigId, setSelectedOwnPriceConfigId] = useState(null);
     const [cartItems, setCartItems] = useState([]);
     const [selectedCartKeys, setSelectedCartKeys] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -366,6 +473,232 @@ const AutopartOffers = () => {
         }
         return Array.from(uniqueOems);
     }, [normalizedCurrentOem, trackingHistory]);
+
+    const summaryCrossOems = useMemo(() => {
+        const uniqueOems = new Set([
+            ...trackingHistoryCrossOems,
+            ...((trackingInsights?.cross_oem_numbers || []).map((item) =>
+                String(item || '').trim().toUpperCase()
+            )),
+        ]);
+        return Array.from(uniqueOems).filter(Boolean);
+    }, [trackingHistoryCrossOems, trackingInsights]);
+
+    const fetchTrackingInsights = useCallback(async ({
+        oemValue,
+        brandValue,
+        ownProviderConfigId,
+    }) => {
+        const normalizedOemValue = String(oemValue || '').trim();
+        if (!normalizedOemValue) {
+            setTrackingInsights(null);
+            return null;
+        }
+        setTrackingInsightsLoading(true);
+        try {
+            const response = await getTrackingOrderInsights({
+                oem: normalizedOemValue,
+                brand: brandValue || undefined,
+                own_provider_config_id: ownProviderConfigId || undefined,
+            });
+            const payload = response?.data || null;
+            setTrackingInsights(payload);
+            const resolvedConfigId = (
+                payload?.own_price_analysis?.provider_config_id
+                || ownProviderConfigId
+                || null
+            );
+            setSelectedOwnPriceConfigId(resolvedConfigId);
+            return payload;
+        } catch (error) {
+            console.error('Fetch tracking insights error:', error);
+            setTrackingInsights(null);
+            return null;
+        } finally {
+            setTrackingInsightsLoading(false);
+        }
+    }, []);
+
+    const ownPriceConfigOptions = useMemo(
+        () => (trackingInsights?.own_price_configs || []).map((config) => ({
+            label: `${config.provider_name} · ${config.name_price || `Конфиг #${config.id}`}`,
+            value: config.id,
+        })),
+        [trackingInsights]
+    );
+
+    const handleOwnPriceConfigChange = useCallback(async (value) => {
+        const nextValue = value || null;
+        setSelectedOwnPriceConfigId(nextValue);
+        if (!currentOem) {
+            return;
+        }
+        await fetchTrackingInsights({
+            oemValue: currentOem,
+            brandValue: selectedBrand || undefined,
+            ownProviderConfigId: nextValue,
+        });
+    }, [currentOem, fetchTrackingInsights, selectedBrand]);
+
+    const insightTiles = useMemo(() => {
+        if (!trackingInsights) {
+            return [];
+        }
+        const exactMinOffer = trackingInsights.exact_min_offer;
+        const minOfferWithCrosses = trackingInsights.min_offer_with_crosses;
+
+        return [
+            {
+                key: 'exact-min',
+                tone: 'green',
+                title: 'Мин. цена по точному OEM',
+                value: exactMinOffer
+                    ? `${formatInsightMoney(exactMinOffer.price)}`
+                    : '—',
+                subtitle: exactMinOffer
+                    ? `${exactMinOffer.provider_name} · ${exactMinOffer.quantity} шт · ${formatInsightDelivery(
+                        exactMinOffer.min_delivery_day,
+                        exactMinOffer.max_delivery_day
+                    )}`
+                    : 'В текущих прайсах по точному OEM предложений не найдено',
+                extra: exactMinOffer?.provider_config_name || '',
+            },
+            {
+                key: 'cross-min',
+                tone: 'blue',
+                title: 'Мин. цена с учётом кроссов',
+                value: minOfferWithCrosses
+                    ? `${formatInsightMoney(minOfferWithCrosses.price)}`
+                    : '—',
+                subtitle: minOfferWithCrosses
+                    ? `${minOfferWithCrosses.provider_name} · ${minOfferWithCrosses.quantity} шт · ${formatInsightDelivery(
+                        minOfferWithCrosses.min_delivery_day,
+                        minOfferWithCrosses.max_delivery_day
+                    )}`
+                    : 'По OEM и кроссам в текущих прайсах предложений нет',
+                extra: minOfferWithCrosses
+                    ? (
+                        minOfferWithCrosses.oem_number !== normalizedCurrentOem
+                            ? `Сработал кросс: ${minOfferWithCrosses.oem_number}`
+                            : 'Лучшее предложение по текущему OEM'
+                    )
+                    : '',
+            },
+            {
+                key: 'historical-min',
+                tone: 'amber',
+                title: 'Мин. цена в наших заказах за 1 год',
+                value: trackingInsights.historical_min_price_with_crosses != null
+                    ? `${formatInsightMoney(trackingInsights.historical_min_price_with_crosses)}`
+                    : '—',
+                subtitle:
+                    trackingInsights.historical_min_price_exact != null
+                        ? `Без кроссов: ${formatInsightMoney(trackingInsights.historical_min_price_exact)}`
+                        : 'По точному OEM в заказах за год цены не найдено',
+                extra: 'Это ориентир по тому, как уже покупали через программу',
+            },
+            {
+                key: 'ordered-year',
+                tone: 'slate',
+                title: 'Заказано через программу за 1 год',
+                value: `${Number(
+                    trackingInsights.total_ordered_quantity_last_year || 0
+                ).toLocaleString('ru-RU')} шт`,
+                subtitle: `Заказов: ${trackingInsights.order_count_last_year || 0} · поставщиков: ${trackingInsights.unique_suppliers_last_year || 0}`,
+                extra: trackingInsights.last_ordered_at
+                    ? `Последний заказ: ${formatInsightDateTime(trackingInsights.last_ordered_at)}`
+                    : '',
+            },
+            {
+                key: 'fill-rate',
+                tone: 'rose',
+                title: 'Исполнение заказов за 1 год',
+                value: trackingInsights.fill_rate_percent != null
+                    ? `${trackingInsights.fill_rate_percent}%`
+                    : '—',
+                subtitle: `Получено ${Number(
+                    trackingInsights.total_received_quantity_last_year || 0
+                ).toLocaleString('ru-RU')} из ${Number(
+                    trackingInsights.total_ordered_quantity_last_year || 0
+                ).toLocaleString('ru-RU')} шт`,
+                extra: trackingInsights.last_received_at
+                    ? `Последнее получение: ${formatInsightDateTime(trackingInsights.last_received_at)}`
+                    : '',
+            },
+            {
+                key: 'lead-time',
+                tone: 'blue',
+                title: 'Средний фактический срок',
+                value: trackingInsights.average_actual_lead_days != null
+                    ? `${trackingInsights.average_actual_lead_days} дн`
+                    : '—',
+                subtitle: 'Считается по тем заказам, где есть дата фактического получения',
+                extra: summaryCrossOems.length
+                    ? `С учётом кроссов: ${summaryCrossOems.join(', ')}`
+                    : 'Пока без кроссов в истории',
+            },
+        ];
+    }, [normalizedCurrentOem, summaryCrossOems, trackingInsights]);
+
+    const ownPriceTiles = useMemo(() => {
+        const analysis = trackingInsights?.own_price_analysis;
+        if (!analysis) {
+            return [];
+        }
+        return [
+            {
+                key: 'own-current-qty',
+                tone: 'green',
+                title: 'Остаток сейчас по нашему прайсу',
+                value: `${Number(analysis.current_quantity || 0).toLocaleString('ru-RU')} шт`,
+                subtitle: `${analysis.provider_name} · ${analysis.provider_config_name || `Конфиг #${analysis.provider_config_id}`}`,
+                extra: analysis.latest_pricelist_date
+                    ? `Снимок прайса: ${formatShortDate(analysis.latest_pricelist_date)}`
+                    : '',
+            },
+            {
+                key: 'own-price',
+                tone: 'blue',
+                title: 'Текущая цена в нашем прайсе',
+                value: analysis.latest_price != null
+                    ? `${formatInsightMoney(analysis.latest_price)}`
+                    : '—',
+                subtitle: 'Берём последнюю найденную цену по OEM и его кроссам',
+            },
+            {
+                key: 'own-30',
+                tone: 'amber',
+                title: 'Уменьшение остатков за 30 дней',
+                value: `${Number(analysis.sold_last_30_days || 0).toLocaleString('ru-RU')} шт`,
+                subtitle: 'Считается по снижению количества между снимками прайса',
+            },
+            {
+                key: 'own-90',
+                tone: 'amber',
+                title: 'Уменьшение остатков за 90 дней',
+                value: `${Number(analysis.sold_last_90_days || 0).toLocaleString('ru-RU')} шт`,
+                subtitle: 'Помогает понять темп ухода позиции в среднем горизонте',
+            },
+            {
+                key: 'own-365',
+                tone: 'slate',
+                title: 'Уменьшение остатков за 1 год',
+                value: `${Number(analysis.sold_last_365_days || 0).toLocaleString('ru-RU')} шт`,
+                subtitle: 'Полезно для оценки сезонности и общего спроса',
+            },
+            {
+                key: 'own-days-left',
+                tone: 'rose',
+                title: 'Оценка, на сколько хватит',
+                value: analysis.estimated_days_left_30_days != null
+                    ? `${analysis.estimated_days_left_30_days} дн`
+                    : '—',
+                subtitle: analysis.average_daily_decrease_30_days != null
+                    ? `Среднее снижение: ${analysis.average_daily_decrease_30_days} шт/день за 30 дней`
+                    : 'Недостаточно движения за 30 дней для оценки',
+            },
+        ];
+    }, [trackingInsights]);
 
     const oemOptions = useMemo(() => {
         const seen = new Set();
@@ -733,8 +1066,10 @@ const AutopartOffers = () => {
         setHistoricalOffers([]);
         setRemoteOffers([]);
         setTrackingHistory([]);
+        setTrackingInsights(null);
         setRemoteMeta({ total: 0 });
         setSiteBrandCandidates([]);
+        setSelectedOwnPriceConfigId(null);
         try {
             const { data } = await getAutopartOffers(
                 oemValue,
@@ -805,6 +1140,11 @@ const AutopartOffers = () => {
                 ? trackingResponse.data
                 : [];
             setTrackingHistory(trackingRows);
+            await fetchTrackingInsights({
+                oemValue,
+                brandValue: effectiveBrand || siteSuggestedBrand || '',
+                ownProviderConfigId: null,
+            });
             setSelectedBrand(effectiveBrand || siteSuggestedBrand || '');
             if (!filtered.length) {
                 if (sortedHistorical.length) {
@@ -825,7 +1165,7 @@ const AutopartOffers = () => {
             setLoading(false);
             setTrackingHistoryLoading(false);
         }
-    }, [pushOemHistory]);
+    }, [fetchTrackingInsights, pushOemHistory]);
 
     const handleSearch = async (values) => {
         const oemValue = (values.oem || '').trim();
@@ -1902,11 +2242,11 @@ const AutopartOffers = () => {
                         сколько заказали, сколько получили и какой статус сейчас.
                         Для заказов с сайта статусы подтягиваются автоматически.
                     </div>
-                    {trackingHistoryCrossOems.length ? (
+                    {summaryCrossOems.length ? (
                         <div style={{ color: '#2563eb', marginTop: 4 }}>
                             В выборку также включены кросс-артикулы:
                             {' '}
-                            <strong>{trackingHistoryCrossOems.join(', ')}</strong>
+                            <strong>{summaryCrossOems.join(', ')}</strong>
                         </div>
                     ) : null}
                 </div>
@@ -1917,6 +2257,83 @@ const AutopartOffers = () => {
                     showOem
                     emptyText="По этой позиции за последний год заказов через программу не было"
                 />
+                <Spin spinning={trackingInsightsLoading}>
+                    {trackingInsights || ownPriceConfigOptions.length ? (
+                        <Space
+                            direction="vertical"
+                            style={{ width: '100%' }}
+                            size="middle"
+                        >
+                            <div>
+                                <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                                    Краткая сводка для заказа
+                                </div>
+                                <div style={{ color: '#6b7280' }}>
+                                    Минимумы считаются по актуальным прайсам с положительным остатком.
+                                    История и сроки берутся из заказов, оформленных через программу.
+                                </div>
+                            </div>
+
+                            {insightTiles.length ? (
+                                <div
+                                    style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                                        gap: 12,
+                                    }}
+                                >
+                                    {insightTiles.map((tile) => (
+                                        <InsightTile key={tile.key} {...tile} />
+                                    ))}
+                                </div>
+                            ) : null}
+
+                            {ownPriceConfigOptions.length ? (
+                                <Space
+                                    direction="vertical"
+                                    style={{ width: '100%' }}
+                                    size="middle"
+                                >
+                                    <div>
+                                        <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                                            Как быстро заканчивается по нашему прайсу
+                                        </div>
+                                        <div style={{ color: '#6b7280', marginBottom: 8 }}>
+                                            Это оценка по уменьшению остатков между снимками прайса.
+                                            Она показывает спрос, но не заменяет точный отчёт по реализациям.
+                                        </div>
+                                        <Select
+                                            value={selectedOwnPriceConfigId}
+                                            options={ownPriceConfigOptions}
+                                            onChange={handleOwnPriceConfigChange}
+                                            placeholder="Выбери наш прайс для анализа"
+                                            style={{ width: 420, maxWidth: '100%' }}
+                                        />
+                                    </div>
+
+                                    {ownPriceTiles.length ? (
+                                        <div
+                                            style={{
+                                                display: 'grid',
+                                                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                                                gap: 12,
+                                            }}
+                                        >
+                                            {ownPriceTiles.map((tile) => (
+                                                <InsightTile key={tile.key} {...tile} />
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div style={{ color: '#6b7280' }}>
+                                            Для выбранного нашего прайса ещё нет достаточной истории,
+                                            чтобы показать динамику уменьшения остатков.
+                                        </div>
+                                    )}
+                                </Space>
+                            ) : null}
+                        </Space>
+                    ) : null}
+                </Spin>
             </Space>
 
             <Divider />
