@@ -27,6 +27,7 @@ import {
     UnorderedListOutlined,
     TableOutlined,
     CloudSyncOutlined,
+    CloseOutlined,
 } from '@ant-design/icons';
 import useAuth from '../context/useAuth';
 
@@ -66,6 +67,8 @@ const Sidebar = () => {
         if (path.startsWith('/customers')) return 'customers';
         if (path.startsWith('/substitutions')) return 'substitutions';
         if (path.startsWith('/autoparts/offers')) return 'autopart-offers';
+        if (path.startsWith('/autoparts/invalid-crosses')) return 'autopart-invalid-crosses';
+        if (path.startsWith('/autoparts/crosses')) return 'autopart-crosses';
         if (path.startsWith('/autoparts/nomenclature')) return 'autopart-nomenclature';
         if (path.startsWith('/watchlist')) return 'watchlist';
         if (path.startsWith('/autoparts/price-history')) return 'autopart-price-history';
@@ -196,6 +199,12 @@ const Sidebar = () => {
             >
                 <Menu.Item key="autopart-nomenclature">
                     <Link to="/autoparts/nomenclature">Номенклатура</Link>
+                </Menu.Item>
+                <Menu.Item key="autopart-crosses" icon={<TagsOutlined />}>
+                    <Link to="/autoparts/crosses">Кроссы</Link>
+                </Menu.Item>
+                <Menu.Item key="autopart-invalid-crosses" icon={<CloseOutlined />}>
+                    <Link to="/autoparts/invalid-crosses">Неверные кроссы</Link>
                 </Menu.Item>
                 <Menu.Item key="autopart-offers">
                     <Link to="/autoparts/offers">Прайсы по артикулу</Link>

@@ -12,9 +12,11 @@ import ProviderConfigDetail from './components/ProviderConfigDetail';
 import ProviderPage from './components/ProviderPage';
 import SubstitutionsList from './components/SubstitutionsList';
 import SubstitutionPage from './components/SubstitutionPage';
+import CrossesPage from './components/CrossesPage';
 import CustomersList from './components/CustomersList';
 import CustomerPage from './components/CustomerPage';
 import AutopartOffers from './components/AutopartOffers';
+import InvalidCrossesPage from './components/InvalidCrossesPage';
 import NomenclaturePage from './components/NomenclaturePage';
 import PriceHistoryPlot from './components/PriceHistoryPlot';
 import OrdersTrackingPage from './components/OrdersTrackingPage';
@@ -120,6 +122,8 @@ const AppRoutes = () => (
         <Route path="/substitutions" element={<RequireAuth><SubstitutionsList /></RequireAuth>} />
         <Route path="/substitutions/create" element={<RequireAuth><SubstitutionPage /></RequireAuth>} />
         <Route path="/substitutions/:substitutionId/edit" element={<RequireAuth><SubstitutionPage /></RequireAuth>} />
+        <Route path="/autoparts/crosses" element={<RequireAuth><CrossesPage /></RequireAuth>} />
+        <Route path="/autoparts/invalid-crosses" element={<RequireAuth><InvalidCrossesPage /></RequireAuth>} />
 
         {/* Autoparts offers */}
         <Route path="/autoparts/offers" element={<RequireAuth><AutopartOffers /></RequireAuth>} />

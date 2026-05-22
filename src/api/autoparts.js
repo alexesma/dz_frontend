@@ -12,13 +12,13 @@ export const searchAutopartsByOem = (q, limit = 50) =>
 export const getDragonzapOffers = (oem, makeName, withoutCross = true) =>
     api.get('/order/get_offers_by_oem_and_make_name', {
         params: { oem, make_name: makeName, without_cross: withoutCross },
-        timeout: 70000,
+        timeout: 300000,
     });
 
 export const getDragonzapBrands = (oem) =>
     api.get('/order/get_brands_by_oem', {
         params: { oem },
-        timeout: 45000,
+        timeout: 120000,
     });
 
 export const sendDragonzapOrder = (items, customerId) =>
@@ -52,6 +52,12 @@ export const addAutopartCross = (id, data) =>
 
 export const deleteAutopartCross = (crossId) =>
     api.delete(`/autoparts/crosses/${crossId}`);
+
+export const getAutopartInvalidCrosses = (id) =>
+    api.get(`/autoparts/${id}/invalid-crosses/`);
+
+export const addAutopartInvalidCross = (id, data) =>
+    api.post(`/autoparts/${id}/invalid-crosses/`, data);
 
 // Storage locations list
 export const getStorageLocations = () =>
