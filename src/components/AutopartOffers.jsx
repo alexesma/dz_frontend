@@ -194,26 +194,27 @@ const InsightTile = ({ tone = 'blue', title, value, subtitle, extra }) => (
     <div
         style={{
             ...INSIGHT_TONE_STYLES[tone],
-            borderRadius: 16,
-            padding: 16,
-            minHeight: 128,
+            borderRadius: 10,
+            padding: 10,
+            minHeight: 78,
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
-            boxShadow: '0 10px 30px rgba(15, 23, 42, 0.05)',
+            gap: 6,
+            boxShadow: '0 6px 18px rgba(15, 23, 42, 0.05)',
         }}
     >
-        <div style={{ color: '#475569', fontSize: 13, fontWeight: 600 }}>
+        <div style={{ color: '#475569', fontSize: 11, fontWeight: 700 }}>
             {title}
         </div>
-        <div style={{ color: '#0f172a', fontSize: 28, fontWeight: 800 }}>
+        <div style={{ color: '#0f172a', fontSize: 18, fontWeight: 800 }}>
             {value}
         </div>
-        <div style={{ color: '#334155', fontSize: 13, lineHeight: 1.45 }}>
+        <div style={{ color: '#334155', fontSize: 11, lineHeight: 1.35 }}>
             {subtitle}
         </div>
         {extra ? (
-            <div style={{ color: '#64748b', fontSize: 12, marginTop: 8 }}>
+            <div style={{ color: '#64748b', fontSize: 10, marginTop: 2 }}>
                 {extra}
             </div>
         ) : null}
@@ -370,7 +371,6 @@ const AutopartOffers = () => {
     const [trackingHistoryLoading, setTrackingHistoryLoading] = useState(false);
     const [trackingInsights, setTrackingInsights] = useState(null);
     const [trackingInsightsLoading, setTrackingInsightsLoading] = useState(false);
-    const [selectedOwnPriceConfigId, setSelectedOwnPriceConfigId] = useState(null);
     const [siteBrandWarning, setSiteBrandWarning] = useState(null);
     const [cartItems, setCartItems] = useState([]);
     const [selectedCartKeys, setSelectedCartKeys] = useState([]);
@@ -489,7 +489,6 @@ const AutopartOffers = () => {
     const fetchTrackingInsights = useCallback(async ({
         oemValue,
         brandValue,
-        ownProviderConfigId,
     }) => {
         const normalizedOemValue = String(oemValue || '').trim();
         if (!normalizedOemValue) {
@@ -501,16 +500,9 @@ const AutopartOffers = () => {
             const response = await getTrackingOrderInsights({
                 oem: normalizedOemValue,
                 brand: brandValue || undefined,
-                own_provider_config_id: ownProviderConfigId || undefined,
             });
             const payload = response?.data || null;
             setTrackingInsights(payload);
-            const resolvedConfigId = (
-                payload?.own_price_analysis?.provider_config_id
-                || ownProviderConfigId
-                || null
-            );
-            setSelectedOwnPriceConfigId(resolvedConfigId);
             return payload;
         } catch (error) {
             console.error('Fetch tracking insights error:', error);
@@ -520,27 +512,6 @@ const AutopartOffers = () => {
             setTrackingInsightsLoading(false);
         }
     }, []);
-
-    const ownPriceConfigOptions = useMemo(
-        () => (trackingInsights?.own_price_configs || []).map((config) => ({
-            label: `${config.provider_name} · ${config.name_price || `Конфиг #${config.id}`}`,
-            value: config.id,
-        })),
-        [trackingInsights]
-    );
-
-    const handleOwnPriceConfigChange = useCallback(async (value) => {
-        const nextValue = value || null;
-        setSelectedOwnPriceConfigId(nextValue);
-        if (!currentOem) {
-            return;
-        }
-        await fetchTrackingInsights({
-            oemValue: currentOem,
-            brandValue: selectedBrand || undefined,
-            ownProviderConfigId: nextValue,
-        });
-    }, [currentOem, fetchTrackingInsights, selectedBrand]);
 
     const insightTiles = useMemo(() => {
         if (!trackingInsights) {
@@ -747,6 +718,11 @@ const AutopartOffers = () => {
             },
         ];
     }, [trackingInsights]);
+
+    const combinedInsightTiles = useMemo(
+        () => [...insightTiles, ...ownPriceTiles],
+        [insightTiles, ownPriceTiles]
+    );
 
     const oemOptions = useMemo(() => {
         const seen = new Set();
@@ -1117,7 +1093,6 @@ const AutopartOffers = () => {
         setTrackingInsights(null);
         setRemoteMeta({ total: 0 });
         setSiteBrandCandidates([]);
-        setSelectedOwnPriceConfigId(null);
         setSiteBrandWarning(null);
         try {
             const { data } = await getAutopartOffers(
@@ -1208,7 +1183,6 @@ const AutopartOffers = () => {
             await fetchTrackingInsights({
                 oemValue,
                 brandValue: effectiveBrand || siteSuggestedBrand || '',
-                ownProviderConfigId: null,
             });
             setSelectedBrand(effectiveBrand || siteSuggestedBrand || '');
             if (!filtered.length) {
@@ -2344,7 +2318,7 @@ const AutopartOffers = () => {
                     emptyText="По этой позиции за последний год заказов через программу не было"
                 />
                 <Spin spinning={trackingInsightsLoading}>
-                    {trackingInsights || ownPriceConfigOptions.length ? (
+                    {trackingInsights ? (
                         <Space
                             direction="vertical"
                             style={{ width: '100%' }}
@@ -2361,73 +2335,27 @@ const AutopartOffers = () => {
                                 </div>
                             </div>
 
-                            {insightTiles.length ? (
+                            {combinedInsightTiles.length ? (
                                 <div
                                     style={{
                                         display: 'grid',
-                                        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                                        gap: 12,
+                                        gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+                                        gap: 8,
                                     }}
                                 >
-                                    {insightTiles.map((tile) => (
+                                    {combinedInsightTiles.map((tile) => (
                                         <InsightTile key={tile.key} {...tile} />
                                     ))}
                                 </div>
                             ) : null}
 
-                            {ownPriceConfigOptions.length ? (
-                                <Space
-                                    direction="vertical"
-                                    style={{ width: '100%' }}
-                                    size="middle"
-                                >
-                                    <div>
-                                        <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                                            Как быстро заканчивается по нашему прайсу
-                                        </div>
-                                        <div style={{ color: '#6b7280', marginBottom: 8 }}>
-                                            Это расчёт по движению позиции: учитываем приходы из заказов
-                                            программы, а рост остатка между снимками прайса тоже принимаем
-                                            как приход для расчёта.
-                                        </div>
-                                        <div style={{ color: '#6b7280', marginBottom: 8 }}>
-                                            Анализ строим только по явно выбранному нашему прайсу, чтобы
-                                            не смешивать его с чужими прайсами поставщиков.
-                                        </div>
-                                        <Select
-                                            value={selectedOwnPriceConfigId}
-                                            options={ownPriceConfigOptions}
-                                            onChange={handleOwnPriceConfigChange}
-                                            placeholder="Выбери наш прайс для анализа"
-                                            style={{ width: 420, maxWidth: '100%' }}
-                                        />
-                                    </div>
-
-                                    {!selectedOwnPriceConfigId ? (
-                                        <div style={{ color: '#6b7280' }}>
-                                            Выбери наш прайс для анализа. Пока прайс не выбран,
-                                            плитки с остатком и ценой не показываем специально,
-                                            чтобы не подставить чужой прайс вместо нашего.
-                                        </div>
-                                    ) : ownPriceTiles.length ? (
-                                        <div
-                                            style={{
-                                                display: 'grid',
-                                                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                                                gap: 12,
-                                            }}
-                                        >
-                                            {ownPriceTiles.map((tile) => (
-                                                <InsightTile key={tile.key} {...tile} />
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <div style={{ color: '#6b7280' }}>
-                                            Для выбранного нашего прайса ещё нет достаточной истории,
-                                            чтобы показать динамику уменьшения остатков.
-                                        </div>
-                                    )}
-                                </Space>
+                            {!trackingInsights?.own_price_analysis &&
+                            (trackingInsights?.own_price_configs || []).length ? (
+                                <div style={{ color: '#6b7280' }}>
+                                    Для блока по нашему прайсу выбери один конфиг в
+                                    настройках поставщика: `Конфигурации прайс-листов` →
+                                    `Использовать для сводки заказа`.
+                                </div>
                             ) : null}
                         </Space>
                     ) : null}

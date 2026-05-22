@@ -475,6 +475,8 @@ const ProviderPage = () => {
                 exclude_positions: config.exclude_positions || [],
                 max_days_without_update: config.max_days_without_update ?? 3,
                 is_active: config.is_active ?? true,
+                use_for_order_insights:
+                    config.use_for_order_insights ?? false,
                 start_row: adjustForDisplay(config.start_row, true),
                 oem_col: adjustForDisplay(config.oem_col, true),
                 brand_col: adjustForDisplay(config.brand_col, true),
@@ -493,6 +495,7 @@ const ProviderPage = () => {
                 exclude_positions: [],
                 max_days_without_update: 3,
                 is_active: true,
+                use_for_order_insights: false,
             });
         }
         setConfigModalVisible(true);
@@ -579,6 +582,27 @@ const ProviderPage = () => {
         } catch (err) {
             console.error(err);
             message.error("Не удалось обновить статус конфигурации");
+        }
+    };
+
+    const handleToggleConfigUseForOrderInsights = async (configId, checked) => {
+        if (!providerId) return;
+        try {
+            await updateProviderConfig(providerId, configId, {
+                use_for_order_insights: checked,
+            });
+            message.success(
+                checked
+                    ? "Конфиг выбран для сводки заказа"
+                    : "Конфиг убран из сводки заказа"
+            );
+            await refreshProviderData();
+        } catch (err) {
+            console.error(err);
+            message.error(
+                err?.response?.data?.detail
+                || "Не удалось обновить конфиг для сводки заказа"
+            );
         }
     };
 
@@ -1555,6 +1579,25 @@ const ProviderPage = () => {
                 />
             ),
         },
+        ...(providerData?.provider?.is_own_price ? [{
+            title: "Для сводки заказа",
+            dataIndex: "use_for_order_insights",
+            key: "use_for_order_insights",
+            render: (enabled, record) => (
+                <Switch
+                    checked={Boolean(enabled)}
+                    disabled={!record.is_active}
+                    onChange={(checked) =>
+                        handleToggleConfigUseForOrderInsights(
+                            record.id,
+                            checked
+                        )
+                    }
+                    checkedChildren="Да"
+                    unCheckedChildren="Нет"
+                />
+            ),
+        }] : []),
         {
             title: "Последний прайс",
             key: "latest_pricelist",
@@ -2378,6 +2421,21 @@ const ProviderPage = () => {
                     >
                         <Switch checkedChildren="Вкл" unCheckedChildren="Выкл" />
                     </Form.Item>
+
+                    {providerData?.provider?.is_own_price ? (
+                        <Form.Item
+                            name="use_for_order_insights"
+                            label="Использовать для сводки заказа"
+                            valuePropName="checked"
+                            extra={
+                                "Можно выбрать только один такой конфиг. " +
+                                "Именно он будет использоваться на странице " +
+                                "поиска по артикулу для блока по нашему прайсу."
+                            }
+                        >
+                            <Switch checkedChildren="Да" unCheckedChildren="Нет" />
+                        </Form.Item>
+                    ) : null}
 
                     <Divider>Настройки парсинга</Divider>
 
