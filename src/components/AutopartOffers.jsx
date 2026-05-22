@@ -376,6 +376,8 @@ const AutopartOffers = () => {
     const [selectedCartKeys, setSelectedCartKeys] = useState([]);
     const [loading, setLoading] = useState(false);
     const [remoteOffers, setRemoteOffers] = useState([]);
+    const [siteExactOffers, setSiteExactOffers] = useState([]);
+    const [siteOffersWithCrosses, setSiteOffersWithCrosses] = useState([]);
     const [remoteLoading, setRemoteLoading] = useState(false);
     const [cartSubmitting, setCartSubmitting] = useState(false);
     const [remoteMeta, setRemoteMeta] = useState({ total: 0 });
@@ -519,10 +521,25 @@ const AutopartOffers = () => {
         }
         const exactMinOffer = trackingInsights.exact_min_offer;
         const minOfferWithCrosses = trackingInsights.min_offer_with_crosses;
-        const siteMinOffer = Array.isArray(remoteOffers) && remoteOffers.length
-            ? remoteOffers[0]
+        const siteExactMinOffer = Array.isArray(siteExactOffers) && siteExactOffers.length
+            ? siteExactOffers[0]
             : null;
-        const localCurrentBest = minOfferWithCrosses
+        const siteCrossMinOffer = Array.isArray(siteOffersWithCrosses)
+            && siteOffersWithCrosses.length
+            ? siteOffersWithCrosses[0]
+            : null;
+        const localExactBest = exactMinOffer
+            ? {
+                source: 'Прайсы',
+                provider_name: exactMinOffer.provider_name,
+                oem_number: exactMinOffer.oem_number,
+                quantity: exactMinOffer.quantity,
+                min_delivery_day: exactMinOffer.min_delivery_day,
+                max_delivery_day: exactMinOffer.max_delivery_day,
+                price: Number(exactMinOffer.price),
+            }
+            : null;
+        const localCrossBest = minOfferWithCrosses
             ? {
                 source: 'Прайсы',
                 provider_name: minOfferWithCrosses.provider_name,
@@ -533,18 +550,32 @@ const AutopartOffers = () => {
                 price: Number(minOfferWithCrosses.price),
             }
             : null;
-        const siteCurrentBest = siteMinOffer
+        const siteExactBest = siteExactMinOffer
             ? {
                 source: 'Dragonzap',
-                provider_name: siteMinOffer.supplier_name || 'Dragonzap',
-                oem_number: siteMinOffer.oem,
-                quantity: Number(siteMinOffer.qnt || 0),
-                min_delivery_day: siteMinOffer.min_delivery_day,
-                max_delivery_day: siteMinOffer.max_delivery_day,
-                price: Number(siteMinOffer.price),
+                provider_name: siteExactMinOffer.supplier_name || 'Dragonzap',
+                oem_number: siteExactMinOffer.oem,
+                quantity: Number(siteExactMinOffer.qnt || 0),
+                min_delivery_day: siteExactMinOffer.min_delivery_day,
+                max_delivery_day: siteExactMinOffer.max_delivery_day,
+                price: Number(siteExactMinOffer.price),
             }
             : null;
-        const overallCurrentBest = [localCurrentBest, siteCurrentBest]
+        const siteCrossBest = siteCrossMinOffer
+            ? {
+                source: 'Dragonzap',
+                provider_name: siteCrossMinOffer.supplier_name || 'Dragonzap',
+                oem_number: siteCrossMinOffer.oem,
+                quantity: Number(siteCrossMinOffer.qnt || 0),
+                min_delivery_day: siteCrossMinOffer.min_delivery_day,
+                max_delivery_day: siteCrossMinOffer.max_delivery_day,
+                price: Number(siteCrossMinOffer.price),
+            }
+            : null;
+        const exactCurrentBest = [localExactBest, siteExactBest]
+            .filter((item) => item && Number.isFinite(item.price))
+            .sort((a, b) => a.price - b.price)[0] || null;
+        const crossCurrentBest = [localCrossBest, siteCrossBest]
             .filter((item) => item && Number.isFinite(item.price))
             .sort((a, b) => a.price - b.price)[0] || null;
 
@@ -552,71 +583,38 @@ const AutopartOffers = () => {
             {
                 key: 'exact-min',
                 tone: 'green',
-                title: 'Мин. цена в прайсах по OEM',
-                value: exactMinOffer
-                    ? `${formatInsightMoney(exactMinOffer.price)}`
+                title: 'Мин. цена по OEM сейчас',
+                value: exactCurrentBest
+                    ? `${formatInsightMoney(exactCurrentBest.price)}`
                     : '—',
-                subtitle: exactMinOffer
-                    ? `${exactMinOffer.provider_name} · ${exactMinOffer.quantity} шт · ${formatInsightDelivery(
-                        exactMinOffer.min_delivery_day,
-                        exactMinOffer.max_delivery_day
+                subtitle: exactCurrentBest
+                    ? `${exactCurrentBest.source} · ${exactCurrentBest.provider_name} · ${exactCurrentBest.quantity} шт · ${formatInsightDelivery(
+                        exactCurrentBest.min_delivery_day,
+                        exactCurrentBest.max_delivery_day
                     )}`
-                    : 'В текущих прайсах по точному OEM предложений не найдено',
-                extra: exactMinOffer?.provider_config_name || '',
+                    : 'Ни прайсы, ни сайт по точному OEM пока ничего не дали',
+                extra: exactCurrentBest?.oem_number
+                    ? `OEM: ${exactCurrentBest.oem_number}`
+                    : '',
             },
             {
                 key: 'cross-min',
                 tone: 'blue',
-                title: 'Мин. цена в прайсах с кроссами',
-                value: minOfferWithCrosses
-                    ? `${formatInsightMoney(minOfferWithCrosses.price)}`
+                title: 'Мин. цена с кроссами сейчас',
+                value: crossCurrentBest
+                    ? `${formatInsightMoney(crossCurrentBest.price)}`
                     : '—',
-                subtitle: minOfferWithCrosses
-                    ? `${minOfferWithCrosses.provider_name} · ${minOfferWithCrosses.quantity} шт · ${formatInsightDelivery(
-                        minOfferWithCrosses.min_delivery_day,
-                        minOfferWithCrosses.max_delivery_day
+                subtitle: crossCurrentBest
+                    ? `${crossCurrentBest.source} · ${crossCurrentBest.provider_name} · ${crossCurrentBest.quantity} шт · ${formatInsightDelivery(
+                        crossCurrentBest.min_delivery_day,
+                        crossCurrentBest.max_delivery_day
                     )}`
-                    : 'По OEM и кроссам в текущих прайсах предложений нет',
-                extra: minOfferWithCrosses
+                    : 'По OEM и кроссам пока нет ни локального, ни site-результата',
+                extra: crossCurrentBest
                     ? (
-                        minOfferWithCrosses.oem_number !== normalizedCurrentOem
-                            ? `Сработал кросс: ${minOfferWithCrosses.oem_number}`
+                        crossCurrentBest.oem_number !== normalizedCurrentOem
+                            ? `Сработал кросс: ${crossCurrentBest.oem_number}`
                             : 'Лучшее предложение по текущему OEM'
-                    )
-                    : '',
-            },
-            {
-                key: 'site-min',
-                tone: 'slate',
-                title: 'Мин. цена на сайте',
-                value: siteCurrentBest
-                    ? `${formatInsightMoney(siteCurrentBest.price)}`
-                    : '—',
-                subtitle: siteCurrentBest
-                    ? `${siteCurrentBest.provider_name} · ${siteCurrentBest.quantity} шт · ${formatInsightDelivery(
-                        siteCurrentBest.min_delivery_day,
-                        siteCurrentBest.max_delivery_day
-                    )}`
-                    : 'Сайт ещё не запрошен или не вернул подходящих предложений',
-                extra: siteCurrentBest?.oem_number &&
-                    siteCurrentBest.oem_number !== normalizedCurrentOem
-                    ? `На сайте сработал кросс: ${siteCurrentBest.oem_number}`
-                    : '',
-            },
-            {
-                key: 'overall-current-min',
-                tone: 'green',
-                title: 'Лучшая текущая цена сейчас',
-                value: overallCurrentBest
-                    ? `${formatInsightMoney(overallCurrentBest.price)}`
-                    : '—',
-                subtitle: overallCurrentBest
-                    ? `${overallCurrentBest.source} · ${overallCurrentBest.provider_name} · ${overallCurrentBest.quantity} шт`
-                    : 'Пока нет ни подходящего прайса, ни результата с сайта',
-                extra: overallCurrentBest
-                    ? formatInsightDelivery(
-                        overallCurrentBest.min_delivery_day,
-                        overallCurrentBest.max_delivery_day
                     )
                     : '',
             },
@@ -662,7 +660,13 @@ const AutopartOffers = () => {
                     : 'Пока без кроссов в истории',
             },
         ];
-    }, [normalizedCurrentOem, remoteOffers, summaryCrossOems, trackingInsights]);
+    }, [
+        normalizedCurrentOem,
+        siteExactOffers,
+        siteOffersWithCrosses,
+        summaryCrossOems,
+        trackingInsights,
+    ]);
 
     const ownPriceTiles = useMemo(() => {
         const analysis = trackingInsights?.own_price_analysis;
@@ -1089,6 +1093,8 @@ const AutopartOffers = () => {
         setTrackingHistoryLoading(true);
         setHistoricalOffers([]);
         setRemoteOffers([]);
+        setSiteExactOffers([]);
+        setSiteOffersWithCrosses([]);
         setTrackingHistory([]);
         setTrackingInsights(null);
         setRemoteMeta({ total: 0 });
@@ -1240,166 +1246,186 @@ const AutopartOffers = () => {
         setRemoteLoading(true);
         setSiteBrandWarning(null);
         try {
-            const { data } = await getDragonzapOffers(
-                oemValue,
+            const normalizeSiteResponse = (payload, requestedBrand, allowCrosses) => {
+                const responseBrandCandidates = normalizeDragonzapBrandCandidates(
+                    payload?.site_brand_candidates
+                );
+                const queryBrands = Array.isArray(payload?.query_brands)
+                    ? payload.query_brands
+                        .map((brand) => String(brand || '').toLowerCase())
+                        .filter((brand) => brand)
+                    : [];
+                const rawList = Array.isArray(payload)
+                    ? payload
+                    : Array.isArray(payload?.data)
+                        ? payload.data
+                        : [];
+                const normalizedList = rawList.map((item) => {
+                    const oem =
+                        item.oem ??
+                        item.oem_number ??
+                        item.article ??
+                        item.artikul ??
+                        item.part_number;
+                    const price =
+                        item.price ??
+                        item.price_rub ??
+                        item.price_total ??
+                        item.price_total_rub ??
+                        item.price_with_markup ??
+                        item.cost;
+                    const supplierName =
+                        normalizeSupplierName(
+                            item.supplier_name ??
+                                item.supplier ??
+                                item.supplier_title ??
+                                item.supplier_company ??
+                                item.provider ??
+                                item.seller_name ??
+                                item.price_name ??
+                                item.sup_logo
+                        );
+                    const quantity =
+                        item.qnt ??
+                        item.quantity ??
+                        item.qty ??
+                        item.balance ??
+                        item.stock;
+                    const detailName =
+                        item.detail_name ??
+                        item.name ??
+                        item.autopart_name ??
+                        item.title;
+                    const makeName =
+                        item.make_name ??
+                        item.brand ??
+                        item.brand_name;
+                    const minDelivery =
+                        item.min_delivery_day ??
+                        item.min_delivery ??
+                        item.min_delivery_days;
+                    const maxDelivery =
+                        item.max_delivery_day ??
+                        item.max_delivery ??
+                        item.max_delivery_days;
+                    const supplierId =
+                        item.supplier_id ??
+                        item.provider_id ??
+                        item?.provider?.id ??
+                        null;
+                    const hashKey =
+                        item.hash_key ??
+                        item.api_hash ??
+                        item.system_hash ??
+                        null;
+                    return {
+                        ...item,
+                        oem,
+                        price,
+                        supplier_id: supplierId,
+                        supplier_name: supplierName,
+                        qnt: quantity,
+                        detail_name: detailName,
+                        make_name: makeName,
+                        min_delivery_day: minDelivery,
+                        max_delivery_day: maxDelivery,
+                        hash_key: hashKey,
+                    };
+                });
+                const filtered = normalizedList.filter((item) => {
+                    const qty = Number(item.qnt ?? 0);
+                    if (Number.isNaN(qty) || qty <= 0) {
+                        return false;
+                    }
+                    if (!allowCrosses && requestedBrand) {
+                        const itemBrand = (item.make_name || '').toLowerCase();
+                        const responseRequestedBrand = (
+                            item?.sys_info?.requested_make_name ||
+                            item?.query_brand ||
+                            ''
+                        ).toLowerCase();
+                        if (queryBrands.length) {
+                            return (
+                                queryBrands.includes(itemBrand) ||
+                                queryBrands.includes(responseRequestedBrand)
+                            );
+                        }
+                        return itemBrand === requestedBrand.toLowerCase();
+                    }
+                    return true;
+                });
+                const sortedByPrice = [...filtered].sort((a, b) => {
+                    const aPrice = Number(a.price ?? Number.POSITIVE_INFINITY);
+                    const bPrice = Number(b.price ?? Number.POSITIVE_INFINITY);
+                    return aPrice - bPrice;
+                });
+                return {
+                    offers: sortedByPrice,
+                    responseBrandCandidates,
+                    fallbackBrand: Array.isArray(payload?.query_brands)
+                        ? String(payload.query_brands[0] || '').trim()
+                        : '',
+                    usedFallbackBrand: Boolean(payload?.used_fallback_brand),
+                };
+            };
+
+            const [exactResponse, crossResponse] = await Promise.all([
+                getDragonzapOffers(oemValue, effectiveBrand, true),
+                getDragonzapOffers(oemValue, effectiveBrand, false),
+            ]);
+            const exactParsed = normalizeSiteResponse(
+                exactResponse?.data,
                 effectiveBrand,
-                !showCrosses
+                false
             );
-            const responseBrandCandidates = normalizeDragonzapBrandCandidates(
-                data?.site_brand_candidates
+            const crossParsed = normalizeSiteResponse(
+                crossResponse?.data,
+                effectiveBrand,
+                true
             );
-            if (responseBrandCandidates.length) {
-                setSiteBrandCandidates(responseBrandCandidates);
+            const activeParsed = showCrosses ? crossParsed : exactParsed;
+
+            setSiteExactOffers(exactParsed.offers);
+            setSiteOffersWithCrosses(crossParsed.offers);
+
+            if (activeParsed.responseBrandCandidates.length) {
+                setSiteBrandCandidates(activeParsed.responseBrandCandidates);
             }
-            const fallbackBrand = Array.isArray(data?.query_brands)
-                ? String(data.query_brands[0] || '').trim()
-                : '';
             if (
-                data?.used_fallback_brand &&
-                fallbackBrand &&
-                fallbackBrand !== effectiveBrand
+                activeParsed.usedFallbackBrand &&
+                activeParsed.fallbackBrand &&
+                activeParsed.fallbackBrand !== effectiveBrand
             ) {
-                setSelectedBrand(fallbackBrand);
+                setSelectedBrand(activeParsed.fallbackBrand);
                 setSiteBrandWarning({
                     type: 'warning',
                     message:
                         `Сайт не вернул данные по бренду ${effectiveBrand}.`,
                     description:
-                        `Автоматически переключили поиск на ${fallbackBrand} и показали найденные предложения.`,
+                        `Автоматически переключили поиск на ${activeParsed.fallbackBrand} и показали найденные предложения.`,
                 });
                 message.info(
                     `По бренду ${effectiveBrand} сайт ничего не вернул. ` +
-                    `Показаны результаты по бренду ${fallbackBrand}.`
+                    `Показаны результаты по бренду ${activeParsed.fallbackBrand}.`
                 );
             } else if (
-                responseBrandCandidates.length &&
+                activeParsed.responseBrandCandidates.length &&
                 effectiveBrand &&
-                String(responseBrandCandidates[0]?.brand || '').toUpperCase() !==
+                String(activeParsed.responseBrandCandidates[0]?.brand || '').toUpperCase() !==
                     effectiveBrand.toUpperCase()
             ) {
                 setSiteBrandWarning({
                     type: 'info',
                     message:
-                        `На сайте есть и другой бренд для этого OEM: ${responseBrandCandidates[0].brand}.`,
+                        `На сайте есть и другой бренд для этого OEM: ${activeParsed.responseBrandCandidates[0].brand}.`,
                     description:
                         'Если результаты по текущему бренду выглядят неполными, можно быстро переключить запрос на подсказанный бренд.',
                 });
             }
-            const queryBrands = Array.isArray(data?.query_brands)
-                ? data.query_brands
-                    .map((brand) => String(brand || '').toLowerCase())
-                    .filter((brand) => brand)
-                : [];
-            const rawList = Array.isArray(data)
-                ? data
-                : Array.isArray(data?.data)
-                    ? data.data
-                    : [];
 
-            const normalizedList = rawList.map((item) => {
-                const oem =
-                    item.oem ??
-                    item.oem_number ??
-                    item.article ??
-                    item.artikul ??
-                    item.part_number;
-                const price =
-                    item.price ??
-                    item.price_rub ??
-                    item.price_total ??
-                    item.price_total_rub ??
-                    item.price_with_markup ??
-                    item.cost;
-                const supplierName =
-                    normalizeSupplierName(
-                        item.supplier_name ??
-                            item.supplier ??
-                            item.supplier_title ??
-                            item.supplier_company ??
-                            item.provider ??
-                            item.seller_name ??
-                            item.price_name ??
-                            item.sup_logo
-                    );
-                const quantity =
-                    item.qnt ??
-                    item.quantity ??
-                    item.qty ??
-                    item.balance ??
-                    item.stock;
-                const detailName =
-                    item.detail_name ??
-                    item.name ??
-                    item.autopart_name ??
-                    item.title;
-                const makeName =
-                    item.make_name ??
-                    item.brand ??
-                    item.brand_name;
-                const minDelivery =
-                    item.min_delivery_day ??
-                    item.min_delivery ??
-                    item.min_delivery_days;
-                const maxDelivery =
-                    item.max_delivery_day ??
-                    item.max_delivery ??
-                    item.max_delivery_days;
-                const supplierId =
-                    item.supplier_id ??
-                    item.provider_id ??
-                    item?.provider?.id ??
-                    null;
-                const hashKey =
-                    item.hash_key ??
-                    item.api_hash ??
-                    item.system_hash ??
-                    null;
-                return {
-                    ...item,
-                    oem,
-                    price,
-                    supplier_id: supplierId,
-                    supplier_name: supplierName,
-                    qnt: quantity,
-                    detail_name: detailName,
-                    make_name: makeName,
-                    min_delivery_day: minDelivery,
-                    max_delivery_day: maxDelivery,
-                    hash_key: hashKey,
-                };
-            });
-
-            const filtered = normalizedList.filter((item) => {
-                const qty = Number(item.qnt ?? 0);
-                if (Number.isNaN(qty) || qty <= 0) {
-                    return false;
-                }
-                if (!showCrosses && brandValue) {
-                    const itemBrand = (item.make_name || '').toLowerCase();
-                    const requestedBrand = (
-                        item?.sys_info?.requested_make_name ||
-                        item?.query_brand ||
-                        ''
-                    ).toLowerCase();
-                    if (queryBrands.length) {
-                        return (
-                            queryBrands.includes(itemBrand) ||
-                            queryBrands.includes(requestedBrand)
-                        );
-                    }
-                    return itemBrand === brandValue.toLowerCase();
-                }
-                return true;
-            });
-
-            const sortedByPrice = [...filtered].sort((a, b) => {
-                const aPrice = Number(a.price ?? Number.POSITIVE_INFINITY);
-                const bPrice = Number(b.price ?? Number.POSITIVE_INFINITY);
-                return aPrice - bPrice;
-            });
-            setRemoteOffers(sortedByPrice);
-            setRemoteMeta({ total: filtered.length });
-            if (!sortedByPrice.length) {
+            setRemoteOffers(activeParsed.offers);
+            setRemoteMeta({ total: activeParsed.offers.length });
+            if (!activeParsed.offers.length) {
                 message.info('Dragonzap не вернул данные');
             }
         } catch (error) {
@@ -1409,6 +1435,17 @@ const AutopartOffers = () => {
             setRemoteLoading(false);
         }
     }, [showCrosses]);
+
+    useEffect(() => {
+        if (!siteExactOffers.length && !siteOffersWithCrosses.length) {
+            return;
+        }
+        const nextOffers = showCrosses
+            ? siteOffersWithCrosses
+            : siteExactOffers;
+        setRemoteOffers(nextOffers);
+        setRemoteMeta({ total: nextOffers.length });
+    }, [showCrosses, siteExactOffers, siteOffersWithCrosses]);
 
     const handleDragonzapRequest = async () => {
         const oemValue = currentOem || form.getFieldValue('oem');
