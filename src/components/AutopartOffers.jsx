@@ -30,6 +30,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
     getAutopartOffers,
+    getDragonzapBrands,
     getDragonzapOffers,
     searchAutopartsByOem,
     sendDragonzapOrder,
@@ -144,6 +145,36 @@ const safeStorageSet = (key, value) => {
     }
 };
 
+const normalizeDragonzapBrandCandidates = (payload) => {
+    const rawList = Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload)
+            ? payload
+            : [];
+
+    return rawList
+        .map((item) => ({
+            brand: String(item?.brand || '').trim(),
+            rate: Number(item?.rate || 0),
+            des_text: String(item?.des_text || '').trim(),
+        }))
+        .filter((item) => item.brand)
+        .sort((a, b) => {
+            if (b.rate !== a.rate) {
+                return b.rate - a.rate;
+            }
+            return a.brand.localeCompare(b.brand);
+        });
+};
+
+const pickBestDragonzapBrand = (candidates) => {
+    if (!Array.isArray(candidates) || !candidates.length) {
+        return '';
+    }
+    const positiveCandidate = candidates.find((item) => Number(item.rate) > 0);
+    return positiveCandidate?.brand || candidates[0]?.brand || '';
+};
+
 const buildPersistedCartItems = (items) => {
     if (!Array.isArray(items)) {
         return [];
@@ -242,6 +273,7 @@ const AutopartOffers = () => {
     const [showCrosses, setShowCrosses] = useState(false);
     const [partialSearch, setPartialSearch] = useState(false);
     const [currentOem, setCurrentOem] = useState('');
+    const [siteBrandCandidates, setSiteBrandCandidates] = useState([]);
     const [nomenclatureInfo, setNomenclatureInfo] = useState(null); // { in_nomenclature, id, brand, name }
     const [oemInput, setOemInput] = useState('');
     const [lookupLoading, setLookupLoading] = useState(false);
@@ -280,16 +312,60 @@ const AutopartOffers = () => {
     const activeLookupQuery = String(oemInput || '').trim();
 
     const brandOptions = useMemo(() => {
-        const uniqueBrands = new Set(
-            [...offers, ...historicalOffers]
-                .map((item) => item.brand_name)
-                .filter((value) => value && value.trim())
-        );
-        return Array.from(uniqueBrands).map((brand) => ({
-            label: brand,
-            value: brand,
-        }));
-    }, [offers, historicalOffers]);
+        const options = [];
+        const seen = new Set();
+
+        for (const brand of [...offers, ...historicalOffers]
+            .map((item) => item.brand_name)
+            .filter((value) => value && value.trim())) {
+            const normalized = String(brand).trim();
+            const key = normalized.toLowerCase();
+            if (!normalized || seen.has(key)) {
+                continue;
+            }
+            seen.add(key);
+            options.push({
+                label: normalized,
+                value: normalized,
+            });
+        }
+
+        for (const candidate of siteBrandCandidates) {
+            const normalized = String(candidate.brand || '').trim();
+            const key = normalized.toLowerCase();
+            if (!normalized || seen.has(key)) {
+                continue;
+            }
+            seen.add(key);
+            const rate = Number(candidate.rate || 0);
+            options.push({
+                label:
+                    rate > 0
+                        ? `${normalized} · Dragonzap (${rate})`
+                        : `${normalized} · Dragonzap`,
+                value: normalized,
+            });
+        }
+
+        return options;
+    }, [historicalOffers, offers, siteBrandCandidates]);
+
+    const normalizedCurrentOem = useMemo(
+        () => String(currentOem || '').trim().toUpperCase(),
+        [currentOem]
+    );
+
+    const trackingHistoryCrossOems = useMemo(() => {
+        const uniqueOems = new Set();
+        for (const row of trackingHistory) {
+            const normalizedOem = String(row?.oem_number || '').trim().toUpperCase();
+            if (!normalizedOem || normalizedOem === normalizedCurrentOem) {
+                continue;
+            }
+            uniqueOems.add(normalizedOem);
+        }
+        return Array.from(uniqueOems);
+    }, [normalizedCurrentOem, trackingHistory]);
 
     const oemOptions = useMemo(() => {
         const seen = new Set();
@@ -658,18 +734,12 @@ const AutopartOffers = () => {
         setRemoteOffers([]);
         setTrackingHistory([]);
         setRemoteMeta({ total: 0 });
+        setSiteBrandCandidates([]);
         try {
-            const [{ data }, trackingResponse] = await Promise.all([
-                getAutopartOffers(
-                    oemValue,
-                    usePartialSearch
-                ),
-                getTrackingOrderItems({
-                    oem: oemValue,
-                    sync_site: true,
-                    limit: 100,
-                }).catch(() => null),
-            ]);
+            const { data } = await getAutopartOffers(
+                oemValue,
+                usePartialSearch
+            );
             const list = Array.isArray(data?.offers) ? data.offers : [];
             const historicalList = Array.isArray(data?.historical_offers)
                 ? data.historical_offers
@@ -706,15 +776,36 @@ const AutopartOffers = () => {
             setCurrentOem(oemValue);
             setOemInput(oemValue);
             pushOemHistory(oemValue);
-            const trackingRows = Array.isArray(trackingResponse?.data)
-                ? trackingResponse.data
-                : [];
-            setTrackingHistory(trackingRows);
             const fallbackBrand = [...list, ...historicalList].find(
                 (item) => item.brand_name
             )?.brand_name;
             const resolvedBrand = brandHint || fallbackBrand || '';
-            setSelectedBrand(resolvedBrand);
+            const siteBrandsResponse = await getDragonzapBrands(oemValue).catch(
+                () => null
+            );
+            const candidates = normalizeDragonzapBrandCandidates(
+                siteBrandsResponse?.data
+            );
+            setSiteBrandCandidates(candidates);
+            const siteSuggestedBrand = pickBestDragonzapBrand(candidates);
+            const effectiveBrand = (
+                !resolvedBrand ||
+                String(resolvedBrand).trim().toUpperCase() === 'DRAGONZAP'
+            ) && siteSuggestedBrand
+                ? siteSuggestedBrand
+                : resolvedBrand;
+            const trackingResponse = await getTrackingOrderItems({
+                oem: oemValue,
+                brand: effectiveBrand || undefined,
+                sync_site: true,
+                include_crosses: true,
+                limit: 100,
+            }).catch(() => null);
+            const trackingRows = Array.isArray(trackingResponse?.data)
+                ? trackingResponse.data
+                : [];
+            setTrackingHistory(trackingRows);
+            setSelectedBrand(effectiveBrand || siteSuggestedBrand || '');
             if (!filtered.length) {
                 if (sortedHistorical.length) {
                     message.info(
@@ -725,7 +816,7 @@ const AutopartOffers = () => {
                     message.info('В актуальных прайсах ничего не найдено');
                 }
             }
-            return resolvedBrand;
+            return effectiveBrand || siteSuggestedBrand || '';
         } catch (error) {
             console.error('Fetch offers error:', error);
             message.error('Ошибка получения данных');
@@ -742,10 +833,28 @@ const AutopartOffers = () => {
     };
 
     const requestDragonzapOffers = useCallback(async (oemValue, brandValue) => {
-        if (!oemValue || !brandValue) {
+        let effectiveBrand = String(brandValue || '').trim();
+        if (!oemValue) {
+            message.warning('Введите OEM номер');
+            return;
+        }
+        if (!effectiveBrand) {
+            const brandsResponse = await getDragonzapBrands(oemValue).catch(
+                () => null
+            );
+            const candidates = normalizeDragonzapBrandCandidates(
+                brandsResponse?.data
+            );
+            setSiteBrandCandidates(candidates);
+            effectiveBrand = pickBestDragonzapBrand(candidates);
+            if (effectiveBrand) {
+                setSelectedBrand(effectiveBrand);
+            }
+        }
+        if (!effectiveBrand) {
             message.warning(
                 'Не удалось определить бренд для запроса. ' +
-                'Сначала найдите позицию в локальных прайсах.'
+                'Уточните бренд вручную или добавьте позицию в номенклатуру.'
             );
             return;
         }
@@ -753,9 +862,29 @@ const AutopartOffers = () => {
         try {
             const { data } = await getDragonzapOffers(
                 oemValue,
-                brandValue,
+                effectiveBrand,
                 !showCrosses
             );
+            const responseBrandCandidates = normalizeDragonzapBrandCandidates(
+                data?.site_brand_candidates
+            );
+            if (responseBrandCandidates.length) {
+                setSiteBrandCandidates(responseBrandCandidates);
+            }
+            const fallbackBrand = Array.isArray(data?.query_brands)
+                ? String(data.query_brands[0] || '').trim()
+                : '';
+            if (
+                data?.used_fallback_brand &&
+                fallbackBrand &&
+                fallbackBrand !== effectiveBrand
+            ) {
+                setSelectedBrand(fallbackBrand);
+                message.info(
+                    `По бренду ${effectiveBrand} сайт ничего не вернул. ` +
+                    `Показаны результаты по бренду ${fallbackBrand}.`
+                );
+            }
             const queryBrands = Array.isArray(data?.query_brands)
                 ? data.query_brands
                     .map((brand) => String(brand || '').toLowerCase())
@@ -1773,12 +1902,19 @@ const AutopartOffers = () => {
                         сколько заказали, сколько получили и какой статус сейчас.
                         Для заказов с сайта статусы подтягиваются автоматически.
                     </div>
+                    {trackingHistoryCrossOems.length ? (
+                        <div style={{ color: '#2563eb', marginTop: 4 }}>
+                            В выборку также включены кросс-артикулы:
+                            {' '}
+                            <strong>{trackingHistoryCrossOems.join(', ')}</strong>
+                        </div>
+                    ) : null}
                 </div>
                 <TrackingOrderHistoryTable
                     rows={trackingHistory}
                     loading={trackingHistoryLoading}
                     compact
-                    showOem={false}
+                    showOem
                     emptyText="По этой позиции за последний год заказов через программу не было"
                 />
             </Space>

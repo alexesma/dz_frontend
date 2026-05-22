@@ -12,6 +12,13 @@ export const searchAutopartsByOem = (q, limit = 50) =>
 export const getDragonzapOffers = (oem, makeName, withoutCross = true) =>
     api.get('/order/get_offers_by_oem_and_make_name', {
         params: { oem, make_name: makeName, without_cross: withoutCross },
+        timeout: 70000,
+    });
+
+export const getDragonzapBrands = (oem) =>
+    api.get('/order/get_brands_by_oem', {
+        params: { oem },
+        timeout: 45000,
     });
 
 export const sendDragonzapOrder = (items, customerId) =>
