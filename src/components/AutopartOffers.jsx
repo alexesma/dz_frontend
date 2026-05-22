@@ -398,6 +398,8 @@ const AutopartOffers = () => {
     const [remoteOffers, setRemoteOffers] = useState([]);
     const [siteExactOffers, setSiteExactOffers] = useState([]);
     const [siteOffersWithCrosses, setSiteOffersWithCrosses] = useState([]);
+    const [siteResponseDiagnostics, setSiteResponseDiagnostics] = useState(null);
+    const [siteRequestError, setSiteRequestError] = useState('');
     const [remoteLoading, setRemoteLoading] = useState(false);
     const [cartSubmitting, setCartSubmitting] = useState(false);
     const [remoteMeta, setRemoteMeta] = useState({ total: 0 });
@@ -711,6 +713,95 @@ const AutopartOffers = () => {
         summaryCrossOems,
         trackingInsights,
     ]);
+
+    const siteDiagnosticsAlert = useMemo(() => {
+        if (siteRequestError) {
+            return {
+                type: 'error',
+                message: 'Не удалось получить ответ от Dragonzap',
+                description: siteRequestError,
+            };
+        }
+        if (!siteResponseDiagnostics) {
+            return null;
+        }
+
+        const {
+            requestedBrand,
+            usingCrossFallback,
+            exact,
+            crosses,
+        } = siteResponseDiagnostics;
+
+        const exactDiagnostic = (
+            <div>
+                Точный OEM: получено <strong>{exact.rawCount}</strong>, показано{' '}
+                <strong>{exact.shownCount}</strong>
+                {exact.qtyFilteredCount > 0 ? (
+                    <>
+                        , скрыто из-за нулевого остатка{' '}
+                        <strong>{exact.qtyFilteredCount}</strong>
+                    </>
+                ) : null}
+                {exact.brandFilteredCount > 0 ? (
+                    <>
+                        , скрыто из-за несовпадения бренда{' '}
+                        <strong>{exact.brandFilteredCount}</strong>
+                    </>
+                ) : null}
+                .
+            </div>
+        );
+
+        const crossDiagnostic = (
+            <div>
+                OEM + кроссы: получено <strong>{crosses.rawCount}</strong>, показано{' '}
+                <strong>{crosses.shownCount}</strong>
+                {crosses.qtyFilteredCount > 0 ? (
+                    <>
+                        , скрыто из-за нулевого остатка{' '}
+                        <strong>{crosses.qtyFilteredCount}</strong>
+                    </>
+                ) : null}
+                .
+            </div>
+        );
+
+        if (usingCrossFallback) {
+            return {
+                type: 'info',
+                message:
+                    'По точному OEM сайт ничего не показал, поэтому ниже выведены предложения с учетом кроссов.',
+                description: (
+                    <Space direction="vertical" size={2}>
+                        <div>
+                            Запрос на сайт шёл по бренду <strong>{requestedBrand}</strong>.
+                        </div>
+                        {exactDiagnostic}
+                        {crossDiagnostic}
+                    </Space>
+                ),
+            };
+        }
+
+        if (!exact.shownCount && !crosses.shownCount) {
+            return {
+                type: 'warning',
+                message: 'Сайт ответил, но к показу не осталось предложений.',
+                description: (
+                    <Space direction="vertical" size={2}>
+                        <div>
+                            Запрос на сайт шёл по бренду <strong>{requestedBrand}</strong>.
+                        </div>
+                        {exactDiagnostic}
+                        {crossDiagnostic}
+                    </Space>
+                ),
+            };
+        }
+
+        return null;
+    }, [siteRequestError, siteResponseDiagnostics]);
 
     const ownPriceTiles = useMemo(() => {
         const analysis = trackingInsights?.own_price_analysis;
@@ -1139,6 +1230,8 @@ const AutopartOffers = () => {
         setRemoteOffers([]);
         setSiteExactOffers([]);
         setSiteOffersWithCrosses([]);
+        setSiteResponseDiagnostics(null);
+        setSiteRequestError('');
         setTrackingHistory([]);
         setTrackingInsights(null);
         setSiteAnalysisCrossOems([]);
@@ -1292,6 +1385,8 @@ const AutopartOffers = () => {
         }
         setRemoteLoading(true);
         setSiteBrandWarning(null);
+        setSiteRequestError('');
+        setSiteResponseDiagnostics(null);
         try {
             const normalizeSiteResponse = (payload, requestedBrand, allowCrosses) => {
                 const responseBrandCandidates = normalizeDragonzapBrandCandidates(
@@ -1379,28 +1474,33 @@ const AutopartOffers = () => {
                         hash_key: hashKey,
                     };
                 });
-                const filtered = normalizedList.filter((item) => {
+                const qtyFiltered = normalizedList.filter((item) => {
                     const qty = Number(item.qnt ?? 0);
                     if (Number.isNaN(qty) || qty <= 0) {
                         return false;
                     }
-                    if (!allowCrosses && requestedBrand) {
-                        const itemBrand = (item.make_name || '').toLowerCase();
-                        const responseRequestedBrand = (
-                            item?.sys_info?.requested_make_name ||
-                            item?.query_brand ||
-                            ''
-                        ).toLowerCase();
-                        if (queryBrands.length) {
-                            return (
-                                queryBrands.includes(itemBrand) ||
-                                queryBrands.includes(responseRequestedBrand)
-                            );
-                        }
-                        return itemBrand === requestedBrand.toLowerCase();
-                    }
                     return true;
                 });
+                const qtyFilteredCount = normalizedList.length - qtyFiltered.length;
+                const filtered = qtyFiltered.filter((item) => {
+                    if (allowCrosses || !requestedBrand) {
+                        return true;
+                    }
+                    const itemBrand = (item.make_name || '').toLowerCase();
+                    const responseRequestedBrand = (
+                        item?.sys_info?.requested_make_name ||
+                        item?.query_brand ||
+                        ''
+                    ).toLowerCase();
+                    if (queryBrands.length) {
+                        return (
+                            queryBrands.includes(itemBrand) ||
+                            queryBrands.includes(responseRequestedBrand)
+                        );
+                    }
+                    return itemBrand === requestedBrand.toLowerCase();
+                });
+                const brandFilteredCount = qtyFiltered.length - filtered.length;
                 const sortedByPrice = [...filtered].sort((a, b) => {
                     const aPrice = Number(a.price ?? Number.POSITIVE_INFINITY);
                     const bPrice = Number(b.price ?? Number.POSITIVE_INFINITY);
@@ -1413,6 +1513,10 @@ const AutopartOffers = () => {
                         ? String(payload.query_brands[0] || '').trim()
                         : '',
                     usedFallbackBrand: Boolean(payload?.used_fallback_brand),
+                    rawCount: normalizedList.length,
+                    shownCount: sortedByPrice.length,
+                    qtyFilteredCount,
+                    brandFilteredCount,
                 };
             };
 
@@ -1431,14 +1535,37 @@ const AutopartOffers = () => {
                 true
             );
             const activeParsed = showCrosses ? crossParsed : exactParsed;
+            const usingCrossFallback =
+                !showCrosses &&
+                !exactParsed.offers.length &&
+                crossParsed.offers.length > 0;
             const nextSiteCrossOems = extractUniqueCrossOems(
                 crossParsed.offers,
                 oemValue
             );
+            const displayedOffers = usingCrossFallback
+                ? crossParsed.offers
+                : activeParsed.offers;
 
             setSiteExactOffers(exactParsed.offers);
             setSiteOffersWithCrosses(crossParsed.offers);
             setSiteAnalysisCrossOems(nextSiteCrossOems);
+            setSiteResponseDiagnostics({
+                requestedBrand: effectiveBrand,
+                usingCrossFallback,
+                exact: {
+                    rawCount: exactParsed.rawCount,
+                    shownCount: exactParsed.shownCount,
+                    qtyFilteredCount: exactParsed.qtyFilteredCount,
+                    brandFilteredCount: exactParsed.brandFilteredCount,
+                },
+                crosses: {
+                    rawCount: crossParsed.rawCount,
+                    shownCount: crossParsed.shownCount,
+                    qtyFilteredCount: crossParsed.qtyFilteredCount,
+                    brandFilteredCount: crossParsed.brandFilteredCount,
+                },
+            });
 
             if (activeParsed.responseBrandCandidates.length) {
                 setSiteBrandCandidates(activeParsed.responseBrandCandidates);
@@ -1475,8 +1602,8 @@ const AutopartOffers = () => {
                 });
             }
 
-            setRemoteOffers(activeParsed.offers);
-            setRemoteMeta({ total: activeParsed.offers.length });
+            setRemoteOffers(displayedOffers);
+            setRemoteMeta({ total: displayedOffers.length });
             const [trackingResponse] = await Promise.all([
                 getTrackingOrderItems({
                     oem: oemValue,
@@ -1498,12 +1625,23 @@ const AutopartOffers = () => {
                 ? trackingResponse.data
                 : [];
             setTrackingHistory(trackingRows);
-            if (!activeParsed.offers.length) {
-                message.info('Dragonzap не вернул данные');
+            if (usingCrossFallback) {
+                message.info(
+                    'По точному OEM сайт ничего не вернул. Показаны предложения с учетом кроссов.'
+                );
+            } else if (!exactParsed.offers.length && !crossParsed.offers.length) {
+                message.info(
+                    'Сайт ничего не показал ни по точному OEM, ни по запросу с учетом кроссов.'
+                );
             }
         } catch (error) {
             console.error('Dragonzap request error:', error);
-            message.error('Ошибка запроса к dragonzap');
+            const detail = extractRequestError(
+                error,
+                error?.message || 'Ошибка запроса к Dragonzap'
+            );
+            setSiteRequestError(detail);
+            message.error(detail);
         } finally {
             setRemoteLoading(false);
         }
@@ -1515,7 +1653,7 @@ const AutopartOffers = () => {
         }
         const nextOffers = showCrosses
             ? siteOffersWithCrosses
-            : siteExactOffers;
+            : (siteExactOffers.length ? siteExactOffers : siteOffersWithCrosses);
         setRemoteOffers(nextOffers);
         setRemoteMeta({ total: nextOffers.length });
     }, [showCrosses, siteExactOffers, siteOffersWithCrosses]);
@@ -2525,13 +2663,27 @@ const AutopartOffers = () => {
                         showIcon
                         message={siteBrandWarning.message}
                         description={siteBrandWarning.description}
+                        style={{ marginBottom: siteDiagnosticsAlert ? 0 : 12 }}
+                    />
+                ) : null}
+
+                {siteDiagnosticsAlert ? (
+                    <Alert
+                        type={siteDiagnosticsAlert.type || 'info'}
+                        showIcon
+                        message={siteDiagnosticsAlert.message}
+                        description={siteDiagnosticsAlert.description}
+                        style={{ marginBottom: 12 }}
                     />
                 ) : null}
 
                 <Spin spinning={remoteLoading}>
                     {remoteMeta.total > 0 ? (
                         <div style={{ marginBottom: 8, color: '#6b7280' }}>
-                            Найдено {remoteMeta.total}. Показаны все предложения.
+                            Найдено {remoteMeta.total}. Показаны все предложения
+                            {siteResponseDiagnostics?.usingCrossFallback
+                                ? ' с учетом кроссов.'
+                                : '.'}
                         </div>
                     ) : null}
                     <Table
