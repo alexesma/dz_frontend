@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+    Alert,
     AutoComplete,
     Card,
     Form,
@@ -370,6 +371,7 @@ const AutopartOffers = () => {
     const [trackingInsights, setTrackingInsights] = useState(null);
     const [trackingInsightsLoading, setTrackingInsightsLoading] = useState(false);
     const [selectedOwnPriceConfigId, setSelectedOwnPriceConfigId] = useState(null);
+    const [siteBrandWarning, setSiteBrandWarning] = useState(null);
     const [cartItems, setCartItems] = useState([]);
     const [selectedCartKeys, setSelectedCartKeys] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -546,12 +548,40 @@ const AutopartOffers = () => {
         }
         const exactMinOffer = trackingInsights.exact_min_offer;
         const minOfferWithCrosses = trackingInsights.min_offer_with_crosses;
+        const siteMinOffer = Array.isArray(remoteOffers) && remoteOffers.length
+            ? remoteOffers[0]
+            : null;
+        const localCurrentBest = minOfferWithCrosses
+            ? {
+                source: 'Прайсы',
+                provider_name: minOfferWithCrosses.provider_name,
+                oem_number: minOfferWithCrosses.oem_number,
+                quantity: minOfferWithCrosses.quantity,
+                min_delivery_day: minOfferWithCrosses.min_delivery_day,
+                max_delivery_day: minOfferWithCrosses.max_delivery_day,
+                price: Number(minOfferWithCrosses.price),
+            }
+            : null;
+        const siteCurrentBest = siteMinOffer
+            ? {
+                source: 'Dragonzap',
+                provider_name: siteMinOffer.supplier_name || 'Dragonzap',
+                oem_number: siteMinOffer.oem,
+                quantity: Number(siteMinOffer.qnt || 0),
+                min_delivery_day: siteMinOffer.min_delivery_day,
+                max_delivery_day: siteMinOffer.max_delivery_day,
+                price: Number(siteMinOffer.price),
+            }
+            : null;
+        const overallCurrentBest = [localCurrentBest, siteCurrentBest]
+            .filter((item) => item && Number.isFinite(item.price))
+            .sort((a, b) => a.price - b.price)[0] || null;
 
         return [
             {
                 key: 'exact-min',
                 tone: 'green',
-                title: 'Мин. цена по точному OEM',
+                title: 'Мин. цена в прайсах по OEM',
                 value: exactMinOffer
                     ? `${formatInsightMoney(exactMinOffer.price)}`
                     : '—',
@@ -566,7 +596,7 @@ const AutopartOffers = () => {
             {
                 key: 'cross-min',
                 tone: 'blue',
-                title: 'Мин. цена с учётом кроссов',
+                title: 'Мин. цена в прайсах с кроссами',
                 value: minOfferWithCrosses
                     ? `${formatInsightMoney(minOfferWithCrosses.price)}`
                     : '—',
@@ -585,6 +615,41 @@ const AutopartOffers = () => {
                     : '',
             },
             {
+                key: 'site-min',
+                tone: 'slate',
+                title: 'Мин. цена на сайте',
+                value: siteCurrentBest
+                    ? `${formatInsightMoney(siteCurrentBest.price)}`
+                    : '—',
+                subtitle: siteCurrentBest
+                    ? `${siteCurrentBest.provider_name} · ${siteCurrentBest.quantity} шт · ${formatInsightDelivery(
+                        siteCurrentBest.min_delivery_day,
+                        siteCurrentBest.max_delivery_day
+                    )}`
+                    : 'Сайт ещё не запрошен или не вернул подходящих предложений',
+                extra: siteCurrentBest?.oem_number &&
+                    siteCurrentBest.oem_number !== normalizedCurrentOem
+                    ? `На сайте сработал кросс: ${siteCurrentBest.oem_number}`
+                    : '',
+            },
+            {
+                key: 'overall-current-min',
+                tone: 'green',
+                title: 'Лучшая текущая цена сейчас',
+                value: overallCurrentBest
+                    ? `${formatInsightMoney(overallCurrentBest.price)}`
+                    : '—',
+                subtitle: overallCurrentBest
+                    ? `${overallCurrentBest.source} · ${overallCurrentBest.provider_name} · ${overallCurrentBest.quantity} шт`
+                    : 'Пока нет ни подходящего прайса, ни результата с сайта',
+                extra: overallCurrentBest
+                    ? formatInsightDelivery(
+                        overallCurrentBest.min_delivery_day,
+                        overallCurrentBest.max_delivery_day
+                    )
+                    : '',
+            },
+            {
                 key: 'historical-min',
                 tone: 'amber',
                 title: 'Мин. цена в наших заказах за 1 год',
@@ -596,18 +661,6 @@ const AutopartOffers = () => {
                         ? `Без кроссов: ${formatInsightMoney(trackingInsights.historical_min_price_exact)}`
                         : 'По точному OEM в заказах за год цены не найдено',
                 extra: 'Это ориентир по тому, как уже покупали через программу',
-            },
-            {
-                key: 'ordered-year',
-                tone: 'slate',
-                title: 'Заказано через программу за 1 год',
-                value: `${Number(
-                    trackingInsights.total_ordered_quantity_last_year || 0
-                ).toLocaleString('ru-RU')} шт`,
-                subtitle: `Заказов: ${trackingInsights.order_count_last_year || 0} · поставщиков: ${trackingInsights.unique_suppliers_last_year || 0}`,
-                extra: trackingInsights.last_ordered_at
-                    ? `Последний заказ: ${formatInsightDateTime(trackingInsights.last_ordered_at)}`
-                    : '',
             },
             {
                 key: 'fill-rate',
@@ -638,7 +691,7 @@ const AutopartOffers = () => {
                     : 'Пока без кроссов в истории',
             },
         ];
-    }, [normalizedCurrentOem, summaryCrossOems, trackingInsights]);
+    }, [normalizedCurrentOem, remoteOffers, summaryCrossOems, trackingInsights]);
 
     const ownPriceTiles = useMemo(() => {
         const analysis = trackingInsights?.own_price_analysis;
@@ -1065,6 +1118,7 @@ const AutopartOffers = () => {
         setRemoteMeta({ total: 0 });
         setSiteBrandCandidates([]);
         setSelectedOwnPriceConfigId(null);
+        setSiteBrandWarning(null);
         try {
             const { data } = await getAutopartOffers(
                 oemValue,
@@ -1118,6 +1172,22 @@ const AutopartOffers = () => {
             );
             setSiteBrandCandidates(candidates);
             const siteSuggestedBrand = pickBestDragonzapBrand(candidates);
+            if (
+                resolvedBrand &&
+                siteSuggestedBrand &&
+                String(resolvedBrand).trim().toUpperCase() !==
+                    String(siteSuggestedBrand).trim().toUpperCase()
+            ) {
+                setSiteBrandWarning({
+                    type: 'warning',
+                    message:
+                        `Для сайта по этому OEM вероятнее бренд ${siteSuggestedBrand}.`,
+                    description:
+                        `В локальных прайсах позиция найдена как ${resolvedBrand}, ` +
+                        `но Dragonzap может отвечать только по бренду ${siteSuggestedBrand}. ` +
+                        'Если прямой запрос будет пустым, программа попробует этот бренд автоматически.',
+                });
+            }
             const effectiveBrand = (
                 !resolvedBrand ||
                 String(resolvedBrand).trim().toUpperCase() === 'DRAGONZAP'
@@ -1194,6 +1264,7 @@ const AutopartOffers = () => {
             return;
         }
         setRemoteLoading(true);
+        setSiteBrandWarning(null);
         try {
             const { data } = await getDragonzapOffers(
                 oemValue,
@@ -1215,10 +1286,30 @@ const AutopartOffers = () => {
                 fallbackBrand !== effectiveBrand
             ) {
                 setSelectedBrand(fallbackBrand);
+                setSiteBrandWarning({
+                    type: 'warning',
+                    message:
+                        `Сайт не вернул данные по бренду ${effectiveBrand}.`,
+                    description:
+                        `Автоматически переключили поиск на ${fallbackBrand} и показали найденные предложения.`,
+                });
                 message.info(
                     `По бренду ${effectiveBrand} сайт ничего не вернул. ` +
                     `Показаны результаты по бренду ${fallbackBrand}.`
                 );
+            } else if (
+                responseBrandCandidates.length &&
+                effectiveBrand &&
+                String(responseBrandCandidates[0]?.brand || '').toUpperCase() !==
+                    effectiveBrand.toUpperCase()
+            ) {
+                setSiteBrandWarning({
+                    type: 'info',
+                    message:
+                        `На сайте есть и другой бренд для этого OEM: ${responseBrandCandidates[0].brand}.`,
+                    description:
+                        'Если результаты по текущему бренду выглядят неполными, можно быстро переключить запрос на подсказанный бренд.',
+                });
             }
             const queryBrands = Array.isArray(data?.query_brands)
                 ? data.query_brands
@@ -2264,8 +2355,9 @@ const AutopartOffers = () => {
                                     Краткая сводка для заказа
                                 </div>
                                 <div style={{ color: '#6b7280' }}>
-                                    Минимумы считаются по актуальным прайсам с положительным остатком.
-                                    История и сроки берутся из заказов, оформленных через программу.
+                                    Здесь сводим вместе актуальные прайсы, сайт Dragonzap
+                                    и историю заказов через программу, чтобы быстрее понять,
+                                    как лучше заказывать позицию прямо сейчас.
                                 </div>
                             </div>
 
@@ -2298,6 +2390,10 @@ const AutopartOffers = () => {
                                             программы, а рост остатка между снимками прайса тоже принимаем
                                             как приход для расчёта.
                                         </div>
+                                        <div style={{ color: '#6b7280', marginBottom: 8 }}>
+                                            Анализ строим только по явно выбранному нашему прайсу, чтобы
+                                            не смешивать его с чужими прайсами поставщиков.
+                                        </div>
                                         <Select
                                             value={selectedOwnPriceConfigId}
                                             options={ownPriceConfigOptions}
@@ -2307,7 +2403,13 @@ const AutopartOffers = () => {
                                         />
                                     </div>
 
-                                    {ownPriceTiles.length ? (
+                                    {!selectedOwnPriceConfigId ? (
+                                        <div style={{ color: '#6b7280' }}>
+                                            Выбери наш прайс для анализа. Пока прайс не выбран,
+                                            плитки с остатком и ценой не показываем специально,
+                                            чтобы не подставить чужой прайс вместо нашего.
+                                        </div>
+                                    ) : ownPriceTiles.length ? (
                                         <div
                                             style={{
                                                 display: 'grid',
@@ -2365,6 +2467,15 @@ const AutopartOffers = () => {
                         Запросить на dragonzap
                     </Button>
                 </Space>
+
+                {siteBrandWarning ? (
+                    <Alert
+                        type={siteBrandWarning.type || 'info'}
+                        showIcon
+                        message={siteBrandWarning.message}
+                        description={siteBrandWarning.description}
+                    />
+                ) : null}
 
                 <Spin spinning={remoteLoading}>
                     {remoteMeta.total > 0 ? (
