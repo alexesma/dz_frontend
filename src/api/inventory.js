@@ -161,6 +161,15 @@ export const postShipment = (id) =>
 export const unpostShipment = (id) =>
     api.post(`/inventory/shipments/${id}/unpost/`);
 
+export const getShipmentProfitReport = (params = {}) =>
+    api.get('/inventory/shipments/profit-report/', { params });
+
+export const exportShipmentProfitReport = (params = {}) =>
+    api.get('/inventory/shipments/profit-report/export/', {
+        params,
+        responseType: 'blob',
+    });
+
 // ── Returns ───────────────────────────────────────────────────────────────────
 
 export const listCustomerReturns = (params = {}) =>

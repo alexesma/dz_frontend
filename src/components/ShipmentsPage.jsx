@@ -1,9 +1,11 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+    Alert,
     Badge,
     Button,
     Card,
     Col,
+    DatePicker,
     Form,
     Input,
     Modal,
@@ -27,7 +29,9 @@ import {
     ReloadOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { searchAutopartsByOem } from '../api/autoparts';
+import { getCustomers } from '../api/customers';
 import {
     bulkSyncShipments,
     createShipment,
@@ -36,6 +40,7 @@ import {
     listShipments,
     syncShipment,
 } from '../api/inventory';
+import { getAllProviders } from '../api/providers';
 import {
     getDiadocShipmentsOutboundReadiness,
     listDiadocOutboundDocuments,
@@ -45,6 +50,7 @@ import useAuth from '../context/useAuth';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
+const { RangePicker } = DatePicker;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -146,6 +152,7 @@ const DIADOC_LABELS = { draft: 'Черновик', sent: 'Отправлен', e
 const ShipmentsPage = () => {
     const { user } = useAuth();
     const navigate                         = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
     const [data, setData]                 = useState([]);
     const [loading, setLoading]           = useState(false);
     const [total, setTotal]               = useState(0);
@@ -157,8 +164,68 @@ const ShipmentsPage = () => {
     const [syncing, setSyncing]           = useState({});
     const [diadocByShipmentId, setDiadocByShipmentId] = useState({});
     const [diadocReadinessByShipmentId, setDiadocReadinessByShipmentId] = useState({});
+    const [customerOptions, setCustomerOptions] = useState([]);
+    const [providerOptions, setProviderOptions] = useState([]);
+    const [autopartOptions, setAutopartOptions] = useState([]);
+    const [searchingAutopart, setSearchingAutopart] = useState(false);
+    const searchTimer = useRef(null);
     const [filterForm]               = Form.useForm();
     const canUseDiadoc = user?.role === 'admin';
+
+    useEffect(() => {
+        Promise.all([
+            getCustomers({ page_size: 200 }),
+            getAllProviders({ page_size: 100 }),
+        ])
+            .then(([customersResponse, providers]) => {
+                const customers = customersResponse?.data?.items || customersResponse?.data || [];
+                setCustomerOptions(
+                    (customers || []).map((customer) => ({
+                        value: customer.id,
+                        label: customer.name,
+                    }))
+                );
+                setProviderOptions(
+                    (providers || []).map((provider) => ({
+                        value: provider.id,
+                        label: provider.name,
+                    }))
+                );
+            })
+            .catch(() => {});
+    }, []);
+
+    useEffect(() => {
+        const parsedFilters = {
+            status: searchParams.get('status') || undefined,
+            doc_number: searchParams.get('doc_number') || undefined,
+            customer_id: searchParams.get('customer_id')
+                ? Number(searchParams.get('customer_id'))
+                : undefined,
+            provider_id: searchParams.get('provider_id')
+                ? Number(searchParams.get('provider_id'))
+                : undefined,
+            autopart_id: searchParams.get('autopart_id')
+                ? Number(searchParams.get('autopart_id'))
+                : undefined,
+            posted_from: searchParams.get('posted_from') || undefined,
+            posted_to: searchParams.get('posted_to') || undefined,
+        };
+        filterForm.setFieldsValue({
+            status: parsedFilters.status,
+            doc_number: parsedFilters.doc_number,
+            customer_id: parsedFilters.customer_id,
+            provider_id: parsedFilters.provider_id,
+            autopart_id: parsedFilters.autopart_id,
+            posted_range: (
+                parsedFilters.posted_from && parsedFilters.posted_to
+                    ? [dayjs(parsedFilters.posted_from), dayjs(parsedFilters.posted_to)]
+                    : undefined
+            ),
+        });
+        setFilters(parsedFilters);
+        setPage(1);
+    }, [searchParams, filterForm]);
 
     const loadDiadocStatuses = useCallback(async (shipmentRows = []) => {
         if (!canUseDiadoc) {
@@ -244,22 +311,58 @@ const ShipmentsPage = () => {
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
+    const handleAutopartSearch = (query) => {
+        clearTimeout(searchTimer.current);
+        if (!query || query.length < 2) {
+            setAutopartOptions([]);
+            return;
+        }
+        searchTimer.current = setTimeout(async () => {
+            setSearchingAutopart(true);
+            try {
+                const response = await searchAutopartsByOem(query, 30);
+                setAutopartOptions(
+                    (response.data || []).map((part) => ({
+                        value: part.id,
+                        label: `${part.oem_number} — ${part.name}${part.brand_name ? ` [${part.brand_name}]` : ''}`,
+                    }))
+                );
+            } catch {
+                setAutopartOptions([]);
+            } finally {
+                setSearchingAutopart(false);
+            }
+        }, 250);
+    };
+
     const applyFilters = () => {
         const vals = filterForm.getFieldsValue();
         const newFilters = {
             status:     vals.status || undefined,
             doc_number: vals.doc_number || undefined,
+            customer_id: vals.customer_id || undefined,
+            provider_id: vals.provider_id || undefined,
+            autopart_id: vals.autopart_id || undefined,
+            posted_from: vals.posted_range?.[0]
+                ? vals.posted_range[0].startOf('day').toISOString()
+                : undefined,
+            posted_to: vals.posted_range?.[1]
+                ? vals.posted_range[1].endOf('day').toISOString()
+                : undefined,
         };
-        setFilters(newFilters);
-        setPage(1);
-        fetchData(1, pageSize, newFilters);
+        const nextSearch = {};
+        Object.entries(newFilters).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                nextSearch[key] = String(value);
+            }
+        });
+        setSearchParams(nextSearch);
     };
 
     const resetFilters = () => {
         filterForm.resetFields();
-        setFilters({});
-        setPage(1);
-        fetchData(1, pageSize, {});
+        setAutopartOptions([]);
+        setSearchParams({});
     };
 
     const handleDelete = async (id) => {
@@ -567,8 +670,54 @@ const ShipmentsPage = () => {
                     <Form.Item name="doc_number" style={{ marginBottom: 4 }}>
                         <Input placeholder="Номер документа" style={{ width: 180 }} allowClear />
                     </Form.Item>
+                    <Form.Item name="customer_id" style={{ marginBottom: 4 }}>
+                        <Select
+                            allowClear
+                            showSearch
+                            placeholder="Клиент"
+                            style={{ width: 220 }}
+                            options={customerOptions}
+                            optionFilterProp="label"
+                        />
+                    </Form.Item>
+                    <Form.Item name="provider_id" style={{ marginBottom: 4 }}>
+                        <Select
+                            allowClear
+                            showSearch
+                            placeholder="Поставщик"
+                            style={{ width: 220 }}
+                            options={providerOptions}
+                            optionFilterProp="label"
+                        />
+                    </Form.Item>
+                    <Form.Item name="autopart_id" style={{ marginBottom: 4 }}>
+                        <Select
+                            allowClear
+                            showSearch
+                            placeholder="Позиция"
+                            style={{ width: 320 }}
+                            options={autopartOptions}
+                            onSearch={handleAutopartSearch}
+                            filterOption={false}
+                            loading={searchingAutopart}
+                            notFoundContent={searchingAutopart ? 'Поиск...' : 'Ничего не найдено'}
+                        />
+                    </Form.Item>
+                    <Form.Item name="posted_range" style={{ marginBottom: 4 }}>
+                        <RangePicker format="DD.MM.YYYY" />
+                    </Form.Item>
                 </Form>
             </Card>
+
+            {(filters.provider_id || filters.autopart_id || filters.posted_from || filters.customer_id) && (
+                <Alert
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                    message="Активны расширенные фильтры отгрузок"
+                    description="Список может быть открыт из отчёта по валовой прибыли и уже содержать точные фильтры по клиенту, поставщику, позиции и периоду проведения."
+                />
+            )}
 
             <Table
                 rowKey="id"

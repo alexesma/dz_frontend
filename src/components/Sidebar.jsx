@@ -81,6 +81,7 @@ const Sidebar = () => {
         if (path.startsWith('/warehouse/stock-documents')) return 'warehouse-stock-documents';
         if (path.startsWith('/warehouse/movements')) return 'warehouse-movements';
         if (path.startsWith('/warehouse/reserves')) return 'warehouse-reserves';
+        if (path.startsWith('/warehouse/profit-report')) return 'warehouse-profit-report';
         if (path.startsWith('/warehouse/shipments')) return 'warehouse-shipments';
         if (path.startsWith('/warehouse/returns')) return 'warehouse-returns';
         if (path.startsWith('/warehouse/lots')) return 'warehouse-lots';
@@ -174,6 +175,9 @@ const Sidebar = () => {
                 </Menu.Item>
                 <Menu.Item key="warehouse-shipments" icon={<FileDoneOutlined />}>
                     <Link to="/warehouse/shipments">Накладные на отгрузку</Link>
+                </Menu.Item>
+                <Menu.Item key="warehouse-profit-report" icon={<BarChartOutlined />}>
+                    <Link to="/warehouse/profit-report">Валовая прибыль</Link>
                 </Menu.Item>
                 <Menu.Item key="warehouse-returns" icon={<RollbackOutlined />}>
                     <Link to="/warehouse/returns">Возвраты</Link>

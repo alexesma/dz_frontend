@@ -46,6 +46,7 @@ import StockDocumentDetailPage from './components/StockDocumentDetailPage';
 import StockMovementsPage from './components/StockMovementsPage';
 import ReservesPage from './components/ReservesPage';
 import ShipmentsPage from './components/ShipmentsPage';
+import ShipmentProfitReportPage from './components/ShipmentProfitReportPage';
 import ShipmentDetailPage from './components/ShipmentDetailPage';
 import ReturnsPage from './components/ReturnsPage';
 import ReturnDetailPage from './components/ReturnDetailPage';
@@ -135,6 +136,7 @@ const AppRoutes = () => (
         <Route path="/warehouse/movements" element={<RequireAuth><StockMovementsPage /></RequireAuth>} />
         <Route path="/warehouse/reserves" element={<RequireAuth><ReservesPage /></RequireAuth>} />
         <Route path="/warehouse/shipments" element={<RequireAuth><ShipmentsPage /></RequireAuth>} />
+        <Route path="/warehouse/profit-report" element={<RequireAuth><ShipmentProfitReportPage /></RequireAuth>} />
         <Route path="/warehouse/shipments/:id" element={<RequireAuth><ShipmentDetailPage /></RequireAuth>} />
         <Route path="/warehouse/returns" element={<RequireAuth><ReturnsPage /></RequireAuth>} />
         <Route
