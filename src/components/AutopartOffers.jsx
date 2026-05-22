@@ -167,6 +167,25 @@ const formatInsightDelivery = (minDeliveryDay, maxDeliveryDay) => {
     return 'срок не указан';
 };
 
+const extractUniqueCrossOems = (offers, baseOem) => {
+    const normalizedBase = String(baseOem || '').trim().toUpperCase();
+    const uniqueOems = new Set();
+    for (const offer of offers || []) {
+        const normalizedOem = String(
+            offer?.oem ||
+            offer?.oem_number ||
+            offer?.article ||
+            offer?.part_number ||
+            ''
+        ).trim().toUpperCase();
+        if (!normalizedOem || normalizedOem === normalizedBase) {
+            continue;
+        }
+        uniqueOems.add(normalizedOem);
+    }
+    return Array.from(uniqueOems);
+};
+
 const INSIGHT_TONE_STYLES = {
     blue: {
         background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
@@ -372,6 +391,7 @@ const AutopartOffers = () => {
     const [trackingInsights, setTrackingInsights] = useState(null);
     const [trackingInsightsLoading, setTrackingInsightsLoading] = useState(false);
     const [siteBrandWarning, setSiteBrandWarning] = useState(null);
+    const [siteAnalysisCrossOems, setSiteAnalysisCrossOems] = useState([]);
     const [cartItems, setCartItems] = useState([]);
     const [selectedCartKeys, setSelectedCartKeys] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -484,13 +504,24 @@ const AutopartOffers = () => {
             ...((trackingInsights?.cross_oem_numbers || []).map((item) =>
                 String(item || '').trim().toUpperCase()
             )),
+            ...((trackingInsights?.site_cross_oem_numbers || []).map((item) =>
+                String(item || '').trim().toUpperCase()
+            )),
         ]);
         return Array.from(uniqueOems).filter(Boolean);
     }, [trackingHistoryCrossOems, trackingInsights]);
 
+    const siteSummaryCrossOems = useMemo(
+        () => ((trackingInsights?.site_cross_oem_numbers || []).map((item) =>
+            String(item || '').trim().toUpperCase()
+        )).filter(Boolean),
+        [trackingInsights]
+    );
+
     const fetchTrackingInsights = useCallback(async ({
         oemValue,
         brandValue,
+        extraOemNumbers = [],
     }) => {
         const normalizedOemValue = String(oemValue || '').trim();
         if (!normalizedOemValue) {
@@ -499,9 +530,22 @@ const AutopartOffers = () => {
         }
         setTrackingInsightsLoading(true);
         try {
+            const normalizedExtraOems = Array.from(
+                new Set(
+                    (extraOemNumbers || [])
+                        .map((item) => String(item || '').trim().toUpperCase())
+                        .filter((item) =>
+                            item &&
+                            item !== normalizedOemValue.toUpperCase()
+                        )
+                )
+            );
             const response = await getTrackingOrderInsights({
                 oem: normalizedOemValue,
                 brand: brandValue || undefined,
+                site_cross_oems: normalizedExtraOems.length
+                    ? normalizedExtraOems.join(',')
+                    : undefined,
             });
             const payload = response?.data || null;
             setTrackingInsights(payload);
@@ -1097,6 +1141,7 @@ const AutopartOffers = () => {
         setSiteOffersWithCrosses([]);
         setTrackingHistory([]);
         setTrackingInsights(null);
+        setSiteAnalysisCrossOems([]);
         setRemoteMeta({ total: 0 });
         setSiteBrandCandidates([]);
         setSiteBrandWarning(null);
@@ -1181,6 +1226,7 @@ const AutopartOffers = () => {
                 sync_site: true,
                 include_crosses: true,
                 limit: 100,
+                site_cross_oems: undefined,
             }).catch(() => null);
             const trackingRows = Array.isArray(trackingResponse?.data)
                 ? trackingResponse.data
@@ -1189,6 +1235,7 @@ const AutopartOffers = () => {
             await fetchTrackingInsights({
                 oemValue,
                 brandValue: effectiveBrand || siteSuggestedBrand || '',
+                extraOemNumbers: [],
             });
             setSelectedBrand(effectiveBrand || siteSuggestedBrand || '');
             if (!filtered.length) {
@@ -1384,9 +1431,14 @@ const AutopartOffers = () => {
                 true
             );
             const activeParsed = showCrosses ? crossParsed : exactParsed;
+            const nextSiteCrossOems = extractUniqueCrossOems(
+                crossParsed.offers,
+                oemValue
+            );
 
             setSiteExactOffers(exactParsed.offers);
             setSiteOffersWithCrosses(crossParsed.offers);
+            setSiteAnalysisCrossOems(nextSiteCrossOems);
 
             if (activeParsed.responseBrandCandidates.length) {
                 setSiteBrandCandidates(activeParsed.responseBrandCandidates);
@@ -1425,6 +1477,27 @@ const AutopartOffers = () => {
 
             setRemoteOffers(activeParsed.offers);
             setRemoteMeta({ total: activeParsed.offers.length });
+            const [trackingResponse] = await Promise.all([
+                getTrackingOrderItems({
+                    oem: oemValue,
+                    brand: effectiveBrand || undefined,
+                    sync_site: true,
+                    include_crosses: true,
+                    limit: 100,
+                    site_cross_oems: nextSiteCrossOems.length
+                        ? nextSiteCrossOems.join(',')
+                        : undefined,
+                }).catch(() => null),
+                fetchTrackingInsights({
+                    oemValue,
+                    brandValue: effectiveBrand,
+                    extraOemNumbers: nextSiteCrossOems,
+                }),
+            ]);
+            const trackingRows = Array.isArray(trackingResponse?.data)
+                ? trackingResponse.data
+                : [];
+            setTrackingHistory(trackingRows);
             if (!activeParsed.offers.length) {
                 message.info('Dragonzap не вернул данные');
             }
@@ -1434,7 +1507,7 @@ const AutopartOffers = () => {
         } finally {
             setRemoteLoading(false);
         }
-    }, [showCrosses]);
+    }, [fetchTrackingInsights, showCrosses]);
 
     useEffect(() => {
         if (!siteExactOffers.length && !siteOffersWithCrosses.length) {
@@ -2344,6 +2417,19 @@ const AutopartOffers = () => {
                             В выборку также включены кросс-артикулы:
                             {' '}
                             <strong>{summaryCrossOems.join(', ')}</strong>
+                        </div>
+                    ) : null}
+                    {siteSummaryCrossOems.length ? (
+                        <div style={{ color: '#0f766e', marginTop: 4 }}>
+                            Дополнительно по кроссам с сайта проверили:
+                            {' '}
+                            <strong>{siteSummaryCrossOems.join(', ')}</strong>
+                        </div>
+                    ) : siteAnalysisCrossOems.length ? (
+                        <div style={{ color: '#0f766e', marginTop: 4 }}>
+                            Сайт подсказал кроссы для проверки:
+                            {' '}
+                            <strong>{siteAnalysisCrossOems.join(', ')}</strong>
                         </div>
                     ) : null}
                 </div>
