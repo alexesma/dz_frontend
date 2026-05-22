@@ -666,25 +666,20 @@ const AutopartOffers = () => {
                 subtitle: 'Берём последнюю найденную цену по OEM и его кроссам',
             },
             {
-                key: 'own-30',
+                key: 'own-arrivals',
                 tone: 'amber',
-                title: 'Уменьшение остатков за 30 дней',
+                title: 'Приходы для расчёта',
+                value: `${Number(analysis.arrivals_last_30_days || 0).toLocaleString('ru-RU')} шт`,
+                subtitle: `За 90 дней: ${Number(analysis.arrivals_last_90_days || 0).toLocaleString('ru-RU')} шт · за 1 год: ${Number(analysis.arrivals_last_365_days || 0).toLocaleString('ru-RU')} шт`,
+                extra: 'Учитываем приходы из заказов программы и рост остатка в прайсе',
+            },
+            {
+                key: 'own-consumption',
+                tone: 'amber',
+                title: 'Расход по остатку',
                 value: `${Number(analysis.sold_last_30_days || 0).toLocaleString('ru-RU')} шт`,
-                subtitle: 'Считается по снижению количества между снимками прайса',
-            },
-            {
-                key: 'own-90',
-                tone: 'amber',
-                title: 'Уменьшение остатков за 90 дней',
-                value: `${Number(analysis.sold_last_90_days || 0).toLocaleString('ru-RU')} шт`,
-                subtitle: 'Помогает понять темп ухода позиции в среднем горизонте',
-            },
-            {
-                key: 'own-365',
-                tone: 'slate',
-                title: 'Уменьшение остатков за 1 год',
-                value: `${Number(analysis.sold_last_365_days || 0).toLocaleString('ru-RU')} шт`,
-                subtitle: 'Полезно для оценки сезонности и общего спроса',
+                subtitle: `За 90 дней: ${Number(analysis.sold_last_90_days || 0).toLocaleString('ru-RU')} шт · за 1 год: ${Number(analysis.sold_last_365_days || 0).toLocaleString('ru-RU')} шт`,
+                extra: 'Считается уже после учёта приходов в каждом интервале',
             },
             {
                 key: 'own-days-left',
@@ -694,8 +689,8 @@ const AutopartOffers = () => {
                     ? `${analysis.estimated_days_left_30_days} дн`
                     : '—',
                 subtitle: analysis.average_daily_decrease_30_days != null
-                    ? `Среднее снижение: ${analysis.average_daily_decrease_30_days} шт/день за 30 дней`
-                    : 'Недостаточно движения за 30 дней для оценки',
+                    ? `Темп расхода: ${analysis.average_daily_decrease_30_days} шт/день за 30 дней`
+                    : 'Недостаточно данных за 30 дней для оценки',
             },
         ];
     }, [trackingInsights]);
@@ -2299,8 +2294,9 @@ const AutopartOffers = () => {
                                             Как быстро заканчивается по нашему прайсу
                                         </div>
                                         <div style={{ color: '#6b7280', marginBottom: 8 }}>
-                                            Это оценка по уменьшению остатков между снимками прайса.
-                                            Она показывает спрос, но не заменяет точный отчёт по реализациям.
+                                            Это расчёт по движению позиции: учитываем приходы из заказов
+                                            программы, а рост остатка между снимками прайса тоже принимаем
+                                            как приход для расчёта.
                                         </div>
                                         <Select
                                             value={selectedOwnPriceConfigId}
