@@ -4,9 +4,9 @@ import {
     Card,
     Form,
     Input,
-    InputNumber,
     Modal,
     Popconfirm,
+    Radio,
     Select,
     Space,
     Table,
@@ -93,7 +93,7 @@ const CrossesPage = () => {
     const openCreateModal = () => {
         setEditingRow(null);
         form.resetFields();
-        form.setFieldsValue({ priority: 100 });
+        form.setFieldsValue({ is_bidirectional: true });
         setModalOpen(true);
     };
 
@@ -115,7 +115,7 @@ const CrossesPage = () => {
             source_autopart_id: row.source_autopart_id,
             cross_brand_id: row.cross_brand_id,
             cross_oem_number: row.cross_oem_number,
-            priority: row.priority,
+            is_bidirectional: row.is_bidirectional !== false,
             comment: row.comment,
         });
         setModalOpen(true);
@@ -187,11 +187,19 @@ const CrossesPage = () => {
                 ),
             },
             {
-                title: 'Приоритет',
-                dataIndex: 'priority',
-                key: 'priority',
-                width: 110,
-                render: (value) => <Tag color="blue">{value}</Tag>,
+                title: 'Тип связи',
+                key: 'is_bidirectional',
+                width: 220,
+                render: (_, row) => (
+                    <Space size={4} wrap>
+                        <Tag color={row.is_bidirectional === false ? 'orange' : 'green'}>
+                            {row.is_bidirectional === false ? 'Односторонний' : 'Взаимный'}
+                        </Tag>
+                        {String(row.comment || '').includes('Автокросс') ? (
+                            <Tag>Автокросс</Tag>
+                        ) : null}
+                    </Space>
+                ),
             },
             {
                 title: 'Комментарий',
@@ -299,8 +307,15 @@ const CrossesPage = () => {
                     >
                         <Input placeholder="Например, 1002026E00" />
                     </Form.Item>
-                    <Form.Item name="priority" label="Приоритет">
-                        <InputNumber min={1} style={{ width: '100%' }} />
+                    <Form.Item
+                        name="is_bidirectional"
+                        label="Тип связи"
+                        initialValue={true}
+                    >
+                        <Radio.Group>
+                            <Radio value={true}>Взаимный</Radio>
+                            <Radio value={false}>Односторонний</Radio>
+                        </Radio.Group>
                     </Form.Item>
                     <Form.Item name="comment" label="Комментарий">
                         <Input.TextArea rows={3} />
