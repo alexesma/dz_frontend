@@ -353,6 +353,18 @@ const InsightTile = ({ tone = 'blue', title, value, subtitle, extra }) => (
     </div>
 );
 
+const ABC_MEANINGS = {
+    A: 'ключевая позиция по обороту',
+    B: 'средний вклад в оборот',
+    C: 'низкий вклад в оборот',
+};
+
+const XYZ_MEANINGS = {
+    X: 'спрос стабильный',
+    Y: 'спрос умеренно колеблется',
+    Z: 'спрос очень нерегулярный',
+};
+
 const TREND_LABELS = { up: '↑ растёт', down: '↓ снижается', stable: '→ стабильна' };
 const TREND_COLORS = { up: '#dc2626', down: '#16a34a', stable: '#6b7280' };
 
@@ -866,6 +878,29 @@ const AutopartOffers = () => {
                         cross_oem_number: crossItem?.oem_number,
                         comment: 'Подтверждено из поиска по сайту',
                     });
+                    setConfirmedCrosses((prev) => {
+                        const nextItems = Array.isArray(prev) ? [...prev] : [];
+                        if (
+                            nextItems.some(
+                                (item) =>
+                                    normalizeCrossKey(
+                                        item?.cross_brand_name,
+                                        item?.cross_oem_number
+                                    ) === crossItem.key
+                            )
+                        ) {
+                            return nextItems;
+                        }
+                        nextItems.unshift({
+                            id: `optimistic-confirmed:${crossItem.key}`,
+                            cross_brand_id: brandId,
+                            cross_brand_name: crossItem?.brand_name || null,
+                            cross_oem_number: crossItem?.oem_number || '',
+                            cross_autopart_id: targetAutopart?.id ?? null,
+                            comment: 'Подтверждено из поиска по сайту',
+                        });
+                        return nextItems;
+                    });
                     await fetchCrossStates(nomenclatureInfo.id);
                     if (currentOem) {
                         await fetchTrackingInsights({
@@ -930,16 +965,63 @@ const AutopartOffers = () => {
                                 item?.cross_oem_number
                             ) === crossItem.key
                     );
-                    const brandId = await resolveBrandIdByName(
-                        crossItem?.brand_name
-                    );
+                    let brandId = null;
+                    if (!crossItem?.autopart_id) {
+                        try {
+                            brandId = await resolveBrandIdByName(
+                                crossItem?.brand_name
+                            );
+                        } catch (brandError) {
+                            console.warn(
+                                'Reject site cross fallback to raw brand name:',
+                                brandError
+                            );
+                        }
+                    }
                     if (matchingConfirmedCross?.id) {
                         await deleteAutopartCross(matchingConfirmedCross.id);
                     }
                     await addAutopartInvalidCross(nomenclatureInfo.id, {
-                        invalid_brand_id: brandId,
-                        invalid_oem_number: crossItem?.oem_number,
+                        invalid_autopart_id: crossItem?.autopart_id ?? undefined,
+                        invalid_brand_id: brandId ?? undefined,
+                        invalid_brand_name:
+                            brandId == null
+                                ? crossItem?.brand_name || undefined
+                                : undefined,
+                        invalid_oem_number: crossItem?.oem_number || undefined,
                         comment: 'Исключено из поиска по сайту вручную',
+                    });
+                    setConfirmedCrosses((prev) =>
+                        (Array.isArray(prev) ? prev : []).filter(
+                            (item) =>
+                                normalizeCrossKey(
+                                    item?.cross_brand_name,
+                                    item?.cross_oem_number
+                                ) !== crossItem.key
+                        )
+                    );
+                    setInvalidCrosses((prev) => {
+                        const nextItems = Array.isArray(prev) ? [...prev] : [];
+                        if (
+                            nextItems.some(
+                                (item) =>
+                                    normalizeCrossKey(
+                                        item?.invalid_brand_name,
+                                        item?.invalid_oem_number
+                                    ) === crossItem.key
+                            )
+                        ) {
+                            return nextItems;
+                        }
+                        nextItems.unshift({
+                            id: `optimistic-invalid:${crossItem.key}`,
+                            invalid_brand_id: brandId,
+                            invalid_brand_name: crossItem?.brand_name || null,
+                            invalid_oem_number: crossItem?.oem_number || '',
+                            invalid_autopart_id: crossItem?.autopart_id ?? null,
+                            comment: 'Исключено из поиска по сайту вручную',
+                        });
+                        return nextItems;
                     });
                     const nextSiteOffersWithCrosses = siteOffersWithCrosses.filter(
                         (offer) =>
@@ -1196,18 +1278,29 @@ const AutopartOffers = () => {
         }
 
         if (trackingInsights.abc_xyz?.abc_class || trackingInsights.abc_xyz?.xyz_class) {
+            const abcClass = trackingInsights.abc_xyz?.abc_class || '—';
+            const xyzClass = trackingInsights.abc_xyz?.xyz_class || '—';
             tiles.push({
                 key: 'abcxyz',
                 tone: 'slate',
                 title: 'ABC / XYZ',
-                value: `${trackingInsights.abc_xyz?.abc_class || '—'} / ${trackingInsights.abc_xyz?.xyz_class || '—'}`,
-                subtitle: `Оборот за год: ${Number(trackingInsights.abc_xyz?.annual_ordered_qty || 0).toLocaleString('ru-RU')} шт · активных месяцев: ${trackingInsights.abc_xyz?.active_months || 0}`,
+                value: `${abcClass} / ${xyzClass}`,
+                subtitle: [
+                    abcClass !== '—' ? `${abcClass} = ${ABC_MEANINGS[abcClass] || ''}` : null,
+                    xyzClass !== '—' ? `${xyzClass} = ${XYZ_MEANINGS[xyzClass] || ''}` : null,
+                ]
+                    .filter(Boolean)
+                    .join(' · '),
                 extra: [
+                    `За год заказали ${Number(
+                        trackingInsights.abc_xyz?.annual_ordered_qty || 0
+                    ).toLocaleString('ru-RU')} шт`,
+                    `активных месяцев: ${trackingInsights.abc_xyz?.active_months || 0}`,
                     trackingInsights.abc_xyz?.monthly_cv != null
-                        ? `CV: ${trackingInsights.abc_xyz.monthly_cv}`
+                        ? `CV ${trackingInsights.abc_xyz.monthly_cv} = разброс спроса по месяцам`
                         : null,
                     trackingInsights.abc_xyz?.cumulative_share_pct != null
-                        ? `доля в накопленном ранге: ${trackingInsights.abc_xyz.cumulative_share_pct}%`
+                        ? `доля в общем ранге оборота: ${trackingInsights.abc_xyz.cumulative_share_pct}%`
                         : null,
                 ]
                     .filter(Boolean)
@@ -1323,28 +1416,6 @@ const AutopartOffers = () => {
         return null;
     }, [siteRequestError, siteResponseDiagnostics]);
 
-    const resolvedTrackingOems = useMemo(() => {
-        if (!trackingInsights) {
-            return [];
-        }
-        const raw = Array.isArray(trackingInsights.resolved_oem_numbers)
-            ? trackingInsights.resolved_oem_numbers
-            : [
-                trackingInsights.oem_number,
-                ...(trackingInsights.cross_oem_numbers || []),
-                ...(trackingInsights.site_cross_oem_numbers || []),
-            ];
-        const seen = new Set();
-        return raw.filter((item) => {
-            const value = String(item || '').trim().toUpperCase();
-            if (!value || seen.has(value)) {
-                return false;
-            }
-            seen.add(value);
-            return true;
-        });
-    }, [trackingInsights]);
-
     const ownPriceTiles = useMemo(() => {
         const analysis = trackingInsights?.own_price_analysis;
         if (!analysis) {
@@ -1440,11 +1511,21 @@ const AutopartOffers = () => {
             ? [...trackingInsights.supplier_stats]
             : [];
         return rows.sort((a, b) => {
-            const scoreDiff = Number(b?.score || 0) - Number(a?.score || 0);
-            if (scoreDiff !== 0) {
-                return scoreDiff;
+            const priceDiff =
+                Number(a?.current_price || 9_999_999) -
+                Number(b?.current_price || 9_999_999);
+            if (priceDiff !== 0) {
+                return priceDiff;
             }
-            return Number(a?.current_price || 9_999_999) - Number(b?.current_price || 9_999_999);
+            const fillDiff =
+                Number(b?.fill_rate || 0) - Number(a?.fill_rate || 0);
+            if (fillDiff !== 0) {
+                return fillDiff;
+            }
+            return (
+                Number(a?.effective_lead_days || 9_999) -
+                Number(b?.effective_lead_days || 9_999)
+            );
         });
     }, [trackingInsights?.supplier_stats]);
 
@@ -1463,15 +1544,6 @@ const AutopartOffers = () => {
                         </div>
                     </div>
                 ),
-            },
-            {
-                title: 'Счёт',
-                dataIndex: 'score',
-                width: 86,
-                render: (value) =>
-                    value != null ? (
-                        <strong>{Number(value).toFixed(1)}</strong>
-                    ) : '—',
             },
             {
                 title: 'Цена',
@@ -3355,9 +3427,11 @@ const AutopartOffers = () => {
                                                             loading={
                                                                 crossActionLoadingKey === `approve:${item.key}`
                                                             }
-                                                            onClick={() =>
-                                                                handleApproveSiteCross(item)
-                                                            }
+                                                            onClick={(event) => {
+                                                                event.preventDefault();
+                                                                event.stopPropagation();
+                                                                handleApproveSiteCross(item);
+                                                            }}
                                                         />
                                                     </Tooltip>
                                                 ) : null}
@@ -3371,9 +3445,11 @@ const AutopartOffers = () => {
                                                         loading={
                                                             crossActionLoadingKey === `reject:${item.key}`
                                                         }
-                                                        onClick={() =>
-                                                            handleRejectSiteCross(item)
-                                                        }
+                                                        onClick={(event) => {
+                                                            event.preventDefault();
+                                                            event.stopPropagation();
+                                                            handleRejectSiteCross(item);
+                                                        }}
                                                     />
                                                 </Tooltip>
                                             </>
@@ -3432,13 +3508,6 @@ const AutopartOffers = () => {
                                     и историю заказов через программу, чтобы быстрее понять,
                                     как лучше заказывать позицию прямо сейчас.
                                 </div>
-                                {resolvedTrackingOems.length ? (
-                                    <div style={{ color: '#64748b', fontSize: 12, marginTop: 4 }}>
-                                        История за год и аналитика посчитаны по{' '}
-                                        <strong>{resolvedTrackingOems.length}</strong>{' '}
-                                        OEM: {resolvedTrackingOems.join(', ')}
-                                    </div>
-                                ) : null}
                             </div>
 
                             {combinedInsightTiles.length ? (
@@ -3499,23 +3568,12 @@ const AutopartOffers = () => {
                                 const recommendationRows = [
                                     {
                                         key: 'recommended',
-                                        title: 'Рекомендуемый поставщик',
+                                        title: 'Лучший по цене для заказа',
                                         tone: INSIGHT_TONE_STYLES.green,
                                         row:
                                             trackingInsights?.recommended_supplier ||
+                                            trackingInsights?.best_supplier_by_price ||
                                             trackingInsights?.best_supplier,
-                                    },
-                                    {
-                                        key: 'price',
-                                        title: 'Лучший по цене',
-                                        tone: INSIGHT_TONE_STYLES.blue,
-                                        row: trackingInsights?.best_supplier_by_price,
-                                    },
-                                    {
-                                        key: 'lead',
-                                        title: 'Лучший по фактическому сроку',
-                                        tone: INSIGHT_TONE_STYLES.amber,
-                                        row: trackingInsights?.best_supplier_by_lead_time,
                                     },
                                 ].filter((item) => item.row);
 
@@ -3592,12 +3650,13 @@ const AutopartOffers = () => {
                                                         {row.effective_lead_days != null
                                                             ? ` · срок для расчёта: ${row.effective_lead_days} дн`
                                                             : ''}
-                                                        {row.score != null
-                                                            ? ` · score: ${row.score}`
-                                                            : ''}
                                                     </div>
-                                                    {key === 'recommended' &&
-                                                    row.current_autopart_id &&
+                                                    <div style={{ color: '#64748b', fontSize: 11 }}>
+                                                        Сначала берём минимальную цену.
+                                                        Если цены близки, выше ставим поставщика
+                                                        с лучшим исполнением заказов.
+                                                    </div>
+                                                    {row.current_autopart_id &&
                                                     row.current_price != null ? (
                                                         <Space>
                                                             <InputNumber
@@ -3717,9 +3776,20 @@ const AutopartOffers = () => {
                             {supplierScoreRows.length ? (
                                 <Card
                                     size="small"
-                                    title="Supplier scorecard для заказа"
+                                    title="Сравнение поставщиков для заказа"
                                     style={{ borderRadius: 10 }}
                                 >
+                                    <div
+                                        style={{
+                                            color: '#6b7280',
+                                            fontSize: 12,
+                                            marginBottom: 8,
+                                        }}
+                                    >
+                                        Здесь просто сравниваем поставщиков по понятным вещам:
+                                        текущая цена, наличие, фактический срок, исполнение
+                                        прошлых заказов и сколько раз уже заказывали у них.
+                                    </div>
                                     <Table
                                         rowKey={(row) =>
                                             `${row.provider_id || row.provider_name}:${row.current_provider_config_id || 'base'}`

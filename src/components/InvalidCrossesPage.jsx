@@ -103,15 +103,20 @@ const InvalidCrossesPage = () => {
                 label: `${row.source_brand_name || '—'} ${row.source_oem_number} · ${row.source_name || '—'}`,
             },
         ]);
-        setBrandOptions([
-            {
-                value: row.invalid_brand_id,
-                label: row.invalid_brand_name || '—',
-            },
-        ]);
+        setBrandOptions(
+            row.invalid_brand_id
+                ? [
+                      {
+                          value: row.invalid_brand_id,
+                          label: row.invalid_brand_name || '—',
+                      },
+                  ]
+                : []
+        );
         form.setFieldsValue({
             source_autopart_id: row.source_autopart_id,
             invalid_brand_id: row.invalid_brand_id,
+            invalid_brand_name: row.invalid_brand_id ? undefined : row.invalid_brand_name,
             invalid_oem_number: row.invalid_oem_number,
             comment: row.comment,
         });
@@ -121,11 +126,25 @@ const InvalidCrossesPage = () => {
     const handleSave = async (values) => {
         setSaving(true);
         try {
+            const brandId = values.invalid_brand_id ?? null;
+            const brandName = String(values.invalid_brand_name || '').trim();
+            if (!brandId && !brandName) {
+                message.warning(
+                    'Укажи бренд неверного кросса: выбери из справочника или введи вручную'
+                );
+                return;
+            }
             if (editingRow) {
-                await updateInvalidCross(editingRow.id, values);
+                await updateInvalidCross(editingRow.id, {
+                    ...values,
+                    invalid_brand_name: brandId ? undefined : brandName,
+                });
                 message.success('Неверный кросс обновлён');
             } else {
-                await createInvalidCross(values);
+                await createInvalidCross({
+                    ...values,
+                    invalid_brand_name: brandId ? undefined : brandName,
+                });
                 message.success('Неверный кросс добавлен');
             }
             setModalOpen(false);
@@ -279,15 +298,21 @@ const InvalidCrossesPage = () => {
                     <Form.Item
                         name="invalid_brand_id"
                         label="Бренд неверного кросса"
-                        rules={[{ required: true, message: 'Выберите бренд' }]}
                     >
                         <Select
+                            allowClear
                             showSearch
                             filterOption={false}
-                            placeholder="Начните вводить бренд"
+                            placeholder="Выбери бренд из справочника, если он уже есть"
                             options={brandOptions}
                             onSearch={loadBrandOptions}
                         />
+                    </Form.Item>
+                    <Form.Item
+                        name="invalid_brand_name"
+                        label="Или бренд вручную"
+                    >
+                        <Input placeholder="Например, HOT-PARTS" />
                     </Form.Item>
                     <Form.Item
                         name="invalid_oem_number"
