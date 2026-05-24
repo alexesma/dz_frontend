@@ -17,6 +17,7 @@ import {
     Spin,
     Tooltip,
     Modal,
+    Popconfirm,
 } from 'antd';
 import {
     CheckOutlined,
@@ -652,6 +653,65 @@ const AutopartOffers = () => {
         [currentOem, siteOffersWithCrosses]
     );
 
+    const bestSiteOfferForOrder = useMemo(() => {
+        const offers = [
+            ...(Array.isArray(siteExactOffers) ? siteExactOffers : []),
+            ...(Array.isArray(siteOffersWithCrosses) ? siteOffersWithCrosses : []),
+        ];
+        const dedupedOffers = new Map();
+
+        for (const offer of offers) {
+            const price = Number(offer?.price);
+            const quantity = Number(offer?.qnt ?? 0);
+            if (!Number.isFinite(price) || quantity <= 0) {
+                continue;
+            }
+            const key = buildCartKey('dragonzap', {
+                ...offer,
+                oem: offer?.oem || offer?.oem_number,
+            });
+            const existing = dedupedOffers.get(key);
+            const currentLead = Number(
+                offer?.min_delivery_day ??
+                    offer?.max_delivery_day ??
+                    Number.POSITIVE_INFINITY
+            );
+            const existingLead = existing
+                ? Number(
+                    existing?.min_delivery_day ??
+                        existing?.max_delivery_day ??
+                        Number.POSITIVE_INFINITY
+                )
+                : Number.POSITIVE_INFINITY;
+            if (
+                !existing ||
+                price < Number(existing?.price ?? Number.POSITIVE_INFINITY) ||
+                (price === Number(existing?.price) && currentLead < existingLead)
+            ) {
+                dedupedOffers.set(key, offer);
+            }
+        }
+
+        return Array.from(dedupedOffers.values()).sort((a, b) => {
+            const priceDiff =
+                Number(a?.price ?? Number.POSITIVE_INFINITY) -
+                Number(b?.price ?? Number.POSITIVE_INFINITY);
+            if (priceDiff !== 0) {
+                return priceDiff;
+            }
+            const aLead = Number(
+                a?.min_delivery_day ?? a?.max_delivery_day ?? Number.POSITIVE_INFINITY
+            );
+            const bLead = Number(
+                b?.min_delivery_day ?? b?.max_delivery_day ?? Number.POSITIVE_INFINITY
+            );
+            if (aLead !== bLead) {
+                return aLead - bLead;
+            }
+            return Number(b?.qnt ?? 0) - Number(a?.qnt ?? 0);
+        })[0] || null;
+    }, [siteExactOffers, siteOffersWithCrosses]);
+
     const summaryCrossItems = useMemo(() => {
         const itemsByKey = new Map();
 
@@ -846,90 +906,80 @@ const AutopartOffers = () => {
         return exactMatch || null;
     }, []);
 
-    const handleApproveSiteCross = useCallback((crossItem) => {
-        const sourceLabel = `${nomenclatureInfo?.brand || selectedBrand || '—'} ${currentOem || '—'}`.trim();
-        const targetLabel = `${crossItem?.brand_name || '—'} ${crossItem?.oem_number || '—'}`.trim();
-        Modal.confirm({
-            title: 'Подтвердить кросс',
-            content: `Подтверждаете кросс нашей позиции ${sourceLabel} и позиции ${targetLabel}?`,
-            okText: 'Подтвердить',
-            cancelText: 'Отмена',
-            onOk: async () => {
-                if (!nomenclatureInfo?.id) {
-                    message.warning('Сначала нужна позиция в номенклатуре');
-                    return;
+    const handleApproveSiteCross = useCallback(async (crossItem) => {
+        if (!nomenclatureInfo?.id) {
+            message.warning('Сначала нужна позиция в номенклатуре');
+            return;
+        }
+        const actionKey = `approve:${crossItem.key}`;
+        setCrossActionLoadingKey(actionKey);
+        try {
+            const targetAutopart =
+                crossItem?.autopart_id != null
+                    ? { id: crossItem.autopart_id }
+                    : await resolveAutopartByBrandAndOem(
+                          crossItem?.brand_name,
+                          crossItem?.oem_number
+                      );
+            const brandId = await resolveBrandIdByName(
+                crossItem?.brand_name
+            );
+            await addAutopartCross(nomenclatureInfo.id, {
+                cross_autopart_id: targetAutopart?.id ?? undefined,
+                cross_brand_id: brandId,
+                cross_oem_number: crossItem?.oem_number,
+                comment: 'Подтверждено из поиска по сайту',
+            });
+            setConfirmedCrosses((prev) => {
+                const nextItems = Array.isArray(prev) ? [...prev] : [];
+                if (
+                    nextItems.some(
+                        (item) =>
+                            normalizeCrossKey(
+                                item?.cross_brand_name,
+                                item?.cross_oem_number
+                            ) === crossItem.key
+                    )
+                ) {
+                    return nextItems;
                 }
-                const actionKey = `approve:${crossItem.key}`;
-                setCrossActionLoadingKey(actionKey);
-                try {
-                    const targetAutopart =
-                        crossItem?.autopart_id != null
-                            ? { id: crossItem.autopart_id }
-                            : await resolveAutopartByBrandAndOem(
-                                  crossItem?.brand_name,
-                                  crossItem?.oem_number
-                              );
-                    const brandId = await resolveBrandIdByName(
-                        crossItem?.brand_name
-                    );
-                    await addAutopartCross(nomenclatureInfo.id, {
-                        cross_autopart_id: targetAutopart?.id ?? undefined,
-                        cross_brand_id: brandId,
-                        cross_oem_number: crossItem?.oem_number,
-                        comment: 'Подтверждено из поиска по сайту',
-                    });
-                    setConfirmedCrosses((prev) => {
-                        const nextItems = Array.isArray(prev) ? [...prev] : [];
-                        if (
-                            nextItems.some(
-                                (item) =>
-                                    normalizeCrossKey(
-                                        item?.cross_brand_name,
-                                        item?.cross_oem_number
-                                    ) === crossItem.key
-                            )
-                        ) {
-                            return nextItems;
-                        }
-                        nextItems.unshift({
-                            id: `optimistic-confirmed:${crossItem.key}`,
-                            cross_brand_id: brandId,
-                            cross_brand_name: crossItem?.brand_name || null,
-                            cross_oem_number: crossItem?.oem_number || '',
-                            cross_autopart_id: targetAutopart?.id ?? null,
-                            comment: 'Подтверждено из поиска по сайту',
-                        });
-                        return nextItems;
-                    });
-                    await fetchCrossStates(nomenclatureInfo.id);
-                    if (currentOem) {
-                        await fetchTrackingInsights({
-                            oemValue: currentOem,
-                            brandValue:
-                                selectedBrand || nomenclatureInfo?.brand || '',
-                            extraOemNumbers: extractUniqueCrossOems(
-                                siteOffersWithCrosses,
-                                currentOem
-                            ),
-                        });
-                    }
-                    message.success(
-                        targetAutopart?.id
-                            ? 'Кросс добавлен в систему и привязан к позиции номенклатуры'
-                            : 'Кросс добавлен в систему без привязки к позиции номенклатуры'
-                    );
-                } catch (error) {
-                    console.error('Approve site cross error:', error);
-                    message.error(
-                        error?.response?.data?.detail ||
-                            error?.message ||
-                            'Не удалось сохранить кросс'
-                    );
-                } finally {
-                    setCrossActionLoadingKey('');
-                }
-            },
-        });
+                nextItems.unshift({
+                    id: `optimistic-confirmed:${crossItem.key}`,
+                    cross_brand_id: brandId,
+                    cross_brand_name: crossItem?.brand_name || null,
+                    cross_oem_number: crossItem?.oem_number || '',
+                    cross_autopart_id: targetAutopart?.id ?? null,
+                    comment: 'Подтверждено из поиска по сайту',
+                });
+                return nextItems;
+            });
+            await fetchCrossStates(nomenclatureInfo.id);
+            if (currentOem) {
+                await fetchTrackingInsights({
+                    oemValue: currentOem,
+                    brandValue:
+                        selectedBrand || nomenclatureInfo?.brand || '',
+                    extraOemNumbers: extractUniqueCrossOems(
+                        siteOffersWithCrosses,
+                        currentOem
+                    ),
+                });
+            }
+            message.success(
+                targetAutopart?.id
+                    ? 'Кросс добавлен в систему и привязан к позиции номенклатуры'
+                    : 'Кросс добавлен в систему без привязки к позиции номенклатуры'
+            );
+        } catch (error) {
+            console.error('Approve site cross error:', error);
+            message.error(
+                error?.response?.data?.detail ||
+                    error?.message ||
+                    'Не удалось сохранить кросс'
+            );
+        } finally {
+            setCrossActionLoadingKey('');
+        }
     }, [
         currentOem,
         fetchCrossStates,
@@ -941,126 +991,115 @@ const AutopartOffers = () => {
         siteOffersWithCrosses,
     ]);
 
-    const handleRejectSiteCross = useCallback((crossItem) => {
-        const sourceLabel = `${nomenclatureInfo?.brand || selectedBrand || '—'} ${currentOem || '—'}`.trim();
-        const targetLabel = `${crossItem?.brand_name || '—'} ${crossItem?.oem_number || '—'}`.trim();
-        Modal.confirm({
-            title: 'Исключить неверный кросс',
-            content: `Подтверждаете, что ${targetLabel} не является кроссом для позиции ${sourceLabel}?`,
-            okText: 'Исключить',
-            cancelText: 'Отмена',
-            okButtonProps: { danger: true },
-            onOk: async () => {
-                if (!nomenclatureInfo?.id) {
-                    message.warning('Сначала нужна позиция в номенклатуре');
-                    return;
-                }
-                const actionKey = `reject:${crossItem.key}`;
-                setCrossActionLoadingKey(actionKey);
+    const handleRejectSiteCross = useCallback(async (crossItem) => {
+        if (!nomenclatureInfo?.id) {
+            message.warning('Сначала нужна позиция в номенклатуре');
+            return;
+        }
+        const actionKey = `reject:${crossItem.key}`;
+        setCrossActionLoadingKey(actionKey);
+        try {
+            const matchingConfirmedCross = (confirmedCrosses || []).find(
+                (item) =>
+                    normalizeCrossKey(
+                        item?.cross_brand_name,
+                        item?.cross_oem_number
+                    ) === crossItem.key
+            );
+            let brandId = null;
+            if (!crossItem?.autopart_id) {
                 try {
-                    const matchingConfirmedCross = (confirmedCrosses || []).find(
+                    brandId = await resolveBrandIdByName(
+                        crossItem?.brand_name
+                    );
+                } catch (brandError) {
+                    console.warn(
+                        'Reject site cross fallback to raw brand name:',
+                        brandError
+                    );
+                }
+            }
+            if (matchingConfirmedCross?.id) {
+                await deleteAutopartCross(matchingConfirmedCross.id);
+            }
+            await addAutopartInvalidCross(nomenclatureInfo.id, {
+                invalid_autopart_id: crossItem?.autopart_id ?? undefined,
+                invalid_brand_id: brandId ?? undefined,
+                invalid_brand_name:
+                    brandId == null
+                        ? crossItem?.brand_name || undefined
+                        : undefined,
+                invalid_oem_number: crossItem?.oem_number || undefined,
+                comment: 'Исключено из поиска по сайту вручную',
+            });
+            setConfirmedCrosses((prev) =>
+                (Array.isArray(prev) ? prev : []).filter(
+                    (item) =>
+                        normalizeCrossKey(
+                            item?.cross_brand_name,
+                            item?.cross_oem_number
+                        ) !== crossItem.key
+                )
+            );
+            setInvalidCrosses((prev) => {
+                const nextItems = Array.isArray(prev) ? [...prev] : [];
+                if (
+                    nextItems.some(
                         (item) =>
                             normalizeCrossKey(
-                                item?.cross_brand_name,
-                                item?.cross_oem_number
+                                item?.invalid_brand_name,
+                                item?.invalid_oem_number
                             ) === crossItem.key
-                    );
-                    let brandId = null;
-                    if (!crossItem?.autopart_id) {
-                        try {
-                            brandId = await resolveBrandIdByName(
-                                crossItem?.brand_name
-                            );
-                        } catch (brandError) {
-                            console.warn(
-                                'Reject site cross fallback to raw brand name:',
-                                brandError
-                            );
-                        }
-                    }
-                    if (matchingConfirmedCross?.id) {
-                        await deleteAutopartCross(matchingConfirmedCross.id);
-                    }
-                    await addAutopartInvalidCross(nomenclatureInfo.id, {
-                        invalid_autopart_id: crossItem?.autopart_id ?? undefined,
-                        invalid_brand_id: brandId ?? undefined,
-                        invalid_brand_name:
-                            brandId == null
-                                ? crossItem?.brand_name || undefined
-                                : undefined,
-                        invalid_oem_number: crossItem?.oem_number || undefined,
-                        comment: 'Исключено из поиска по сайту вручную',
-                    });
-                    setConfirmedCrosses((prev) =>
-                        (Array.isArray(prev) ? prev : []).filter(
-                            (item) =>
-                                normalizeCrossKey(
-                                    item?.cross_brand_name,
-                                    item?.cross_oem_number
-                                ) !== crossItem.key
-                        )
-                    );
-                    setInvalidCrosses((prev) => {
-                        const nextItems = Array.isArray(prev) ? [...prev] : [];
-                        if (
-                            nextItems.some(
-                                (item) =>
-                                    normalizeCrossKey(
-                                        item?.invalid_brand_name,
-                                        item?.invalid_oem_number
-                                    ) === crossItem.key
-                            )
-                        ) {
-                            return nextItems;
-                        }
-                        nextItems.unshift({
-                            id: `optimistic-invalid:${crossItem.key}`,
-                            invalid_brand_id: brandId,
-                            invalid_brand_name: crossItem?.brand_name || null,
-                            invalid_oem_number: crossItem?.oem_number || '',
-                            invalid_autopart_id: crossItem?.autopart_id ?? null,
-                            comment: 'Исключено из поиска по сайту вручную',
-                        });
-                        return nextItems;
-                    });
-                    const nextSiteOffersWithCrosses = siteOffersWithCrosses.filter(
-                        (offer) =>
-                            normalizeCrossKey(
-                                offer?.make_name || offer?.brand_name,
-                                offer?.oem || offer?.oem_number
-                            ) !== crossItem.key
-                    );
-                    setSiteOffersWithCrosses(nextSiteOffersWithCrosses);
-                    await fetchCrossStates(nomenclatureInfo.id);
-                    if (currentOem) {
-                        await fetchTrackingInsights({
-                            oemValue: currentOem,
-                            brandValue:
-                                selectedBrand || nomenclatureInfo?.brand || '',
-                            extraOemNumbers: extractUniqueCrossOems(
-                                nextSiteOffersWithCrosses,
-                                currentOem
-                            ),
-                        });
-                    }
-                    message.success('Кросс исключён из выборки');
-                } catch (error) {
-                    console.error('Reject site cross error:', error);
-                    if (error?.response?.status === 409) {
-                        await fetchCrossStates(nomenclatureInfo.id);
-                        message.success('Кросс уже был исключён ранее');
-                        return;
-                    }
-                    message.error(
-                        error?.response?.data?.detail ||
-                            error?.message ||
-                            'Не удалось исключить кросс'
-                    );
-                } finally {
-                    setCrossActionLoadingKey('');
+                    )
+                ) {
+                    return nextItems;
                 }
-            },
-        });
+                nextItems.unshift({
+                    id: `optimistic-invalid:${crossItem.key}`,
+                    invalid_brand_id: brandId,
+                    invalid_brand_name: crossItem?.brand_name || null,
+                    invalid_oem_number: crossItem?.oem_number || '',
+                    invalid_autopart_id: crossItem?.autopart_id ?? null,
+                    comment: 'Исключено из поиска по сайту вручную',
+                });
+                return nextItems;
+            });
+            const nextSiteOffersWithCrosses = siteOffersWithCrosses.filter(
+                (offer) =>
+                    normalizeCrossKey(
+                        offer?.make_name || offer?.brand_name,
+                        offer?.oem || offer?.oem_number
+                    ) !== crossItem.key
+            );
+            setSiteOffersWithCrosses(nextSiteOffersWithCrosses);
+            await fetchCrossStates(nomenclatureInfo.id);
+            if (currentOem) {
+                await fetchTrackingInsights({
+                    oemValue: currentOem,
+                    brandValue:
+                        selectedBrand || nomenclatureInfo?.brand || '',
+                    extraOemNumbers: extractUniqueCrossOems(
+                        nextSiteOffersWithCrosses,
+                        currentOem
+                    ),
+                });
+            }
+            message.success('Кросс исключён из выборки');
+        } catch (error) {
+            console.error('Reject site cross error:', error);
+            if (error?.response?.status === 409) {
+                await fetchCrossStates(nomenclatureInfo.id);
+                message.success('Кросс уже был исключён ранее');
+                return;
+            }
+            message.error(
+                error?.response?.data?.detail ||
+                    error?.message ||
+                    'Не удалось исключить кросс'
+            );
+        } finally {
+            setCrossActionLoadingKey('');
+        }
     }, [
         currentOem,
         fetchCrossStates,
@@ -3418,40 +3457,55 @@ const AutopartOffers = () => {
                                             <>
                                                 {item.isSiteSuggested &&
                                                 !item.isConfirmed ? (
-                                                    <Tooltip title="Подтвердить кросс и сохранить в систему">
+                                                    <Popconfirm
+                                                        title="Подтвердить кросс"
+                                                        description={`Подтверждаете кросс нашей позиции ${(nomenclatureInfo?.brand || selectedBrand || '—').trim()} ${(currentOem || '—').trim()} и позиции ${item.brand_name || '—'} ${item.oem_number || '—'}?`}
+                                                        okText="Подтвердить"
+                                                        cancelText="Отмена"
+                                                        onConfirm={() => handleApproveSiteCross(item)}
+                                                        okButtonProps={{
+                                                            loading:
+                                                                crossActionLoadingKey === `approve:${item.key}`,
+                                                        }}
+                                                    >
+                                                        <Tooltip title="Подтвердить кросс и сохранить в систему">
+                                                            <Button
+                                                                type="text"
+                                                                size="small"
+                                                                shape="circle"
+                                                                icon={<CheckOutlined />}
+                                                                loading={
+                                                                    crossActionLoadingKey === `approve:${item.key}`
+                                                                }
+                                                            />
+                                                        </Tooltip>
+                                                    </Popconfirm>
+                                                ) : null}
+                                                <Popconfirm
+                                                    title="Исключить неверный кросс"
+                                                    description={`Подтверждаете, что ${item.brand_name || '—'} ${item.oem_number || '—'} не является кроссом для позиции ${(nomenclatureInfo?.brand || selectedBrand || '—').trim()} ${(currentOem || '—').trim()}?`}
+                                                    okText="Исключить"
+                                                    cancelText="Отмена"
+                                                    okButtonProps={{
+                                                        danger: true,
+                                                        loading:
+                                                            crossActionLoadingKey === `reject:${item.key}`,
+                                                    }}
+                                                    onConfirm={() => handleRejectSiteCross(item)}
+                                                >
+                                                    <Tooltip title="Пометить как неверный кросс">
                                                         <Button
+                                                            danger
                                                             type="text"
                                                             size="small"
                                                             shape="circle"
-                                                            icon={<CheckOutlined />}
+                                                            icon={<CloseOutlined />}
                                                             loading={
-                                                                crossActionLoadingKey === `approve:${item.key}`
+                                                                crossActionLoadingKey === `reject:${item.key}`
                                                             }
-                                                            onClick={(event) => {
-                                                                event.preventDefault();
-                                                                event.stopPropagation();
-                                                                handleApproveSiteCross(item);
-                                                            }}
                                                         />
                                                     </Tooltip>
-                                                ) : null}
-                                                <Tooltip title="Пометить как неверный кросс">
-                                                    <Button
-                                                        danger
-                                                        type="text"
-                                                        size="small"
-                                                        shape="circle"
-                                                        icon={<CloseOutlined />}
-                                                        loading={
-                                                            crossActionLoadingKey === `reject:${item.key}`
-                                                        }
-                                                        onClick={(event) => {
-                                                            event.preventDefault();
-                                                            event.stopPropagation();
-                                                            handleRejectSiteCross(item);
-                                                        }}
-                                                    />
-                                                </Tooltip>
+                                                </Popconfirm>
                                             </>
                                         ) : null}
                                     </div>
@@ -3570,10 +3624,7 @@ const AutopartOffers = () => {
                                         key: 'recommended',
                                         title: 'Лучший по цене для заказа',
                                         tone: INSIGHT_TONE_STYLES.green,
-                                        row:
-                                            trackingInsights?.recommended_supplier ||
-                                            trackingInsights?.best_supplier_by_price ||
-                                            trackingInsights?.best_supplier,
+                                        row: bestSiteOfferForOrder,
                                     },
                                 ].filter((item) => item.row);
 
@@ -3592,9 +3643,19 @@ const AutopartOffers = () => {
                                     >
                                         {recommendationRows.map(({ key, title, tone, row }) => {
                                             const deliveryStr = formatInsightDelivery(
-                                                row.current_min_delivery,
-                                                row.current_max_delivery
+                                                row.min_delivery_day,
+                                                row.max_delivery_day
                                             );
+                                            const rowOem = row.oem || row.oem_number || currentOem;
+                                            const rowBrand =
+                                                row.make_name || row.brand_name || '—';
+                                            const rowQty = Number(row.qnt ?? 0);
+                                            const rowSupplier =
+                                                normalizeSupplierName(
+                                                    row.supplier_name ||
+                                                        row.sup_logo ||
+                                                        row.provider_name
+                                                ) || 'Dragonzap';
                                             return (
                                                 <div
                                                     key={key}
@@ -3625,43 +3686,36 @@ const AutopartOffers = () => {
                                                             fontWeight: 800,
                                                         }}
                                                     >
-                                                        {row.provider_name || '—'}
+                                                        {rowSupplier}
                                                     </div>
                                                     <div style={{ color: '#334155', fontSize: 12 }}>
-                                                        {row.current_brand_name && row.current_oem_number
-                                                            ? `${row.current_brand_name} ${row.current_oem_number}`
-                                                            : row.current_oem_number || '—'}
+                                                        {`${rowBrand} ${rowOem || '—'}`}
                                                     </div>
                                                     <div style={{ color: '#334155', fontSize: 12 }}>
-                                                        {row.current_price != null
-                                                            ? `${formatInsightMoney(row.current_price)} руб.`
+                                                        {row.price != null
+                                                            ? `${formatInsightMoney(row.price)} руб.`
                                                             : 'Цена: —'}
-                                                        {row.current_qty != null
-                                                            ? ` · ${row.current_qty} шт`
+                                                        {rowQty > 0
+                                                            ? ` · ${rowQty} шт`
                                                             : ''}
                                                         {deliveryStr !== 'срок не указан'
                                                             ? ` · ${deliveryStr}`
                                                             : ''}
                                                     </div>
                                                     <div style={{ color: '#64748b', fontSize: 11 }}>
-                                                        {row.fill_rate != null
-                                                            ? `Исполнение: ${row.fill_rate}%`
-                                                            : 'Исполнение: нет истории'}
-                                                        {row.effective_lead_days != null
-                                                            ? ` · срок для расчёта: ${row.effective_lead_days} дн`
-                                                            : ''}
+                                                        Dragonzap · этот блок сейчас выбирает
+                                                        только минимальную цену по сайту
                                                     </div>
                                                     <div style={{ color: '#64748b', fontSize: 11 }}>
-                                                        Сначала берём минимальную цену.
-                                                        Если цены близки, выше ставим поставщика
-                                                        с лучшим исполнением заказов.
+                                                        {rowOem && rowOem !== normalizedCurrentOem
+                                                            ? `Сработал кросс: ${rowOem}`
+                                                            : 'Лучшее предложение по текущему OEM на сайте'}
                                                     </div>
-                                                    {row.current_autopart_id &&
-                                                    row.current_price != null ? (
+                                                    {row.price != null ? (
                                                         <Space>
                                                             <InputNumber
                                                                 min={1}
-                                                                max={row.current_qty > 0 ? row.current_qty : undefined}
+                                                                max={rowQty > 0 ? rowQty : undefined}
                                                                 value={bestSupplierQty}
                                                                 size="small"
                                                                 style={{ width: 70 }}
@@ -3672,29 +3726,12 @@ const AutopartOffers = () => {
                                                                 size="small"
                                                                 icon={<ShoppingCartOutlined />}
                                                                 onClick={() => {
-                                                                    addLocalOfferToCart({
-                                                                        autopart_id: row.current_autopart_id,
-                                                                        provider_id: row.provider_id,
-                                                                        provider_name: row.provider_name,
-                                                                        provider_config_id: row.current_provider_config_id,
-                                                                        provider_config_name: row.current_provider_config_name,
-                                                                        oem_number: row.current_oem_number || currentOem,
-                                                                        brand_name: row.current_brand_name,
-                                                                        name: row.current_autopart_name,
-                                                                        price: row.current_price,
-                                                                        quantity: row.current_qty,
-                                                                        min_delivery_day: row.current_min_delivery,
-                                                                        max_delivery_day: row.current_max_delivery,
-                                                                        is_own_price: row.is_own_price,
-                                                                    });
+                                                                    addDragonzapOfferToCart(row);
                                                                     if (bestSupplierQty > 1) {
-                                                                        const cartKey = [
-                                                                            'supplier',
-                                                                            row.provider_id,
-                                                                            row.current_provider_config_id || 'base',
-                                                                            row.current_autopart_id,
-                                                                            row.current_oem_number || currentOem,
-                                                                        ].join(':');
+                                                                        const cartKey = buildCartKey(
+                                                                            'dragonzap',
+                                                                            row
+                                                                        );
                                                                         updateCartQty(cartKey, bestSupplierQty);
                                                                     }
                                                                 }}
