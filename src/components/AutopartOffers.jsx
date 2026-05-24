@@ -34,6 +34,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
     addAutopartCross,
     addAutopartInvalidCross,
+    deleteAutopartCross,
     getAutopartCrosses,
     getAutopartInvalidCrosses,
     getAutopartOffers,
@@ -884,9 +885,19 @@ const AutopartOffers = () => {
                 const actionKey = `reject:${crossItem.key}`;
                 setCrossActionLoadingKey(actionKey);
                 try {
+                    const matchingConfirmedCross = (confirmedCrosses || []).find(
+                        (item) =>
+                            normalizeCrossKey(
+                                item?.cross_brand_name,
+                                item?.cross_oem_number
+                            ) === crossItem.key
+                    );
                     const brandId = await resolveBrandIdByName(
                         crossItem?.brand_name
                     );
+                    if (matchingConfirmedCross?.id) {
+                        await deleteAutopartCross(matchingConfirmedCross.id);
+                    }
                     await addAutopartInvalidCross(nomenclatureInfo.id, {
                         invalid_brand_id: brandId,
                         invalid_oem_number: crossItem?.oem_number,
@@ -912,9 +923,14 @@ const AutopartOffers = () => {
                             ),
                         });
                     }
-                    message.success('Неверный кросс исключён');
+                    message.success('Кросс исключён из выборки');
                 } catch (error) {
                     console.error('Reject site cross error:', error);
+                    if (error?.response?.status === 409) {
+                        await fetchCrossStates(nomenclatureInfo.id);
+                        message.success('Кросс уже был исключён ранее');
+                        return;
+                    }
                     message.error(
                         error?.response?.data?.detail ||
                             error?.message ||
@@ -932,6 +948,7 @@ const AutopartOffers = () => {
         nomenclatureInfo,
         resolveBrandIdByName,
         selectedBrand,
+        confirmedCrosses,
         siteOffersWithCrosses,
     ]);
 
@@ -3137,25 +3154,26 @@ const AutopartOffers = () => {
                                                 исключён
                                             </Tag>
                                         ) : null}
-                                        {item.isSiteSuggested &&
-                                        nomenclatureInfo?.in_nomenclature &&
-                                        !item.isConfirmed &&
+                                        {nomenclatureInfo?.in_nomenclature &&
                                         !item.isInvalid ? (
                                             <>
-                                                <Tooltip title="Подтвердить кросс и сохранить в систему">
-                                                    <Button
-                                                        type="text"
-                                                        size="small"
-                                                        shape="circle"
-                                                        icon={<CheckOutlined />}
-                                                        loading={
-                                                            crossActionLoadingKey === `approve:${item.key}`
-                                                        }
-                                                        onClick={() =>
-                                                            handleApproveSiteCross(item)
-                                                        }
-                                                    />
-                                                </Tooltip>
+                                                {item.isSiteSuggested &&
+                                                !item.isConfirmed ? (
+                                                    <Tooltip title="Подтвердить кросс и сохранить в систему">
+                                                        <Button
+                                                            type="text"
+                                                            size="small"
+                                                            shape="circle"
+                                                            icon={<CheckOutlined />}
+                                                            loading={
+                                                                crossActionLoadingKey === `approve:${item.key}`
+                                                            }
+                                                            onClick={() =>
+                                                                handleApproveSiteCross(item)
+                                                            }
+                                                        />
+                                                    </Tooltip>
+                                                ) : null}
                                                 <Tooltip title="Пометить как неверный кросс">
                                                     <Button
                                                         danger
@@ -3196,9 +3214,9 @@ const AutopartOffers = () => {
                                     </Button>
                                 ) : null}
                             </div>
-                            {siteCrossItems.length && !nomenclatureInfo?.in_nomenclature ? (
+                            {summaryCrossItems.length && !nomenclatureInfo?.in_nomenclature ? (
                                 <div style={{ color: '#64748b', fontSize: 12, marginTop: 6 }}>
-                                    Чтобы подтверждать или исключать кроссы с сайта, позиция должна быть в номенклатуре.
+                                    Чтобы подтверждать или исключать кроссы, позиция должна быть в номенклатуре.
                                 </div>
                             ) : null}
                         </div>
