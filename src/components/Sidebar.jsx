@@ -54,6 +54,7 @@ const Sidebar = () => {
     const selectedKey = (() => {
         const path = location.pathname;
         if (path.startsWith('/restock')) return '2';
+        if (path.startsWith('/orders/exceptions')) return 'orders-exceptions';
         if (path.startsWith('/orders/tracking')) return 'orders-tracking';
         if (path.startsWith('/orders')) return '3';
         if (path.startsWith('/customer-orders/suppliers')) return 'customer-supplier-orders';
@@ -211,6 +212,9 @@ const Sidebar = () => {
                 </Menu.Item>
                 <Menu.Item key="orders-tracking" icon={<SendOutlined />}>
                     <Link to="/orders/tracking">Отслеживание наших заказов</Link>
+                </Menu.Item>
+                <Menu.Item key="orders-exceptions" icon={<AuditOutlined />}>
+                    <Link to="/orders/exceptions">Очередь исключений</Link>
                 </Menu.Item>
                 <Menu.Item
                     key="autopart-price-history"

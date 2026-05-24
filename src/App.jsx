@@ -20,6 +20,7 @@ import InvalidCrossesPage from './components/InvalidCrossesPage';
 import NomenclaturePage from './components/NomenclaturePage';
 import PriceHistoryPlot from './components/PriceHistoryPlot';
 import OrdersTrackingPage from './components/OrdersTrackingPage';
+import OrderExceptionsQueuePage from './components/OrderExceptionsQueuePage';
 import StockOrdersPage from './components/StockOrdersPage';
 import SupplierReceiptsPage from './components/SupplierReceiptsPage';
 import IncomingSupplierDocumentsPage from './components/IncomingSupplierDocumentsPage';
@@ -97,6 +98,7 @@ const AppRoutes = () => (
         <Route path="/restock" element={<RequireAuth><RestockOffers /></RequireAuth>} />
         <Route path="/orders" element={<RequireAuth><OrdersList /></RequireAuth>} />
         <Route path="/orders/tracking" element={<RequireAuth><OrdersTrackingPage /></RequireAuth>} />
+        <Route path="/orders/exceptions" element={<RequireAuth><OrderExceptionsQueuePage /></RequireAuth>} />
         <Route path="/customer-orders" element={<RequireAuth><CustomerOrdersPage /></RequireAuth>} />
         <Route path="/customer-orders/:orderId" element={<RequireAuth><CustomerOrderDetailPage /></RequireAuth>} />
         <Route path="/customer-orders/stock" element={<RequireAuth><StockOrdersPage /></RequireAuth>} />

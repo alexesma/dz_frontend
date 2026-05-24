@@ -522,6 +522,7 @@ const AutopartOffers = () => {
     const [remoteLoading, setRemoteLoading] = useState(false);
     const [cartSubmitting, setCartSubmitting] = useState(false);
     const [bestSupplierQty, setBestSupplierQty] = useState(1);
+    const [draftOrderQty, setDraftOrderQty] = useState(1);
     const [remoteMeta, setRemoteMeta] = useState({ total: 0 });
     const [showCrosses, setShowCrosses] = useState(false);
     const [partialSearch, setPartialSearch] = useState(false);
@@ -790,6 +791,13 @@ const AutopartOffers = () => {
         setShowAllSummaryCrosses(false);
     }, [currentOem]);
 
+    useEffect(() => {
+        const nextQty = Number(
+            trackingInsights?.draft_purchase_order?.recommended_qty || 1
+        );
+        setDraftOrderQty(nextQty > 0 ? nextQty : 1);
+    }, [trackingInsights?.draft_purchase_order?.recommended_qty]);
+
     const resolveBrandIdByName = useCallback(async (brandName) => {
         const normalizedBrandName = String(brandName || '').trim();
         if (!normalizedBrandName) {
@@ -809,6 +817,23 @@ const AutopartOffers = () => {
         return exactMatch.id;
     }, []);
 
+    const resolveAutopartByBrandAndOem = useCallback(async (brandName, oemNumber) => {
+        const normalizedBrandName = String(brandName || '').trim().toUpperCase();
+        const normalizedOemNumber = String(oemNumber || '').trim().toUpperCase();
+        if (!normalizedBrandName || !normalizedOemNumber) {
+            return null;
+        }
+        const { data } = await searchAutopartsByOem(normalizedOemNumber, 50);
+        const exactMatch = (data || []).find((item) => {
+            const itemBrand = String(
+                item?.brand_name || item?.brand || ''
+            ).trim().toUpperCase();
+            const itemOem = String(item?.oem_number || '').trim().toUpperCase();
+            return itemBrand === normalizedBrandName && itemOem === normalizedOemNumber;
+        });
+        return exactMatch || null;
+    }, []);
+
     const handleApproveSiteCross = useCallback((crossItem) => {
         const sourceLabel = `${nomenclatureInfo?.brand || selectedBrand || '—'} ${currentOem || '—'}`.trim();
         const targetLabel = `${crossItem?.brand_name || '—'} ${crossItem?.oem_number || '—'}`.trim();
@@ -825,10 +850,18 @@ const AutopartOffers = () => {
                 const actionKey = `approve:${crossItem.key}`;
                 setCrossActionLoadingKey(actionKey);
                 try {
+                    const targetAutopart =
+                        crossItem?.autopart_id != null
+                            ? { id: crossItem.autopart_id }
+                            : await resolveAutopartByBrandAndOem(
+                                  crossItem?.brand_name,
+                                  crossItem?.oem_number
+                              );
                     const brandId = await resolveBrandIdByName(
                         crossItem?.brand_name
                     );
                     await addAutopartCross(nomenclatureInfo.id, {
+                        cross_autopart_id: targetAutopart?.id ?? undefined,
                         cross_brand_id: brandId,
                         cross_oem_number: crossItem?.oem_number,
                         comment: 'Подтверждено из поиска по сайту',
@@ -845,7 +878,11 @@ const AutopartOffers = () => {
                             ),
                         });
                     }
-                    message.success('Кросс добавлен в систему');
+                    message.success(
+                        targetAutopart?.id
+                            ? 'Кросс добавлен в систему и привязан к позиции номенклатуры'
+                            : 'Кросс добавлен в систему без привязки к позиции номенклатуры'
+                    );
                 } catch (error) {
                     console.error('Approve site cross error:', error);
                     message.error(
@@ -863,6 +900,7 @@ const AutopartOffers = () => {
         fetchCrossStates,
         fetchTrackingInsights,
         nomenclatureInfo,
+        resolveAutopartByBrandAndOem,
         resolveBrandIdByName,
         selectedBrand,
         siteOffersWithCrosses,
@@ -1157,6 +1195,26 @@ const AutopartOffers = () => {
             });
         }
 
+        if (trackingInsights.abc_xyz?.abc_class || trackingInsights.abc_xyz?.xyz_class) {
+            tiles.push({
+                key: 'abcxyz',
+                tone: 'slate',
+                title: 'ABC / XYZ',
+                value: `${trackingInsights.abc_xyz?.abc_class || '—'} / ${trackingInsights.abc_xyz?.xyz_class || '—'}`,
+                subtitle: `Оборот за год: ${Number(trackingInsights.abc_xyz?.annual_ordered_qty || 0).toLocaleString('ru-RU')} шт · активных месяцев: ${trackingInsights.abc_xyz?.active_months || 0}`,
+                extra: [
+                    trackingInsights.abc_xyz?.monthly_cv != null
+                        ? `CV: ${trackingInsights.abc_xyz.monthly_cv}`
+                        : null,
+                    trackingInsights.abc_xyz?.cumulative_share_pct != null
+                        ? `доля в накопленном ранге: ${trackingInsights.abc_xyz.cumulative_share_pct}%`
+                        : null,
+                ]
+                    .filter(Boolean)
+                    .join(' · '),
+            });
+        }
+
         return tiles;
     }, [
         normalizedCurrentOem,
@@ -1375,6 +1433,84 @@ const AutopartOffers = () => {
     const combinedInsightTiles = useMemo(
         () => [...insightTiles, ...ownPriceTiles],
         [insightTiles, ownPriceTiles]
+    );
+
+    const supplierScoreRows = useMemo(() => {
+        const rows = Array.isArray(trackingInsights?.supplier_stats)
+            ? [...trackingInsights.supplier_stats]
+            : [];
+        return rows.sort((a, b) => {
+            const scoreDiff = Number(b?.score || 0) - Number(a?.score || 0);
+            if (scoreDiff !== 0) {
+                return scoreDiff;
+            }
+            return Number(a?.current_price || 9_999_999) - Number(b?.current_price || 9_999_999);
+        });
+    }, [trackingInsights?.supplier_stats]);
+
+    const supplierScoreColumns = useMemo(
+        () => [
+            {
+                title: 'Поставщик',
+                key: 'provider',
+                render: (_, row) => (
+                    <div>
+                        <div style={{ fontWeight: 600 }}>{row.provider_name || '—'}</div>
+                        <div style={{ color: '#64748b', fontSize: 12 }}>
+                            {row.current_brand_name && row.current_oem_number
+                                ? `${row.current_brand_name} ${row.current_oem_number}`
+                                : row.current_oem_number || '—'}
+                        </div>
+                    </div>
+                ),
+            },
+            {
+                title: 'Счёт',
+                dataIndex: 'score',
+                width: 86,
+                render: (value) =>
+                    value != null ? (
+                        <strong>{Number(value).toFixed(1)}</strong>
+                    ) : '—',
+            },
+            {
+                title: 'Цена',
+                dataIndex: 'current_price',
+                width: 110,
+                render: (value) =>
+                    value != null ? `${formatInsightMoney(value)}` : '—',
+            },
+            {
+                title: 'Наличие',
+                dataIndex: 'current_qty',
+                width: 90,
+                render: (value) =>
+                    value != null ? `${Number(value).toLocaleString('ru-RU')} шт` : '—',
+            },
+            {
+                title: 'Факт. срок',
+                key: 'lead',
+                width: 110,
+                render: (_, row) =>
+                    row.avg_lead_days != null
+                        ? `${row.avg_lead_days} дн`
+                        : row.effective_lead_days != null
+                            ? `~${row.effective_lead_days} дн`
+                            : '—',
+            },
+            {
+                title: 'Исполнение',
+                dataIndex: 'fill_rate',
+                width: 100,
+                render: (value) => (value != null ? `${value}%` : '—'),
+            },
+            {
+                title: 'Заказов',
+                dataIndex: 'order_count',
+                width: 90,
+            },
+        ],
+        []
     );
 
     const oemOptions = useMemo(() => {
@@ -2314,6 +2450,57 @@ const AutopartOffers = () => {
             minQty: null,
             maxDelivery: null,
         });
+    };
+
+    const handleCreateAutoDraftOrder = async (sendNow = false) => {
+        const draft = trackingInsights?.draft_purchase_order;
+        if (!draft?.provider_id || !draft?.oem_number) {
+            message.warning('Для позиции пока нет готового черновика закупки');
+            return;
+        }
+
+        const quantity = clampQty(
+            draftOrderQty,
+            Number.MAX_SAFE_INTEGER
+        );
+        if (quantity <= 0) {
+            message.warning('Количество для черновика должно быть больше нуля');
+            return;
+        }
+
+        setCartSubmitting(true);
+        try {
+            const { data } = await createManualSupplierOrder({
+                provider_id: Number(draft.provider_id),
+                items: [
+                    {
+                        autopart_id: draft.autopart_id,
+                        oem: draft.oem_number,
+                        brand: draft.brand_name || '',
+                        name: draft.autopart_name,
+                        quantity,
+                        price: draft.price != null ? Number(draft.price) : null,
+                        min_delivery_day: trackingInsights?.recommended_supplier?.current_min_delivery,
+                        max_delivery_day: trackingInsights?.recommended_supplier?.current_max_delivery,
+                    },
+                ],
+            });
+            if (sendNow && data?.id) {
+                const sent = await sendSupplierOrders([data.id]);
+                message.success(
+                    `Черновик создан и отправлен. Успешно: ${sent?.data?.sent || 0}, ошибок: ${sent?.data?.failed || 0}.`
+                );
+            } else {
+                message.success('Черновик закупки создан');
+            }
+        } catch (error) {
+            message.error(
+                error?.response?.data?.detail ||
+                    'Не удалось создать черновик закупки'
+            );
+        } finally {
+            setCartSubmitting(false);
+        }
     };
 
     const handleCreateSupplierOrders = async (sendNow = false) => {
@@ -3277,102 +3464,274 @@ const AutopartOffers = () => {
                                 </div>
                             ) : null}
 
+                            {Array.isArray(trackingInsights?.exceptions) &&
+                            trackingInsights.exceptions.length ? (
+                                <Card
+                                    size="small"
+                                    title="Очередь исключений по позиции"
+                                    style={{ borderRadius: 10 }}
+                                >
+                                    <Space
+                                        direction="vertical"
+                                        size={8}
+                                        style={{ width: '100%' }}
+                                    >
+                                        {trackingInsights.exceptions.map((item) => (
+                                            <Alert
+                                                key={item.code}
+                                                type={
+                                                    item.severity === 'critical'
+                                                        ? 'error'
+                                                        : item.severity === 'warning'
+                                                            ? 'warning'
+                                                            : 'info'
+                                                }
+                                                showIcon
+                                                message={item.title}
+                                                description={item.description}
+                                            />
+                                        ))}
+                                    </Space>
+                                </Card>
+                            ) : null}
+
                             {(() => {
-                                const bs = trackingInsights?.best_supplier;
-                                if (!bs) return null;
-                                const deliveryStr = formatInsightDelivery(
-                                    bs.current_min_delivery,
-                                    bs.current_max_delivery
-                                );
+                                const recommendationRows = [
+                                    {
+                                        key: 'recommended',
+                                        title: 'Рекомендуемый поставщик',
+                                        tone: INSIGHT_TONE_STYLES.green,
+                                        row:
+                                            trackingInsights?.recommended_supplier ||
+                                            trackingInsights?.best_supplier,
+                                    },
+                                    {
+                                        key: 'price',
+                                        title: 'Лучший по цене',
+                                        tone: INSIGHT_TONE_STYLES.blue,
+                                        row: trackingInsights?.best_supplier_by_price,
+                                    },
+                                    {
+                                        key: 'lead',
+                                        title: 'Лучший по фактическому сроку',
+                                        tone: INSIGHT_TONE_STYLES.amber,
+                                        row: trackingInsights?.best_supplier_by_lead_time,
+                                    },
+                                ].filter((item) => item.row);
+
+                                if (!recommendationRows.length) {
+                                    return null;
+                                }
+
                                 return (
                                     <div
                                         style={{
-                                            ...INSIGHT_TONE_STYLES.green,
-                                            borderRadius: 10,
-                                            padding: 12,
-                                            display: 'flex',
-                                            flexDirection: 'column',
+                                            display: 'grid',
+                                            gridTemplateColumns:
+                                                'repeat(auto-fit, minmax(240px, 1fr))',
                                             gap: 8,
-                                            boxShadow: '0 6px 18px rgba(15, 23, 42, 0.05)',
                                         }}
                                     >
-                                        <div style={{ color: '#475569', fontSize: 11, fontWeight: 700 }}>
-                                            Лучший поставщик по позиции
-                                        </div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                                            <div>
-                                                <div style={{ color: '#0f172a', fontSize: 16, fontWeight: 800 }}>
-                                                    {bs.provider_name}
-                                                </div>
-                                                <div style={{ color: '#334155', fontSize: 12 }}>
-                                                    {bs.current_oem_number
-                                                        ? `${bs.current_brand_name || '—'} ${bs.current_oem_number}`
-                                                        : ''}
-                                                    {bs.current_price != null
-                                                        ? `  ·  ${formatInsightMoney(bs.current_price)} руб.`
-                                                        : ''}
-                                                    {bs.current_qty != null
-                                                        ? `  ·  ${bs.current_qty} шт`
-                                                        : ''}
-                                                    {deliveryStr !== 'срок не указан'
-                                                        ? `  ·  ${deliveryStr}`
-                                                        : ''}
-                                                </div>
-                                                <div style={{ color: '#64748b', fontSize: 11, marginTop: 2 }}>
-                                                    {bs.fill_rate != null ? `Исполнение: ${bs.fill_rate}%` : ''}
-                                                    {bs.avg_lead_days != null ? `  ·  Срок ср.: ${bs.avg_lead_days} дн` : ''}
-                                                    {bs.avg_price != null ? `  ·  Ср. цена покупки: ${formatInsightMoney(bs.avg_price)}` : ''}
-                                                </div>
-                                            </div>
-                                            <Space>
-                                                <InputNumber
-                                                    min={1}
-                                                    max={bs.current_qty > 0 ? bs.current_qty : undefined}
-                                                    value={bestSupplierQty}
-                                                    size="small"
-                                                    style={{ width: 70 }}
-                                                    onChange={(v) => setBestSupplierQty(v || 1)}
-                                                />
-                                                <Button
-                                                    type="primary"
-                                                    size="small"
-                                                    icon={<ShoppingCartOutlined />}
-                                                    onClick={() => {
-                                                        addLocalOfferToCart({
-                                                            autopart_id: bs.current_autopart_id,
-                                                            provider_id: bs.provider_id,
-                                                            provider_name: bs.provider_name,
-                                                            provider_config_id: bs.current_provider_config_id,
-                                                            provider_config_name: bs.current_provider_config_name,
-                                                            oem_number: bs.current_oem_number || currentOem,
-                                                            brand_name: bs.current_brand_name,
-                                                            name: bs.current_autopart_name,
-                                                            price: bs.current_price,
-                                                            quantity: bs.current_qty,
-                                                            min_delivery_day: bs.current_min_delivery,
-                                                            max_delivery_day: bs.current_max_delivery,
-                                                            is_own_price: bs.is_own_price,
-                                                        });
-                                                        // apply the chosen qty after upsert
-                                                        if (bestSupplierQty > 1) {
-                                                            const cartKey = [
-                                                                'supplier',
-                                                                bs.provider_id,
-                                                                bs.current_provider_config_id || 'base',
-                                                                bs.current_autopart_id,
-                                                                bs.current_oem_number || currentOem,
-                                                            ].join(':');
-                                                            updateCartQty(cartKey, bestSupplierQty);
-                                                        }
+                                        {recommendationRows.map(({ key, title, tone, row }) => {
+                                            const deliveryStr = formatInsightDelivery(
+                                                row.current_min_delivery,
+                                                row.current_max_delivery
+                                            );
+                                            return (
+                                                <div
+                                                    key={key}
+                                                    style={{
+                                                        ...tone,
+                                                        borderRadius: 10,
+                                                        padding: 12,
+                                                        display: 'flex',
+                                                        flexDirection: 'column',
+                                                        gap: 8,
+                                                        boxShadow:
+                                                            '0 6px 18px rgba(15, 23, 42, 0.05)',
                                                     }}
                                                 >
-                                                    В корзину
-                                                </Button>
-                                            </Space>
-                                        </div>
+                                                    <div
+                                                        style={{
+                                                            color: '#475569',
+                                                            fontSize: 11,
+                                                            fontWeight: 700,
+                                                        }}
+                                                    >
+                                                        {title}
+                                                    </div>
+                                                    <div
+                                                        style={{
+                                                            color: '#0f172a',
+                                                            fontSize: 15,
+                                                            fontWeight: 800,
+                                                        }}
+                                                    >
+                                                        {row.provider_name || '—'}
+                                                    </div>
+                                                    <div style={{ color: '#334155', fontSize: 12 }}>
+                                                        {row.current_brand_name && row.current_oem_number
+                                                            ? `${row.current_brand_name} ${row.current_oem_number}`
+                                                            : row.current_oem_number || '—'}
+                                                    </div>
+                                                    <div style={{ color: '#334155', fontSize: 12 }}>
+                                                        {row.current_price != null
+                                                            ? `${formatInsightMoney(row.current_price)} руб.`
+                                                            : 'Цена: —'}
+                                                        {row.current_qty != null
+                                                            ? ` · ${row.current_qty} шт`
+                                                            : ''}
+                                                        {deliveryStr !== 'срок не указан'
+                                                            ? ` · ${deliveryStr}`
+                                                            : ''}
+                                                    </div>
+                                                    <div style={{ color: '#64748b', fontSize: 11 }}>
+                                                        {row.fill_rate != null
+                                                            ? `Исполнение: ${row.fill_rate}%`
+                                                            : 'Исполнение: нет истории'}
+                                                        {row.effective_lead_days != null
+                                                            ? ` · срок для расчёта: ${row.effective_lead_days} дн`
+                                                            : ''}
+                                                        {row.score != null
+                                                            ? ` · score: ${row.score}`
+                                                            : ''}
+                                                    </div>
+                                                    {key === 'recommended' &&
+                                                    row.current_autopart_id &&
+                                                    row.current_price != null ? (
+                                                        <Space>
+                                                            <InputNumber
+                                                                min={1}
+                                                                max={row.current_qty > 0 ? row.current_qty : undefined}
+                                                                value={bestSupplierQty}
+                                                                size="small"
+                                                                style={{ width: 70 }}
+                                                                onChange={(v) => setBestSupplierQty(v || 1)}
+                                                            />
+                                                            <Button
+                                                                type="primary"
+                                                                size="small"
+                                                                icon={<ShoppingCartOutlined />}
+                                                                onClick={() => {
+                                                                    addLocalOfferToCart({
+                                                                        autopart_id: row.current_autopart_id,
+                                                                        provider_id: row.provider_id,
+                                                                        provider_name: row.provider_name,
+                                                                        provider_config_id: row.current_provider_config_id,
+                                                                        provider_config_name: row.current_provider_config_name,
+                                                                        oem_number: row.current_oem_number || currentOem,
+                                                                        brand_name: row.current_brand_name,
+                                                                        name: row.current_autopart_name,
+                                                                        price: row.current_price,
+                                                                        quantity: row.current_qty,
+                                                                        min_delivery_day: row.current_min_delivery,
+                                                                        max_delivery_day: row.current_max_delivery,
+                                                                        is_own_price: row.is_own_price,
+                                                                    });
+                                                                    if (bestSupplierQty > 1) {
+                                                                        const cartKey = [
+                                                                            'supplier',
+                                                                            row.provider_id,
+                                                                            row.current_provider_config_id || 'base',
+                                                                            row.current_autopart_id,
+                                                                            row.current_oem_number || currentOem,
+                                                                        ].join(':');
+                                                                        updateCartQty(cartKey, bestSupplierQty);
+                                                                    }
+                                                                }}
+                                                            >
+                                                                В корзину
+                                                            </Button>
+                                                        </Space>
+                                                    ) : null}
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 );
                             })()}
+
+                            {trackingInsights?.draft_purchase_order ? (
+                                <Card
+                                    size="small"
+                                    title="Авточерновик закупки"
+                                    style={{ borderRadius: 10 }}
+                                >
+                                    <Space
+                                        direction="vertical"
+                                        size={8}
+                                        style={{ width: '100%' }}
+                                    >
+                                        <div style={{ color: '#334155' }}>
+                                            <strong>{trackingInsights.draft_purchase_order.provider_name}</strong>
+                                            {trackingInsights.draft_purchase_order.provider_config_name
+                                                ? ` · ${trackingInsights.draft_purchase_order.provider_config_name}`
+                                                : ''}
+                                        </div>
+                                        <div style={{ color: '#475569', fontSize: 12 }}>
+                                            {trackingInsights.draft_purchase_order.brand_name || '—'}{' '}
+                                            {trackingInsights.draft_purchase_order.oem_number}
+                                            {trackingInsights.draft_purchase_order.price != null
+                                                ? ` · ${formatInsightMoney(trackingInsights.draft_purchase_order.price)} руб.`
+                                                : ''}
+                                        </div>
+                                        <div style={{ color: '#475569', fontSize: 12 }}>
+                                            В наличии/в пути: {trackingInsights.draft_purchase_order.available_qty} шт · цель: {trackingInsights.draft_purchase_order.target_qty ?? '—'} шт
+                                            {trackingInsights.draft_purchase_order.lead_days_used != null
+                                                ? ` · срок для расчёта: ${trackingInsights.draft_purchase_order.lead_days_used} дн`
+                                                : ''}
+                                        </div>
+                                        {trackingInsights.draft_purchase_order.reason ? (
+                                            <div style={{ color: '#64748b', fontSize: 12 }}>
+                                                {trackingInsights.draft_purchase_order.reason}
+                                            </div>
+                                        ) : null}
+                                        <Space wrap>
+                                            <InputNumber
+                                                min={1}
+                                                value={draftOrderQty}
+                                                size="small"
+                                                style={{ width: 90 }}
+                                                onChange={(v) => setDraftOrderQty(v || 1)}
+                                            />
+                                            <Button
+                                                type="primary"
+                                                icon={<PlusOutlined />}
+                                                loading={cartSubmitting}
+                                                onClick={() => handleCreateAutoDraftOrder(false)}
+                                            >
+                                                Создать черновик
+                                            </Button>
+                                            <Button
+                                                icon={<MailOutlined />}
+                                                loading={cartSubmitting}
+                                                onClick={() => handleCreateAutoDraftOrder(true)}
+                                            >
+                                                Создать и отправить
+                                            </Button>
+                                        </Space>
+                                    </Space>
+                                </Card>
+                            ) : null}
+
+                            {supplierScoreRows.length ? (
+                                <Card
+                                    size="small"
+                                    title="Supplier scorecard для заказа"
+                                    style={{ borderRadius: 10 }}
+                                >
+                                    <Table
+                                        rowKey={(row) =>
+                                            `${row.provider_id || row.provider_name}:${row.current_provider_config_id || 'base'}`
+                                        }
+                                        columns={supplierScoreColumns}
+                                        dataSource={supplierScoreRows}
+                                        size="small"
+                                        pagination={{ pageSize: 5, showSizeChanger: false }}
+                                        scroll={{ x: 760 }}
+                                    />
+                                </Card>
+                            ) : null}
                         </Space>
                     ) : null}
                 </Spin>

@@ -6,5 +6,8 @@ export const getTrackingOrderItems = (params) =>
 export const getTrackingOrderInsights = (params) =>
     api.get('/order/tracking-summary', { params });
 
+export const getTrackingExceptionsQueue = (params) =>
+    api.get('/order/tracking-exceptions-queue', { params });
+
 export const updateTrackingOrderItem = (sourceType, itemId, payload) =>
     api.patch(`/order/tracking-items/${sourceType}/${itemId}`, payload);
