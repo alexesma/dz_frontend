@@ -1248,11 +1248,36 @@ const AutopartOffers = () => {
         return null;
     }, [siteRequestError, siteResponseDiagnostics]);
 
+    const resolvedTrackingOems = useMemo(() => {
+        if (!trackingInsights) {
+            return [];
+        }
+        const raw = Array.isArray(trackingInsights.resolved_oem_numbers)
+            ? trackingInsights.resolved_oem_numbers
+            : [
+                trackingInsights.oem_number,
+                ...(trackingInsights.cross_oem_numbers || []),
+                ...(trackingInsights.site_cross_oem_numbers || []),
+            ];
+        const seen = new Set();
+        return raw.filter((item) => {
+            const value = String(item || '').trim().toUpperCase();
+            if (!value || seen.has(value)) {
+                return false;
+            }
+            seen.add(value);
+            return true;
+        });
+    }, [trackingInsights]);
+
     const ownPriceTiles = useMemo(() => {
         const analysis = trackingInsights?.own_price_analysis;
         if (!analysis) {
             return [];
         }
+        const quantityBreakdown = Array.isArray(analysis.current_quantity_breakdown)
+            ? analysis.current_quantity_breakdown
+            : [];
         return [
             {
                 key: 'own-current-qty',
@@ -1260,9 +1285,28 @@ const AutopartOffers = () => {
                 title: 'Остаток сейчас по нашему прайсу',
                 value: `${Number(analysis.current_quantity || 0).toLocaleString('ru-RU')} шт`,
                 subtitle: `${analysis.provider_name} · ${analysis.provider_config_name || `Конфиг #${analysis.provider_config_id}`}`,
-                extra: analysis.latest_pricelist_date
-                    ? `Снимок прайса: ${formatShortDate(analysis.latest_pricelist_date)}`
-                    : '',
+                extra: (
+                    <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                        {analysis.latest_pricelist_date ? (
+                            <div>
+                                Снимок прайса: {formatShortDate(analysis.latest_pricelist_date)}
+                            </div>
+                        ) : null}
+                        {quantityBreakdown.length ? (
+                            <div>
+                                По OEM:{' '}
+                                {quantityBreakdown
+                                    .map(
+                                        (item) =>
+                                            `${item.oem_number} — ${Number(
+                                                item.quantity || 0
+                                            ).toLocaleString('ru-RU')} шт`
+                                    )
+                                    .join(' · ')}
+                            </div>
+                        ) : null}
+                    </Space>
+                ),
             },
             {
                 key: 'own-price',
@@ -1279,7 +1323,7 @@ const AutopartOffers = () => {
                 title: 'Приходы для расчёта',
                 value: `${Number(analysis.arrivals_last_30_days || 0).toLocaleString('ru-RU')} шт`,
                 subtitle: `За 90 дней: ${Number(analysis.arrivals_last_90_days || 0).toLocaleString('ru-RU')} шт · за 1 год: ${Number(analysis.arrivals_last_365_days || 0).toLocaleString('ru-RU')} шт`,
-                extra: 'Учитываем приходы из заказов программы и рост остатка в прайсе',
+                extra: 'Считаем по точному OEM и всем кроссам из выборки: приходы из заказов программы + рост остатка между снимками прайса',
             },
             {
                 key: 'own-consumption',
@@ -1287,7 +1331,7 @@ const AutopartOffers = () => {
                 title: 'Расход по остатку',
                 value: `${Number(analysis.sold_last_30_days || 0).toLocaleString('ru-RU')} шт`,
                 subtitle: `За 90 дней: ${Number(analysis.sold_last_90_days || 0).toLocaleString('ru-RU')} шт · за 1 год: ${Number(analysis.sold_last_365_days || 0).toLocaleString('ru-RU')} шт`,
-                extra: 'Считается уже после учёта приходов в каждом интервале',
+                extra: 'Считается по точному OEM и всем кроссам из выборки уже после учёта приходов в каждом интервале',
             },
             {
                 key: 'own-days-left',
@@ -1771,7 +1815,7 @@ const AutopartOffers = () => {
                 brand: effectiveBrand || undefined,
                 sync_site: true,
                 include_crosses: true,
-                limit: 100,
+                limit: 1000,
                 site_cross_oems: undefined,
             }).catch(() => null);
             const trackingRows = Array.isArray(trackingResponse?.data)
@@ -2082,7 +2126,7 @@ const AutopartOffers = () => {
                     brand: effectiveBrand || undefined,
                     sync_site: true,
                     include_crosses: true,
-                    limit: 100,
+                    limit: 1000,
                     site_cross_oems: nextSiteCrossOems.length
                         ? nextSiteCrossOems.join(',')
                         : undefined,
@@ -3130,6 +3174,36 @@ const AutopartOffers = () => {
                         </div>
                     ) : null}
                 </div>
+                {Array.isArray(trackingInsights?.cross_offer_rows) &&
+                trackingInsights.cross_offer_rows.length ? (
+                    <Space
+                        direction="vertical"
+                        style={{ width: '100%' }}
+                        size="small"
+                    >
+                        <div>
+                            <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                                В прайсах поставщиков по кроссам
+                            </div>
+                            <div style={{ color: '#6b7280' }}>
+                                Ниже показываем найденные предложения по кросс-артикулам,
+                                которые попали в выборку из нашей базы и из подсказок сайта.
+                            </div>
+                        </div>
+                        <Table
+                            className="autopart-offers-table"
+                            rowKey={(record) =>
+                                `cross-${record.autopart_id}-${record.provider_id}-${record.provider_config_id || 'base'}-${record.oem_number}`
+                            }
+                            columns={localColumns}
+                            dataSource={trackingInsights.cross_offer_rows}
+                            size="small"
+                            pagination={{ pageSize: 5, showSizeChanger: false }}
+                            tableLayout="fixed"
+                            scroll={{ x: 820 }}
+                        />
+                    </Space>
+                ) : null}
                 <TrackingOrderHistoryTable
                     rows={trackingHistory}
                     loading={trackingHistoryLoading}
@@ -3153,6 +3227,13 @@ const AutopartOffers = () => {
                                     и историю заказов через программу, чтобы быстрее понять,
                                     как лучше заказывать позицию прямо сейчас.
                                 </div>
+                                {resolvedTrackingOems.length ? (
+                                    <div style={{ color: '#64748b', fontSize: 12, marginTop: 4 }}>
+                                        История за год и аналитика посчитаны по{' '}
+                                        <strong>{resolvedTrackingOems.length}</strong>{' '}
+                                        OEM: {resolvedTrackingOems.join(', ')}
+                                    </div>
+                                ) : null}
                             </div>
 
                             {combinedInsightTiles.length ? (
@@ -3274,37 +3355,6 @@ const AutopartOffers = () => {
                                     </div>
                                 );
                             })()}
-
-                            {Array.isArray(trackingInsights?.cross_offer_rows) &&
-                            trackingInsights.cross_offer_rows.length ? (
-                                <Space
-                                    direction="vertical"
-                                    style={{ width: '100%' }}
-                                    size="small"
-                                >
-                                    <div>
-                                        <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                                            Что есть сейчас по кроссам в прайсах поставщиков
-                                        </div>
-                                        <div style={{ color: '#6b7280' }}>
-                                            Ниже показываем найденные предложения по кросс-артикулам,
-                                            которые попали в выборку из нашей базы и из подсказок сайта.
-                                        </div>
-                                    </div>
-                                    <Table
-                                        className="autopart-offers-table"
-                                        rowKey={(record) =>
-                                            `cross-${record.autopart_id}-${record.provider_id}-${record.provider_config_id || 'base'}-${record.oem_number}`
-                                        }
-                                        columns={localColumns}
-                                        dataSource={trackingInsights.cross_offer_rows}
-                                        size="small"
-                                        pagination={{ pageSize: 10, showSizeChanger: false }}
-                                        tableLayout="fixed"
-                                        scroll={{ x: 820 }}
-                                    />
-                                </Space>
-                            ) : null}
                         </Space>
                     ) : null}
                 </Spin>
