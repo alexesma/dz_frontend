@@ -4,6 +4,7 @@ import {
     Card,
     Form,
     Input,
+    List,
     Modal,
     Popconfirm,
     Radio,
@@ -24,12 +25,14 @@ import { lookupBrands } from '../api/brands';
 import {
     createCross,
     deleteCross,
+    listCrossGroups,
     listCrosses,
     updateCross,
 } from '../api/crosses';
 
 const CrossesPage = () => {
     const [rows, setRows] = useState([]);
+    const [groups, setGroups] = useState([]);
     const [loading, setLoading] = useState(false);
     const [query, setQuery] = useState('');
     const [modalOpen, setModalOpen] = useState(false);
@@ -41,9 +44,18 @@ const CrossesPage = () => {
 
     const loadRows = useCallback(async () => {
         setLoading(true);
+        const normalizedQuery = String(query || '').trim();
         try {
-            const { data } = await listCrosses(query ? { q: query } : {});
-            setRows(Array.isArray(data) ? data : []);
+            const [rowsResponse, groupsResponse] = await Promise.all([
+                listCrosses(normalizedQuery ? { q: normalizedQuery } : {}),
+                normalizedQuery
+                    ? listCrossGroups({ q: normalizedQuery })
+                    : Promise.resolve({ data: [] }),
+            ]);
+            setRows(Array.isArray(rowsResponse?.data) ? rowsResponse.data : []);
+            setGroups(
+                Array.isArray(groupsResponse?.data) ? groupsResponse.data : []
+            );
         } catch (error) {
             console.error('Load crosses error:', error);
             message.error('Не удалось загрузить кроссы');
@@ -253,6 +265,68 @@ const CrossesPage = () => {
                     Обновить
                 </Button>
             </Space>
+
+            {String(query || '').trim() ? (
+                <Card
+                    size="small"
+                    title="Полный список взаимных кроссов по найденной позиции"
+                    style={{ marginBottom: 16 }}
+                >
+                    <div style={{ color: '#64748b', fontSize: 12, marginBottom: 12 }}>
+                        Здесь показана вся связанная группа с транзитивностью для
+                        взаимных кроссов. Отдельные строки ниже остаются таблицей
+                        для редактирования.
+                    </div>
+                    {groups.length ? (
+                        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                            {groups.map((group) => (
+                                <Card
+                                    key={group.anchor_autopart_id}
+                                    type="inner"
+                                    size="small"
+                                    title={`${group.anchor_brand_name || '—'} ${group.anchor_oem_number}`}
+                                    extra={`${group.member_count} связ.`}
+                                >
+                                    <div
+                                        style={{
+                                            color: '#64748b',
+                                            fontSize: 12,
+                                            marginBottom: 8,
+                                        }}
+                                    >
+                                        {group.anchor_name || '—'}
+                                    </div>
+                                    <List
+                                        size="small"
+                                        dataSource={group.members || []}
+                                        renderItem={(item) => (
+                                            <List.Item key={`${item.autopart_id}:${item.brand_id}:${item.oem_number}`}>
+                                                <div style={{ width: '100%' }}>
+                                                    <div style={{ fontWeight: 600 }}>
+                                                        {item.brand_name || '—'} {item.oem_number}
+                                                    </div>
+                                                    <div
+                                                        style={{
+                                                            color: '#64748b',
+                                                            fontSize: 12,
+                                                        }}
+                                                    >
+                                                        {item.name || '—'}
+                                                    </div>
+                                                </div>
+                                            </List.Item>
+                                        )}
+                                    />
+                                </Card>
+                            ))}
+                        </Space>
+                    ) : (
+                        <div style={{ color: '#64748b' }}>
+                            По этому поиску пока не найдено полной взаимной группы.
+                        </div>
+                    )}
+                </Card>
+            ) : null}
 
             <Table
                 rowKey="id"

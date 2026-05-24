@@ -3054,6 +3054,36 @@ const AutopartOffers = () => {
             <Divider />
 
             <Space direction="vertical" style={{ width: '100%' }} size="small">
+                {Array.isArray(trackingInsights?.cross_offer_rows) &&
+                trackingInsights.cross_offer_rows.length ? (
+                    <Space
+                        direction="vertical"
+                        style={{ width: '100%' }}
+                        size="small"
+                    >
+                        <div>
+                            <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                                В прайсах поставщиков по кроссам
+                            </div>
+                            <div style={{ color: '#6b7280' }}>
+                                Ниже показываем найденные предложения по кросс-артикулам,
+                                которые попали в выборку из нашей базы и из подсказок сайта.
+                            </div>
+                        </div>
+                        <Table
+                            className="autopart-offers-table"
+                            rowKey={(record) =>
+                                `cross-${record.autopart_id}-${record.provider_id}-${record.provider_config_id || 'base'}-${record.oem_number}`
+                            }
+                            columns={localColumns}
+                            dataSource={trackingInsights.cross_offer_rows}
+                            size="small"
+                            pagination={{ pageSize: 5, showSizeChanger: false }}
+                            tableLayout="fixed"
+                            scroll={{ x: 820 }}
+                        />
+                    </Space>
+                ) : null}
                 <div>
                     <div style={{ fontWeight: 600, marginBottom: 4 }}>
                         Что уже заказывали через программу за 1 год
@@ -3174,36 +3204,6 @@ const AutopartOffers = () => {
                         </div>
                     ) : null}
                 </div>
-                {Array.isArray(trackingInsights?.cross_offer_rows) &&
-                trackingInsights.cross_offer_rows.length ? (
-                    <Space
-                        direction="vertical"
-                        style={{ width: '100%' }}
-                        size="small"
-                    >
-                        <div>
-                            <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                                В прайсах поставщиков по кроссам
-                            </div>
-                            <div style={{ color: '#6b7280' }}>
-                                Ниже показываем найденные предложения по кросс-артикулам,
-                                которые попали в выборку из нашей базы и из подсказок сайта.
-                            </div>
-                        </div>
-                        <Table
-                            className="autopart-offers-table"
-                            rowKey={(record) =>
-                                `cross-${record.autopart_id}-${record.provider_id}-${record.provider_config_id || 'base'}-${record.oem_number}`
-                            }
-                            columns={localColumns}
-                            dataSource={trackingInsights.cross_offer_rows}
-                            size="small"
-                            pagination={{ pageSize: 5, showSizeChanger: false }}
-                            tableLayout="fixed"
-                            scroll={{ x: 820 }}
-                        />
-                    </Space>
-                ) : null}
                 <TrackingOrderHistoryTable
                     rows={trackingHistory}
                     loading={trackingHistoryLoading}

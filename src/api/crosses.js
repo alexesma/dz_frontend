@@ -3,6 +3,9 @@ import api from '../api.js';
 export const listCrosses = (params = {}) =>
     api.get('/crosses/', { params });
 
+export const listCrossGroups = (params = {}) =>
+    api.get('/crosses/groups/', { params });
+
 export const createCross = (data) =>
     api.post('/crosses/', data);
 
