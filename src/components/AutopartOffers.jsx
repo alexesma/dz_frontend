@@ -654,62 +654,24 @@ const AutopartOffers = () => {
     );
 
     const bestSiteOfferForOrder = useMemo(() => {
-        const offers = [
-            ...(Array.isArray(siteExactOffers) ? siteExactOffers : []),
-            ...(Array.isArray(siteOffersWithCrosses) ? siteOffersWithCrosses : []),
-        ];
-        const dedupedOffers = new Map();
-
-        for (const offer of offers) {
-            const price = Number(offer?.price);
-            const quantity = Number(offer?.qnt ?? 0);
-            if (!Number.isFinite(price) || quantity <= 0) {
-                continue;
-            }
-            const key = buildCartKey('dragonzap', {
-                ...offer,
-                oem: offer?.oem || offer?.oem_number,
-            });
-            const existing = dedupedOffers.get(key);
-            const currentLead = Number(
-                offer?.min_delivery_day ??
-                    offer?.max_delivery_day ??
-                    Number.POSITIVE_INFINITY
-            );
-            const existingLead = existing
-                ? Number(
-                    existing?.min_delivery_day ??
-                        existing?.max_delivery_day ??
-                        Number.POSITIVE_INFINITY
-                )
-                : Number.POSITIVE_INFINITY;
-            if (
-                !existing ||
-                price < Number(existing?.price ?? Number.POSITIVE_INFINITY) ||
-                (price === Number(existing?.price) && currentLead < existingLead)
-            ) {
-                dedupedOffers.set(key, offer);
-            }
+        const normalizedCrossOffers = Array.isArray(siteOffersWithCrosses)
+            ? siteOffersWithCrosses.filter((offer) => {
+                const price = Number(offer?.price);
+                const quantity = Number(offer?.qnt ?? 0);
+                return Number.isFinite(price) && quantity > 0;
+            })
+            : [];
+        if (normalizedCrossOffers.length) {
+            return normalizedCrossOffers[0];
         }
-
-        return Array.from(dedupedOffers.values()).sort((a, b) => {
-            const priceDiff =
-                Number(a?.price ?? Number.POSITIVE_INFINITY) -
-                Number(b?.price ?? Number.POSITIVE_INFINITY);
-            if (priceDiff !== 0) {
-                return priceDiff;
-            }
-            const aLead = Number(
-                a?.min_delivery_day ?? a?.max_delivery_day ?? Number.POSITIVE_INFINITY
-            );
-            const bLead = Number(
-                b?.min_delivery_day ?? b?.max_delivery_day ?? Number.POSITIVE_INFINITY
-            );
-            if (aLead !== bLead) {
-                return aLead - bLead;
-            }
-            return Number(b?.qnt ?? 0) - Number(a?.qnt ?? 0);
-        })[0] || null;
+        const normalizedExactOffers = Array.isArray(siteExactOffers)
+            ? siteExactOffers.filter((offer) => {
+                const price = Number(offer?.price);
+                const quantity = Number(offer?.qnt ?? 0);
+                return Number.isFinite(price) && quantity > 0;
+            })
+            : [];
+        return normalizedExactOffers[0] || null;
     }, [siteExactOffers, siteOffersWithCrosses]);
 
     const summaryCrossItems = useMemo(() => {
@@ -3703,8 +3665,10 @@ const AutopartOffers = () => {
                                                             : ''}
                                                     </div>
                                                     <div style={{ color: '#64748b', fontSize: 11 }}>
-                                                        Dragonzap · этот блок сейчас выбирает
-                                                        только минимальную цену по сайту
+                                                        Dragonzap · сначала берём
+                                                        минимальную цену из запроса
+                                                        по OEM и кроссам, а если там
+                                                        пусто — по точному OEM
                                                     </div>
                                                     <div style={{ color: '#64748b', fontSize: 11 }}>
                                                         {rowOem && rowOem !== normalizedCurrentOem
