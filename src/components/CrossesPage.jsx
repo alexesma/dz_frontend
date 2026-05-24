@@ -21,7 +21,6 @@ import {
     ReloadOutlined,
 } from '@ant-design/icons';
 import { searchAutopartsByOem } from '../api/autoparts';
-import { lookupBrands } from '../api/brands';
 import {
     createCross,
     deleteCross,
@@ -39,7 +38,7 @@ const CrossesPage = () => {
     const [saving, setSaving] = useState(false);
     const [editingRow, setEditingRow] = useState(null);
     const [sourceOptions, setSourceOptions] = useState([]);
-    const [brandOptions, setBrandOptions] = useState([]);
+    const [targetOptions, setTargetOptions] = useState([]);
     const [form] = Form.useForm();
 
     const loadRows = useCallback(async () => {
@@ -87,18 +86,22 @@ const CrossesPage = () => {
         }
     }, []);
 
-    const loadBrandOptions = useCallback(async (search) => {
+    const loadTargetOptions = useCallback(async (search) => {
         const normalized = String(search || '').trim();
+        if (!normalized) {
+            setTargetOptions([]);
+            return;
+        }
         try {
-            const { data } = await lookupBrands(normalized, 30);
-            setBrandOptions(
+            const { data } = await searchAutopartsByOem(normalized, 20);
+            setTargetOptions(
                 (Array.isArray(data) ? data : []).map((item) => ({
                     value: item.id,
-                    label: item.name,
+                    label: `${item.brand} ${item.oem_number} · ${item.name || '—'}`,
                 }))
             );
         } catch (error) {
-            console.error('Load brands error:', error);
+            console.error('Load target autoparts error:', error);
         }
     }, []);
 
@@ -117,16 +120,19 @@ const CrossesPage = () => {
                 label: `${row.source_brand_name || '—'} ${row.source_oem_number} · ${row.source_name || '—'}`,
             },
         ]);
-        setBrandOptions([
-            {
-                value: row.cross_brand_id,
-                label: row.cross_brand_name || '—',
-            },
-        ]);
+        setTargetOptions(
+            row.cross_autopart_id
+                ? [
+                      {
+                          value: row.cross_autopart_id,
+                          label: `${row.cross_brand_name || '—'} ${row.cross_oem_number} · ${row.cross_autopart_name || '—'}`,
+                      },
+                  ]
+                : []
+        );
         form.setFieldsValue({
             source_autopart_id: row.source_autopart_id,
-            cross_brand_id: row.cross_brand_id,
-            cross_oem_number: row.cross_oem_number,
+            cross_autopart_id: row.cross_autopart_id || undefined,
             is_bidirectional: row.is_bidirectional !== false,
             comment: row.comment,
         });
@@ -362,24 +368,17 @@ const CrossesPage = () => {
                         />
                     </Form.Item>
                     <Form.Item
-                        name="cross_brand_id"
-                        label="Бренд кросса"
-                        rules={[{ required: true, message: 'Выберите бренд кросса' }]}
+                        name="cross_autopart_id"
+                        label="Связанная позиция"
+                        rules={[{ required: true, message: 'Выберите связанную позицию' }]}
                     >
                         <Select
                             showSearch
                             filterOption={false}
-                            placeholder="Начните вводить бренд"
-                            options={brandOptions}
-                            onSearch={loadBrandOptions}
+                            placeholder="Начните вводить OEM или бренд связанной позиции"
+                            options={targetOptions}
+                            onSearch={loadTargetOptions}
                         />
-                    </Form.Item>
-                    <Form.Item
-                        name="cross_oem_number"
-                        label="OEM кросса"
-                        rules={[{ required: true, message: 'Введите OEM кросса' }]}
-                    >
-                        <Input placeholder="Например, 1002026E00" />
                     </Form.Item>
                     <Form.Item
                         name="is_bidirectional"
