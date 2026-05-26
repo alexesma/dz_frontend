@@ -60,6 +60,8 @@ import TrackingOrderHistoryTable from './TrackingOrderHistoryTable';
 const OEM_HISTORY_KEY = 'autopart_oem_history_v1';
 const STATE_STORAGE_KEY = 'autopart_offers_state_v2';
 const MAX_PERSISTED_CART_ITEMS = 200;
+const MAX_SITE_EXACT_CROSS_REQUESTS = 3;
+const SITE_RECOMMENDATION_LOW_STOCK_QTY = 10;
 
 const buildCartKey = (sourceType, record) => {
     if (sourceType === 'supplier') {
@@ -300,6 +302,126 @@ const extractUniqueCrossItemsFromSiteOffers = (offers, baseOem) => {
     return Array.from(uniqueItems.values());
 };
 
+const extractCheapestCrossCandidatesFromLocalOffers = (
+    rows,
+    baseOem,
+    limit = MAX_SITE_EXACT_CROSS_REQUESTS
+) => {
+    const normalizedBase = String(baseOem || '').trim().toUpperCase();
+    const byKey = new Map();
+    for (const row of rows || []) {
+        const oemNumber = String(row?.oem_number || '').trim().toUpperCase();
+        const brandName = String(row?.brand_name || '').trim();
+        const price = Number(row?.price);
+        if (
+            !oemNumber ||
+            oemNumber === normalizedBase ||
+            !brandName ||
+            !Number.isFinite(price)
+        ) {
+            continue;
+        }
+        const key = normalizeCrossKey(brandName, oemNumber);
+        const existing = byKey.get(key);
+        if (
+            !existing ||
+            price < existing.price ||
+            (price === existing.price &&
+                Number(row?.quantity ?? 0) > Number(existing.quantity ?? 0))
+        ) {
+            byKey.set(key, {
+                brand_name: brandName,
+                oem_number: oemNumber,
+                price,
+                quantity: Number(row?.quantity ?? 0),
+            });
+        }
+    }
+    return Array.from(byKey.values())
+        .sort((a, b) => {
+            if (a.price !== b.price) {
+                return a.price - b.price;
+            }
+            return Number(b.quantity ?? 0) - Number(a.quantity ?? 0);
+        })
+        .slice(0, limit);
+};
+
+const dedupeAndSortSiteOffers = (offers) => {
+    const dedupedOffers = new Map();
+    for (const offer of offers || []) {
+        const price = Number(offer?.price);
+        const quantity = Number(offer?.qnt ?? 0);
+        if (!Number.isFinite(price) || quantity <= 0) {
+            continue;
+        }
+        const key = buildCartKey('dragonzap', {
+            ...offer,
+            oem: offer?.oem || offer?.oem_number,
+        });
+        const existing = dedupedOffers.get(key);
+        const currentLead = Number(
+            offer?.min_delivery_day ??
+                offer?.max_delivery_day ??
+                Number.POSITIVE_INFINITY
+        );
+        const existingLead = existing
+            ? Number(
+                existing?.min_delivery_day ??
+                    existing?.max_delivery_day ??
+                    Number.POSITIVE_INFINITY
+            )
+            : Number.POSITIVE_INFINITY;
+        if (
+            !existing ||
+            price < Number(existing?.price ?? Number.POSITIVE_INFINITY) ||
+            (price === Number(existing?.price) && currentLead < existingLead)
+        ) {
+            dedupedOffers.set(key, offer);
+        }
+    }
+    return Array.from(dedupedOffers.values()).sort((a, b) => {
+        const priceDiff =
+            Number(a?.price ?? Number.POSITIVE_INFINITY) -
+            Number(b?.price ?? Number.POSITIVE_INFINITY);
+        if (priceDiff !== 0) {
+            return priceDiff;
+        }
+        const aLead = Number(
+            a?.min_delivery_day ?? a?.max_delivery_day ?? Number.POSITIVE_INFINITY
+        );
+        const bLead = Number(
+            b?.min_delivery_day ?? b?.max_delivery_day ?? Number.POSITIVE_INFINITY
+        );
+        if (aLead !== bLead) {
+            return aLead - bLead;
+        }
+        return Number(b?.qnt ?? 0) - Number(a?.qnt ?? 0);
+    });
+};
+
+const pickSiteRecommendationOffers = (offers) => {
+    const sorted = dedupeAndSortSiteOffers(offers);
+    if (!sorted.length) {
+        return [];
+    }
+    const selected = [sorted[0]];
+    if (
+        Number(sorted[0]?.qnt ?? 0) < SITE_RECOMMENDATION_LOW_STOCK_QTY &&
+        sorted[1]
+    ) {
+        selected.push(sorted[1]);
+    }
+    if (
+        selected.length === 2 &&
+        Number(sorted[1]?.qnt ?? 0) < SITE_RECOMMENDATION_LOW_STOCK_QTY &&
+        sorted[2]
+    ) {
+        selected.push(sorted[2]);
+    }
+    return selected;
+};
+
 const INSIGHT_TONE_STYLES = {
     blue: {
         background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
@@ -530,6 +652,7 @@ const AutopartOffers = () => {
     const [remoteOffers, setRemoteOffers] = useState([]);
     const [siteExactOffers, setSiteExactOffers] = useState([]);
     const [siteOffersWithCrosses, setSiteOffersWithCrosses] = useState([]);
+    const [siteExactCrossOffers, setSiteExactCrossOffers] = useState([]);
     const [siteResponseDiagnostics, setSiteResponseDiagnostics] = useState(null);
     const [siteRequestError, setSiteRequestError] = useState(null);
     const [remoteLoading, setRemoteLoading] = useState(false);
@@ -653,26 +776,19 @@ const AutopartOffers = () => {
         [currentOem, siteOffersWithCrosses]
     );
 
-    const bestSiteOfferForOrder = useMemo(() => {
-        const normalizedCrossOffers = Array.isArray(siteOffersWithCrosses)
-            ? siteOffersWithCrosses.filter((offer) => {
-                const price = Number(offer?.price);
-                const quantity = Number(offer?.qnt ?? 0);
-                return Number.isFinite(price) && quantity > 0;
-            })
-            : [];
-        if (normalizedCrossOffers.length) {
-            return normalizedCrossOffers[0];
-        }
-        const normalizedExactOffers = Array.isArray(siteExactOffers)
-            ? siteExactOffers.filter((offer) => {
-                const price = Number(offer?.price);
-                const quantity = Number(offer?.qnt ?? 0);
-                return Number.isFinite(price) && quantity > 0;
-            })
-            : [];
-        return normalizedExactOffers[0] || null;
-    }, [siteExactOffers, siteOffersWithCrosses]);
+    const bestSiteOffersForOrder = useMemo(
+        () =>
+            pickSiteRecommendationOffers([
+                ...(Array.isArray(siteExactCrossOffers)
+                    ? siteExactCrossOffers
+                    : []),
+                ...(Array.isArray(siteOffersWithCrosses)
+                    ? siteOffersWithCrosses
+                    : []),
+                ...(Array.isArray(siteExactOffers) ? siteExactOffers : []),
+            ]),
+        [siteExactCrossOffers, siteExactOffers, siteOffersWithCrosses]
+    );
 
     const summaryCrossItems = useMemo(() => {
         const itemsByKey = new Map();
@@ -1953,6 +2069,7 @@ const AutopartOffers = () => {
         setRemoteOffers([]);
         setSiteExactOffers([]);
         setSiteOffersWithCrosses([]);
+        setSiteExactCrossOffers([]);
         setSiteResponseDiagnostics(null);
         setSiteRequestError(null);
         setTrackingHistory([]);
@@ -2110,6 +2227,7 @@ const AutopartOffers = () => {
         setSiteBrandWarning(null);
         setSiteRequestError(null);
         setSiteResponseDiagnostics(null);
+        setSiteExactCrossOffers([]);
         try {
             const normalizeSiteResponse = (payload, requestedBrand, allowCrosses) => {
                 const responseBrandCandidates = normalizeDragonzapBrandCandidates(
@@ -2346,7 +2464,7 @@ const AutopartOffers = () => {
 
             setRemoteOffers(displayedOffers);
             setRemoteMeta({ total: displayedOffers.length });
-            const [trackingResponse] = await Promise.all([
+            const [trackingResponse, trackingInsightsPayload] = await Promise.all([
                 getTrackingOrderItems({
                     oem: oemValue,
                     brand: effectiveBrand || undefined,
@@ -2363,6 +2481,44 @@ const AutopartOffers = () => {
                     extraOemNumbers: nextSiteCrossOems,
                 }),
             ]);
+            const crossLookupCandidates = extractCheapestCrossCandidatesFromLocalOffers(
+                trackingInsightsPayload?.cross_offer_rows,
+                oemValue
+            );
+            const directCrossExactResponses = await Promise.all(
+                crossLookupCandidates.map(async (item) => {
+                    try {
+                        const response = await getDragonzapOffers(
+                            item.oem_number,
+                            item.brand_name,
+                            true
+                        );
+                        const parsed = normalizeSiteResponse(
+                            response?.data,
+                            item.brand_name,
+                            false
+                        );
+                        return (parsed.offers || []).map((offer) => ({
+                            ...offer,
+                            recommendation_source: 'cross_exact',
+                            recommendation_cross_brand_name: item.brand_name,
+                            recommendation_cross_oem_number: item.oem_number,
+                            recommendation_local_cross_price: item.price,
+                        }));
+                    } catch (crossExactError) {
+                        console.warn(
+                            'Dragonzap direct cross exact lookup failed:',
+                            item,
+                            crossExactError
+                        );
+                        return [];
+                    }
+                })
+            );
+            const nextSiteExactCrossOffers = dedupeAndSortSiteOffers(
+                directCrossExactResponses.flat()
+            );
+            setSiteExactCrossOffers(nextSiteExactCrossOffers);
             const trackingRows = Array.isArray(trackingResponse?.data)
                 ? trackingResponse.data
                 : [];
@@ -3581,14 +3737,20 @@ const AutopartOffers = () => {
                             ) : null}
 
                             {(() => {
-                                const recommendationRows = [
-                                    {
-                                        key: 'recommended',
-                                        title: 'Лучший по цене для заказа',
-                                        tone: INSIGHT_TONE_STYLES.green,
-                                        row: bestSiteOfferForOrder,
-                                    },
-                                ].filter((item) => item.row);
+                                const recommendationRows = bestSiteOffersForOrder.map(
+                                    (row, index) => ({
+                                        key: `recommended-${index}`,
+                                        title:
+                                            index === 0
+                                                ? 'Лучший по цене для заказа'
+                                                : `Доп. вариант ${index + 1}`,
+                                        tone:
+                                            index === 0
+                                                ? INSIGHT_TONE_STYLES.green
+                                                : INSIGHT_TONE_STYLES.blue,
+                                        row,
+                                    })
+                                );
 
                                 if (!recommendationRows.length) {
                                     return null;
@@ -3603,7 +3765,7 @@ const AutopartOffers = () => {
                                             gap: 8,
                                         }}
                                     >
-                                        {recommendationRows.map(({ key, title, tone, row }) => {
+                                        {recommendationRows.map(({ key, title, tone, row }, index) => {
                                             const deliveryStr = formatInsightDelivery(
                                                 row.min_delivery_day,
                                                 row.max_delivery_day
@@ -3665,15 +3827,23 @@ const AutopartOffers = () => {
                                                             : ''}
                                                     </div>
                                                     <div style={{ color: '#64748b', fontSize: 11 }}>
-                                                        Dragonzap · сначала берём
-                                                        минимальную цену из запроса
-                                                        по OEM и кроссам, а если там
-                                                        пусто — по точному OEM
+                                                        {row.recommendation_source === 'cross_exact'
+                                                            ? 'Dragonzap · найдено прямым запросом по кроссу без режима кроссов'
+                                                            : 'Dragonzap · учитываем прямой OEM, cross-режим и прямые запросы по найденным кроссам'}
                                                     </div>
                                                     <div style={{ color: '#64748b', fontSize: 11 }}>
-                                                        {rowOem && rowOem !== normalizedCurrentOem
-                                                            ? `Сработал кросс: ${rowOem}`
-                                                            : 'Лучшее предложение по текущему OEM на сайте'}
+                                                        {index === 0
+                                                            ? (
+                                                                rowOem &&
+                                                                rowOem !== normalizedCurrentOem
+                                                                    ? `Сработал кросс: ${rowOem}`
+                                                                    : 'Лучшее предложение по текущему OEM на сайте'
+                                                            )
+                                                            : Number(
+                                                                recommendationRows[index - 1]?.row?.qnt ?? 0
+                                                            ) < SITE_RECOMMENDATION_LOW_STOCK_QTY
+                                                                ? `Показываем ещё вариант, потому что у предыдущего меньше ${SITE_RECOMMENDATION_LOW_STOCK_QTY} шт`
+                                                                : 'Дополнительный вариант по сайту'}
                                                     </div>
                                                     {row.price != null ? (
                                                         <Space>
