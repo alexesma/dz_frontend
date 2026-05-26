@@ -422,6 +422,75 @@ const pickSiteRecommendationOffers = (offers) => {
     return selected;
 };
 
+const sortSiteOffersByPriority = (offers) =>
+    [...(offers || [])].sort((a, b) => {
+        const priceDiff =
+            Number(a?.price ?? Number.POSITIVE_INFINITY) -
+            Number(b?.price ?? Number.POSITIVE_INFINITY);
+        if (priceDiff !== 0) {
+            return priceDiff;
+        }
+        const aLead = Number(
+            a?.min_delivery_day ?? a?.max_delivery_day ?? Number.POSITIVE_INFINITY
+        );
+        const bLead = Number(
+            b?.min_delivery_day ?? b?.max_delivery_day ?? Number.POSITIVE_INFINITY
+        );
+        if (aLead !== bLead) {
+            return aLead - bLead;
+        }
+        return Number(b?.qnt ?? 0) - Number(a?.qnt ?? 0);
+    });
+
+const mergeSiteOffersForDisplay = (groups) => {
+    const byKey = new Map();
+
+    for (const group of groups || []) {
+        const label = String(group?.label || '').trim();
+        const type = String(group?.type || '').trim();
+        for (const offer of group?.offers || []) {
+            const key = buildCartKey('dragonzap', {
+                ...offer,
+                oem: offer?.oem || offer?.oem_number,
+            });
+            const existing = byKey.get(key);
+            if (!existing) {
+                const siteRequestEntries =
+                    label || type ? [{ label, type }] : [];
+                byKey.set(key, {
+                    ...offer,
+                    site_request_entries: siteRequestEntries,
+                    site_request_labels: label ? [label] : [],
+                    site_request_types: type ? [type] : [],
+                });
+                continue;
+            }
+            const nextEntries = new Map(
+                (existing.site_request_entries || []).map((entry) => [
+                    `${entry.type || ''}::${entry.label || ''}`,
+                    entry,
+                ])
+            );
+            if (label || type) {
+                nextEntries.set(`${type}::${label}`, { label, type });
+            }
+            const mergedEntries = Array.from(nextEntries.values());
+            byKey.set(key, {
+                ...existing,
+                site_request_entries: mergedEntries,
+                site_request_labels: mergedEntries
+                    .map((entry) => String(entry?.label || '').trim())
+                    .filter(Boolean),
+                site_request_types: mergedEntries
+                    .map((entry) => String(entry?.type || '').trim())
+                    .filter(Boolean),
+            });
+        }
+    }
+
+    return sortSiteOffersByPriority(Array.from(byKey.values()));
+};
+
 const INSIGHT_TONE_STYLES = {
     blue: {
         background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
@@ -795,6 +864,80 @@ const AutopartOffers = () => {
             ]),
         [siteExactCrossOffers, siteExactOffers, siteOffersWithCrosses]
     );
+
+    const mergedRemoteSiteOffers = useMemo(() => {
+        const normalizedOem = String(currentOem || '').trim().toUpperCase();
+        const normalizedBrand = String(selectedBrand || '').trim();
+        const baseQueryLabel = [normalizedBrand, normalizedOem]
+            .filter(Boolean)
+            .join(' ')
+            .trim();
+        const groups = [];
+
+        if (siteExactOffers.length) {
+            groups.push({
+                label: baseQueryLabel
+                    ? `Исходный точный запрос: ${baseQueryLabel}`
+                    : 'Исходный точный запрос',
+                type: 'base_exact',
+                offers: siteExactOffers,
+            });
+        }
+
+        if (siteOffersWithCrosses.length) {
+            groups.push({
+                label: baseQueryLabel
+                    ? `Запрос по исходному OEM с кроссами: ${baseQueryLabel}`
+                    : 'Запрос по исходному OEM с кроссами',
+                type: 'base_cross',
+                offers: siteOffersWithCrosses,
+            });
+        }
+
+        const directCrossGroups = new Map();
+        for (const offer of siteExactCrossOffers || []) {
+            const crossBrand = String(
+                offer?.recommendation_cross_brand_name ||
+                    offer?.make_name ||
+                    offer?.brand_name ||
+                    ''
+            ).trim();
+            const crossOem = String(
+                offer?.recommendation_cross_oem_number ||
+                    offer?.oem ||
+                    offer?.oem_number ||
+                    ''
+            )
+                .trim()
+                .toUpperCase();
+            const requestLabel = [crossBrand, crossOem]
+                .filter(Boolean)
+                .join(' ')
+                .trim();
+            const groupKey = normalizeCrossKey(crossBrand, crossOem);
+            if (!directCrossGroups.has(groupKey)) {
+                directCrossGroups.set(groupKey, {
+                    label: requestLabel
+                        ? `Прямой запрос по кроссу: ${requestLabel}`
+                        : 'Прямой запрос по кроссу',
+                    type: 'cross_exact',
+                    offers: [],
+                });
+            }
+            directCrossGroups.get(groupKey).offers.push(offer);
+        }
+
+        return mergeSiteOffersForDisplay([
+            ...groups,
+            ...Array.from(directCrossGroups.values()),
+        ]);
+    }, [
+        currentOem,
+        selectedBrand,
+        siteExactCrossOffers,
+        siteExactOffers,
+        siteOffersWithCrosses,
+    ]);
 
     const summaryCrossItems = useMemo(() => {
         const itemsByKey = new Map();
@@ -2422,9 +2565,6 @@ const AutopartOffers = () => {
                 crossParsed.offers,
                 oemValue
             );
-            const displayedOffers = usingCrossFallback
-                ? crossParsed.offers
-                : activeParsed.offers;
 
             setSiteExactOffers(exactParsed.offers);
             setSiteOffersWithCrosses(crossParsed.offers);
@@ -2480,8 +2620,6 @@ const AutopartOffers = () => {
                 });
             }
 
-            setRemoteOffers(displayedOffers);
-            setRemoteMeta({ total: displayedOffers.length });
             const [trackingResponse, trackingInsightsPayload] = await Promise.all([
                 getTrackingOrderItems({
                     oem: oemValue,
@@ -2626,15 +2764,9 @@ const AutopartOffers = () => {
     }, [fetchTrackingInsights, invalidCrossKeySet, showCrosses]);
 
     useEffect(() => {
-        if (!siteExactOffers.length && !siteOffersWithCrosses.length) {
-            return;
-        }
-        const nextOffers = showCrosses
-            ? siteOffersWithCrosses
-            : (siteExactOffers.length ? siteExactOffers : siteOffersWithCrosses);
-        setRemoteOffers(nextOffers);
-        setRemoteMeta({ total: nextOffers.length });
-    }, [showCrosses, siteExactOffers, siteOffersWithCrosses]);
+        setRemoteOffers(mergedRemoteSiteOffers);
+        setRemoteMeta({ total: mergedRemoteSiteOffers.length });
+    }, [mergedRemoteSiteOffers]);
 
     const handleDragonzapRequest = async () => {
         const oemValue = currentOem || form.getFieldValue('oem');
@@ -3188,6 +3320,41 @@ const AutopartOffers = () => {
         { title: 'OEM', dataIndex: 'oem', key: 'oem', width: 112 },
         { title: 'Бренд', dataIndex: 'make_name', key: 'make_name', width: 88, ellipsis: true },
         { title: 'Наименование', dataIndex: 'detail_name', key: 'detail_name', ellipsis: true, width: 180 },
+        {
+            title: 'Запрос',
+            key: 'site_request_labels',
+            width: 250,
+            render: (_, record) => {
+                const entries = Array.isArray(record.site_request_entries)
+                    ? record.site_request_entries
+                    : [];
+                if (!entries.length) {
+                    return <span style={{ color: '#94a3b8' }}>—</span>;
+                }
+                return (
+                    <Space direction="vertical" size={2}>
+                        {entries.map((entry) => {
+                            const type = String(entry?.type || '').trim();
+                            const color =
+                                type === 'cross_exact'
+                                    ? 'purple'
+                                    : type === 'base_cross'
+                                        ? 'blue'
+                                        : 'green';
+                            return (
+                                <Tag
+                                    key={`${type}:${entry?.label || ''}`}
+                                    color={color}
+                                    style={{ marginInlineEnd: 0, whiteSpace: 'normal' }}
+                                >
+                                    {entry?.label || 'Запрос сайта'}
+                                </Tag>
+                            );
+                        })}
+                    </Space>
+                );
+            },
+        },
         {
             title: 'Цена',
             dataIndex: 'price',
@@ -4154,7 +4321,9 @@ const AutopartOffers = () => {
                 <Spin spinning={remoteLoading}>
                     {remoteMeta.total > 0 ? (
                         <div style={{ marginBottom: 8, color: '#6b7280' }}>
-                            Найдено {remoteMeta.total}. Показаны все предложения
+                            Найдено {remoteMeta.total}. Показаны все предложения сайта
+                            по исходному точному запросу, запросу с кроссами
+                            и дополнительным прямым запросам по кроссам
                             {siteResponseDiagnostics?.usingCrossFallback
                                 ? ' с учетом кроссов.'
                                 : '.'}
@@ -4162,13 +4331,20 @@ const AutopartOffers = () => {
                     ) : null}
                     <Table
                         className="autopart-offers-table"
-                        rowKey={(record, index) => record.api_hash || `${record.oem}-${index}`}
+                        rowKey={(record, index) =>
+                            record.api_hash ||
+                            buildCartKey('dragonzap', {
+                                ...record,
+                                oem: record?.oem || record?.oem_number,
+                            }) ||
+                            `${record.oem}-${index}`
+                        }
                         columns={remoteColumns}
                         dataSource={remoteOffers}
                         size="small"
                         pagination={{ pageSize: 20, showSizeChanger: false }}
                         tableLayout="fixed"
-                        scroll={{ x: 820 }}
+                        scroll={{ x: 1100 }}
                     />
                 </Spin>
 
