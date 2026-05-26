@@ -653,6 +653,12 @@ const AutopartOffers = () => {
     const [siteExactOffers, setSiteExactOffers] = useState([]);
     const [siteOffersWithCrosses, setSiteOffersWithCrosses] = useState([]);
     const [siteExactCrossOffers, setSiteExactCrossOffers] = useState([]);
+    const [siteCrossFollowupStatus, setSiteCrossFollowupStatus] = useState({
+        active: false,
+        total: 0,
+        completed: 0,
+        candidates: [],
+    });
     const [siteResponseDiagnostics, setSiteResponseDiagnostics] = useState(null);
     const [siteRequestError, setSiteRequestError] = useState(null);
     const [remoteLoading, setRemoteLoading] = useState(false);
@@ -2070,6 +2076,12 @@ const AutopartOffers = () => {
         setSiteExactOffers([]);
         setSiteOffersWithCrosses([]);
         setSiteExactCrossOffers([]);
+        setSiteCrossFollowupStatus({
+            active: false,
+            total: 0,
+            completed: 0,
+            candidates: [],
+        });
         setSiteResponseDiagnostics(null);
         setSiteRequestError(null);
         setTrackingHistory([]);
@@ -2228,6 +2240,12 @@ const AutopartOffers = () => {
         setSiteRequestError(null);
         setSiteResponseDiagnostics(null);
         setSiteExactCrossOffers([]);
+        setSiteCrossFollowupStatus({
+            active: false,
+            total: 0,
+            completed: 0,
+            candidates: [],
+        });
         try {
             const normalizeSiteResponse = (payload, requestedBrand, allowCrosses) => {
                 const responseBrandCandidates = normalizeDragonzapBrandCandidates(
@@ -2485,23 +2503,72 @@ const AutopartOffers = () => {
                 trackingInsightsPayload?.cross_offer_rows,
                 oemValue
             );
+            if (crossLookupCandidates.length) {
+                setSiteCrossFollowupStatus({
+                    active: true,
+                    total: crossLookupCandidates.length,
+                    completed: 0,
+                    candidates: crossLookupCandidates,
+                });
+            } else {
+                setSiteCrossFollowupStatus({
+                    active: false,
+                    total: 0,
+                    completed: 0,
+                    candidates: [],
+                });
+            }
+            const siteBrandCandidatesByOem = new Map();
+            for (const offer of filteredCrossOffers) {
+                const candidateOem = String(
+                    offer?.oem || offer?.oem_number || ''
+                ).trim().toUpperCase();
+                const candidateBrand = String(
+                    offer?.make_name || offer?.brand_name || ''
+                ).trim();
+                const candidatePrice = Number(offer?.price);
+                if (
+                    !candidateOem ||
+                    !candidateBrand ||
+                    !Number.isFinite(candidatePrice)
+                ) {
+                    continue;
+                }
+                const existingCandidate = siteBrandCandidatesByOem.get(
+                    candidateOem
+                );
+                if (
+                    !existingCandidate ||
+                    candidatePrice < existingCandidate.price
+                ) {
+                    siteBrandCandidatesByOem.set(candidateOem, {
+                        brand_name: candidateBrand,
+                        price: candidatePrice,
+                    });
+                }
+            }
             const directCrossExactResponses = await Promise.all(
                 crossLookupCandidates.map(async (item) => {
+                    const siteBrandCandidate = siteBrandCandidatesByOem.get(
+                        item.oem_number
+                    );
+                    const requestBrand =
+                        siteBrandCandidate?.brand_name || item.brand_name;
                     try {
                         const response = await getDragonzapOffers(
                             item.oem_number,
-                            item.brand_name,
+                            requestBrand,
                             true
                         );
                         const parsed = normalizeSiteResponse(
                             response?.data,
-                            item.brand_name,
+                            requestBrand,
                             false
                         );
                         return (parsed.offers || []).map((offer) => ({
                             ...offer,
                             recommendation_source: 'cross_exact',
-                            recommendation_cross_brand_name: item.brand_name,
+                            recommendation_cross_brand_name: requestBrand,
                             recommendation_cross_oem_number: item.oem_number,
                             recommendation_local_cross_price: item.price,
                         }));
@@ -2512,6 +2579,14 @@ const AutopartOffers = () => {
                             crossExactError
                         );
                         return [];
+                    } finally {
+                        setSiteCrossFollowupStatus((prev) => ({
+                            ...prev,
+                            completed: Math.min(
+                                prev.total,
+                                Number(prev.completed || 0) + 1
+                            ),
+                        }));
                     }
                 })
             );
@@ -2519,6 +2594,10 @@ const AutopartOffers = () => {
                 directCrossExactResponses.flat()
             );
             setSiteExactCrossOffers(nextSiteExactCrossOffers);
+            setSiteCrossFollowupStatus((prev) => ({
+                ...prev,
+                active: false,
+            }));
             const trackingRows = Array.isArray(trackingResponse?.data)
                 ? trackingResponse.data
                 : [];
@@ -2534,6 +2613,10 @@ const AutopartOffers = () => {
             }
         } catch (error) {
             console.error('Dragonzap request error:', error);
+            setSiteCrossFollowupStatus((prev) => ({
+                ...prev,
+                active: false,
+            }));
             const describedError = describeDragonzapRequestError(error);
             setSiteRequestError(describedError);
             message.error(describedError.userMessage);
@@ -4028,6 +4111,42 @@ const AutopartOffers = () => {
                         showIcon
                         message={siteDiagnosticsAlert.message}
                         description={siteDiagnosticsAlert.description}
+                        style={{ marginBottom: 12 }}
+                    />
+                ) : null}
+
+                {siteCrossFollowupStatus.total > 0 ? (
+                    <Alert
+                        type={siteCrossFollowupStatus.active ? 'info' : 'success'}
+                        showIcon
+                        message={
+                            siteCrossFollowupStatus.active
+                                ? 'Ждём дополнительный ответ от сайта по кроссам'
+                                : 'Дополнительная проверка сайта по кроссам завершена'
+                        }
+                        description={
+                            <Space direction="vertical" size={2}>
+                                <div>
+                                    Проверяем ещё {siteCrossFollowupStatus.total} кросс-артикула
+                                    по прямому запросу на сайт после основного ответа.
+                                </div>
+                                <div>
+                                    Прогресс: {siteCrossFollowupStatus.completed} из{' '}
+                                    {siteCrossFollowupStatus.total}
+                                </div>
+                                {siteCrossFollowupStatus.candidates.length ? (
+                                    <div style={{ fontSize: 12, color: '#64748b' }}>
+                                        Кроссы для доп. проверки:{' '}
+                                        {siteCrossFollowupStatus.candidates
+                                            .map(
+                                                (item) =>
+                                                    `${item.brand_name} ${item.oem_number}`
+                                            )
+                                            .join(' · ')}
+                                    </div>
+                                ) : null}
+                            </Space>
+                        }
                         style={{ marginBottom: 12 }}
                     />
                 ) : null}
