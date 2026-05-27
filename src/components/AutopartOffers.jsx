@@ -24,6 +24,7 @@ import {
     SearchOutlined,
     CloseOutlined,
     CloudDownloadOutlined,
+    InfoCircleOutlined,
     LineChartOutlined,
     PlusOutlined,
     ShoppingCartOutlined,
@@ -3317,13 +3318,48 @@ const AutopartOffers = () => {
     ];
 
     const remoteColumns = [
-        { title: 'OEM', dataIndex: 'oem', key: 'oem', width: 112 },
-        { title: 'Бренд', dataIndex: 'make_name', key: 'make_name', width: 88, ellipsis: true },
-        { title: 'Наименование', dataIndex: 'detail_name', key: 'detail_name', ellipsis: true, width: 180 },
+        {
+            title: 'Позиция',
+            key: 'position',
+            width: 138,
+            render: (_, record) => (
+                <div style={{ minWidth: 0 }}>
+                    <div
+                        style={{
+                            fontWeight: 600,
+                            lineHeight: 1.2,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                        }}
+                    >
+                        {record.oem || record.oem_number || '—'}
+                    </div>
+                    <div
+                        style={{
+                            color: '#64748b',
+                            fontSize: 11,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                        }}
+                    >
+                        {record.make_name || record.brand_name || '—'}
+                    </div>
+                </div>
+            ),
+        },
+        {
+            title: 'Наименование',
+            dataIndex: 'detail_name',
+            key: 'detail_name',
+            ellipsis: true,
+            width: 140,
+        },
         {
             title: 'Запрос',
             key: 'site_request_labels',
-            width: 250,
+            width: 132,
             render: (_, record) => {
                 const entries = Array.isArray(record.site_request_entries)
                     ? record.site_request_entries
@@ -3331,27 +3367,55 @@ const AutopartOffers = () => {
                 if (!entries.length) {
                     return <span style={{ color: '#94a3b8' }}>—</span>;
                 }
-                return (
-                    <Space direction="vertical" size={2}>
-                        {entries.map((entry) => {
-                            const type = String(entry?.type || '').trim();
-                            const color =
-                                type === 'cross_exact'
-                                    ? 'purple'
-                                    : type === 'base_cross'
-                                        ? 'blue'
-                                        : 'green';
-                            return (
-                                <Tag
-                                    key={`${type}:${entry?.label || ''}`}
-                                    color={color}
-                                    style={{ marginInlineEnd: 0, whiteSpace: 'normal' }}
-                                >
-                                    {entry?.label || 'Запрос сайта'}
-                                </Tag>
-                            );
-                        })}
+                const hasBaseExact = entries.some(
+                    (entry) => String(entry?.type || '').trim() === 'base_exact'
+                );
+                const hasBaseCross = entries.some(
+                    (entry) => String(entry?.type || '').trim() === 'base_cross'
+                );
+                const crossExactEntries = entries.filter(
+                    (entry) => String(entry?.type || '').trim() === 'cross_exact'
+                );
+                const compactTags = [];
+                if (hasBaseExact) {
+                    compactTags.push({ key: 'base_exact', label: 'OEM', color: 'green' });
+                }
+                if (hasBaseCross) {
+                    compactTags.push({ key: 'base_cross', label: 'OEM+X', color: 'blue' });
+                }
+                if (crossExactEntries.length) {
+                    compactTags.push({
+                        key: 'cross_exact',
+                        label:
+                            crossExactEntries.length > 1
+                                ? `Кросс +${crossExactEntries.length}`
+                                : 'Кросс',
+                        color: 'purple',
+                    });
+                }
+                const tooltipContent = (
+                    <Space direction="vertical" size={4}>
+                        {entries.map((entry) => (
+                            <div key={`${entry?.type || ''}:${entry?.label || ''}`}>
+                                {entry?.label || 'Запрос сайта'}
+                            </div>
+                        ))}
                     </Space>
+                );
+                return (
+                    <Tooltip title={tooltipContent}>
+                        <Space size={4} wrap>
+                            {compactTags.map((entry) => (
+                                <Tag
+                                    key={entry.key}
+                                    color={entry.color}
+                                    style={{ marginInlineEnd: 0 }}
+                                >
+                                    {entry.label}
+                                </Tag>
+                            ))}
+                        </Space>
+                    </Tooltip>
                 );
             },
         },
@@ -3359,7 +3423,7 @@ const AutopartOffers = () => {
             title: 'Цена',
             dataIndex: 'price',
             key: 'price',
-            width: 82,
+            width: 76,
             sorter: (a, b) => {
                 const aPrice = Number(a.price ?? Number.POSITIVE_INFINITY);
                 const bPrice = Number(b.price ?? Number.POSITIVE_INFINITY);
@@ -3372,13 +3436,13 @@ const AutopartOffers = () => {
             title: 'Кол-во',
             dataIndex: 'qnt',
             key: 'qnt',
-            width: 62,
+            width: 56,
             render: (value) => (value === null || value === undefined ? '—' : value),
         },
         {
             title: 'Срок',
             key: 'delivery',
-            width: 72,
+            width: 66,
             sorter: (a, b) => {
                 const aVal = Number(a.min_delivery_day ?? a.max_delivery_day ?? Number.POSITIVE_INFINITY);
                 const bVal = Number(b.min_delivery_day ?? b.max_delivery_day ?? Number.POSITIVE_INFINITY);
@@ -3390,17 +3454,32 @@ const AutopartOffers = () => {
                 if (min == null && max == null) {
                     return '—';
                 }
-                return `${min ?? '?'} - ${max ?? '?'}`;
+                return `${min ?? '?'}-${max ?? '?'}`;
             },
         },
         {
             title: 'Поставщик',
             dataIndex: 'supplier_name',
             key: 'supplier_name',
-            width: 130,
+            width: 92,
+            ellipsis: true,
             render: (value) => value || '—',
         },
-        { title: 'Комментарий', dataIndex: 'comment', key: 'comment', ellipsis: true, width: 140 },
+        {
+            title: 'Комм.',
+            dataIndex: 'comment',
+            key: 'comment',
+            width: 46,
+            align: 'center',
+            render: (value) =>
+                value ? (
+                    <Tooltip title={value}>
+                        <InfoCircleOutlined style={{ color: '#64748b' }} />
+                    </Tooltip>
+                ) : (
+                    <span style={{ color: '#94a3b8' }}>—</span>
+                ),
+        },
         {
             title: '',
             key: 'price_history',
@@ -4321,9 +4400,9 @@ const AutopartOffers = () => {
                 <Spin spinning={remoteLoading}>
                     {remoteMeta.total > 0 ? (
                         <div style={{ marginBottom: 8, color: '#6b7280' }}>
-                            Найдено {remoteMeta.total}. Показаны все предложения сайта
-                            по исходному точному запросу, запросу с кроссами
-                            и дополнительным прямым запросам по кроссам
+                            Найдено {remoteMeta.total}. Показаны все site-предложения
+                            из исходного запроса, запроса с кроссами
+                            и доп. прямых запросов по кроссам
                             {siteResponseDiagnostics?.usingCrossFallback
                                 ? ' с учетом кроссов.'
                                 : '.'}
@@ -4344,7 +4423,7 @@ const AutopartOffers = () => {
                         size="small"
                         pagination={{ pageSize: 20, showSizeChanger: false }}
                         tableLayout="fixed"
-                        scroll={{ x: 1100 }}
+                        scroll={{ x: 840 }}
                     />
                 </Spin>
 
