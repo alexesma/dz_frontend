@@ -45,7 +45,7 @@ import {
     searchAutopartsByOem,
     sendDragonzapOrder,
 } from '../api/autoparts';
-import { lookupBrands } from '../api/brands';
+import { getBrands, lookupBrands } from '../api/brands';
 import { getCustomersSummary } from '../api/customers';
 import {
     createManualSupplierOrder,
@@ -262,6 +262,9 @@ const normalizeCrossKey = (brandName, oemNumber) =>
         String(brandName || '').trim().toUpperCase(),
         String(oemNumber || '').trim().toUpperCase(),
     ].join('::');
+
+const normalizeBrandToken = (value) =>
+    String(value || '').trim().toUpperCase();
 
 const extractUniqueCrossItemsFromSiteOffers = (offers, baseOem) => {
     const normalizedBase = String(baseOem || '').trim().toUpperCase();
@@ -723,6 +726,7 @@ const AutopartOffers = () => {
     const [siteExactOffers, setSiteExactOffers] = useState([]);
     const [siteOffersWithCrosses, setSiteOffersWithCrosses] = useState([]);
     const [siteExactCrossOffers, setSiteExactCrossOffers] = useState([]);
+    const [siteBrandFamilyNames, setSiteBrandFamilyNames] = useState([]);
     const [siteCrossFollowupStatus, setSiteCrossFollowupStatus] = useState({
         active: false,
         total: 0,
@@ -737,6 +741,7 @@ const AutopartOffers = () => {
     const [draftOrderQty, setDraftOrderQty] = useState(1);
     const [remoteMeta, setRemoteMeta] = useState({ total: 0 });
     const [showCrosses, setShowCrosses] = useState(false);
+    const [restrictCrossBrand, setRestrictCrossBrand] = useState(false);
     const [partialSearch, setPartialSearch] = useState(false);
     const [currentOem, setCurrentOem] = useState('');
     const [siteBrandCandidates, setSiteBrandCandidates] = useState([]);
@@ -761,6 +766,9 @@ const AutopartOffers = () => {
     const [searchParams] = useSearchParams();
     const lookupRequestIdRef = useRef(0);
     const autoSearchKeyRef = useRef('');
+    const brandCatalogRef = useRef(null);
+    const previousRestrictCrossBrandRef = useRef(false);
+    const previousShowCrossesRef = useRef(false);
 
     const replaceItemId = searchParams.get('replace_item_id');
     const replaceSource = searchParams.get('replace_source');
@@ -816,6 +824,50 @@ const AutopartOffers = () => {
         return options;
     }, [historicalOffers, offers, siteBrandCandidates]);
 
+    const loadBrandCatalog = useCallback(async () => {
+        if (Array.isArray(brandCatalogRef.current)) {
+            return brandCatalogRef.current;
+        }
+        const { data } = await getBrands();
+        const rows = Array.isArray(data) ? data : [];
+        brandCatalogRef.current = rows;
+        return rows;
+    }, []);
+
+    const resolveBrandFamilyNames = useCallback(async (brandName) => {
+        const normalizedInput = normalizeBrandToken(brandName);
+        if (!normalizedInput) {
+            return [];
+        }
+        try {
+            const brands = await loadBrandCatalog();
+            const matchedBrand = brands.find((item) => {
+                const mainName = normalizeBrandToken(item?.name);
+                if (mainName === normalizedInput) {
+                    return true;
+                }
+                return (item?.synonyms || []).some(
+                    (synonym) =>
+                        normalizeBrandToken(synonym?.name) === normalizedInput
+                );
+            });
+            if (!matchedBrand) {
+                return [normalizedInput];
+            }
+            const family = new Set([
+                normalizeBrandToken(matchedBrand?.name),
+                ...(matchedBrand?.synonyms || []).map((synonym) =>
+                    normalizeBrandToken(synonym?.name)
+                ),
+                normalizedInput,
+            ]);
+            return Array.from(family).filter(Boolean);
+        } catch (error) {
+            console.warn('Failed to resolve brand family names:', error);
+            return [normalizedInput];
+        }
+    }, [loadBrandCatalog]);
+
     const normalizedCurrentOem = useMemo(
         () => String(currentOem || '').trim().toUpperCase(),
         [currentOem]
@@ -853,8 +905,13 @@ const AutopartOffers = () => {
     );
 
     const bestSiteOffersForOrder = useMemo(
-        () =>
-            pickSiteRecommendationOffers([
+        () => {
+            if (!showCrosses) {
+                return pickSiteRecommendationOffers(
+                    Array.isArray(siteExactOffers) ? siteExactOffers : []
+                );
+            }
+            return pickSiteRecommendationOffers([
                 ...(Array.isArray(siteExactCrossOffers)
                     ? siteExactCrossOffers
                     : []),
@@ -862,8 +919,9 @@ const AutopartOffers = () => {
                     ? siteOffersWithCrosses
                     : []),
                 ...(Array.isArray(siteExactOffers) ? siteExactOffers : []),
-            ]),
-        [siteExactCrossOffers, siteExactOffers, siteOffersWithCrosses]
+            ]);
+        },
+        [showCrosses, siteExactCrossOffers, siteExactOffers, siteOffersWithCrosses]
     );
 
     const mergedRemoteSiteOffers = useMemo(() => {
@@ -885,7 +943,7 @@ const AutopartOffers = () => {
             });
         }
 
-        if (siteOffersWithCrosses.length) {
+        if (showCrosses && siteOffersWithCrosses.length) {
             groups.push({
                 label: baseQueryLabel
                     ? `Запрос по исходному OEM с кроссами: ${baseQueryLabel}`
@@ -896,7 +954,7 @@ const AutopartOffers = () => {
         }
 
         const directCrossGroups = new Map();
-        for (const offer of siteExactCrossOffers || []) {
+        for (const offer of showCrosses ? siteExactCrossOffers || [] : []) {
             const crossBrand = String(
                 offer?.recommendation_cross_brand_name ||
                     offer?.make_name ||
@@ -935,10 +993,18 @@ const AutopartOffers = () => {
     }, [
         currentOem,
         selectedBrand,
+        showCrosses,
         siteExactCrossOffers,
         siteExactOffers,
         siteOffersWithCrosses,
     ]);
+
+    const hasHiddenCrossSiteOffers = useMemo(
+        () =>
+            !showCrosses &&
+            (siteOffersWithCrosses.length > 0 || siteExactCrossOffers.length > 0),
+        [showCrosses, siteExactCrossOffers.length, siteOffersWithCrosses.length]
+    );
 
     const summaryCrossItems = useMemo(() => {
         const itemsByKey = new Map();
@@ -2220,6 +2286,7 @@ const AutopartOffers = () => {
         setSiteExactOffers([]);
         setSiteOffersWithCrosses([]);
         setSiteExactCrossOffers([]);
+        setSiteBrandFamilyNames([]);
         setSiteCrossFollowupStatus({
             active: false,
             total: 0,
@@ -2391,6 +2458,15 @@ const AutopartOffers = () => {
             candidates: [],
         });
         try {
+            const allowedBrandFamilyNames = restrictCrossBrand
+                ? await resolveBrandFamilyNames(
+                    effectiveBrand || selectedBrand || brandValue || ''
+                )
+                : [];
+            const allowedBrandFamilySet = new Set(
+                allowedBrandFamilyNames.map(normalizeBrandToken)
+            );
+            setSiteBrandFamilyNames(allowedBrandFamilyNames);
             const normalizeSiteResponse = (payload, requestedBrand, allowCrosses) => {
                 const responseBrandCandidates = normalizeDragonzapBrandCandidates(
                     payload?.site_brand_candidates
@@ -2523,24 +2599,53 @@ const AutopartOffers = () => {
                 };
             };
 
-            const [exactResponse, crossResponse] = await Promise.all([
-                getDragonzapOffers(oemValue, effectiveBrand, true),
-                getDragonzapOffers(oemValue, effectiveBrand, false),
-            ]);
+            const exactResponse = await getDragonzapOffers(
+                oemValue,
+                effectiveBrand,
+                true
+            );
             const exactParsed = normalizeSiteResponse(
                 exactResponse?.data,
                 effectiveBrand,
                 false
             );
-            const crossParsed = normalizeSiteResponse(
-                crossResponse?.data,
-                effectiveBrand,
-                true
-            );
+            const crossParsed = showCrosses
+                ? normalizeSiteResponse(
+                    (
+                        await getDragonzapOffers(
+                            oemValue,
+                            effectiveBrand,
+                            false
+                        )
+                    )?.data,
+                    effectiveBrand,
+                    true
+                )
+                : {
+                    offers: [],
+                    responseBrandCandidates: [],
+                    fallbackBrand: '',
+                    usedFallbackBrand: false,
+                    rawCount: 0,
+                    shownCount: 0,
+                    qtyFilteredCount: 0,
+                    brandFilteredCount: 0,
+                };
             const filteredCrossOffers = crossParsed.offers.filter((offer) => {
                 const normalizedOfferOem = String(
                     offer?.oem || offer?.oem_number || ''
                 ).trim().toUpperCase();
+                const normalizedOfferBrand = normalizeBrandToken(
+                    offer?.make_name || offer?.brand_name
+                );
+                if (
+                    restrictCrossBrand &&
+                    allowedBrandFamilySet.size &&
+                    normalizedOfferBrand &&
+                    !allowedBrandFamilySet.has(normalizedOfferBrand)
+                ) {
+                    return false;
+                }
                 if (
                     !normalizedOfferOem ||
                     normalizedOfferOem ===
@@ -2558,10 +2663,6 @@ const AutopartOffers = () => {
             crossParsed.offers = filteredCrossOffers;
             crossParsed.shownCount = filteredCrossOffers.length;
             const activeParsed = showCrosses ? crossParsed : exactParsed;
-            const usingCrossFallback =
-                !showCrosses &&
-                !exactParsed.offers.length &&
-                crossParsed.offers.length > 0;
             const nextSiteCrossOems = extractUniqueCrossOems(
                 crossParsed.offers,
                 oemValue
@@ -2571,7 +2672,7 @@ const AutopartOffers = () => {
             setSiteOffersWithCrosses(crossParsed.offers);
             setSiteResponseDiagnostics({
                 requestedBrand: effectiveBrand,
-                usingCrossFallback,
+                usingCrossFallback: false,
                 exact: {
                     rawCount: exactParsed.rawCount,
                     shownCount: exactParsed.shownCount,
@@ -2641,8 +2742,15 @@ const AutopartOffers = () => {
             const crossLookupCandidates = extractCheapestCrossCandidatesFromLocalOffers(
                 trackingInsightsPayload?.cross_offer_rows,
                 oemValue
-            );
-            if (crossLookupCandidates.length) {
+            ).filter((item) => {
+                if (!restrictCrossBrand || !allowedBrandFamilySet.size) {
+                    return true;
+                }
+                return allowedBrandFamilySet.has(
+                    normalizeBrandToken(item?.brand_name)
+                );
+            });
+            if (showCrosses && crossLookupCandidates.length) {
                 setSiteCrossFollowupStatus({
                     active: true,
                     total: crossLookupCandidates.length,
@@ -2657,81 +2765,84 @@ const AutopartOffers = () => {
                     candidates: [],
                 });
             }
-            const siteBrandCandidatesByOem = new Map();
-            for (const offer of filteredCrossOffers) {
-                const candidateOem = String(
-                    offer?.oem || offer?.oem_number || ''
-                ).trim().toUpperCase();
-                const candidateBrand = String(
-                    offer?.make_name || offer?.brand_name || ''
-                ).trim();
-                const candidatePrice = Number(offer?.price);
-                if (
-                    !candidateOem ||
-                    !candidateBrand ||
-                    !Number.isFinite(candidatePrice)
-                ) {
-                    continue;
-                }
-                const existingCandidate = siteBrandCandidatesByOem.get(
-                    candidateOem
-                );
-                if (
-                    !existingCandidate ||
-                    candidatePrice < existingCandidate.price
-                ) {
-                    siteBrandCandidatesByOem.set(candidateOem, {
-                        brand_name: candidateBrand,
-                        price: candidatePrice,
-                    });
-                }
-            }
-            const directCrossExactResponses = await Promise.all(
-                crossLookupCandidates.map(async (item) => {
-                    const siteBrandCandidate = siteBrandCandidatesByOem.get(
-                        item.oem_number
-                    );
-                    const requestBrand =
-                        siteBrandCandidate?.brand_name || item.brand_name;
-                    try {
-                        const response = await getDragonzapOffers(
-                            item.oem_number,
-                            requestBrand,
-                            true
-                        );
-                        const parsed = normalizeSiteResponse(
-                            response?.data,
-                            requestBrand,
-                            false
-                        );
-                        return (parsed.offers || []).map((offer) => ({
-                            ...offer,
-                            recommendation_source: 'cross_exact',
-                            recommendation_cross_brand_name: requestBrand,
-                            recommendation_cross_oem_number: item.oem_number,
-                            recommendation_local_cross_price: item.price,
-                        }));
-                    } catch (crossExactError) {
-                        console.warn(
-                            'Dragonzap direct cross exact lookup failed:',
-                            item,
-                            crossExactError
-                        );
-                        return [];
-                    } finally {
-                        setSiteCrossFollowupStatus((prev) => ({
-                            ...prev,
-                            completed: Math.min(
-                                prev.total,
-                                Number(prev.completed || 0) + 1
-                            ),
-                        }));
+            let nextSiteExactCrossOffers = [];
+            if (showCrosses && crossLookupCandidates.length) {
+                const siteBrandCandidatesByOem = new Map();
+                for (const offer of filteredCrossOffers) {
+                    const candidateOem = String(
+                        offer?.oem || offer?.oem_number || ''
+                    ).trim().toUpperCase();
+                    const candidateBrand = String(
+                        offer?.make_name || offer?.brand_name || ''
+                    ).trim();
+                    const candidatePrice = Number(offer?.price);
+                    if (
+                        !candidateOem ||
+                        !candidateBrand ||
+                        !Number.isFinite(candidatePrice)
+                    ) {
+                        continue;
                     }
-                })
-            );
-            const nextSiteExactCrossOffers = dedupeAndSortSiteOffers(
-                directCrossExactResponses.flat()
-            );
+                    const existingCandidate = siteBrandCandidatesByOem.get(
+                        candidateOem
+                    );
+                    if (
+                        !existingCandidate ||
+                        candidatePrice < existingCandidate.price
+                    ) {
+                        siteBrandCandidatesByOem.set(candidateOem, {
+                            brand_name: candidateBrand,
+                            price: candidatePrice,
+                        });
+                    }
+                }
+                const directCrossExactResponses = await Promise.all(
+                    crossLookupCandidates.map(async (item) => {
+                        const siteBrandCandidate = siteBrandCandidatesByOem.get(
+                            item.oem_number
+                        );
+                        const requestBrand =
+                            siteBrandCandidate?.brand_name || item.brand_name;
+                        try {
+                            const response = await getDragonzapOffers(
+                                item.oem_number,
+                                requestBrand,
+                                true
+                            );
+                            const parsed = normalizeSiteResponse(
+                                response?.data,
+                                requestBrand,
+                                false
+                            );
+                            return (parsed.offers || []).map((offer) => ({
+                                ...offer,
+                                recommendation_source: 'cross_exact',
+                                recommendation_cross_brand_name: requestBrand,
+                                recommendation_cross_oem_number: item.oem_number,
+                                recommendation_local_cross_price: item.price,
+                            }));
+                        } catch (crossExactError) {
+                            console.warn(
+                                'Dragonzap direct cross exact lookup failed:',
+                                item,
+                                crossExactError
+                            );
+                            return [];
+                        } finally {
+                            setSiteCrossFollowupStatus((prev) => ({
+                                ...prev,
+                                completed: Math.min(
+                                    prev.total,
+                                    Number(prev.completed || 0) + 1
+                                ),
+                            }));
+                        }
+                    })
+                );
+                nextSiteExactCrossOffers = dedupeAndSortSiteOffers(
+                    directCrossExactResponses.flat()
+                );
+            }
             setSiteExactCrossOffers(nextSiteExactCrossOffers);
             setSiteCrossFollowupStatus((prev) => ({
                 ...prev,
@@ -2741,11 +2852,15 @@ const AutopartOffers = () => {
                 ? trackingResponse.data
                 : [];
             setTrackingHistory(trackingRows);
-            if (usingCrossFallback) {
+            if (!showCrosses && !exactParsed.offers.length) {
+                message.info(
+                    'Сайт ничего не показал по точному OEM и выбранному бренду.'
+                );
+            } else if (showCrosses && !exactParsed.offers.length && crossParsed.offers.length) {
                 message.info(
                     'По точному OEM сайт ничего не вернул. Показаны предложения с учетом кроссов.'
                 );
-            } else if (!exactParsed.offers.length && !crossParsed.offers.length) {
+            } else if (showCrosses && !exactParsed.offers.length && !crossParsed.offers.length) {
                 message.info(
                     'Сайт ничего не показал ни по точному OEM, ни по запросу с учетом кроссов.'
                 );
@@ -2762,12 +2877,57 @@ const AutopartOffers = () => {
         } finally {
             setRemoteLoading(false);
         }
-    }, [fetchTrackingInsights, invalidCrossKeySet, showCrosses]);
+    }, [
+        fetchTrackingInsights,
+        invalidCrossKeySet,
+        restrictCrossBrand,
+        resolveBrandFamilyNames,
+        selectedBrand,
+        showCrosses,
+    ]);
 
     useEffect(() => {
         setRemoteOffers(mergedRemoteSiteOffers);
         setRemoteMeta({ total: mergedRemoteSiteOffers.length });
     }, [mergedRemoteSiteOffers]);
+
+    useEffect(() => {
+        if (previousRestrictCrossBrandRef.current === restrictCrossBrand) {
+            return;
+        }
+        previousRestrictCrossBrandRef.current = restrictCrossBrand;
+        if (!showCrosses || !currentOem || !siteResponseDiagnostics) {
+            return;
+        }
+        void requestDragonzapOffers(currentOem, selectedBrand || '');
+    }, [
+        currentOem,
+        requestDragonzapOffers,
+        restrictCrossBrand,
+        selectedBrand,
+        siteResponseDiagnostics,
+        showCrosses,
+    ]);
+
+    useEffect(() => {
+        if (previousShowCrossesRef.current === showCrosses) {
+            return;
+        }
+        const wasEnabled = previousShowCrossesRef.current;
+        previousShowCrossesRef.current = showCrosses;
+        if (!currentOem || !siteResponseDiagnostics) {
+            return;
+        }
+        if (showCrosses && !wasEnabled) {
+            void requestDragonzapOffers(currentOem, selectedBrand || '');
+        }
+    }, [
+        currentOem,
+        requestDragonzapOffers,
+        selectedBrand,
+        showCrosses,
+        siteResponseDiagnostics,
+    ]);
 
     const handleDragonzapRequest = async () => {
         const oemValue = currentOem || form.getFieldValue('oem');
@@ -4331,6 +4491,17 @@ const AutopartOffers = () => {
                     >
                         Показывать кроссы
                     </Checkbox>
+                    <Tooltip title="Оставлять только кроссы того же бренда и его синонимов из справочника брендов">
+                        <Checkbox
+                            checked={restrictCrossBrand}
+                            disabled={!showCrosses}
+                            onChange={(e) =>
+                                setRestrictCrossBrand(e.target.checked)
+                            }
+                        >
+                            Ограничить кроссы брендом
+                        </Checkbox>
+                    </Tooltip>
                     <Button
                         type="primary"
                         icon={<CloudDownloadOutlined />}
@@ -4397,15 +4568,37 @@ const AutopartOffers = () => {
                     />
                 ) : null}
 
+                {showCrosses && restrictCrossBrand && siteBrandFamilyNames.length ? (
+                    <div style={{ color: '#6b7280', fontSize: 12 }}>
+                        По кроссам оставляем только бренд запроса и его синонимы:{' '}
+                        {siteBrandFamilyNames.join(' · ')}
+                    </div>
+                ) : null}
+
                 <Spin spinning={remoteLoading}>
                     {remoteMeta.total > 0 ? (
                         <div style={{ marginBottom: 8, color: '#6b7280' }}>
-                            Найдено {remoteMeta.total}. Показаны все site-предложения
-                            из исходного запроса, запроса с кроссами
-                            и доп. прямых запросов по кроссам
-                            {siteResponseDiagnostics?.usingCrossFallback
-                                ? ' с учетом кроссов.'
-                                : '.'}
+                            Найдено {remoteMeta.total}.{' '}
+                            {showCrosses
+                                ? (
+                                    <>
+                                        Показаны все site-предложения из исходного
+                                        запроса, запроса с кроссами и доп. прямых
+                                        запросов по кроссам.
+                                    </>
+                                )
+                                : (
+                                    <>
+                                        Показаны только предложения по исходному
+                                        точному запросу.
+                                    </>
+                                )}
+                        </div>
+                    ) : null}
+                    {hasHiddenCrossSiteOffers ? (
+                        <div style={{ marginBottom: 8, color: '#2563eb', fontSize: 12 }}>
+                            Ответы по кроссам уже получены, но скрыты. Включи
+                            ` Показывать кроссы `, чтобы увидеть полную картину.
                         </div>
                     ) : null}
                     <Table
