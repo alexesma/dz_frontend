@@ -240,6 +240,8 @@ const AutopurchasePage = () => {
         void fetchDraftOrders(selectedRunId);
     }, [fetchDraftOrders, selectedRunId]);
 
+    const run = runPayload?.run || runs.find((item) => item.id === selectedRunId) || null;
+
     const handleCreateRun = async () => {
         setCreateLoading(true);
         try {
@@ -378,7 +380,6 @@ const AutopurchasePage = () => {
         () => (Array.isArray(runPayload?.rows) ? runPayload.rows : []),
         [runPayload?.rows]
     );
-    const run = runPayload?.run || runs.find((item) => item.id === selectedRunId) || null;
     const visibleRows = useMemo(
         () => (
             showOnlyPendingRows
