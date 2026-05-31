@@ -3685,7 +3685,7 @@ const AutopartOffers = () => {
             title: 'Источник',
             dataIndex: 'source_type',
             key: 'source_type',
-            width: 92,
+            width: 76,
             render: (value) => (
                 <Tag color={value === 'dragonzap' ? 'blue' : 'green'}>
                     {value === 'dragonzap' ? 'Сайт' : 'Прайс'}
@@ -3693,63 +3693,114 @@ const AutopartOffers = () => {
             ),
         },
         {
-            title: 'OEM',
-            dataIndex: 'oem_number',
-            key: 'oem_number',
-            width: 130,
-            ellipsis: true,
-        },
-        {
-            title: 'Бренд',
-            dataIndex: 'brand_name',
-            key: 'brand_name',
-            width: 110,
-            ellipsis: true,
+            title: 'Позиция',
+            key: 'position',
+            width: 150,
+            render: (_, record) => (
+                <div style={{ minWidth: 0 }}>
+                    <div
+                        style={{
+                            fontWeight: 600,
+                            lineHeight: 1.2,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                        }}
+                    >
+                        {record.oem_number || '—'}
+                    </div>
+                    <div
+                        style={{
+                            color: '#64748b',
+                            fontSize: 11,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                        }}
+                    >
+                        {record.brand_name || '—'}
+                    </div>
+                </div>
+            ),
         },
         {
             title: 'Наименование',
             dataIndex: 'name',
             key: 'name',
-            width: 220,
+            width: 150,
             ellipsis: true,
+            render: (value) =>
+                value ? (
+                    <Tooltip title={value}>
+                        <span>{value}</span>
+                    </Tooltip>
+                ) : '—',
         },
         {
             title: 'Поставщик',
             dataIndex: 'provider_name',
             key: 'provider_name',
-            width: 180,
+            width: 126,
             ellipsis: true,
             render: (value, record) => (
-                <div>
-                    <div style={{ fontWeight: 500 }}>{value || '—'}</div>
-                    {record.provider_config_name ? (
-                        <div style={{ color: '#6b7280', fontSize: 12 }}>
-                            {record.provider_config_name}
+                <Tooltip
+                    title={
+                        <Space direction="vertical" size={2}>
+                            <div>{value || '—'}</div>
+                            {record.provider_config_name ? (
+                                <div>{record.provider_config_name}</div>
+                            ) : null}
+                        </Space>
+                    }
+                >
+                    <div style={{ minWidth: 0 }}>
+                        <div
+                            style={{
+                                fontWeight: 500,
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                            }}
+                        >
+                            {value || '—'}
                         </div>
-                    ) : null}
-                </div>
+                        {record.provider_config_name ? (
+                            <div
+                                style={{
+                                    color: '#6b7280',
+                                    fontSize: 11,
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                }}
+                            >
+                                {record.provider_config_name}
+                            </div>
+                        ) : null}
+                    </div>
+                </Tooltip>
             ),
         },
         {
             title: 'Цена',
             dataIndex: 'price',
             key: 'price',
-            width: 90,
+            width: 76,
             render: (value) =>
                 value === null || value === undefined ? '—' : Number(value).toFixed(2),
         },
         {
-            title: 'Доступно',
+            title: 'Дост.',
             dataIndex: 'available_qty',
             key: 'available_qty',
-            width: 82,
+            width: 64,
             render: (value) => value ?? '—',
         },
         {
-            title: 'В заказ',
+            title: 'Заказ',
             dataIndex: 'order_qty',
             key: 'order_qty',
-            width: 95,
+            width: 82,
             render: (value, record) => (
                 <InputNumber
                     min={1}
@@ -3764,20 +3815,20 @@ const AutopartOffers = () => {
         {
             title: 'Срок',
             key: 'delivery',
-            width: 90,
+            width: 72,
             render: (_, record) => {
                 const min = record.min_delivery_day;
                 const max = record.max_delivery_day;
                 if (min == null && max == null) {
                     return '—';
                 }
-                return `${min ?? '?'} - ${max ?? '?'}`;
+                return `${min ?? '?'}-${max ?? '?'}`;
             },
         },
         {
             title: '',
             key: 'remove',
-            width: 64,
+            width: 48,
             render: (_, record) => (
                 <Button
                     danger
@@ -4751,7 +4802,7 @@ const AutopartOffers = () => {
                     locale={{
                         emptyText: 'Корзина пуста',
                     }}
-                    scroll={{ x: 1080 }}
+                    scroll={{ x: 840 }}
                 />
             </Space>
 

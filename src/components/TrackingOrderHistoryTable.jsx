@@ -116,6 +116,27 @@ const formatLeadTime = (record) => {
     return '—';
 };
 
+const formatLeadTimeCompact = (record) => {
+    if (record.actual_lead_days !== null && record.actual_lead_days !== undefined) {
+        return `${record.actual_lead_days} д`;
+    }
+    if (
+        record.min_delivery_day !== null &&
+        record.min_delivery_day !== undefined &&
+        record.max_delivery_day !== null &&
+        record.max_delivery_day !== undefined
+    ) {
+        return `${record.min_delivery_day}-${record.max_delivery_day} д`;
+    }
+    if (record.min_delivery_day !== null && record.min_delivery_day !== undefined) {
+        return `от ${record.min_delivery_day} д`;
+    }
+    if (record.max_delivery_day !== null && record.max_delivery_day !== undefined) {
+        return `до ${record.max_delivery_day} д`;
+    }
+    return '—';
+};
+
 const buildStatusOptions = (sourceType) =>
     (STATUS_OPTIONS_BY_SOURCE[sourceType] || []).map((value) => ({
         value,
@@ -251,7 +272,7 @@ const TrackingOrderHistoryTable = ({
                 title: '',
                 dataIndex: 'source_type',
                 key: 'source_type',
-                width: compact ? 66 : 86,
+                width: compact ? 58 : 86,
                 render: (value) => {
                     const meta = SOURCE_LABELS[value] || {
                         color: 'default',
@@ -264,75 +285,129 @@ const TrackingOrderHistoryTable = ({
                 title: 'Когда',
                 dataIndex: 'created_at',
                 key: 'created_at',
-                width: compact ? 96 : 128,
+                width: compact ? 84 : 128,
                 render: formatDateTime,
             },
         ];
 
         if (showOem) {
-            baseColumns.push({
-                title: 'OEM',
-                dataIndex: 'oem_number',
-                key: 'oem_number',
-                width: compact ? 112 : 132,
-                ellipsis: true,
-            });
+            if (compact) {
+                baseColumns.push({
+                    title: 'Позиция',
+                    key: 'position',
+                    width: 146,
+                    render: (_, record) => (
+                        <div style={{ minWidth: 0 }}>
+                            <div
+                                style={{
+                                    fontWeight: 600,
+                                    lineHeight: 1.2,
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                }}
+                            >
+                                {record.oem_number || '—'}
+                            </div>
+                            <div
+                                style={{
+                                    color: '#64748b',
+                                    fontSize: 11,
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                }}
+                            >
+                                {record.brand_name || '—'}
+                            </div>
+                        </div>
+                    ),
+                });
+            } else {
+                baseColumns.push({
+                    title: 'OEM',
+                    dataIndex: 'oem_number',
+                    key: 'oem_number',
+                    width: 132,
+                    ellipsis: true,
+                });
+            }
         }
 
         baseColumns.push(
-            {
-                title: 'Бренд',
-                dataIndex: 'brand_name',
-                key: 'brand_name',
-                width: compact ? 96 : 116,
-                ellipsis: true,
-                render: (value) => value || '—',
-            },
+            ...(!compact
+                ? [{
+                    title: 'Бренд',
+                    dataIndex: 'brand_name',
+                    key: 'brand_name',
+                    width: 116,
+                    ellipsis: true,
+                    render: (value) => value || '—',
+                }]
+                : []),
             {
                 title: 'Наименование',
                 dataIndex: 'autopart_name',
                 key: 'autopart_name',
-                width: compact ? 170 : 220,
+                width: compact ? 138 : 220,
                 ellipsis: true,
-                render: (value) => value || '—',
+                render: (value) =>
+                    value ? (
+                        <Tooltip title={value}>
+                            <span>{value}</span>
+                        </Tooltip>
+                    ) : '—',
             },
             {
                 title: 'Где / кто',
                 key: 'provider_summary',
-                width: compact ? 172 : 228,
-                render: (_, record) => (
-                    <div className="tracking-orders-provider-cell">
-                        <div className="tracking-orders-provider-name">
-                            {record.provider_name || '—'}
-                        </div>
-                        <div className="tracking-orders-provider-user">
-                            {record.ordered_by_email || 'Система'}
-                        </div>
-                    </div>
-                ),
+                width: compact ? 126 : 228,
+                render: (_, record) => {
+                    const providerName = record.provider_name || '—';
+                    const orderedBy = record.ordered_by_email || 'Система';
+                    return (
+                        <Tooltip
+                            title={
+                                <div>
+                                    <div>{providerName}</div>
+                                    <div>{orderedBy}</div>
+                                </div>
+                            }
+                        >
+                            <div className="tracking-orders-provider-cell">
+                                <div className="tracking-orders-provider-name">
+                                    {providerName}
+                                </div>
+                                <div className="tracking-orders-provider-user">
+                                    {orderedBy}
+                                </div>
+                            </div>
+                        </Tooltip>
+                    );
+                },
             },
             {
                 title: 'Цена',
                 dataIndex: 'price',
                 key: 'price',
-                width: compact ? 70 : 88,
+                width: compact ? 66 : 88,
                 render: formatMoney,
             },
             {
                 title: 'Заказ',
                 dataIndex: 'ordered_quantity',
                 key: 'ordered_quantity',
-                width: compact ? 64 : 82,
+                width: compact ? 54 : 82,
             },
             {
                 title: (
                     <Tooltip title="Сколько фактически получили по этой строке">
-                        <span>Получено</span>
+                        <span>{compact ? 'Получ.' : 'Получено'}</span>
                     </Tooltip>
                 ),
                 dataIndex: 'received_quantity',
                 key: 'received_quantity',
-                width: compact ? 82 : 110,
+                width: compact ? 72 : 110,
                 render: (value, record) => {
                     if (!allowEdit) {
                         if (value === null || value === undefined) {
@@ -408,21 +483,24 @@ const TrackingOrderHistoryTable = ({
             {
                 title: 'Срок',
                 key: 'lead_time',
-                width: compact ? 94 : 114,
-                render: (_, record) => formatLeadTime(record),
+                width: compact ? 66 : 114,
+                render: (_, record) =>
+                    compact
+                        ? formatLeadTimeCompact(record)
+                        : formatLeadTime(record),
             },
             {
                 title: 'Статус',
                 dataIndex: 'current_status',
                 key: 'current_status',
-                width: compact ? 168 : 210,
+                width: compact ? 132 : 210,
                 render: (value, record) => {
                     const statusTag = (
                         <Tag color={STATUS_COLORS[value] || 'default'}>
                             {STATUS_LABELS[value] || value || '—'}
                         </Tag>
                     );
-                    const externalHint = record.external_status_raw ? (
+                    const externalHint = record.external_status_raw && !compact ? (
                         <div
                             style={{
                                 marginTop: 4,
@@ -448,9 +526,18 @@ const TrackingOrderHistoryTable = ({
                         return (
                             <Tooltip
                                 title={
-                                    record.source_type === 'site'
-                                        ? 'Статус синхронизируется с Dragonzap автоматически'
-                                        : 'Статус ведется внутри программы'
+                                    <div>
+                                        <div>
+                                            {record.source_type === 'site'
+                                                ? 'Статус синхронизируется с Dragonzap автоматически'
+                                                : 'Статус ведется внутри программы'}
+                                        </div>
+                                        {record.external_status_raw ? (
+                                            <div>
+                                                Внешний: {record.external_status_raw}
+                                            </div>
+                                        ) : null}
+                                    </div>
                                 }
                             >
                                 <div className={className}>
@@ -463,7 +550,16 @@ const TrackingOrderHistoryTable = ({
                     const rowKey = `${record.source_type}:${record.item_id}`;
                     if (record.source_type === 'site') {
                         return (
-                            <Tooltip title="Статус синхронизируется с Dragonzap автоматически">
+                            <Tooltip
+                                title={
+                                    <div>
+                                        <div>Статус синхронизируется с Dragonzap автоматически</div>
+                                        {record.external_status_raw ? (
+                                            <div>Внешний: {record.external_status_raw}</div>
+                                        ) : null}
+                                    </div>
+                                }
+                            >
                                 <div>
                                     {statusTag}
                                     {externalHint}
@@ -496,7 +592,7 @@ const TrackingOrderHistoryTable = ({
             baseColumns.push({
                 title: '',
                 key: 'reorder_action',
-                width: compact ? 120 : 140,
+                width: compact ? 92 : 140,
                 render: (_, record) => {
                     const rowKey = `${record.source_type}:${record.item_id}`;
                     return (
@@ -514,7 +610,7 @@ const TrackingOrderHistoryTable = ({
                                 }
                             }}
                         >
-                            Перезаказать
+                            {compact ? 'Повтор' : 'Перезаказать'}
                         </Button>
                     );
                 },
@@ -544,7 +640,7 @@ const TrackingOrderHistoryTable = ({
             size="small"
             pagination={{ pageSize: compact ? 8 : 20, showSizeChanger: false }}
             tableLayout="fixed"
-            scroll={{ x: compact ? 980 : 1220 }}
+            scroll={{ x: compact ? 790 : 1080 }}
             locale={{ emptyText }}
             rowClassName={(record) => getRowStatusClass(record.current_status)}
         />
