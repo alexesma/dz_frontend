@@ -66,10 +66,24 @@ const formatQty = (value) => {
 const buildAutopurchaseTrackingKey = (runId, itemId) =>
     `apr${String(runId || '')}i${String(itemId || '')}`;
 
+const hasSendableIdentity = (item) => Boolean(item?.hash_key || item?.system_hash);
+
 const extractRequestError = (error, fallback) =>
     error?.response?.data?.detail ||
     error?.message ||
     fallback;
+
+const isAutopurchaseRunLockedError = (error) => {
+    const statusCode = Number(error?.response?.status || 0);
+    const detail = String(error?.response?.data?.detail || '').toLowerCase();
+    return statusCode === 409 || detail.includes('уже выполняется расчёт автозаказа');
+};
+
+const showAutopurchaseRunLockedMessage = () => {
+    message.warning(
+        'Сейчас другой менеджер уже запустил расчёт автозаказа. Дождись его завершения и попробуй снова через несколько секунд.'
+    );
+};
 
 const formatSupplierBadge = (supplier) => {
     if (!supplier?.provider_name) {
@@ -239,8 +253,12 @@ const AutopurchasePage = () => {
                 setSelectedRunId(data.id);
             }
         } catch (error) {
-            const detail = error?.response?.data?.detail;
-            message.error(detail || 'Не удалось создать запуск автозаказа');
+            if (isAutopurchaseRunLockedError(error)) {
+                showAutopurchaseRunLockedMessage();
+            } else {
+                const detail = error?.response?.data?.detail;
+                message.error(detail || 'Не удалось создать запуск автозаказа');
+            }
         } finally {
             setCreateLoading(false);
         }
@@ -268,12 +286,44 @@ const AutopurchasePage = () => {
             setSelectedRowKeys([]);
             setSelectedDraftGroupKeys([]);
         } catch (error) {
-            const detail = error?.response?.data?.detail;
-            message.error(detail || 'Не удалось пересчитать новый запуск автозаказа');
+            if (isAutopurchaseRunLockedError(error)) {
+                showAutopurchaseRunLockedMessage();
+            } else {
+                const detail = error?.response?.data?.detail;
+                message.error(detail || 'Не удалось пересчитать новый запуск автозаказа');
+            }
         } finally {
             setRerunLoading(false);
         }
     }, [fetchRuns, filters.limit, filters.mode, run]);
+
+    const applyDecisionStatusLocally = useCallback((itemIds, decisionStatus) => {
+        const itemIdSet = new Set((Array.isArray(itemIds) ? itemIds : [itemIds]).map(Number));
+        setRunPayload((prev) => {
+            if (!prev?.rows) {
+                return prev;
+            }
+            return {
+                ...prev,
+                rows: prev.rows.map((row) => (
+                    itemIdSet.has(Number(row.id))
+                        ? { ...row, decision_status: decisionStatus }
+                        : row
+                )),
+            };
+        });
+    }, []);
+
+    const refreshSelectedRunData = useCallback(async (runId, nextFilters) => {
+        if (!runId) {
+            return;
+        }
+        await Promise.all([
+            fetchRuns(),
+            fetchRunItems(runId, nextFilters),
+            fetchDraftOrders(runId),
+        ]);
+    }, [fetchDraftOrders, fetchRunItems, fetchRuns]);
 
     const handleItemStatusChange = useCallback(async (itemId, decisionStatus) => {
         if (!selectedRunId) {
@@ -283,15 +333,14 @@ const AutopurchasePage = () => {
             await updateAutoPurchaseRunItem(selectedRunId, itemId, {
                 decision_status: decisionStatus,
             });
+            applyDecisionStatusLocally(itemId, decisionStatus);
             message.success('Статус строки автозаказа обновлён');
-            await fetchRuns();
-            await fetchRunItems(selectedRunId, filters);
-            await fetchDraftOrders(selectedRunId);
+            await refreshSelectedRunData(selectedRunId, filters);
         } catch (error) {
             const detail = error?.response?.data?.detail;
             message.error(detail || 'Не удалось обновить статус строки');
         }
-    }, [fetchDraftOrders, fetchRunItems, fetchRuns, filters, selectedRunId]);
+    }, [applyDecisionStatusLocally, filters, refreshSelectedRunData, selectedRunId]);
 
     const handleBulkStatusChange = useCallback(async (decisionStatus) => {
         if (!selectedRunId) {
@@ -307,11 +356,10 @@ const AutopurchasePage = () => {
                 item_ids: selectedRowKeys,
                 decision_status: decisionStatus,
             });
+            applyDecisionStatusLocally(selectedRowKeys, decisionStatus);
             message.success('Статусы выбранных строк обновлены');
             setSelectedRowKeys([]);
-            await fetchRuns();
-            await fetchRunItems(selectedRunId, filters);
-            await fetchDraftOrders(selectedRunId);
+            await refreshSelectedRunData(selectedRunId, filters);
         } catch (error) {
             const detail = error?.response?.data?.detail;
             message.error(detail || 'Не удалось массово обновить статусы строк');
@@ -319,10 +367,9 @@ const AutopurchasePage = () => {
             setBulkStatusLoading(false);
         }
     }, [
-        fetchDraftOrders,
-        fetchRunItems,
-        fetchRuns,
+        applyDecisionStatusLocally,
         filters,
+        refreshSelectedRunData,
         selectedRowKeys,
         selectedRunId,
     ]);
@@ -363,7 +410,7 @@ const AutopurchasePage = () => {
         (group?.items || []).filter(
             (item) =>
                 Number(item.proposed_order_qty || 0) > 0 &&
-                item.hash_key
+                hasSendableIdentity(item)
         )
     ), []);
 
@@ -402,12 +449,13 @@ const AutopurchasePage = () => {
 
         setSendGroupLoadingKey(group.supplier_key);
         try {
+            const orderComment = `АвтоЗаказ run #${selectedRunId} · ${group.provider_name || 'Dragonzap'}`;
             const payload = activeItems.map((item) => ({
                 autopart_id: item.autopart_id ?? null,
                 oem_number: item.oem_number,
                 brand_name: item.brand_name,
                 autopart_name: item.autopart_name,
-                supplier_id: null,
+                supplier_id: item.external_supplier_id ?? group.external_supplier_id ?? null,
                 supplier_name: group.provider_name,
                 quantity: Number(item.proposed_order_qty),
                 confirmed_price: Number(item.price),
@@ -418,7 +466,11 @@ const AutopurchasePage = () => {
                 hash_key: item.hash_key,
                 system_hash: item.system_hash,
             }));
-            const { data } = await sendDragonzapOrder(payload, selectedCustomerId);
+            const { data } = await sendDragonzapOrder(
+                payload,
+                selectedCustomerId,
+                orderComment
+            );
             const successTrackingKeys = Array.isArray(data?.results)
                 ? data.results
                     .filter((result) => result?.status === 'success')
@@ -896,7 +948,7 @@ const AutopurchasePage = () => {
                     const remainingItems = (row.items || []).filter(
                         (item) =>
                             Number(item.proposed_order_qty || 0) > 0 &&
-                            item.hash_key
+                            hasSendableIdentity(item)
                     );
                     return (
                         <Space direction="vertical" size={4}>
@@ -1313,12 +1365,6 @@ const AutopurchasePage = () => {
                                                     value != null
                                                         ? `${formatMoney(value)} руб.`
                                                         : '—',
-                                            },
-                                            {
-                                                title: 'Статус отправки',
-                                                key: 'sent',
-                                                width: 140,
-                                                render: () => <Tag color="blue">К отправке</Tag>,
                                             },
                                         ]}
                                     />

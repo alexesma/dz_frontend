@@ -21,9 +21,9 @@ export const getDragonzapBrands = (oem) =>
         timeout: 120000,
     });
 
-export const sendDragonzapOrder = (items, customerId) =>
+export const sendDragonzapOrder = (items, customerId, orderComment = null) =>
     api.post('/order/send_api', items, {
-        params: { customer_id: customerId },
+        params: { customer_id: customerId, order_comment: orderComment },
     });
 
 export const clearDragonzapBasket = () =>
