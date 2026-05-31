@@ -1,0 +1,1349 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+    Button,
+    Card,
+    Checkbox,
+    Input,
+    Popconfirm,
+    Select,
+    Space,
+    Table,
+    Tag,
+    Typography,
+    message,
+} from 'antd';
+import { PlayCircleOutlined, ReloadOutlined, SendOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
+import { sendDragonzapOrder } from '../api/autoparts';
+import { getCustomers } from '../api/customers';
+import {
+    createAutoPurchaseRun,
+    getAutoPurchaseRunDraftOrders,
+    getAutoPurchaseRunItems,
+    listAutoPurchaseRuns,
+    markAutoPurchaseRunItemsSent,
+    updateAutoPurchaseRunItems,
+    updateAutoPurchaseRunItem,
+} from '../api/orderTracking';
+
+const { Title, Text } = Typography;
+
+const MODE_OPTIONS = [
+    { value: 'draft_only', label: 'Только черновики' },
+    { value: 'auto_approve_safe', label: 'Автоподтверждение safe' },
+    { value: 'disabled', label: 'Отключено' },
+];
+
+const STATUS_OPTIONS = [
+    { value: 'blocked', label: 'Заблокировано' },
+    { value: 'needs_review', label: 'На проверку' },
+    { value: 'auto_approved', label: 'Автоподтверждено' },
+];
+
+const statusColor = {
+    blocked: 'red',
+    needs_review: 'orange',
+    auto_approved: 'green',
+};
+
+const formatMoney = (value) => {
+    if (value == null) {
+        return '—';
+    }
+    return new Intl.NumberFormat('ru-RU', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(Number(value));
+};
+
+const formatQty = (value) => {
+    if (value == null) {
+        return '—';
+    }
+    return `${value} шт`;
+};
+
+const buildAutopurchaseTrackingKey = (runId, itemId) =>
+    `apr${String(runId || '')}i${String(itemId || '')}`;
+
+const extractRequestError = (error, fallback) =>
+    error?.response?.data?.detail ||
+    error?.message ||
+    fallback;
+
+const formatSupplierBadge = (supplier) => {
+    if (!supplier?.provider_name) {
+        return '—';
+    }
+    const bits = [supplier.provider_name];
+    if (supplier.current_provider_config_name) {
+        bits.push(supplier.current_provider_config_name);
+    }
+    if (supplier.current_price != null) {
+        bits.push(`${formatMoney(supplier.current_price)} руб.`);
+    }
+    if (supplier.current_qty != null) {
+        bits.push(`${supplier.current_qty} шт`);
+    }
+    if (supplier.effective_lead_days != null) {
+        bits.push(`${supplier.effective_lead_days} дн`);
+    }
+    return bits.join(' · ');
+};
+
+const SummaryStatCard = ({ title, value, color = '#0f172a' }) => (
+    <div
+        style={{
+            border: '1px solid #e2e8f0',
+            borderRadius: 10,
+            padding: 12,
+            background: '#fff',
+        }}
+    >
+        <div style={{ color: '#64748b', fontSize: 12, marginBottom: 4 }}>{title}</div>
+        <div style={{ color, fontWeight: 800, fontSize: 20 }}>{value}</div>
+    </div>
+);
+
+const AutopurchasePage = () => {
+    const navigate = useNavigate();
+    const [runsLoading, setRunsLoading] = useState(false);
+    const [rowsLoading, setRowsLoading] = useState(false);
+    const [draftsLoading, setDraftsLoading] = useState(false);
+    const [customersLoading, setCustomersLoading] = useState(false);
+    const [sendGroupLoadingKey, setSendGroupLoadingKey] = useState(null);
+    const [bulkSendLoading, setBulkSendLoading] = useState(false);
+    const [bulkStatusLoading, setBulkStatusLoading] = useState(false);
+    const [createLoading, setCreateLoading] = useState(false);
+    const [rerunLoading, setRerunLoading] = useState(false);
+    const [runs, setRuns] = useState([]);
+    const [selectedRunId, setSelectedRunId] = useState(null);
+    const [runPayload, setRunPayload] = useState(null);
+    const [draftPayload, setDraftPayload] = useState(null);
+    const [customerOptions, setCustomerOptions] = useState([]);
+    const [selectedCustomerId, setSelectedCustomerId] = useState(null);
+    const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+    const [selectedDraftGroupKeys, setSelectedDraftGroupKeys] = useState([]);
+    const [showOnlyPendingRows, setShowOnlyPendingRows] = useState(false);
+    const [showOnlySendableDraftGroups, setShowOnlySendableDraftGroups] = useState(false);
+    const [filters, setFilters] = useState({
+        mode: 'draft_only',
+        decision_status: undefined,
+        q: '',
+        limit: 200,
+    });
+
+    const fetchRuns = useCallback(async () => {
+        setRunsLoading(true);
+        try {
+            const { data } = await listAutoPurchaseRuns({ limit: 50 });
+            const nextRuns = Array.isArray(data) ? data : [];
+            setRuns(nextRuns);
+            if (!selectedRunId && nextRuns.length) {
+                setSelectedRunId(nextRuns[0].id);
+            }
+        } catch (error) {
+            const detail = error?.response?.data?.detail;
+            message.error(detail || 'Не удалось загрузить запуски автозаказа');
+        } finally {
+            setRunsLoading(false);
+        }
+    }, [selectedRunId]);
+
+    const fetchRunItems = useCallback(async (runId, nextFilters) => {
+        if (!runId) {
+            setRunPayload(null);
+            return;
+        }
+        setRowsLoading(true);
+        try {
+            const { data } = await getAutoPurchaseRunItems(runId, {
+                decision_status: nextFilters?.decision_status || undefined,
+                q: (nextFilters?.q || '').trim() || undefined,
+                limit: nextFilters?.limit || 200,
+            });
+            setRunPayload(data || null);
+        } catch (error) {
+            const detail = error?.response?.data?.detail;
+            message.error(detail || 'Не удалось загрузить строки автозаказа');
+            setRunPayload(null);
+        } finally {
+            setRowsLoading(false);
+        }
+    }, []);
+
+    const fetchDraftOrders = useCallback(async (runId) => {
+        if (!runId) {
+            setDraftPayload(null);
+            return;
+        }
+        setDraftsLoading(true);
+        try {
+            const { data } = await getAutoPurchaseRunDraftOrders(runId);
+            setDraftPayload(data || null);
+        } catch (error) {
+            const detail = error?.response?.data?.detail;
+            message.error(detail || 'Не удалось собрать черновики автозаказа');
+            setDraftPayload(null);
+        } finally {
+            setDraftsLoading(false);
+        }
+    }, []);
+
+    const fetchCustomers = useCallback(async () => {
+        setCustomersLoading(true);
+        try {
+            const { data } = await getCustomers();
+            const nextRows = Array.isArray(data) ? data : [];
+            setCustomerOptions(
+                nextRows.map((item) => ({
+                    value: item.id,
+                    label: item.name || `Клиент #${item.id}`,
+                }))
+            );
+            setSelectedCustomerId((prev) => prev || nextRows[0]?.id || null);
+        } catch (error) {
+            const detail = error?.response?.data?.detail;
+            message.error(detail || 'Не удалось загрузить список клиентов');
+        } finally {
+            setCustomersLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        void fetchRuns();
+    }, [fetchRuns]);
+
+    useEffect(() => {
+        void fetchCustomers();
+    }, [fetchCustomers]);
+
+    useEffect(() => {
+        void fetchRunItems(selectedRunId, filters);
+    }, [fetchRunItems, selectedRunId, filters]);
+
+    useEffect(() => {
+        void fetchDraftOrders(selectedRunId);
+    }, [fetchDraftOrders, selectedRunId]);
+
+    const handleCreateRun = async () => {
+        setCreateLoading(true);
+        try {
+            const { data } = await createAutoPurchaseRun({
+                mode: filters.mode,
+                limit: 300,
+            });
+            message.success('Запуск автозаказа создан');
+            await fetchRuns();
+            if (data?.id) {
+                setSelectedRunId(data.id);
+            }
+        } catch (error) {
+            const detail = error?.response?.data?.detail;
+            message.error(detail || 'Не удалось создать запуск автозаказа');
+        } finally {
+            setCreateLoading(false);
+        }
+    };
+
+    const handleRerunCurrentSettings = useCallback(async () => {
+        if (!run) {
+            message.warning('Сначала выбери запуск автозаказа');
+            return;
+        }
+        const settings = run.settings_snapshot || {};
+        setRerunLoading(true);
+        try {
+            const { data } = await createAutoPurchaseRun({
+                own_provider_config_id:
+                    settings.own_provider_config_id ?? run.provider_config_id ?? undefined,
+                mode: settings.mode || run.mode || filters.mode,
+                limit: settings.limit || filters.limit || 300,
+            });
+            message.success('Новый запуск автозаказа создан на текущих настройках');
+            await fetchRuns();
+            if (data?.id) {
+                setSelectedRunId(data.id);
+            }
+            setSelectedRowKeys([]);
+            setSelectedDraftGroupKeys([]);
+        } catch (error) {
+            const detail = error?.response?.data?.detail;
+            message.error(detail || 'Не удалось пересчитать новый запуск автозаказа');
+        } finally {
+            setRerunLoading(false);
+        }
+    }, [fetchRuns, filters.limit, filters.mode, run]);
+
+    const handleItemStatusChange = useCallback(async (itemId, decisionStatus) => {
+        if (!selectedRunId) {
+            return;
+        }
+        try {
+            await updateAutoPurchaseRunItem(selectedRunId, itemId, {
+                decision_status: decisionStatus,
+            });
+            message.success('Статус строки автозаказа обновлён');
+            await fetchRuns();
+            await fetchRunItems(selectedRunId, filters);
+            await fetchDraftOrders(selectedRunId);
+        } catch (error) {
+            const detail = error?.response?.data?.detail;
+            message.error(detail || 'Не удалось обновить статус строки');
+        }
+    }, [fetchDraftOrders, fetchRunItems, fetchRuns, filters, selectedRunId]);
+
+    const handleBulkStatusChange = useCallback(async (decisionStatus) => {
+        if (!selectedRunId) {
+            return;
+        }
+        if (!selectedRowKeys.length) {
+            message.warning('Выбери хотя бы одну строку автозаказа');
+            return;
+        }
+        setBulkStatusLoading(true);
+        try {
+            await updateAutoPurchaseRunItems(selectedRunId, {
+                item_ids: selectedRowKeys,
+                decision_status: decisionStatus,
+            });
+            message.success('Статусы выбранных строк обновлены');
+            setSelectedRowKeys([]);
+            await fetchRuns();
+            await fetchRunItems(selectedRunId, filters);
+            await fetchDraftOrders(selectedRunId);
+        } catch (error) {
+            const detail = error?.response?.data?.detail;
+            message.error(detail || 'Не удалось массово обновить статусы строк');
+        } finally {
+            setBulkStatusLoading(false);
+        }
+    }, [
+        fetchDraftOrders,
+        fetchRunItems,
+        fetchRuns,
+        filters,
+        selectedRowKeys,
+        selectedRunId,
+    ]);
+
+    const rows = useMemo(
+        () => (Array.isArray(runPayload?.rows) ? runPayload.rows : []),
+        [runPayload?.rows]
+    );
+    const run = runPayload?.run || runs.find((item) => item.id === selectedRunId) || null;
+    const visibleRows = useMemo(
+        () => (
+            showOnlyPendingRows
+                ? rows.filter((row) => !row?.sent_to_site_at)
+                : rows
+        ),
+        [rows, showOnlyPendingRows]
+    );
+    useEffect(() => {
+        const availableKeys = new Set(rows.map((row) => row.id));
+        setSelectedRowKeys((prev) => prev.filter((key) => availableKeys.has(key)));
+    }, [rows]);
+
+    const runOptions = runs.map((item) => ({
+        value: item.id,
+        label: `#${item.id} · ${item.provider_name || '—'} · ${item.mode}`,
+    }));
+
+    const draftGroups = useMemo(
+        () => (Array.isArray(draftPayload?.groups) ? draftPayload.groups : []),
+        [draftPayload?.groups]
+    );
+    const skippedDraftItems = useMemo(
+        () => (Array.isArray(draftPayload?.skipped_items) ? draftPayload.skipped_items : []),
+        [draftPayload?.skipped_items]
+    );
+
+    const getSendableGroupItems = useCallback((group) => (
+        (group?.items || []).filter(
+            (item) =>
+                Number(item.proposed_order_qty || 0) > 0 &&
+                item.hash_key
+        )
+    ), []);
+
+    useEffect(() => {
+        const availableKeys = new Set(draftGroups.map((group) => group.supplier_key));
+        setSelectedDraftGroupKeys((prev) => prev.filter((key) => availableKeys.has(key)));
+    }, [draftGroups]);
+
+    const visibleDraftGroups = useMemo(
+        () => (
+            showOnlySendableDraftGroups
+                ? draftGroups.filter((group) => getSendableGroupItems(group).length > 0)
+                : draftGroups
+        ),
+        [draftGroups, getSendableGroupItems, showOnlySendableDraftGroups]
+    );
+
+    const sendDraftGroupInternal = useCallback(async (
+        group,
+        { refreshAfter = true, emitSuccessMessage = true } = {}
+    ) => {
+        if (!selectedCustomerId) {
+            message.warning(
+                'Выберите клиента, от имени которого нужно оформить заказ на Dragonzap'
+            );
+            return { successCount: 0, failedCount: 0, skipped: true };
+        }
+
+        const activeItems = getSendableGroupItems(group);
+        if (!activeItems.length) {
+            if (emitSuccessMessage) {
+                message.info('В этой группе уже нет неотправленных строк для сайта');
+            }
+            return { successCount: 0, failedCount: 0, skipped: true };
+        }
+
+        setSendGroupLoadingKey(group.supplier_key);
+        try {
+            const payload = activeItems.map((item) => ({
+                autopart_id: item.autopart_id ?? null,
+                oem_number: item.oem_number,
+                brand_name: item.brand_name,
+                autopart_name: item.autopart_name,
+                supplier_id: null,
+                supplier_name: group.provider_name,
+                quantity: Number(item.proposed_order_qty),
+                confirmed_price: Number(item.price),
+                min_delivery_day: item.min_delivery_day,
+                max_delivery_day: item.max_delivery_day,
+                status: 'Send',
+                tracking_uuid: buildAutopurchaseTrackingKey(selectedRunId, item.item_id),
+                hash_key: item.hash_key,
+                system_hash: item.system_hash,
+            }));
+            const { data } = await sendDragonzapOrder(payload, selectedCustomerId);
+            const successTrackingKeys = Array.isArray(data?.results)
+                ? data.results
+                    .filter((result) => result?.status === 'success')
+                    .map((result) => String(result?.request_tracking_uuid || result?.tracking_uuid || ''))
+                    .filter(Boolean)
+                : [];
+
+            const successIds = activeItems
+                .filter((item) =>
+                    successTrackingKeys.includes(
+                        buildAutopurchaseTrackingKey(selectedRunId, item.item_id)
+                    )
+                )
+                .map((item) => item.item_id);
+
+            let failedCount = Number(data?.failed_items || 0);
+
+            if (successIds.length) {
+                await markAutoPurchaseRunItemsSent(selectedRunId, {
+                    item_ids: successIds,
+                    order_id: data?.order_id || null,
+                    order_number: data?.order_number || null,
+                    customer_id: selectedCustomerId,
+                    send_result_snapshot: {
+                        supplier_key: group.supplier_key,
+                        provider_name: group.provider_name,
+                        successful_items: data?.successful_items || 0,
+                        failed_items: data?.failed_items || 0,
+                    },
+                });
+                if (emitSuccessMessage) {
+                    message.success(
+                        `Dragonzap: оформлен заказ по поставщику ${group.provider_name} (${successIds.length} поз.). Перезапусти расчёт, чтобы увидеть позиции уже в пути.`
+                    );
+                }
+            }
+
+            if (failedCount > 0) {
+                const resultErrors = Array.isArray(data?.results)
+                    ? data.results
+                        .filter((result) => result?.status !== 'success')
+                        .map((result) => String(result?.message || '').trim())
+                        .filter(Boolean)
+                    : [];
+                const uniqueErrors = [...new Set(resultErrors)].slice(0, 3);
+                message.warning(
+                    uniqueErrors.length
+                        ? `Часть строк не ушла: ${uniqueErrors.join(' | ')}`
+                        : 'Часть строк не удалось отправить на Dragonzap'
+                );
+            }
+            if (refreshAfter) {
+                await fetchRuns();
+                await fetchRunItems(selectedRunId, filters);
+                await fetchDraftOrders(selectedRunId);
+            }
+            return {
+                successCount: successIds.length,
+                failedCount,
+                skipped: false,
+                orderId: data?.order_id || null,
+                orderNumber: data?.order_number || null,
+            };
+        } catch (error) {
+            const detail = extractRequestError(
+                error,
+                'Не удалось оформить заказ через Dragonzap'
+            );
+            message.error(detail);
+            return {
+                successCount: 0,
+                failedCount: activeItems.length,
+                skipped: false,
+                orderId: null,
+                orderNumber: null,
+            };
+        } finally {
+            setSendGroupLoadingKey(null);
+        }
+    }, [
+        fetchDraftOrders,
+        fetchRunItems,
+        fetchRuns,
+        filters,
+        getSendableGroupItems,
+        selectedCustomerId,
+        selectedRunId,
+    ]);
+
+    const handleSendDraftGroup = useCallback(async (group) => {
+        const result = await sendDraftGroupInternal(group, {
+            refreshAfter: true,
+            emitSuccessMessage: true,
+        });
+        if (Number(result?.successCount || 0) > 0) {
+            await handleRerunCurrentSettings();
+        }
+    }, [handleRerunCurrentSettings, sendDraftGroupInternal]);
+
+    const handleSendSelectedGroups = useCallback(async () => {
+        if (!selectedDraftGroupKeys.length) {
+            message.warning('Выбери хотя бы одну группу для отправки');
+            return;
+        }
+        if (!selectedCustomerId) {
+            message.warning(
+                'Выберите клиента, от имени которого нужно оформить заказ на Dragonzap'
+            );
+            return;
+        }
+
+        const targetGroups = draftGroups.filter((group) =>
+            selectedDraftGroupKeys.includes(group.supplier_key)
+        );
+        if (!targetGroups.length) {
+            message.warning('Не удалось найти выбранные группы');
+            return;
+        }
+
+        setBulkSendLoading(true);
+        let totalSuccess = 0;
+        let totalFailed = 0;
+        let processedGroups = 0;
+        let shouldRerun = false;
+        try {
+            for (const group of targetGroups) {
+                const result = await sendDraftGroupInternal(group, {
+                    refreshAfter: false,
+                    emitSuccessMessage: false,
+                });
+                if (!result?.skipped) {
+                    processedGroups += 1;
+                }
+                totalSuccess += Number(result?.successCount || 0);
+                totalFailed += Number(result?.failedCount || 0);
+                if (Number(result?.successCount || 0) > 0) {
+                    shouldRerun = true;
+                }
+            }
+            await fetchRuns();
+            await fetchRunItems(selectedRunId, filters);
+            await fetchDraftOrders(selectedRunId);
+            setSelectedDraftGroupKeys([]);
+            if (processedGroups > 0 || totalSuccess > 0 || totalFailed > 0) {
+                message.success(
+                    `Группы Dragonzap обработаны: групп ${processedGroups}, успешно ${totalSuccess}, с ошибками ${totalFailed}.`
+                );
+            }
+            if (shouldRerun) {
+                await handleRerunCurrentSettings();
+            }
+        } finally {
+            setBulkSendLoading(false);
+        }
+    }, [
+        fetchDraftOrders,
+        fetchRunItems,
+        fetchRuns,
+        filters,
+        handleRerunCurrentSettings,
+        draftGroups,
+        selectedCustomerId,
+        selectedDraftGroupKeys,
+        selectedRunId,
+        sendDraftGroupInternal,
+    ]);
+
+    const handleSendAllGroups = useCallback(async () => {
+        if (!selectedCustomerId) {
+            message.warning(
+                'Выберите клиента, от имени которого нужно оформить заказ на Dragonzap'
+            );
+            return;
+        }
+
+        const targetGroups = draftGroups.filter(
+            (group) => getSendableGroupItems(group).length > 0
+        );
+        if (!targetGroups.length) {
+            message.info('Сейчас нет доступных групп для отправки');
+            return;
+        }
+
+        setBulkSendLoading(true);
+        let totalSuccess = 0;
+        let totalFailed = 0;
+        let processedGroups = 0;
+        let shouldRerun = false;
+        try {
+            for (const group of targetGroups) {
+                const result = await sendDraftGroupInternal(group, {
+                    refreshAfter: false,
+                    emitSuccessMessage: false,
+                });
+                if (!result?.skipped) {
+                    processedGroups += 1;
+                }
+                totalSuccess += Number(result?.successCount || 0);
+                totalFailed += Number(result?.failedCount || 0);
+                if (Number(result?.successCount || 0) > 0) {
+                    shouldRerun = true;
+                }
+            }
+            await fetchRuns();
+            await fetchRunItems(selectedRunId, filters);
+            await fetchDraftOrders(selectedRunId);
+            setSelectedDraftGroupKeys([]);
+            if (processedGroups > 0 || totalSuccess > 0 || totalFailed > 0) {
+                message.success(
+                    `Все доступные группы обработаны: групп ${processedGroups}, успешно ${totalSuccess}, с ошибками ${totalFailed}.`
+                );
+            }
+            if (shouldRerun) {
+                await handleRerunCurrentSettings();
+            }
+        } finally {
+            setBulkSendLoading(false);
+        }
+    }, [
+        draftGroups,
+        fetchDraftOrders,
+        fetchRunItems,
+        fetchRuns,
+        filters,
+        getSendableGroupItems,
+        handleRerunCurrentSettings,
+        selectedCustomerId,
+        selectedRunId,
+        sendDraftGroupInternal,
+    ]);
+
+    const columns = useMemo(
+        () => [
+            {
+                title: 'Статус',
+                dataIndex: 'decision_status',
+                width: 140,
+                render: (value, row) => (
+                    <Space direction="vertical" size={4}>
+                        <Tag color={statusColor[value] || 'default'}>
+                            {value === 'blocked'
+                                ? 'Заблокировано'
+                                : value === 'needs_review'
+                                    ? 'На проверку'
+                                    : 'Авто'}
+                        </Tag>
+                        {row?.sent_to_site_at ? (
+                            <>
+                                <Tag color="green">
+                                    Отправлено{row?.sent_order_number ? ` · ${row.sent_order_number}` : ''}
+                                </Tag>
+                                {row?.sent_order_id ? (
+                                    <Button
+                                        type="link"
+                                        size="small"
+                                        style={{ padding: 0, height: 'auto' }}
+                                        onClick={() => {
+                                            navigate(`/orders/${row.sent_order_id}`);
+                                        }}
+                                    >
+                                        Открыть заказ
+                                    </Button>
+                                ) : null}
+                            </>
+                        ) : null}
+                    </Space>
+                ),
+            },
+            {
+                title: 'Позиция',
+                key: 'position',
+                width: 230,
+                render: (_, row) => (
+                    <div>
+                        <div style={{ fontWeight: 700 }}>
+                            {row.brand_name || '—'} {row.oem_number}
+                        </div>
+                        <div style={{ color: '#64748b', fontSize: 12 }}>
+                            {row.autopart_name || '—'}
+                        </div>
+                        {row.abc_xyz?.abc_class || row.abc_xyz?.xyz_class ? (
+                            <div style={{ color: '#64748b', fontSize: 12 }}>
+                                {row.abc_xyz?.abc_class || '—'} / {row.abc_xyz?.xyz_class || '—'}
+                            </div>
+                        ) : null}
+                    </div>
+                ),
+            },
+            {
+                title: 'Остаток',
+                key: 'stock',
+                width: 130,
+                render: (_, row) => (
+                    <div>
+                        <div>{formatQty(row.current_quantity)}</div>
+                        <div style={{ color: '#64748b', fontSize: 12 }}>
+                            в пути: {formatQty(row.in_transit_qty)}
+                        </div>
+                    </div>
+                ),
+            },
+            {
+                title: 'Спрос',
+                key: 'demand',
+                width: 140,
+                render: (_, row) => (
+                    <div>
+                        <div>{row.avg_daily_blended != null ? `${row.avg_daily_blended} шт/д` : '—'}</div>
+                        <div style={{ color: '#64748b', fontSize: 12 }}>
+                            30д: {row.sold_last_30_days || 0} · 90д: {row.sold_last_90_days || 0}
+                        </div>
+                    </div>
+                ),
+            },
+            {
+                title: 'Точка / цель',
+                key: 'target',
+                width: 150,
+                render: (_, row) => (
+                    <div>
+                        <div>точка: {row.reorder_point != null ? row.reorder_point : '—'}</div>
+                        <div style={{ color: '#64748b', fontSize: 12 }}>
+                            цель: {row.target_stock != null ? formatQty(row.target_stock) : '—'}
+                        </div>
+                    </div>
+                ),
+            },
+            {
+                title: 'К заказу',
+                key: 'recommended',
+                width: 120,
+                render: (_, row) => (
+                    <div>
+                        <div style={{ fontWeight: 700 }}>
+                            {formatQty(row.recommended_order_qty)}
+                        </div>
+                        <div style={{ color: '#64748b', fontSize: 12 }}>
+                            кратн.: {row.multiplicity || 1}
+                        </div>
+                    </div>
+                ),
+            },
+            {
+                title: 'Поставщик с сайта',
+                key: 'supplier',
+                width: 260,
+                render: (_, row) => (
+                    <span>{formatSupplierBadge(row.recommended_supplier)}</span>
+                ),
+            },
+            {
+                title: 'Причины',
+                dataIndex: 'reason_titles',
+                width: 320,
+                render: (items) => (
+                    <Space wrap size={[4, 4]}>
+                        {(items || []).map((item) => (
+                            <Tag key={item}>{item}</Tag>
+                        ))}
+                    </Space>
+                ),
+            },
+            {
+                title: 'Действие',
+                key: 'actions',
+                width: 280,
+                fixed: 'right',
+                render: (_, row) => {
+                    const isSent = Boolean(row?.sent_to_site_at);
+                    return (
+                        <Space wrap size={6}>
+                            <Popconfirm
+                                title="Подтвердить строку автозаказа?"
+                                description="Строка попадёт в черновики заказа по выбранному site-поставщику."
+                                onConfirm={() => handleItemStatusChange(row.id, 'auto_approved')}
+                                disabled={isSent}
+                            >
+                                <Button
+                                    type={row.decision_status === 'auto_approved' ? 'primary' : 'default'}
+                                    size="small"
+                                    disabled={isSent}
+                                >
+                                    Подтв.
+                                </Button>
+                            </Popconfirm>
+                            <Popconfirm
+                                title="Вернуть строку на ручную проверку?"
+                                onConfirm={() => handleItemStatusChange(row.id, 'needs_review')}
+                                disabled={isSent}
+                            >
+                                <Button
+                                    type={row.decision_status === 'needs_review' ? 'primary' : 'default'}
+                                    size="small"
+                                    disabled={isSent}
+                                >
+                                    Проверка
+                                </Button>
+                            </Popconfirm>
+                            <Popconfirm
+                                title="Заблокировать строку?"
+                                description="Строка не попадёт в черновик автозаказа."
+                                onConfirm={() => handleItemStatusChange(row.id, 'blocked')}
+                                disabled={isSent}
+                            >
+                                <Button
+                                    danger
+                                    type={row.decision_status === 'blocked' ? 'primary' : 'default'}
+                                    size="small"
+                                    disabled={isSent}
+                                >
+                                    Блок
+                                </Button>
+                            </Popconfirm>
+                            <Button
+                                type="link"
+                                size="small"
+                                onClick={() => {
+                                    const params = new URLSearchParams({
+                                        oem: row.oem_number || '',
+                                        auto: '1',
+                                    });
+                                    if (row.brand_name) {
+                                        params.set('brand', row.brand_name);
+                                    }
+                                    navigate(`/autoparts/offers?${params.toString()}`);
+                                }}
+                            >
+                                Открыть
+                            </Button>
+                        </Space>
+                    );
+                },
+            },
+        ],
+        [handleItemStatusChange, navigate]
+    );
+
+    const draftColumns = useMemo(
+        () => [
+            {
+                title: 'Поставщик',
+                key: 'supplier',
+                width: 260,
+                render: (_, row) => (
+                    <div>
+                        <div style={{ fontWeight: 700 }}>{row.provider_name || '—'}</div>
+                        <div style={{ color: '#64748b', fontSize: 12 }}>
+                            {row.provider_config_name || row.sup_logo || 'site'}
+                        </div>
+                    </div>
+                ),
+            },
+            {
+                title: 'Строк',
+                dataIndex: 'total_items',
+                width: 90,
+            },
+            {
+                title: 'К заказу сейчас',
+                dataIndex: 'total_quantity',
+                width: 140,
+                render: (value) => formatQty(value),
+            },
+            {
+                title: 'Сумма',
+                dataIndex: 'total_sum',
+                width: 140,
+                render: (value) => (value != null ? `${formatMoney(value)} руб.` : '—'),
+            },
+            {
+                title: 'Действие',
+                key: 'action',
+                width: 180,
+                render: (_, row) => {
+                    const remainingItems = (row.items || []).filter(
+                        (item) =>
+                            Number(item.proposed_order_qty || 0) > 0 &&
+                            item.hash_key
+                    );
+                    return (
+                        <Space direction="vertical" size={4}>
+                            <Button
+                                type="primary"
+                                icon={<SendOutlined />}
+                                size="small"
+                                loading={sendGroupLoadingKey === row.supplier_key}
+                                disabled={!remainingItems.length || !selectedCustomerId}
+                                onClick={() => {
+                                    void handleSendDraftGroup(row);
+                                }}
+                            >
+                                Отправить на сайт
+                            </Button>
+                            {!remainingItems.length ? (
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                    Все строки группы уже отправлены
+                                </Text>
+                            ) : null}
+                        </Space>
+                    );
+                },
+            },
+        ],
+        [handleSendDraftGroup, selectedCustomerId, sendGroupLoadingKey]
+    );
+
+    return (
+        <Card style={{ margin: 16 }}>
+            <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                <div>
+                    <Title level={3} style={{ marginBottom: 0 }}>
+                        Автозаказ
+                    </Title>
+                    <Text type="secondary">
+                        Потребность в пополнении считается по нашим остаткам и истории,
+                        а источник закупки сейчас берётся только с сайта Dragonzap.
+                    </Text>
+                    {run ? (
+                        <>
+                            <br />
+                            <Text type="secondary">
+                                Источник остатка: {run.provider_name}
+                                {run.provider_config_name ? ` · ${run.provider_config_name}` : ''}
+                                {' · '}
+                                режим: {run.mode}
+                            </Text>
+                        </>
+                    ) : null}
+                </div>
+
+                <Space wrap style={{ justifyContent: 'space-between', width: '100%' }}>
+                    <Space wrap>
+                        <Select
+                            value={filters.mode}
+                            options={MODE_OPTIONS}
+                            style={{ width: 220 }}
+                            onChange={(value) => {
+                                setFilters((prev) => ({ ...prev, mode: value }));
+                            }}
+                        />
+                        <Button
+                            type="primary"
+                            icon={<PlayCircleOutlined />}
+                            loading={createLoading}
+                            onClick={handleCreateRun}
+                        >
+                            Запустить расчёт
+                        </Button>
+                        <Button
+                            icon={<ReloadOutlined />}
+                            loading={runsLoading || rowsLoading}
+                            onClick={() => {
+                                void fetchRuns();
+                                void fetchRunItems(selectedRunId, filters);
+                                void fetchDraftOrders(selectedRunId);
+                            }}
+                        >
+                            Обновить
+                        </Button>
+                    </Space>
+
+                    <Space wrap>
+                        <Select
+                            allowClear
+                            placeholder="Статус"
+                            value={filters.decision_status}
+                            options={STATUS_OPTIONS}
+                            style={{ width: 190 }}
+                            onChange={(value) => {
+                                setFilters((prev) => ({ ...prev, decision_status: value || undefined }));
+                            }}
+                        />
+                        <Checkbox
+                            checked={showOnlyPendingRows}
+                            onChange={(event) => setShowOnlyPendingRows(event.target.checked)}
+                        >
+                            Только неотправленные
+                        </Checkbox>
+                        <Input.Search
+                            allowClear
+                            placeholder="Поиск OEM / бренда / поставщика"
+                            value={filters.q}
+                            style={{ width: 280 }}
+                            onChange={(event) => {
+                                const nextValue = event.target.value;
+                                setFilters((prev) => ({ ...prev, q: nextValue }));
+                            }}
+                        />
+                    </Space>
+                </Space>
+
+                <Select
+                    placeholder="Выберите запуск"
+                    options={runOptions}
+                    value={selectedRunId}
+                    loading={runsLoading}
+                    style={{ width: '100%' }}
+                    onChange={(value) => setSelectedRunId(value)}
+                />
+
+                <div
+                    style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                        gap: 12,
+                    }}
+                >
+                    <SummaryStatCard
+                        title="Всего строк"
+                        value={run?.total_items ?? 0}
+                    />
+                    <SummaryStatCard
+                        title="Автоподтверждено"
+                        value={run?.auto_approved_count ?? 0}
+                        color="#15803d"
+                    />
+                    <SummaryStatCard
+                        title="На проверку"
+                        value={run?.needs_review_count ?? 0}
+                        color="#c2410c"
+                    />
+                    <SummaryStatCard
+                        title="Заблокировано"
+                        value={run?.blocked_count ?? 0}
+                        color="#b91c1c"
+                    />
+                    <SummaryStatCard
+                        title="Уже отправлено"
+                        value={run?.sent_count ?? 0}
+                        color="#0f766e"
+                    />
+                </div>
+
+                <Space wrap>
+                    <Text type="secondary">
+                        Выбрано строк: {selectedRowKeys.length}
+                    </Text>
+                    <Popconfirm
+                        title="Подтвердить выбранные строки?"
+                        description="Они попадут в черновики заказа по найденным site-поставщикам."
+                        disabled={!selectedRowKeys.length}
+                        onConfirm={() => {
+                            void handleBulkStatusChange('auto_approved');
+                        }}
+                    >
+                        <Button
+                            type="primary"
+                            loading={bulkStatusLoading}
+                            disabled={!selectedRowKeys.length}
+                        >
+                            Подтвердить выбранные
+                        </Button>
+                    </Popconfirm>
+                    <Popconfirm
+                        title="Вернуть выбранные строки на ручную проверку?"
+                        disabled={!selectedRowKeys.length}
+                        onConfirm={() => {
+                            void handleBulkStatusChange('needs_review');
+                        }}
+                    >
+                        <Button
+                            loading={bulkStatusLoading}
+                            disabled={!selectedRowKeys.length}
+                        >
+                            Вернуть на проверку
+                        </Button>
+                    </Popconfirm>
+                    <Popconfirm
+                        title="Заблокировать выбранные строки?"
+                        description="Они не попадут в черновики автозаказа."
+                        disabled={!selectedRowKeys.length}
+                        onConfirm={() => {
+                            void handleBulkStatusChange('blocked');
+                        }}
+                    >
+                        <Button
+                            danger
+                            loading={bulkStatusLoading}
+                            disabled={!selectedRowKeys.length}
+                        >
+                            Блокировать выбранные
+                        </Button>
+                    </Popconfirm>
+                    <Button
+                        icon={<PlayCircleOutlined />}
+                        loading={rerunLoading}
+                        disabled={!run}
+                        onClick={() => {
+                            void handleRerunCurrentSettings();
+                        }}
+                    >
+                        Новый запуск по текущим настройкам
+                    </Button>
+                </Space>
+
+                <Table
+                    rowKey="id"
+                    loading={rowsLoading}
+                    columns={columns}
+                    dataSource={visibleRows}
+                    rowSelection={{
+                        selectedRowKeys,
+                        onChange: (keys) => setSelectedRowKeys(keys),
+                        getCheckboxProps: (record) => ({
+                            disabled: Boolean(record?.sent_to_site_at),
+                        }),
+                    }}
+                    pagination={{ pageSize: 25 }}
+                    scroll={{ x: 1380 }}
+                />
+
+                <Card
+                    size="small"
+                    title="Черновики заказов по подтверждённым строкам"
+                    extra={
+                        <Button
+                            size="small"
+                            icon={<ReloadOutlined />}
+                            loading={draftsLoading}
+                            onClick={() => {
+                                void fetchDraftOrders(selectedRunId);
+                            }}
+                        >
+                            Пересобрать
+                        </Button>
+                    }
+                >
+                    <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                        <Text type="secondary">
+                            Если у найденного site-поставщика количества меньше, чем рекомендует
+                            расчёт, в черновик попадёт доступный объём сейчас, а остаток
+                            потребности будет виден отдельной строкой.
+                        </Text>
+                        <Space wrap>
+                            <Button
+                                icon={<PlayCircleOutlined />}
+                                loading={rerunLoading}
+                                disabled={!run || Number(run?.sent_count || 0) <= 0}
+                                onClick={() => {
+                                    void handleRerunCurrentSettings();
+                                }}
+                            >
+                                Пересчитать после отправки
+                            </Button>
+                            <Select
+                                placeholder="Клиент для оформления на Dragonzap"
+                                value={selectedCustomerId}
+                                loading={customersLoading}
+                                options={customerOptions}
+                                style={{ width: 320 }}
+                                onChange={(value) => setSelectedCustomerId(value)}
+                            />
+                            <Button
+                                type="primary"
+                                icon={<SendOutlined />}
+                                loading={bulkSendLoading}
+                                disabled={!selectedCustomerId || !selectedDraftGroupKeys.length}
+                                onClick={() => {
+                                    void handleSendSelectedGroups();
+                                }}
+                            >
+                                Отправить выбранные группы
+                            </Button>
+                            <Button
+                                icon={<SendOutlined />}
+                                loading={bulkSendLoading}
+                                disabled={
+                                    !selectedCustomerId ||
+                                    !draftGroups.some((group) => getSendableGroupItems(group).length)
+                                }
+                                onClick={() => {
+                                    void handleSendAllGroups();
+                                }}
+                            >
+                                Отправить все доступные
+                            </Button>
+                            <Checkbox
+                                checked={showOnlySendableDraftGroups}
+                                onChange={(event) =>
+                                    setShowOnlySendableDraftGroups(event.target.checked)
+                                }
+                            >
+                                Только доступные к отправке
+                            </Checkbox>
+                            <Text type="secondary">
+                                Отправка использует текущий рабочий поток Dragonzap, а факт
+                                отправки сохраняется в backend и переживает перезагрузку страницы.
+                            </Text>
+                        </Space>
+                        <div
+                            style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                                gap: 12,
+                            }}
+                        >
+                            <SummaryStatCard
+                                title="Групп поставщиков"
+                                value={draftPayload?.total_groups ?? 0}
+                            />
+                            <SummaryStatCard
+                                title="Подтверждённых строк в черновиках"
+                                value={draftPayload?.total_items ?? 0}
+                                color="#15803d"
+                            />
+                            <SummaryStatCard
+                                title="К заказу сейчас"
+                                value={formatQty(draftPayload?.total_quantity ?? 0)}
+                                color="#0f766e"
+                            />
+                            <SummaryStatCard
+                                title="Сумма черновиков"
+                                value={
+                                    draftPayload?.total_sum != null
+                                        ? `${formatMoney(draftPayload.total_sum)} руб.`
+                                        : '—'
+                                }
+                            />
+                        </div>
+                        <Table
+                            rowKey="supplier_key"
+                            loading={draftsLoading}
+                            columns={draftColumns}
+                            dataSource={visibleDraftGroups}
+                            pagination={false}
+                            rowSelection={{
+                                selectedRowKeys: selectedDraftGroupKeys,
+                                onChange: (keys) => setSelectedDraftGroupKeys(keys),
+                                getCheckboxProps: (record) => ({
+                                    disabled: !getSendableGroupItems(record).length,
+                                }),
+                            }}
+                            expandable={{
+                                expandedRowRender: (group) => (
+                                    <Table
+                                        rowKey="item_id"
+                                        size="small"
+                                        pagination={false}
+                                        dataSource={group.items || []}
+                                        columns={[
+                                            {
+                                                title: 'Позиция',
+                                                key: 'position',
+                                                render: (_, item) => (
+                                                    <div>
+                                                        <div style={{ fontWeight: 700 }}>
+                                                            {item.brand_name || '—'} {item.oem_number}
+                                                        </div>
+                                                        <div
+                                                            style={{
+                                                                color: '#64748b',
+                                                                fontSize: 12,
+                                                            }}
+                                                        >
+                                                            {item.autopart_name || '—'}
+                                                        </div>
+                                                    </div>
+                                                ),
+                                            },
+                                            {
+                                                title: 'Реком.',
+                                                dataIndex: 'recommended_order_qty',
+                                                width: 110,
+                                                render: (value) => formatQty(value),
+                                            },
+                                            {
+                                                title: 'Закажем сейчас',
+                                                dataIndex: 'proposed_order_qty',
+                                                width: 130,
+                                                render: (value) => formatQty(value),
+                                            },
+                                            {
+                                                title: 'Остаток потребности',
+                                                dataIndex: 'remaining_gap_qty',
+                                                width: 150,
+                                                render: (value) => formatQty(value),
+                                            },
+                                            {
+                                                title: 'Цена',
+                                                dataIndex: 'price',
+                                                width: 110,
+                                                render: (value) =>
+                                                    value != null
+                                                        ? `${formatMoney(value)} руб.`
+                                                        : '—',
+                                            },
+                                            {
+                                                title: 'Сумма',
+                                                dataIndex: 'line_total',
+                                                width: 120,
+                                                render: (value) =>
+                                                    value != null
+                                                        ? `${formatMoney(value)} руб.`
+                                                        : '—',
+                                            },
+                                            {
+                                                title: 'Статус отправки',
+                                                key: 'sent',
+                                                width: 140,
+                                                render: () => <Tag color="blue">К отправке</Tag>,
+                                            },
+                                        ]}
+                                    />
+                                ),
+                            }}
+                        />
+                        {skippedDraftItems.length ? (
+                            <div>
+                                <Text strong>Не вошли в черновики:</Text>
+                                <div style={{ marginTop: 8 }}>
+                                    <Space wrap size={[6, 6]}>
+                                        {skippedDraftItems.map((item) => (
+                                            <Tag key={item.item_id} color="default">
+                                                {(item.brand_name || '—') + ' ' + item.oem_number}: {item.reason}
+                                            </Tag>
+                                        ))}
+                                    </Space>
+                                </div>
+                            </div>
+                        ) : null}
+                    </Space>
+                </Card>
+            </Space>
+        </Card>
+    );
+};
+
+export default AutopurchasePage;

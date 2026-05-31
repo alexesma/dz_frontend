@@ -2,6 +2,7 @@ import api from "../api.js";
 import React, { useEffect, useCallback, useState } from 'react';
 import { Button, Card, Space } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
+import { useSearchParams } from 'react-router-dom';
 import { formatMoscow } from '../utils/time';
 
 // --- API КЛИЕНТ ---
@@ -141,6 +142,7 @@ const StatusBadge = ({ status, options }) => {
 };
 
 const OrdersList = () => {
+    const [searchParams] = useSearchParams();
     const [confirmedPositions, setConfirmedPositions] = useState([]);
     const [createdOrders, setCreatedOrders] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -155,6 +157,8 @@ const OrdersList = () => {
         comment: ''
     });
     const [message, setMessage] = useState({ text: '', type: '' });
+    const requestedOpenOrderId = searchParams.get('open_order_id');
+    const requestedOpenOrderNumber = searchParams.get('open_order_number');
 
     const confirmAction = (text) => window.confirm(text);
 
@@ -197,6 +201,12 @@ const OrdersList = () => {
         }
     }, [showMessage]); // showMessage в зависимостях
 
+    useEffect(() => {
+        if ((requestedOpenOrderId || requestedOpenOrderNumber) && activeTab !== 'orders') {
+            setActiveTab('orders');
+        }
+    }, [activeTab, requestedOpenOrderId, requestedOpenOrderNumber]);
+
 // Теперь useEffect с правильными зависимостями
     useEffect(() => {
         if (activeTab === 'confirmed') {
@@ -205,6 +215,32 @@ const OrdersList = () => {
             fetchCreatedOrders();
         }
     }, [activeTab, fetchConfirmedPositions, fetchCreatedOrders]);
+
+    useEffect(() => {
+        if (activeTab !== 'orders' || !createdOrders.length) {
+            return;
+        }
+        const matchedOrder = createdOrders.find((order) => {
+            if (requestedOpenOrderId && String(order.id) === String(requestedOpenOrderId)) {
+                return true;
+            }
+            return (
+                requestedOpenOrderNumber &&
+                String(order.order_number || '') === String(requestedOpenOrderNumber)
+            );
+        });
+        if (!matchedOrder) {
+            return;
+        }
+        setExpandedOrders((prev) => ({ ...prev, [matchedOrder.id]: true }));
+        const timer = window.setTimeout(() => {
+            const node = document.getElementById(`order-card-${matchedOrder.id}`);
+            if (node) {
+                node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }, 80);
+        return () => window.clearTimeout(timer);
+    }, [activeTab, createdOrders, requestedOpenOrderId, requestedOpenOrderNumber]);
 
     const handleRefresh = () => {
         if (activeTab === 'confirmed') {
@@ -718,7 +754,7 @@ const OrdersList = () => {
                             const ORDER_STATUS = orderStatusOptions.find(option => option.value === order.status);
 
                             return (
-                                <div key={order.id} style={styles.card}>
+                                <div id={`order-card-${order.id}`} key={order.id} style={styles.card}>
                                     <div
                                         style={styles.cardHeader}
                                         onClick={() => toggleExpanded(order.id)}
