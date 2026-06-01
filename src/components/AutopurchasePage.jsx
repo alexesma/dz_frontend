@@ -4,6 +4,7 @@ import {
     Card,
     Checkbox,
     Input,
+    InputNumber,
     Popconfirm,
     Select,
     Space,
@@ -145,6 +146,8 @@ const AutopurchasePage = () => {
         decision_status: undefined,
         q: '',
         limit: 200,
+        budget_limit: null,
+        position_limit: null,
     });
 
     const fetchRuns = useCallback(async () => {
@@ -248,6 +251,8 @@ const AutopurchasePage = () => {
             const { data } = await createAutoPurchaseRun({
                 mode: filters.mode,
                 limit: 300,
+                budget_limit: filters.budget_limit || undefined,
+                position_limit: filters.position_limit || undefined,
             });
             message.success('Запуск автозаказа создан');
             await fetchRuns();
@@ -279,6 +284,8 @@ const AutopurchasePage = () => {
                     settings.own_provider_config_id ?? run.provider_config_id ?? undefined,
                 mode: settings.mode || run.mode || filters.mode,
                 limit: settings.limit || filters.limit || 300,
+                budget_limit: settings.budget_limit || undefined,
+                position_limit: settings.position_limit || undefined,
             });
             message.success('Новый запуск автозаказа создан на текущих настройках');
             await fetchRuns();
@@ -380,6 +387,9 @@ const AutopurchasePage = () => {
         () => (Array.isArray(runPayload?.rows) ? runPayload.rows : []),
         [runPayload?.rows]
     );
+    const currentRunSettings = run?.settings_snapshot || {};
+    const currentBudgetLimit = currentRunSettings.budget_limit ?? null;
+    const currentPositionLimit = currentRunSettings.position_limit ?? null;
     const visibleRows = useMemo(
         () => (
             showOnlyPendingRows
@@ -998,6 +1008,16 @@ const AutopurchasePage = () => {
                                 {' · '}
                                 режим: {run.mode}
                             </Text>
+                            <br />
+                            <Text type="secondary">
+                                Лимит суммы: {currentBudgetLimit != null
+                                    ? `${formatMoney(currentBudgetLimit)} руб.`
+                                    : 'без лимита'}
+                                {' · '}
+                                Лимит позиций: {currentPositionLimit != null
+                                    ? `${currentPositionLimit} шт.`
+                                    : 'без лимита'}
+                            </Text>
                         </>
                     ) : null}
                 </div>
@@ -1010,6 +1030,30 @@ const AutopurchasePage = () => {
                             style={{ width: 220 }}
                             onChange={(value) => {
                                 setFilters((prev) => ({ ...prev, mode: value }));
+                            }}
+                        />
+                        <InputNumber
+                            min={1}
+                            value={filters.budget_limit}
+                            placeholder="Лимит суммы, руб."
+                            style={{ width: 180 }}
+                            onChange={(value) => {
+                                setFilters((prev) => ({
+                                    ...prev,
+                                    budget_limit: value == null ? null : Number(value),
+                                }));
+                            }}
+                        />
+                        <InputNumber
+                            min={1}
+                            value={filters.position_limit}
+                            placeholder="Лимит позиций"
+                            style={{ width: 160 }}
+                            onChange={(value) => {
+                                setFilters((prev) => ({
+                                    ...prev,
+                                    position_limit: value == null ? null : Number(value),
+                                }));
                             }}
                         />
                         <Button
@@ -1205,6 +1249,14 @@ const AutopurchasePage = () => {
                             расчёт, в черновик попадёт доступный объём сейчас, а остаток
                             потребности будет виден отдельной строкой.
                         </Text>
+                        <Text type="secondary">
+                            При лимитах строки попадают в отправку по приоритету:
+                            меньше дней остатка → больше рекомендуемое количество →
+                            больше продажи за 30 дней → OEM по алфавиту.
+                            Если строка не помещается в остаток лимита суммы или
+                            достигнут лимит позиций, она остаётся в списке
+                            “Не вошли в черновики”.
+                        </Text>
                         <Space wrap>
                             <Button
                                 icon={<PlayCircleOutlined />}
@@ -1374,7 +1426,7 @@ const AutopurchasePage = () => {
                         />
                         {skippedDraftItems.length ? (
                             <div>
-                                <Text strong>Не вошли в черновики:</Text>
+                                <Text strong>Не вошли в черновики / отправку:</Text>
                                 <div style={{ marginTop: 8 }}>
                                     <Space wrap size={[6, 6]}>
                                         {skippedDraftItems.map((item) => (
