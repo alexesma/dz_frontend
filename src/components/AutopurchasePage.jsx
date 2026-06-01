@@ -1,11 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+    Alert,
     Button,
     Card,
     Checkbox,
     Input,
     InputNumber,
+    Modal,
     Popconfirm,
+    Progress,
     Select,
     Space,
     Table,
@@ -20,6 +23,8 @@ import { getCustomers } from '../api/customers';
 import {
     createAutoPurchaseRun,
     getAutoPurchaseRunDraftOrders,
+    getAutoPurchaseRunDraftGroupAiExplanation,
+    getAutoPurchaseRunItemAiExplanation,
     getAutoPurchaseRunItems,
     listAutoPurchaseRuns,
     markAutoPurchaseRunItemsSent,
@@ -126,6 +131,7 @@ const AutopurchasePage = () => {
     const [rowsLoading, setRowsLoading] = useState(false);
     const [draftsLoading, setDraftsLoading] = useState(false);
     const [customersLoading, setCustomersLoading] = useState(false);
+    const [aiLoading, setAiLoading] = useState(false);
     const [sendGroupLoadingKey, setSendGroupLoadingKey] = useState(null);
     const [bulkSendLoading, setBulkSendLoading] = useState(false);
     const [bulkStatusLoading, setBulkStatusLoading] = useState(false);
@@ -141,6 +147,15 @@ const AutopurchasePage = () => {
     const [selectedDraftGroupKeys, setSelectedDraftGroupKeys] = useState([]);
     const [showOnlyPendingRows, setShowOnlyPendingRows] = useState(false);
     const [showOnlySendableDraftGroups, setShowOnlySendableDraftGroups] = useState(false);
+    const [activeRunProgress, setActiveRunProgress] = useState(null);
+    const [runElapsedSec, setRunElapsedSec] = useState(0);
+    const [aiModalState, setAiModalState] = useState({
+        open: false,
+        kind: 'item',
+        row: null,
+        group: null,
+        payload: null,
+    });
     const [filters, setFilters] = useState({
         mode: 'draft_only',
         decision_status: undefined,
@@ -247,6 +262,12 @@ const AutopurchasePage = () => {
 
     const handleCreateRun = async () => {
         setCreateLoading(true);
+        setActiveRunProgress({
+            type: 'create',
+            startedAt: Date.now(),
+            limit: 300,
+            mode: filters.mode,
+        });
         try {
             const { data } = await createAutoPurchaseRun({
                 mode: filters.mode,
@@ -268,6 +289,7 @@ const AutopurchasePage = () => {
             }
         } finally {
             setCreateLoading(false);
+            setActiveRunProgress(null);
         }
     };
 
@@ -278,6 +300,12 @@ const AutopurchasePage = () => {
         }
         const settings = run.settings_snapshot || {};
         setRerunLoading(true);
+        setActiveRunProgress({
+            type: 'rerun',
+            startedAt: Date.now(),
+            limit: settings.limit || filters.limit || 300,
+            mode: settings.mode || run.mode || filters.mode,
+        });
         try {
             const { data } = await createAutoPurchaseRun({
                 own_provider_config_id:
@@ -303,8 +331,106 @@ const AutopurchasePage = () => {
             }
         } finally {
             setRerunLoading(false);
+            setActiveRunProgress(null);
         }
     }, [fetchRuns, filters.limit, filters.mode, run]);
+
+    useEffect(() => {
+        if (!activeRunProgress?.startedAt) {
+            setRunElapsedSec(0);
+            return undefined;
+        }
+        setRunElapsedSec(Math.max(0, Math.floor((Date.now() - activeRunProgress.startedAt) / 1000)));
+        const timer = window.setInterval(() => {
+            setRunElapsedSec(Math.max(0, Math.floor((Date.now() - activeRunProgress.startedAt) / 1000)));
+        }, 1000);
+        return () => window.clearInterval(timer);
+    }, [activeRunProgress]);
+
+    const runProgressPercent = useMemo(() => {
+        if (!activeRunProgress) {
+            return 0;
+        }
+        return Math.min(95, 8 + Math.round(runElapsedSec * 1.6));
+    }, [activeRunProgress, runElapsedSec]);
+
+    const handleOpenAiExplanation = useCallback(async (row) => {
+        if (!selectedRunId || !row?.id) {
+            return;
+        }
+        setAiModalState({
+            open: true,
+            kind: 'item',
+            row,
+            group: null,
+            payload: null,
+        });
+        setAiLoading(true);
+        try {
+            const { data } = await getAutoPurchaseRunItemAiExplanation(selectedRunId, row.id);
+            setAiModalState({
+                open: true,
+                kind: 'item',
+                row,
+                group: null,
+                payload: data || null,
+            });
+        } catch (error) {
+            const detail = extractRequestError(error, 'Не удалось получить AI-пояснение');
+            message.error(detail);
+            setAiModalState({
+                open: true,
+                kind: 'item',
+                row,
+                group: null,
+                payload: null,
+            });
+        } finally {
+            setAiLoading(false);
+        }
+    }, [selectedRunId]);
+
+    const handleOpenDraftGroupAiExplanation = useCallback(async (group) => {
+        if (!selectedRunId || !group?.supplier_key) {
+            return;
+        }
+        setAiModalState({
+            open: true,
+            kind: 'group',
+            row: null,
+            group,
+            payload: null,
+        });
+        setAiLoading(true);
+        try {
+            const { data } = await getAutoPurchaseRunDraftGroupAiExplanation(
+                selectedRunId,
+                group.supplier_key
+            );
+            setAiModalState({
+                open: true,
+                kind: 'group',
+                row: null,
+                group,
+                payload: data || null,
+            });
+        } catch (error) {
+            const detail = extractRequestError(
+                error,
+                'Не удалось получить AI-пояснение по группе поставщика'
+            );
+            message.error(detail);
+            setAiModalState({
+                open: true,
+                kind: 'group',
+                row: null,
+                group,
+                payload: null,
+            });
+        } finally {
+            setAiLoading(false);
+        }
+    }, [selectedRunId]);
 
     const applyDecisionStatusLocally = useCallback((itemIds, decisionStatus) => {
         const itemIdSet = new Set((Array.isArray(itemIds) ? itemIds : [itemIds]).map(Number));
@@ -896,6 +1022,14 @@ const AutopurchasePage = () => {
                                 </Button>
                             </Popconfirm>
                             <Button
+                                size="small"
+                                onClick={() => {
+                                    void handleOpenAiExplanation(row);
+                                }}
+                            >
+                                AI
+                            </Button>
+                            <Button
                                 type="link"
                                 size="small"
                                 onClick={() => {
@@ -916,7 +1050,7 @@ const AutopurchasePage = () => {
                 },
             },
         ],
-        [handleItemStatusChange, navigate]
+        [handleItemStatusChange, handleOpenAiExplanation, navigate]
     );
 
     const draftColumns = useMemo(
@@ -954,7 +1088,7 @@ const AutopurchasePage = () => {
             {
                 title: 'Действие',
                 key: 'action',
-                width: 180,
+                width: 260,
                 render: (_, row) => {
                     const remainingItems = (row.items || []).filter(
                         (item) =>
@@ -963,18 +1097,28 @@ const AutopurchasePage = () => {
                     );
                     return (
                         <Space direction="vertical" size={4}>
-                            <Button
-                                type="primary"
-                                icon={<SendOutlined />}
-                                size="small"
-                                loading={sendGroupLoadingKey === row.supplier_key}
-                                disabled={!remainingItems.length || !selectedCustomerId}
-                                onClick={() => {
-                                    void handleSendDraftGroup(row);
-                                }}
-                            >
-                                Отправить на сайт
-                            </Button>
+                            <Space wrap size={6}>
+                                <Button
+                                    type="primary"
+                                    icon={<SendOutlined />}
+                                    size="small"
+                                    loading={sendGroupLoadingKey === row.supplier_key}
+                                    disabled={!remainingItems.length || !selectedCustomerId}
+                                    onClick={() => {
+                                        void handleSendDraftGroup(row);
+                                    }}
+                                >
+                                    Отправить на сайт
+                                </Button>
+                                <Button
+                                    size="small"
+                                    onClick={() => {
+                                        void handleOpenDraftGroupAiExplanation(row);
+                                    }}
+                                >
+                                    AI
+                                </Button>
+                            </Space>
                             {!remainingItems.length ? (
                                 <Text type="secondary" style={{ fontSize: 12 }}>
                                     Все строки группы уже отправлены
@@ -985,7 +1129,12 @@ const AutopurchasePage = () => {
                 },
             },
         ],
-        [handleSendDraftGroup, selectedCustomerId, sendGroupLoadingKey]
+        [
+            handleOpenDraftGroupAiExplanation,
+            handleSendDraftGroup,
+            selectedCustomerId,
+            sendGroupLoadingKey,
+        ]
     );
 
     return (
@@ -1021,6 +1170,29 @@ const AutopurchasePage = () => {
                         </>
                     ) : null}
                 </div>
+
+                {activeRunProgress ? (
+                    <Card size="small" style={{ background: '#f8fafc', borderColor: '#cbd5e1' }}>
+                        <Space direction="vertical" style={{ width: '100%' }} size="small">
+                            <Space style={{ justifyContent: 'space-between', width: '100%' }} wrap>
+                                <Text strong>Идёт расчёт автозаказа</Text>
+                                <Text type="secondary">
+                                    Прошло: {runElapsedSec} сек.
+                                </Text>
+                            </Space>
+                            <Progress percent={runProgressPercent} status="active" showInfo={false} />
+                            <Text type="secondary">
+                                Считаем потребность по остаткам и истории, затем запрашиваем
+                                Dragonzap по кандидатам и сохраняем новый запуск. Пока backend
+                                считает run синхронно, страница обновится только после завершения
+                                этого запроса.
+                            </Text>
+                            <Text type="secondary">
+                                Режим: {activeRunProgress.mode} · лимит строк расчёта: {activeRunProgress.limit}
+                            </Text>
+                        </Space>
+                    </Card>
+                ) : null}
 
                 <Space wrap style={{ justifyContent: 'space-between', width: '100%' }}>
                     <Space wrap>
@@ -1441,6 +1613,92 @@ const AutopurchasePage = () => {
                     </Space>
                 </Card>
             </Space>
+            <Modal
+                open={aiModalState.open}
+                title={
+                    aiModalState.kind === 'group'
+                        ? `AI-пояснение по группе: ${aiModalState.group?.provider_name || '—'}`
+                        : aiModalState.row
+                            ? `AI-пояснение: ${aiModalState.row.brand_name || '—'} ${aiModalState.row.oem_number || ''}`
+                            : 'AI-пояснение по строке автозаказа'
+                }
+                footer={null}
+                width={760}
+                onCancel={() => {
+                    setAiModalState({
+                        open: false,
+                        kind: 'item',
+                        row: null,
+                        group: null,
+                        payload: null,
+                    });
+                }}
+            >
+                {aiLoading ? (
+                    <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                        <Text strong>Запрашиваем AI-пояснение...</Text>
+                        <Progress percent={Math.min(90, 15 + runElapsedSec * 3)} status="active" showInfo={false} />
+                        <Text type="secondary">
+                            AI не влияет на расчёт заказа, а только помогает менеджеру понять готовое решение системы.
+                        </Text>
+                    </Space>
+                ) : aiModalState.payload ? (
+                    <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                        <Alert
+                            type={aiModalState.payload.source === 'ai' ? 'success' : 'info'}
+                            showIcon
+                            message={
+                                aiModalState.payload.source === 'ai'
+                                    ? `Ответ от модели ${aiModalState.payload.model}`
+                                    : 'AI недоступен, показано резервное пояснение по правилам системы'
+                            }
+                            description={`Уверенность: ${Math.round(Number(aiModalState.payload.confidence || 0) * 100)}% · ${
+                                aiModalState.payload.requires_human_review
+                                    ? 'Требует ручной проверки'
+                                    : 'Можно быстро подтверждать'
+                            }`}
+                        />
+                        <div>
+                            <Text strong>
+                                {aiModalState.kind === 'group'
+                                    ? 'Почему система собрала эту группу'
+                                    : 'Почему система предлагает эту строку'}
+                            </Text>
+                            <div style={{ marginTop: 6 }}>
+                                <Text>{aiModalState.payload.human_explanation}</Text>
+                            </div>
+                        </div>
+                        <div>
+                            <Text strong>Риски</Text>
+                            <div style={{ marginTop: 6 }}>
+                                <Text>{aiModalState.payload.risk_summary}</Text>
+                            </div>
+                        </div>
+                        <div>
+                            <Text strong>
+                                {aiModalState.kind === 'group'
+                                    ? 'Комментарий менеджеру по группе'
+                                    : 'Комментарий менеджеру'}
+                            </Text>
+                            <div style={{ marginTop: 6 }}>
+                                <Text>{aiModalState.payload.manager_note}</Text>
+                            </div>
+                        </div>
+                        <div>
+                            <Text strong>
+                                {aiModalState.kind === 'group'
+                                    ? 'Черновик сообщения поставщику по группе'
+                                    : 'Черновик сообщения поставщику'}
+                            </Text>
+                            <div style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>
+                                <Text>{aiModalState.payload.supplier_message_draft || '—'}</Text>
+                            </div>
+                        </div>
+                    </Space>
+                ) : (
+                    <Text type="secondary">Пояснение пока не получено.</Text>
+                )}
+            </Modal>
         </Card>
     );
 };

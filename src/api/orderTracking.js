@@ -47,5 +47,13 @@ export const getAutoPurchaseRunDraftOrders = (runId) =>
 export const markAutoPurchaseRunItemsSent = (runId, payload) =>
     api.post(`/order/autopurchase-runs/${runId}/mark-sent`, payload);
 
+export const getAutoPurchaseRunItemAiExplanation = (runId, itemId) =>
+    api.get(`/order/autopurchase-runs/${runId}/items/${itemId}/ai-explanation`);
+
+export const getAutoPurchaseRunDraftGroupAiExplanation = (runId, supplierKey) =>
+    api.get(`/order/autopurchase-runs/${runId}/draft-group-ai`, {
+        params: { supplier_key: supplierKey },
+    });
+
 export const updateTrackingOrderItem = (sourceType, itemId, payload) =>
     api.patch(`/order/tracking-items/${sourceType}/${itemId}`, payload);
