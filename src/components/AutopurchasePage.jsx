@@ -13,6 +13,7 @@ import {
     Space,
     Table,
     Tag,
+    Tooltip,
     Typography,
     message,
 } from 'antd';
@@ -67,6 +68,19 @@ const formatQty = (value) => {
         return '—';
     }
     return `${value} шт`;
+};
+
+const getApproveUnavailableReason = (row) => {
+    if (!row) {
+        return 'Строка автозаказа не найдена';
+    }
+    if (!row.recommended_supplier?.provider_name) {
+        return 'Нельзя подтвердить строку без найденного site-поставщика';
+    }
+    if (!row.draft_purchase_order) {
+        return 'Нельзя подтвердить строку без подготовленного черновика заказа';
+    }
+    return null;
 };
 
 const buildAutopurchaseTrackingKey = (runId, itemId) =>
@@ -464,6 +478,14 @@ const AutopurchasePage = () => {
         if (!selectedRunId) {
             return;
         }
+        const row = rows.find((item) => Number(item.id) === Number(itemId));
+        if (decisionStatus === 'auto_approved') {
+            const unavailableReason = getApproveUnavailableReason(row);
+            if (unavailableReason) {
+                message.warning(unavailableReason);
+                return;
+            }
+        }
         try {
             await updateAutoPurchaseRunItem(selectedRunId, itemId, {
                 decision_status: decisionStatus,
@@ -475,7 +497,7 @@ const AutopurchasePage = () => {
             const detail = error?.response?.data?.detail;
             message.error(detail || 'Не удалось обновить статус строки');
         }
-    }, [applyDecisionStatusLocally, filters, refreshSelectedRunData, selectedRunId]);
+    }, [applyDecisionStatusLocally, filters, refreshSelectedRunData, rows, selectedRunId]);
 
     const handleBulkStatusChange = useCallback(async (decisionStatus) => {
         if (!selectedRunId) {
@@ -977,22 +999,28 @@ const AutopurchasePage = () => {
                 fixed: 'right',
                 render: (_, row) => {
                     const isSent = Boolean(row?.sent_to_site_at);
+                    const approveUnavailableReason = getApproveUnavailableReason(row);
+                    const approveDisabled = isSent || Boolean(approveUnavailableReason);
                     return (
                         <Space wrap size={6}>
-                            <Popconfirm
-                                title="Подтвердить строку автозаказа?"
-                                description="Строка попадёт в черновики заказа по выбранному site-поставщику."
-                                onConfirm={() => handleItemStatusChange(row.id, 'auto_approved')}
-                                disabled={isSent}
-                            >
-                                <Button
-                                    type={row.decision_status === 'auto_approved' ? 'primary' : 'default'}
-                                    size="small"
-                                    disabled={isSent}
-                                >
-                                    Подтв.
-                                </Button>
-                            </Popconfirm>
+                            <Tooltip title={approveUnavailableReason}>
+                                <span>
+                                    <Popconfirm
+                                        title="Подтвердить строку автозаказа?"
+                                        description="Строка попадёт в черновики заказа по выбранному site-поставщику."
+                                        onConfirm={() => handleItemStatusChange(row.id, 'auto_approved')}
+                                        disabled={approveDisabled}
+                                    >
+                                        <Button
+                                            type={row.decision_status === 'auto_approved' ? 'primary' : 'default'}
+                                            size="small"
+                                            disabled={approveDisabled}
+                                        >
+                                            Подтв.
+                                        </Button>
+                                    </Popconfirm>
+                                </span>
+                            </Tooltip>
                             <Popconfirm
                                 title="Вернуть строку на ручную проверку?"
                                 onConfirm={() => handleItemStatusChange(row.id, 'needs_review')}
@@ -1650,9 +1678,10 @@ const AutopurchasePage = () => {
                             message={
                                 aiModalState.payload.source === 'ai'
                                     ? `Ответ от модели ${aiModalState.payload.model}`
-                                    : 'AI недоступен, показано резервное пояснение по правилам системы'
+                                    : aiModalState.payload.warning_message ||
+                                      'AI недоступен, показано резервное пояснение по правилам системы'
                             }
-                            description={`Уверенность: ${Math.round(Number(aiModalState.payload.confidence || 0) * 100)}% · ${
+                            description={`${aiModalState.payload.warning_code ? `Код: ${aiModalState.payload.warning_code} · ` : ''}Уверенность: ${Math.round(Number(aiModalState.payload.confidence || 0) * 100)}% · ${
                                 aiModalState.payload.requires_human_review
                                     ? 'Требует ручной проверки'
                                     : 'Можно быстро подтверждать'
