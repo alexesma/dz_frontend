@@ -474,6 +474,11 @@ const AutopurchasePage = () => {
         ]);
     }, [fetchDraftOrders, fetchRunItems, fetchRuns]);
 
+    const rows = useMemo(
+        () => (Array.isArray(runPayload?.rows) ? runPayload.rows : []),
+        [runPayload?.rows]
+    );
+
     const handleItemStatusChange = useCallback(async (itemId, decisionStatus) => {
         if (!selectedRunId) {
             return;
@@ -530,11 +535,6 @@ const AutopurchasePage = () => {
         selectedRowKeys,
         selectedRunId,
     ]);
-
-    const rows = useMemo(
-        () => (Array.isArray(runPayload?.rows) ? runPayload.rows : []),
-        [runPayload?.rows]
-    );
     const currentRunSettings = run?.settings_snapshot || {};
     const currentBudgetLimit = currentRunSettings.budget_limit ?? null;
     const currentPositionLimit = currentRunSettings.position_limit ?? null;
