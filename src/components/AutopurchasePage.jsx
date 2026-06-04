@@ -53,6 +53,12 @@ const statusColor = {
     auto_approved: 'green',
 };
 
+const RUN_STATUS_LABEL = {
+    running: 'В расчёте',
+    completed: 'Готов',
+    failed: 'Ошибка',
+};
+
 const formatMoney = (value) => {
     if (value == null) {
         return '—';
@@ -261,6 +267,20 @@ const AutopurchasePage = () => {
     }, [fetchRuns]);
 
     useEffect(() => {
+        if (!runs.length) {
+            setSelectedRunId(null);
+            return;
+        }
+        if (activeRunProgress && runs[0]?.status === 'running') {
+            setSelectedRunId(runs[0].id);
+            return;
+        }
+        if (!selectedRunId || !runs.some((item) => item.id === selectedRunId)) {
+            setSelectedRunId(runs[0].id);
+        }
+    }, [activeRunProgress, runs, selectedRunId]);
+
+    useEffect(() => {
         void fetchCustomers();
     }, [fetchCustomers]);
 
@@ -271,6 +291,16 @@ const AutopurchasePage = () => {
     useEffect(() => {
         void fetchDraftOrders(selectedRunId);
     }, [fetchDraftOrders, selectedRunId]);
+
+    useEffect(() => {
+        if (!activeRunProgress) {
+            return undefined;
+        }
+        const timer = window.setInterval(() => {
+            void fetchRuns();
+        }, 4000);
+        return () => window.clearInterval(timer);
+    }, [activeRunProgress, fetchRuns]);
 
     const run = runPayload?.run || runs.find((item) => item.id === selectedRunId) || null;
 
@@ -553,7 +583,7 @@ const AutopurchasePage = () => {
 
     const runOptions = runs.map((item) => ({
         value: item.id,
-        label: `#${item.id} · ${item.provider_name || '—'} · ${item.mode}`,
+        label: `#${item.id} · ${item.provider_name || '—'} · ${item.mode} · ${RUN_STATUS_LABEL[item.status] || item.status || '—'}`,
     }));
 
     const draftGroups = useMemo(
