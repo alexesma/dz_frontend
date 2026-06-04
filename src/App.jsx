@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layout } from 'antd';
+import { Button, Layout, Result, Spin } from 'antd';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import NotificationCenter from './components/NotificationCenter';
@@ -66,10 +66,31 @@ import useAuth from './context/useAuth';
 
 const { Content } = Layout;
 
+const AuthUnavailableState = () => {
+    const { retryAuthBootstrap } = useAuth();
+    return (
+        <div style={{ minHeight: '50vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Result
+                status="warning"
+                title="Временная проблема со связью с сервером"
+                subTitle="Сессия не подтверждена из-за временной ошибки. Мы не выходим из аккаунта автоматически."
+                extra={(
+                    <Button type="primary" onClick={() => void retryAuthBootstrap()}>
+                        Повторить
+                    </Button>
+                )}
+            />
+        </div>
+    );
+};
+
 const RequireAuth = ({ children }) => {
-    const { user, loading } = useAuth();
+    const { user, loading, authUnavailable } = useAuth();
     if (loading) {
-        return null;
+        return <Spin size="large" style={{ display: 'block', margin: '120px auto' }} />;
+    }
+    if (authUnavailable) {
+        return <AuthUnavailableState />;
     }
     if (!user) {
         return <Navigate to="/login" replace />;
@@ -78,9 +99,12 @@ const RequireAuth = ({ children }) => {
 };
 
 const RequireAdmin = ({ children }) => {
-    const { user, loading } = useAuth();
+    const { user, loading, authUnavailable } = useAuth();
     if (loading) {
-        return null;
+        return <Spin size="large" style={{ display: 'block', margin: '120px auto' }} />;
+    }
+    if (authUnavailable) {
+        return <AuthUnavailableState />;
     }
     if (!user) {
         return <Navigate to="/login" replace />;
