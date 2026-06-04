@@ -54,6 +54,7 @@ const statusColor = {
 };
 
 const RUN_STATUS_LABEL = {
+    queued: 'В очереди',
     running: 'В расчёте',
     completed: 'Готов',
     failed: 'Ошибка',
@@ -266,12 +267,19 @@ const AutopurchasePage = () => {
         void fetchRuns();
     }, [fetchRuns]);
 
+    const run = runPayload?.run || runs.find((item) => item.id === selectedRunId) || null;
+    const runStatus = run?.status || null;
+    const shouldPollRuns = Boolean(activeRunProgress)
+        || runs.some((item) => item.status === 'queued' || item.status === 'running')
+        || runStatus === 'queued'
+        || runStatus === 'running';
+
     useEffect(() => {
         if (!runs.length) {
             setSelectedRunId(null);
             return;
         }
-        if (activeRunProgress && runs[0]?.status === 'running') {
+        if (activeRunProgress && (runs[0]?.status === 'queued' || runs[0]?.status === 'running')) {
             setSelectedRunId(runs[0].id);
             return;
         }
@@ -286,23 +294,41 @@ const AutopurchasePage = () => {
 
     useEffect(() => {
         void fetchRunItems(selectedRunId, filters);
-    }, [fetchRunItems, selectedRunId, filters]);
+    }, [fetchRunItems, selectedRunId, filters, runStatus]);
 
     useEffect(() => {
         void fetchDraftOrders(selectedRunId);
-    }, [fetchDraftOrders, selectedRunId]);
+    }, [fetchDraftOrders, selectedRunId, runStatus]);
 
     useEffect(() => {
-        if (!activeRunProgress) {
+        if (!shouldPollRuns) {
             return undefined;
         }
         const timer = window.setInterval(() => {
             void fetchRuns();
         }, 4000);
         return () => window.clearInterval(timer);
-    }, [activeRunProgress, fetchRuns]);
+    }, [fetchRuns, shouldPollRuns]);
 
-    const run = runPayload?.run || runs.find((item) => item.id === selectedRunId) || null;
+    const progressRunState = useMemo(() => {
+        if (activeRunProgress) {
+            return activeRunProgress;
+        }
+        if (!run || (run.status !== 'queued' && run.status !== 'running')) {
+            return null;
+        }
+        const startedAtMs = run.started_at ? Date.parse(run.started_at) : NaN;
+        return {
+            type: run.status,
+            startedAt: Number.isFinite(startedAtMs) ? startedAtMs : Date.now(),
+            limit: run.settings_snapshot?.limit || filters.limit || 300,
+            mode: run.settings_snapshot?.mode || run.mode || filters.mode,
+            message: run.summary_snapshot?.message
+                || (run.status === 'queued'
+                    ? 'Запуск автозаказа ожидает обработки scheduler.'
+                    : 'Расчёт автозаказа выполняется в scheduler.'),
+        };
+    }, [activeRunProgress, filters.limit, filters.mode, run]);
 
     const handleCreateRun = async () => {
         setCreateLoading(true);
@@ -319,7 +345,7 @@ const AutopurchasePage = () => {
                 budget_limit: filters.budget_limit || undefined,
                 position_limit: filters.position_limit || undefined,
             });
-            message.success('Запуск автозаказа создан');
+            message.success('Запуск автозаказа создан и поставлен в очередь');
             await fetchRuns();
             if (data?.id) {
                 setSelectedRunId(data.id);
@@ -359,7 +385,7 @@ const AutopurchasePage = () => {
                 budget_limit: settings.budget_limit || undefined,
                 position_limit: settings.position_limit || undefined,
             });
-            message.success('Новый запуск автозаказа создан на текущих настройках');
+            message.success('Новый запуск автозаказа создан и поставлен в очередь');
             await fetchRuns();
             if (data?.id) {
                 setSelectedRunId(data.id);
@@ -380,23 +406,24 @@ const AutopurchasePage = () => {
     }, [fetchRuns, filters.limit, filters.mode, run]);
 
     useEffect(() => {
-        if (!activeRunProgress?.startedAt) {
+        if (!progressRunState?.startedAt) {
             setRunElapsedSec(0);
             return undefined;
         }
-        setRunElapsedSec(Math.max(0, Math.floor((Date.now() - activeRunProgress.startedAt) / 1000)));
+        setRunElapsedSec(Math.max(0, Math.floor((Date.now() - progressRunState.startedAt) / 1000)));
         const timer = window.setInterval(() => {
-            setRunElapsedSec(Math.max(0, Math.floor((Date.now() - activeRunProgress.startedAt) / 1000)));
+            setRunElapsedSec(Math.max(0, Math.floor((Date.now() - progressRunState.startedAt) / 1000)));
         }, 1000);
         return () => window.clearInterval(timer);
-    }, [activeRunProgress]);
+    }, [progressRunState]);
 
     const runProgressPercent = useMemo(() => {
-        if (!activeRunProgress) {
+        if (!progressRunState) {
             return 0;
         }
-        return Math.min(95, 8 + Math.round(runElapsedSec * 1.6));
-    }, [activeRunProgress, runElapsedSec]);
+        const multiplier = progressRunState.type === 'queued' ? 0.8 : 1.6;
+        return Math.min(95, 8 + Math.round(runElapsedSec * multiplier));
+    }, [progressRunState, runElapsedSec]);
 
     const handleOpenAiExplanation = useCallback(async (row) => {
         if (!selectedRunId || !row?.id) {
@@ -1231,24 +1258,30 @@ const AutopurchasePage = () => {
                     ) : null}
                 </div>
 
-                {activeRunProgress ? (
+                {progressRunState ? (
                     <Card size="small" style={{ background: '#f8fafc', borderColor: '#cbd5e1' }}>
                         <Space direction="vertical" style={{ width: '100%' }} size="small">
                             <Space style={{ justifyContent: 'space-between', width: '100%' }} wrap>
-                                <Text strong>Идёт расчёт автозаказа</Text>
+                                <Text strong>
+                                    {progressRunState.type === 'queued'
+                                        ? 'Запуск автозаказа в очереди'
+                                        : progressRunState.type === 'create'
+                                            ? 'Запуск автозаказа создаётся'
+                                            : progressRunState.type === 'rerun'
+                                                ? 'Пересчёт автозаказа создаётся'
+                                                : 'Идёт расчёт автозаказа'}
+                                </Text>
                                 <Text type="secondary">
                                     Прошло: {runElapsedSec} сек.
                                 </Text>
                             </Space>
                             <Progress percent={runProgressPercent} status="active" showInfo={false} />
                             <Text type="secondary">
-                                Считаем потребность по остаткам и истории, затем запрашиваем
-                                Dragonzap по кандидатам и сохраняем новый запуск. Пока backend
-                                считает run синхронно, страница обновится только после завершения
-                                этого запроса.
+                                {progressRunState.message
+                                    || 'Считаем потребность по остаткам и истории, затем запрашиваем Dragonzap по кандидатам и сохраняем новый запуск.'}
                             </Text>
                             <Text type="secondary">
-                                Режим: {activeRunProgress.mode} · лимит строк расчёта: {activeRunProgress.limit}
+                                Режим: {progressRunState.mode} · лимит строк расчёта: {progressRunState.limit}
                             </Text>
                         </Space>
                     </Card>
