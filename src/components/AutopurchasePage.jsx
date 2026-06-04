@@ -904,7 +904,9 @@ const AutopurchasePage = () => {
                                 ? 'Заблокировано'
                                 : value === 'needs_review'
                                     ? 'На проверку'
-                                    : 'Авто'}
+                                    : value === 'auto_approved'
+                                        ? 'Подтверждено'
+                                        : 'Ожидание'}
                         </Tag>
                         {row?.sent_to_site_at ? (
                             <>
@@ -1446,6 +1448,9 @@ const AutopurchasePage = () => {
                     loading={rowsLoading}
                     columns={columns}
                     dataSource={visibleRows}
+                    rowClassName={(record) =>
+                        record?.decision_status === 'needs_review' ? 'row-needs-review' : ''
+                    }
                     rowSelection={{
                         selectedRowKeys,
                         onChange: (keys) => setSelectedRowKeys(keys),

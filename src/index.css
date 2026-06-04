@@ -748,3 +748,7 @@ body {
 .holiday-row-workday td {
   background: #f6ffed !important;
 }
+
+.row-needs-review td {
+  background: #fff7e6 !important;
+}
