@@ -595,6 +595,10 @@ const AutopurchasePage = () => {
     const currentRunSettings = run?.settings_snapshot || {};
     const currentBudgetLimit = currentRunSettings.budget_limit ?? null;
     const currentPositionLimit = currentRunSettings.position_limit ?? null;
+    const runFailureMessage = run?.status === 'failed'
+        ? (run.summary_snapshot?.message
+            || 'Расчёт завершился с ошибкой. Проверь логи scheduler-контейнера.')
+        : null;
     const visibleRows = useMemo(
         () => (
             showOnlyPendingRows
@@ -1285,6 +1289,15 @@ const AutopurchasePage = () => {
                             </Text>
                         </Space>
                     </Card>
+                ) : null}
+
+                {runFailureMessage ? (
+                    <Alert
+                        type="error"
+                        showIcon
+                        message={`Запуск #${run.id} завершился с ошибкой`}
+                        description={runFailureMessage}
+                    />
                 ) : null}
 
                 <Space wrap style={{ justifyContent: 'space-between', width: '100%' }}>
