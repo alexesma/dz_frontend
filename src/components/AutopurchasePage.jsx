@@ -625,6 +625,76 @@ const AutopurchasePage = () => {
         () => (Array.isArray(draftPayload?.skipped_items) ? draftPayload.skipped_items : []),
         [draftPayload?.skipped_items]
     );
+    const rowsEmptyState = useMemo(() => {
+        if (!run || rowsLoading) {
+            return null;
+        }
+        if (rows.length > 0) {
+            return null;
+        }
+        if (run.status === 'queued' || run.status === 'running') {
+            return {
+                type: 'info',
+                message: 'Запуск ещё не завершил расчёт строк',
+                description:
+                    'Пока scheduler не завершил run, таблица строк может быть пустой.',
+            };
+        }
+        if (run.status === 'failed') {
+            return {
+                type: 'warning',
+                message: `Запуск #${run.id} не сохранил строки`,
+                description:
+                    run.summary_snapshot?.message
+                    || 'Этот запуск завершился ошибкой до сохранения строк автозаказа.',
+            };
+        }
+        return {
+            type: 'info',
+            message: `В запуске #${run.id} нет сохранённых строк`,
+            description:
+                'Скорее всего это старый пустой или неудачный запуск. Для работы лучше использовать новый расчёт.',
+        };
+    }, [rows, rowsLoading, run]);
+    const draftEmptyState = useMemo(() => {
+        if (!run || draftsLoading) {
+            return null;
+        }
+        if (draftGroups.length > 0) {
+            return null;
+        }
+        if (run.status === 'queued' || run.status === 'running') {
+            return {
+                type: 'info',
+                message: 'Черновики появятся после завершения расчёта',
+                description:
+                    'Пока scheduler считает run, блок черновиков может быть пустым.',
+            };
+        }
+        if (Number(run.auto_approved_count || 0) <= 0) {
+            return {
+                type: 'info',
+                message: 'В этом запуске пока нет подтверждённых строк',
+                description:
+                    'Черновики заказов собираются только из строк со статусом “Автоподтверждено”.',
+            };
+        }
+        if (run.status === 'failed') {
+            return {
+                type: 'warning',
+                message: `Запуск #${run.id} завершился с ошибкой`,
+                description:
+                    run.summary_snapshot?.message
+                    || 'Черновики не были собраны, потому что запуск завершился ошибкой.',
+            };
+        }
+        return {
+            type: 'info',
+            message: 'Для этого запуска черновики не собраны',
+            description:
+                'Если строки есть, но черновиков нет, попробуй пересчитать run или проверить статусы строк.',
+        };
+    }, [draftGroups.length, draftsLoading, run]);
 
     const getSendableGroupItems = useCallback((group) => (
         (group?.items || []).filter(
@@ -1507,6 +1577,14 @@ const AutopurchasePage = () => {
                     pagination={{ pageSize: 25 }}
                     scroll={{ x: 1380 }}
                 />
+                {rowsEmptyState ? (
+                    <Alert
+                        type={rowsEmptyState.type}
+                        showIcon
+                        message={rowsEmptyState.message}
+                        description={rowsEmptyState.description}
+                    />
+                ) : null}
 
                 <Card
                     size="small"
@@ -1532,8 +1610,10 @@ const AutopurchasePage = () => {
                         </Text>
                         <Text type="secondary">
                             При лимитах строки попадают в отправку по приоритету:
-                            меньше дней остатка → больше рекомендуемое количество →
-                            больше продажи за 30 дней → OEM по алфавиту.
+                            меньше дней остатка → при равной срочности выше класс
+                            ABC/XYZ (AX приоритетнее AY, затем AZ, BX и далее) →
+                            больше рекомендуемое количество → больше продажи за 30
+                            дней → OEM по алфавиту.
                             Если строка не помещается в остаток лимита суммы или
                             достигнут лимит позиций, она остаётся в списке
                             “Не вошли в черновики”.
@@ -1705,6 +1785,14 @@ const AutopurchasePage = () => {
                                 ),
                             }}
                         />
+                        {draftEmptyState ? (
+                            <Alert
+                                type={draftEmptyState.type}
+                                showIcon
+                                message={draftEmptyState.message}
+                                description={draftEmptyState.description}
+                            />
+                        ) : null}
                         {skippedDraftItems.length ? (
                             <div>
                                 <Text strong>Не вошли в черновики / отправку:</Text>
