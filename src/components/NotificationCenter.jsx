@@ -27,7 +27,7 @@ import {
     markNotificationRead,
 } from '../api/notifications';
 
-const POLL_INTERVAL_MS = 15000;
+const POLL_INTERVAL_MS = 30000;
 const MAX_NOTIFICATIONS = 50;
 const SOUND_ENABLED_KEY = 'notification_center_sound_enabled_v1';
 const VIBRATION_ENABLED_KEY = 'notification_center_vibration_enabled_v1';

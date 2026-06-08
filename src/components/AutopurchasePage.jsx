@@ -306,7 +306,7 @@ const AutopurchasePage = () => {
         }
         const timer = window.setInterval(() => {
             void fetchRuns();
-        }, 4000);
+        }, 8000);
         return () => window.clearInterval(timer);
     }, [fetchRuns, shouldPollRuns]);
 
@@ -595,10 +595,16 @@ const AutopurchasePage = () => {
     const currentRunSettings = run?.settings_snapshot || {};
     const currentBudgetLimit = currentRunSettings.budget_limit ?? null;
     const currentPositionLimit = currentRunSettings.position_limit ?? null;
+    const runSummaryMessage = run?.summary_snapshot?.message || null;
     const runFailureMessage = run?.status === 'failed'
-        ? (run.summary_snapshot?.message
+        ? (runSummaryMessage
             || 'Расчёт завершился с ошибкой. Проверь логи scheduler-контейнера.')
         : null;
+    const runDiagnostics = useMemo(() => (
+        Array.isArray(run?.summary_snapshot?.diagnostics)
+            ? run.summary_snapshot.diagnostics.filter((item) => Number(item?.value || 0) > 0)
+            : []
+    ), [run]);
     const visibleRows = useMemo(
         () => (
             showOnlyPendingRows
@@ -676,7 +682,8 @@ const AutopurchasePage = () => {
                 type: 'info',
                 message: 'В этом запуске пока нет подтверждённых строк',
                 description:
-                    'Черновики заказов собираются только из строк со статусом “Автоподтверждено”.',
+                    runSummaryMessage
+                    || 'Черновики заказов собираются только из строк со статусом “Автоподтверждено”.',
             };
         }
         if (run.status === 'failed') {
@@ -694,7 +701,7 @@ const AutopurchasePage = () => {
             description:
                 'Если строки есть, но черновиков нет, попробуй пересчитать run или проверить статусы строк.',
         };
-    }, [draftGroups.length, draftsLoading, run]);
+    }, [draftGroups.length, draftsLoading, run, runSummaryMessage]);
 
     const getSendableGroupItems = useCallback((group) => (
         (group?.items || []).filter(
@@ -1496,6 +1503,27 @@ const AutopurchasePage = () => {
                         color="#0f766e"
                     />
                 </div>
+
+                {runDiagnostics.length ? (
+                    <Alert
+                        type="info"
+                        showIcon
+                        message="Диагностика последнего расчёта"
+                        description={
+                            <Space direction="vertical" size={4}>
+                                {runSummaryMessage ? (
+                                    <Text type="secondary">{runSummaryMessage}</Text>
+                                ) : null}
+                                {runDiagnostics.map((item) => (
+                                    <Text key={item.code}>
+                                        <strong>{item.title}:</strong> {item.value}
+                                        {item.description ? ` — ${item.description}` : ''}
+                                    </Text>
+                                ))}
+                            </Space>
+                        }
+                    />
+                ) : null}
 
                 <Space wrap>
                     <Text type="secondary">
