@@ -638,6 +638,23 @@ const AutopurchasePage = () => {
         if (rows.length > 0) {
             return null;
         }
+        const activeFilterBits = [];
+        if (filters.decision_status) {
+            const statusLabel = STATUS_OPTIONS.find(
+                (item) => item.value === filters.decision_status
+            )?.label || filters.decision_status;
+            activeFilterBits.push(`статус: ${statusLabel}`);
+        }
+        if ((filters.q || '').trim()) {
+            activeFilterBits.push(`поиск: “${String(filters.q).trim()}”`);
+        }
+        if (run.total_items > 0 && activeFilterBits.length > 0) {
+            return {
+                type: 'info',
+                message: 'Строки есть, но их скрыли фильтры',
+                description: `Сейчас активны фильтры: ${activeFilterBits.join(', ')}. Очисти фильтры сверху, чтобы увидеть все ${run.total_items} строк запуска.`,
+            };
+        }
         if (run.status === 'queued' || run.status === 'running') {
             return {
                 type: 'info',
@@ -661,7 +678,7 @@ const AutopurchasePage = () => {
             description:
                 'Скорее всего это старый пустой или неудачный запуск. Для работы лучше использовать новый расчёт.',
         };
-    }, [rows, rowsLoading, run]);
+    }, [filters.decision_status, filters.q, rows, rowsLoading, run]);
     const draftEmptyState = useMemo(() => {
         if (!run || draftsLoading) {
             return null;
@@ -669,6 +686,9 @@ const AutopurchasePage = () => {
         if (draftGroups.length > 0) {
             return null;
         }
+        const readyForDraftMetric = runDiagnostics.find(
+            (item) => item.code === 'rows_ready_for_draft_count'
+        );
         if (run.status === 'queued' || run.status === 'running') {
             return {
                 type: 'info',
@@ -681,9 +701,12 @@ const AutopurchasePage = () => {
             return {
                 type: 'info',
                 message: 'В этом запуске пока нет подтверждённых строк',
-                description:
-                    runSummaryMessage
-                    || 'Черновики заказов собираются только из строк со статусом “Автоподтверждено”.',
+                description: readyForDraftMetric?.value > 0
+                    ? `Технически готовы к подтверждению ${readyForDraftMetric.value} строк, но ни одна ещё не переведена в “Автоподтверждено”. Черновики заказов собираются только из подтверждённых строк.`
+                    : (
+                        runSummaryMessage
+                        || 'Черновики заказов собираются только из строк со статусом “Автоподтверждено”.'
+                    ),
             };
         }
         if (run.status === 'failed') {
@@ -701,7 +724,7 @@ const AutopurchasePage = () => {
             description:
                 'Если строки есть, но черновиков нет, попробуй пересчитать run или проверить статусы строк.',
         };
-    }, [draftGroups.length, draftsLoading, run, runSummaryMessage]);
+    }, [draftGroups.length, draftsLoading, run, runDiagnostics, runSummaryMessage]);
 
     const getSendableGroupItems = useCallback((group) => (
         (group?.items || []).filter(
