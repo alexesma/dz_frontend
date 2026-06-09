@@ -20,7 +20,7 @@ import {
 import { PlayCircleOutlined, ReloadOutlined, SendOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { sendDragonzapOrder } from '../api/autoparts';
-import { getCustomers } from '../api/customers';
+import { getCustomersSummary } from '../api/customers';
 import {
     createAutoPurchaseRun,
     getAutoPurchaseRunDraftOrders,
@@ -59,6 +59,9 @@ const RUN_STATUS_LABEL = {
     completed: 'Готов',
     failed: 'Ошибка',
 };
+
+const AUTOPURCHASE_DEFAULT_CUSTOMER_NAME = 'Zzap';
+const AUTOPURCHASE_CUSTOMER_STORAGE_KEY = 'autopurchase.selectedCustomerId';
 
 const formatMoney = (value) => {
     if (value == null) {
@@ -99,6 +102,60 @@ const extractRequestError = (error, fallback) =>
     error?.response?.data?.detail ||
     error?.message ||
     fallback;
+
+const normalizeCustomerName = (value) =>
+    String(value || '').trim().toLowerCase();
+
+const readStoredAutopurchaseCustomerId = () => {
+    try {
+        const rawValue = window.localStorage.getItem(AUTOPURCHASE_CUSTOMER_STORAGE_KEY);
+        return rawValue ? Number(rawValue) : null;
+    } catch (error) {
+        console.warn('Failed to read autopurchase customer from localStorage', error);
+        return null;
+    }
+};
+
+const persistAutopurchaseCustomerId = (customerId) => {
+    try {
+        if (customerId == null) {
+            window.localStorage.removeItem(AUTOPURCHASE_CUSTOMER_STORAGE_KEY);
+            return;
+        }
+        window.localStorage.setItem(
+            AUTOPURCHASE_CUSTOMER_STORAGE_KEY,
+            String(customerId)
+        );
+    } catch (error) {
+        console.warn('Failed to persist autopurchase customer to localStorage', error);
+    }
+};
+
+const resolvePreferredAutopurchaseCustomerId = (customers, explicitId = null) => {
+    const normalizedDefaultName = normalizeCustomerName(AUTOPURCHASE_DEFAULT_CUSTOMER_NAME);
+    const normalizedCustomers = Array.isArray(customers) ? customers : [];
+
+    if (explicitId != null) {
+        const existingExplicit = normalizedCustomers.find(
+            (item) => Number(item?.id) === Number(explicitId)
+        );
+        if (existingExplicit?.id != null) {
+            return Number(existingExplicit.id);
+        }
+    }
+
+    const zzapCustomer = normalizedCustomers.find(
+        (item) => normalizeCustomerName(item?.name) === normalizedDefaultName
+    ) || normalizedCustomers.find(
+        (item) => normalizeCustomerName(item?.name).includes(normalizedDefaultName)
+    );
+
+    if (zzapCustomer?.id != null) {
+        return Number(zzapCustomer.id);
+    }
+
+    return normalizedCustomers[0]?.id ?? null;
+};
 
 const isAutopurchaseRunLockedError = (error) => {
     const statusCode = Number(error?.response?.status || 0);
@@ -246,15 +303,27 @@ const AutopurchasePage = () => {
     const fetchCustomers = useCallback(async () => {
         setCustomersLoading(true);
         try {
-            const { data } = await getCustomers();
-            const nextRows = Array.isArray(data) ? data : [];
+            const { data } = await getCustomersSummary({
+                page: 1,
+                page_size: 200,
+            });
+            const nextRows = Array.isArray(data?.items) ? data.items : [];
             setCustomerOptions(
                 nextRows.map((item) => ({
                     value: item.id,
                     label: item.name || `Клиент #${item.id}`,
                 }))
             );
-            setSelectedCustomerId((prev) => prev || nextRows[0]?.id || null);
+            setSelectedCustomerId((prev) => {
+                const storedCustomerId = readStoredAutopurchaseCustomerId();
+                const preferredId = prev ?? storedCustomerId;
+                const nextCustomerId = resolvePreferredAutopurchaseCustomerId(
+                    nextRows,
+                    preferredId
+                );
+                persistAutopurchaseCustomerId(nextCustomerId);
+                return nextCustomerId;
+            });
         } catch (error) {
             const detail = error?.response?.data?.detail;
             message.error(detail || 'Не удалось загрузить список клиентов');
@@ -262,6 +331,10 @@ const AutopurchasePage = () => {
             setCustomersLoading(false);
         }
     }, []);
+
+    useEffect(() => {
+        persistAutopurchaseCustomerId(selectedCustomerId);
+    }, [selectedCustomerId]);
 
     useEffect(() => {
         void fetchRuns();
@@ -746,6 +819,11 @@ const AutopurchasePage = () => {
                 : draftGroups
         ),
         [draftGroups, getSendableGroupItems, showOnlySendableDraftGroups]
+    );
+
+    const selectedCustomerLabel = useMemo(
+        () => customerOptions.find((item) => item.value === selectedCustomerId)?.label || null,
+        [customerOptions, selectedCustomerId]
     );
 
     const sendDraftGroupInternal = useCallback(async (
@@ -1686,7 +1764,9 @@ const AutopurchasePage = () => {
                                 loading={customersLoading}
                                 options={customerOptions}
                                 style={{ width: 320 }}
-                                onChange={(value) => setSelectedCustomerId(value)}
+                                optionFilterProp="label"
+                                showSearch
+                                onChange={(value) => setSelectedCustomerId(value ?? null)}
                             />
                             <Button
                                 type="primary"
@@ -1723,6 +1803,10 @@ const AutopurchasePage = () => {
                             <Text type="secondary">
                                 Отправка использует текущий рабочий поток Dragonzap, а факт
                                 отправки сохраняется в backend и переживает перезагрузку страницы.
+                            </Text>
+                            <Text type="secondary">
+                                По умолчанию автозаказ оформляется на клиента {AUTOPURCHASE_DEFAULT_CUSTOMER_NAME}
+                                {selectedCustomerLabel ? ` · сейчас выбран: ${selectedCustomerLabel}` : ''}.
                             </Text>
                         </Space>
                         <div
