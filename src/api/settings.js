@@ -31,6 +31,9 @@ export const createMonitorSnapshot = () =>
 export const getMonitorSnapshots = (params = {}) =>
     api.get("/settings/monitor/snapshots", { params });
 
+export const getExecutionTraces = (params = {}) =>
+    api.get("/settings/monitor/execution-traces", { params });
+
 // Holiday calendar
 export const getHolidays = (year) =>
     api.get("/settings/holidays", { params: year ? { year } : {} });

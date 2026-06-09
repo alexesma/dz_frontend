@@ -13,6 +13,7 @@ import {
     message,
 } from 'antd';
 import { getSupplierPriceTrends } from '../api/dashboard';
+import { getExecutionTraces } from '../api/settings';
 
 const COLORS = [
     '#1d39c4',
@@ -33,6 +34,103 @@ const formatValue = (value, digits = 2) => {
     if (!Number.isFinite(num)) return '-';
     return num.toFixed(digits);
 };
+
+const formatDurationMs = (value) => {
+    const ms = Number(value);
+    if (!Number.isFinite(ms) || ms < 0) {
+        return '—';
+    }
+    if (ms < 1000) {
+        return `${ms} мс`;
+    }
+    const sec = ms / 1000;
+    if (sec < 60) {
+        return `${sec.toFixed(1)} с`;
+    }
+    const minutes = Math.floor(sec / 60);
+    const seconds = Math.round(sec % 60);
+    return `${minutes} мин ${seconds} с`;
+};
+
+const formatMemoryMb = (value) => {
+    const mb = Number(value);
+    if (!Number.isFinite(mb)) {
+        return '—';
+    }
+    return `${mb.toFixed(1)} MB`;
+};
+
+const formatFileSize = (value) => {
+    const bytes = Number(value);
+    if (!Number.isFinite(bytes) || bytes < 0) {
+        return '—';
+    }
+    if (bytes < 1024) {
+        return `${bytes} B`;
+    }
+    if (bytes < 1024 * 1024) {
+        return `${(bytes / 1024).toFixed(1)} KB`;
+    }
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const formatDateTime = (value) => {
+    if (!value) {
+        return '—';
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+        return String(value);
+    }
+    return parsed.toLocaleString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+};
+
+const TRACE_STATUS_COLOR = {
+    success: 'green',
+    error: 'red',
+    running: 'blue',
+};
+
+const jobLabel = (trace) => trace?.job_name || trace?.job_key || '—';
+
+const TraceListCard = ({ title, subtitle, traces, renderBody }) => (
+    <Card title={title} style={{ marginBottom: 16 }} extra={
+        subtitle ? <Typography.Text type="secondary">{subtitle}</Typography.Text> : null
+    }>
+        {!traces.length ? (
+            <Empty description="Нет данных" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        ) : (
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                {traces.map((trace) => (
+                    <Card
+                        key={trace.id}
+                        size="small"
+                        style={{ background: '#fafafa' }}
+                    >
+                        <Space
+                            direction="vertical"
+                            size={6}
+                            style={{ width: '100%' }}
+                        >
+                            <Space wrap>
+                                <Tag color={TRACE_STATUS_COLOR[trace.status] || 'default'}>
+                                    {trace.status}
+                                </Tag>
+                                <Typography.Text strong>{jobLabel(trace)}</Typography.Text>
+                            </Space>
+                            {renderBody(trace)}
+                        </Space>
+                    </Card>
+                ))}
+            </Space>
+        )}
+    </Card>
+);
 
 const joinLabel = (item) => {
     const provider = item.provider_name || 'Без поставщика';
@@ -317,6 +415,7 @@ const Dashboard = () => {
     const [pointsLimit, setPointsLimit] = useState(10);
     const [smoothWindow, setSmoothWindow] = useState(3);
     const [series, setSeries] = useState([]);
+    const [executionTraces, setExecutionTraces] = useState([]);
     const [selectedProviderConfigIds, setSelectedProviderConfigIds] = useState(
         []
     );
@@ -324,12 +423,24 @@ const Dashboard = () => {
     const loadData = useCallback(async () => {
         setLoading(true);
         try {
-            const { data } = await getSupplierPriceTrends({
-                days,
-                points_limit: pointsLimit,
-                smooth_window: smoothWindow,
-            });
-            setSeries(Array.isArray(data?.series) ? data.series : []);
+            const [trendsResponse, tracesResponse] = await Promise.all([
+                getSupplierPriceTrends({
+                    days,
+                    points_limit: pointsLimit,
+                    smooth_window: smoothWindow,
+                }),
+                getExecutionTraces({
+                    limit: 150,
+                }),
+            ]);
+            setSeries(
+                Array.isArray(trendsResponse?.data?.series)
+                    ? trendsResponse.data.series
+                    : []
+            );
+            setExecutionTraces(
+                Array.isArray(tracesResponse?.data) ? tracesResponse.data : []
+            );
         } catch {
             message.error('Не удалось загрузить данные Dashboard');
         } finally {
@@ -367,8 +478,152 @@ const Dashboard = () => {
         return series.filter((item) => selected.has(item.provider_config_id));
     }, [series, selectedProviderConfigIds]);
 
+    const schedulerJobTraces = useMemo(
+        () => executionTraces.filter((item) => item.trace_type === 'scheduler_job'),
+        [executionTraces]
+    );
+
+    const providerPricelistTraces = useMemo(
+        () => executionTraces.filter((item) => item.trace_type === 'provider_pricelist'),
+        [executionTraces]
+    );
+
+    const slowestSchedulerJobs = useMemo(
+        () => [...schedulerJobTraces]
+            .filter((item) => Number(item.duration_ms || 0) > 0)
+            .sort((a, b) => Number(b.duration_ms || 0) - Number(a.duration_ms || 0))
+            .slice(0, 5),
+        [schedulerJobTraces]
+    );
+
+    const latestSchedulerErrors = useMemo(
+        () => schedulerJobTraces
+            .filter((item) => item.status === 'error')
+            .slice(0, 5),
+        [schedulerJobTraces]
+    );
+
+    const slowestPricelists = useMemo(
+        () => [...providerPricelistTraces]
+            .filter((item) => Number(item.duration_ms || 0) > 0)
+            .sort((a, b) => Number(b.duration_ms || 0) - Number(a.duration_ms || 0))
+            .slice(0, 7),
+        [providerPricelistTraces]
+    );
+
     return (
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
+            <Card
+                title="Тяжёлые регламенты и прайсы"
+                extra={
+                    <Button
+                        icon={<ReloadOutlined />}
+                        onClick={loadData}
+                        loading={loading}
+                    >
+                        Обновить
+                    </Button>
+                }
+                style={{ margin: '20px 20px 0 20px' }}
+            >
+                <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+                    Храним traces только за последние 3 дня. Здесь видно, какой регламент
+                    выполнялся дольше всего, какие job падали и какой прайс поставщика
+                    дал самый тяжёлый прогон.
+                </Typography.Paragraph>
+
+                {loading ? (
+                    <Spin />
+                ) : (
+                    <>
+                        <TraceListCard
+                            title="Самые тяжёлые регламенты"
+                            subtitle="Топ по длительности за последние 3 дня"
+                            traces={slowestSchedulerJobs}
+                            renderBody={(trace) => (
+                                <>
+                                    <Typography.Text type="secondary">
+                                        Старт: {formatDateTime(trace.started_at)}
+                                        {' · '}
+                                        Длительность: {formatDurationMs(trace.duration_ms)}
+                                        {' · '}
+                                        Память: {formatMemoryMb(trace.rss_before_mb)} → {formatMemoryMb(trace.rss_after_mb)}
+                                    </Typography.Text>
+                                    {trace.details?.summary ? (
+                                        <Typography.Text type="secondary">
+                                            Summary: {JSON.stringify(trace.details.summary)}
+                                        </Typography.Text>
+                                    ) : null}
+                                    {trace.details?.error ? (
+                                        <Typography.Text type="danger">
+                                            Ошибка: {trace.details.error}
+                                        </Typography.Text>
+                                    ) : null}
+                                </>
+                            )}
+                        />
+
+                        <TraceListCard
+                            title="Последние ошибки регламентов"
+                            subtitle="Если job подвисает или падает, это будет видно здесь"
+                            traces={latestSchedulerErrors}
+                            renderBody={(trace) => (
+                                <>
+                                    <Typography.Text type="secondary">
+                                        Старт: {formatDateTime(trace.started_at)}
+                                        {' · '}
+                                        Длительность: {formatDurationMs(trace.duration_ms)}
+                                    </Typography.Text>
+                                    <Typography.Text type="danger">
+                                        {trace.details?.error || 'Без текста ошибки'}
+                                    </Typography.Text>
+                                </>
+                            )}
+                        />
+
+                        <TraceListCard
+                            title="Самые медленные прайсы поставщиков"
+                            subtitle="Какие конкретно прайсы съедают больше всего времени"
+                            traces={slowestPricelists}
+                            renderBody={(trace) => {
+                                const stats = trace.details?.stats || {};
+                                return (
+                                    <>
+                                        <Typography.Text strong>
+                                            {trace.details?.provider_name || 'Поставщик'}{trace.details?.provider_config_name ? ` · ${trace.details.provider_config_name}` : ''}
+                                        </Typography.Text>
+                                        <Typography.Text type="secondary">
+                                            Файл: {trace.source_filename || '—'}
+                                            {' · '}
+                                            Старт: {formatDateTime(trace.started_at)}
+                                            {' · '}
+                                            Длительность: {formatDurationMs(trace.duration_ms)}
+                                        </Typography.Text>
+                                        <Typography.Text type="secondary">
+                                            Размер: {formatFileSize(trace.details?.file_size_bytes)}
+                                            {' · '}
+                                            Строк до фильтров: {stats.rows_total ?? '—'}
+                                            {' · '}
+                                            После фильтров: {stats.rows_after_filters ?? '—'}
+                                        </Typography.Text>
+                                        <Typography.Text type="secondary">
+                                            Память: {formatMemoryMb(trace.rss_before_mb)} → {formatMemoryMb(trace.rss_after_mb)}
+                                            {' · '}
+                                            Δ: {formatMemoryMb(trace.memory_delta_mb)}
+                                        </Typography.Text>
+                                        {trace.details?.error ? (
+                                            <Typography.Text type="danger">
+                                                Ошибка: {trace.details.error}
+                                            </Typography.Text>
+                                        ) : null}
+                                    </>
+                                );
+                            }}
+                        />
+                    </>
+                )}
+            </Card>
+
             <Card
                 title="Мониторинг прайсов поставщиков"
                 extra={
