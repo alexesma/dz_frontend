@@ -98,12 +98,21 @@ const TRACE_STATUS_COLOR = {
 
 const jobLabel = (trace) => trace?.job_name || trace?.job_key || '—';
 
-const TraceListCard = ({ title, subtitle, traces, renderBody }) => (
+const TraceListCard = ({
+    title,
+    subtitle,
+    traces,
+    renderBody,
+    emptyDescription = 'Нет данных',
+}) => (
     <Card title={title} style={{ marginBottom: 16 }} extra={
         subtitle ? <Typography.Text type="secondary">{subtitle}</Typography.Text> : null
     }>
         {!traces.length ? (
-            <Empty description="Нет данных" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            <Empty
+                description={emptyDescription}
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+            />
         ) : (
             <Space direction="vertical" size="middle" style={{ width: '100%' }}>
                 {traces.map((trace) => (
@@ -415,7 +424,9 @@ const Dashboard = () => {
     const [pointsLimit, setPointsLimit] = useState(10);
     const [smoothWindow, setSmoothWindow] = useState(3);
     const [series, setSeries] = useState([]);
-    const [executionTraces, setExecutionTraces] = useState([]);
+    const [schedulerJobTraces, setSchedulerJobTraces] = useState([]);
+    const [schedulerErrorTraces, setSchedulerErrorTraces] = useState([]);
+    const [providerPricelistTraces, setProviderPricelistTraces] = useState([]);
     const [selectedProviderConfigIds, setSelectedProviderConfigIds] = useState(
         []
     );
@@ -423,14 +434,29 @@ const Dashboard = () => {
     const loadData = useCallback(async () => {
         setLoading(true);
         try {
-            const [trendsResponse, tracesResponse] = await Promise.all([
+            const [
+                trendsResponse,
+                schedulerTracesResponse,
+                schedulerErrorsResponse,
+                providerTracesResponse,
+            ] = await Promise.all([
                 getSupplierPriceTrends({
                     days,
                     points_limit: pointsLimit,
                     smooth_window: smoothWindow,
                 }),
                 getExecutionTraces({
-                    limit: 150,
+                    trace_type: 'scheduler_job',
+                    limit: 200,
+                }),
+                getExecutionTraces({
+                    trace_type: 'scheduler_job',
+                    status: 'error',
+                    limit: 50,
+                }),
+                getExecutionTraces({
+                    trace_type: 'provider_pricelist',
+                    limit: 250,
                 }),
             ]);
             setSeries(
@@ -438,8 +464,20 @@ const Dashboard = () => {
                     ? trendsResponse.data.series
                     : []
             );
-            setExecutionTraces(
-                Array.isArray(tracesResponse?.data) ? tracesResponse.data : []
+            setSchedulerJobTraces(
+                Array.isArray(schedulerTracesResponse?.data)
+                    ? schedulerTracesResponse.data
+                    : []
+            );
+            setSchedulerErrorTraces(
+                Array.isArray(schedulerErrorsResponse?.data)
+                    ? schedulerErrorsResponse.data
+                    : []
+            );
+            setProviderPricelistTraces(
+                Array.isArray(providerTracesResponse?.data)
+                    ? providerTracesResponse.data
+                    : []
             );
         } catch {
             message.error('Не удалось загрузить данные Dashboard');
@@ -478,16 +516,6 @@ const Dashboard = () => {
         return series.filter((item) => selected.has(item.provider_config_id));
     }, [series, selectedProviderConfigIds]);
 
-    const schedulerJobTraces = useMemo(
-        () => executionTraces.filter((item) => item.trace_type === 'scheduler_job'),
-        [executionTraces]
-    );
-
-    const providerPricelistTraces = useMemo(
-        () => executionTraces.filter((item) => item.trace_type === 'provider_pricelist'),
-        [executionTraces]
-    );
-
     const slowestSchedulerJobs = useMemo(
         () => [...schedulerJobTraces]
             .filter((item) => Number(item.duration_ms || 0) > 0)
@@ -497,10 +525,8 @@ const Dashboard = () => {
     );
 
     const latestSchedulerErrors = useMemo(
-        () => schedulerJobTraces
-            .filter((item) => item.status === 'error')
-            .slice(0, 5),
-        [schedulerJobTraces]
+        () => schedulerErrorTraces.slice(0, 5),
+        [schedulerErrorTraces]
     );
 
     const slowestPricelists = useMemo(
@@ -540,6 +566,7 @@ const Dashboard = () => {
                             title="Самые тяжёлые регламенты"
                             subtitle="Топ по длительности за последние 3 дня"
                             traces={slowestSchedulerJobs}
+                            emptyDescription="За последние 3 дня нет записей по регламентам."
                             renderBody={(trace) => (
                                 <>
                                     <Typography.Text type="secondary">
@@ -567,6 +594,7 @@ const Dashboard = () => {
                             title="Последние ошибки регламентов"
                             subtitle="Если job подвисает или падает, это будет видно здесь"
                             traces={latestSchedulerErrors}
+                            emptyDescription="За последние 3 дня ошибок регламентов не зафиксировано."
                             renderBody={(trace) => (
                                 <>
                                     <Typography.Text type="secondary">
@@ -585,6 +613,7 @@ const Dashboard = () => {
                             title="Самые медленные прайсы поставщиков"
                             subtitle="Какие конкретно прайсы съедают больше всего времени"
                             traces={slowestPricelists}
+                            emptyDescription="За последние 3 дня не было записей по обработке входящих прайсов поставщиков."
                             renderBody={(trace) => {
                                 const stats = trace.details?.stats || {};
                                 return (
