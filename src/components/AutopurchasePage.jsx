@@ -35,7 +35,7 @@ import {
     updateAutoPurchaseRunItem,
 } from '../api/orderTracking';
 
-const { Title, Text } = Typography;
+const { Title, Text, Paragraph } = Typography;
 const { useBreakpoint } = Grid;
 
 const MODE_OPTIONS = [
@@ -86,6 +86,50 @@ const formatQty = (value) => {
 const formatMoneyWithRub = (value) => (
     value != null ? `${formatMoney(value)} руб.` : '—'
 );
+
+const resolveOrderHeatTone = (value, values) => {
+    const numericValue = Number(value || 0);
+    if (!numericValue) {
+        return 'muted';
+    }
+    const positiveValues = values
+        .map((item) => Number(item || 0))
+        .filter((item) => item > 0);
+    const maxValue = positiveValues.length ? Math.max(...positiveValues) : 0;
+    if (!maxValue) {
+        return 'muted';
+    }
+    const ratio = numericValue / maxValue;
+    if (ratio >= 0.85) {
+        return 'high';
+    }
+    if (ratio >= 0.45) {
+        return 'mid';
+    }
+    return 'low';
+};
+
+const resolvePriceHeatTone = (value, values) => {
+    const numericValue = Number(value || 0);
+    if (!numericValue) {
+        return 'muted';
+    }
+    const positiveValues = values
+        .map((item) => Number(item || 0))
+        .filter((item) => item > 0);
+    if (!positiveValues.length) {
+        return 'muted';
+    }
+    const minValue = Math.min(...positiveValues);
+    const maxValue = Math.max(...positiveValues);
+    if (numericValue === minValue) {
+        return 'best';
+    }
+    if (numericValue === maxValue) {
+        return 'worst';
+    }
+    return 'mid';
+};
 
 const decisionStatusLabel = (value) => {
     if (value === 'blocked') {
@@ -847,97 +891,150 @@ const AutopurchasePage = () => {
         </Space>
     ), []);
 
-    const renderExpandedContent = useCallback((row) => (
-        <div className="autopurchase-expanded-grid">
-            <div className="autopurchase-expanded-card">
-                <div className="autopurchase-expanded-title">Остаток и спрос</div>
-                <div className="autopurchase-compact-muted">
-                    Остаток: {formatQty(row.current_quantity)}
-                </div>
-                <div className="autopurchase-compact-muted">
-                    В пути: {formatQty(row.in_transit_qty)}
-                </div>
-                <div className="autopurchase-compact-muted">
-                    Спрос: {row.avg_daily_blended != null ? `${row.avg_daily_blended} шт/д` : '—'}
-                </div>
-                <div className="autopurchase-compact-muted">
-                    Продажи: 30д {row.sold_last_30_days || 0} · 90д {row.sold_last_90_days || 0}
-                </div>
-            </div>
-            <div className="autopurchase-expanded-card">
-                <div className="autopurchase-expanded-title">Заказы и цены</div>
-                <div className="autopurchase-compact-muted">
-                    Заказы: 30д {row.order_count_30_days || 0} · 90д {row.order_count_90_days || 0}
-                </div>
-                <div className="autopurchase-compact-muted">
-                    Заказы: 180д {row.order_count_180_days || 0} · 365д {row.order_count_365_days || 0}
-                </div>
-                <div className="autopurchase-compact-muted">
-                    Мин. цена: 30д {formatMoneyWithRub(row.min_sale_price_30_days)} · 90д {formatMoneyWithRub(row.min_sale_price_90_days)}
-                </div>
-                <div className="autopurchase-compact-muted">
-                    Мин. цена: 180д {formatMoneyWithRub(row.min_sale_price_180_days)} · 365д {formatMoneyWithRub(row.min_sale_price_365_days)}
-                </div>
-                <div className="autopurchase-compact-muted">
-                    Текущая цена: {formatMoneyWithRub(row.latest_price)}
-                </div>
-            </div>
-            <div className="autopurchase-expanded-card">
-                <div className="autopurchase-expanded-title">План пополнения</div>
-                <div className="autopurchase-compact-muted">
-                    Точка заказа: {row.reorder_point != null ? row.reorder_point : '—'}
-                </div>
-                <div className="autopurchase-compact-muted">
-                    Цель: {row.target_stock != null ? formatQty(row.target_stock) : '—'}
-                </div>
-                <div className="autopurchase-compact-muted">
-                    К заказу: {formatQty(row.recommended_order_qty)}
-                </div>
-                <div className="autopurchase-compact-muted">
-                    Кратность: {row.multiplicity || 1} · срок: {row.lead_time_days_used != null ? `${row.lead_time_days_used} дн` : '—'}
-                </div>
-            </div>
-            <div className="autopurchase-expanded-card">
-                <div className="autopurchase-expanded-title">Поставщик</div>
-                <div className="autopurchase-compact-muted">
-                    {formatSupplierBadge(row.recommended_supplier)}
-                </div>
-                {row.draft_purchase_order ? (
-                    <>
+    const renderExpandedContent = useCallback((row) => {
+        const orderValues = [
+            row.order_count_30_days,
+            row.order_count_90_days,
+            row.order_count_180_days,
+            row.order_count_365_days,
+        ];
+        const priceValues = [
+            row.min_sale_price_30_days,
+            row.min_sale_price_90_days,
+            row.min_sale_price_180_days,
+            row.min_sale_price_365_days,
+            row.latest_price,
+        ];
+
+        const renderHeatCell = (value, tone, formatter = (cellValue) => cellValue ?? '—') => (
+            <span className={`autopurchase-mini-cell autopurchase-mini-cell--${tone}`}>
+                {formatter(value)}
+            </span>
+        );
+
+        return (
+            <div className="autopurchase-expanded-grid">
+                <div className="autopurchase-expanded-card">
+                    <div className="autopurchase-expanded-title">Остаток и спрос</div>
+                    <div className="autopurchase-compact-muted">
+                        Остаток: {formatQty(row.current_quantity)}
+                    </div>
+                    <div className="autopurchase-compact-muted">
+                        В пути: {formatQty(row.in_transit_qty)}
+                    </div>
+                    {Number(row.open_customer_backlog_qty || 0) > 0 ? (
                         <div className="autopurchase-compact-muted">
-                            Сможем заказать сейчас: {formatQty(row.draft_purchase_order.proposed_order_qty)}
+                            <Tag color="volcano">
+                                Клиентский backlog: {row.open_customer_backlog_qty} шт
+                            </Tag>
                         </div>
-                        <div className="autopurchase-compact-muted">
-                            Остаток дефицита: {formatQty(row.draft_purchase_order.remaining_gap_qty)}
-                        </div>
-                    </>
-                ) : null}
-            </div>
-            <div className="autopurchase-expanded-card">
-                <div className="autopurchase-expanded-title">Причины и детали</div>
-                <div className="autopurchase-expanded-reasons">
-                    {(row.reasons || []).map((reason) => (
-                        <div key={reason.code} className="autopurchase-expanded-reason">
-                            <Space wrap size={[4, 4]}>
-                                <Tag color={
-                                    reason.severity === 'critical'
-                                        ? 'red'
-                                        : reason.severity === 'warning'
-                                            ? 'orange'
-                                            : 'blue'
-                                }>
-                                    {reason.title}
-                                </Tag>
-                            </Space>
+                    ) : null}
+                    <div className="autopurchase-compact-muted">
+                        Спрос: {row.avg_daily_blended != null ? `${row.avg_daily_blended} шт/д` : '—'}
+                    </div>
+                    <div className="autopurchase-compact-muted">
+                        Продажи: 30д {row.sold_last_30_days || 0} · 90д {row.sold_last_90_days || 0}
+                    </div>
+                </div>
+                <div className="autopurchase-expanded-card">
+                    <div className="autopurchase-expanded-title">Заказы и цены</div>
+                    <div className="autopurchase-mini-table-wrap">
+                        <table className="autopurchase-mini-table">
+                            <thead>
+                                <tr>
+                                    <th>Метрика</th>
+                                    <th>30д</th>
+                                    <th>90д</th>
+                                    <th>180д</th>
+                                    <th>365д</th>
+                                    <th>Текущая</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Заказы</td>
+                                    <td>{renderHeatCell(row.order_count_30_days || 0, resolveOrderHeatTone(row.order_count_30_days, orderValues), (cellValue) => cellValue || 0)}</td>
+                                    <td>{renderHeatCell(row.order_count_90_days || 0, resolveOrderHeatTone(row.order_count_90_days, orderValues), (cellValue) => cellValue || 0)}</td>
+                                    <td>{renderHeatCell(row.order_count_180_days || 0, resolveOrderHeatTone(row.order_count_180_days, orderValues), (cellValue) => cellValue || 0)}</td>
+                                    <td>{renderHeatCell(row.order_count_365_days || 0, resolveOrderHeatTone(row.order_count_365_days, orderValues), (cellValue) => cellValue || 0)}</td>
+                                    <td>{renderHeatCell(null, 'muted')}</td>
+                                </tr>
+                                <tr>
+                                    <td>Мин. цена</td>
+                                    <td>{renderHeatCell(row.min_sale_price_30_days, resolvePriceHeatTone(row.min_sale_price_30_days, priceValues), formatMoneyWithRub)}</td>
+                                    <td>{renderHeatCell(row.min_sale_price_90_days, resolvePriceHeatTone(row.min_sale_price_90_days, priceValues), formatMoneyWithRub)}</td>
+                                    <td>{renderHeatCell(row.min_sale_price_180_days, resolvePriceHeatTone(row.min_sale_price_180_days, priceValues), formatMoneyWithRub)}</td>
+                                    <td>{renderHeatCell(row.min_sale_price_365_days, resolvePriceHeatTone(row.min_sale_price_365_days, priceValues), formatMoneyWithRub)}</td>
+                                    <td>{renderHeatCell(row.latest_price, resolvePriceHeatTone(row.latest_price, priceValues), formatMoneyWithRub)}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div className="autopurchase-expanded-card">
+                    <div className="autopurchase-expanded-title">План пополнения</div>
+                    <div className="autopurchase-compact-muted">
+                        Точка заказа: {row.reorder_point != null ? row.reorder_point : '—'}
+                    </div>
+                    <div className="autopurchase-compact-muted">
+                        Цель: {row.target_stock != null ? formatQty(row.target_stock) : '—'}
+                    </div>
+                    <div className="autopurchase-compact-muted">
+                        К заказу: {formatQty(row.recommended_order_qty)}
+                    </div>
+                    <div className="autopurchase-compact-muted">
+                        Кратность: {row.multiplicity || 1} · срок: {row.lead_time_days_used != null ? `${row.lead_time_days_used} дн` : '—'}
+                    </div>
+                </div>
+                <div className="autopurchase-expanded-card">
+                    <div className="autopurchase-expanded-title">Поставщик</div>
+                    <div className="autopurchase-compact-muted">
+                        {formatSupplierBadge(row.recommended_supplier)}
+                    </div>
+                    {row.draft_purchase_order ? (
+                        <>
                             <div className="autopurchase-compact-muted">
-                                {reason.description}
+                                Сможем заказать сейчас: {formatQty(row.draft_purchase_order.proposed_order_qty)}
                             </div>
-                        </div>
-                    ))}
+                            <div className="autopurchase-compact-muted">
+                                Остаток дефицита: {formatQty(row.draft_purchase_order.remaining_gap_qty)}
+                            </div>
+                        </>
+                    ) : null}
+                </div>
+                <div className="autopurchase-expanded-card autopurchase-expanded-card-wide">
+                    <div className="autopurchase-expanded-title">Причины и детали</div>
+                    <div className="autopurchase-expanded-reasons">
+                        {(row.reasons || []).map((reason) => (
+                            <div key={reason.code} className="autopurchase-expanded-reason">
+                                <Space wrap size={[4, 4]}>
+                                    <Tag color={
+                                        reason.severity === 'critical'
+                                            ? 'red'
+                                            : reason.severity === 'warning'
+                                                ? 'orange'
+                                                : 'blue'
+                                    }>
+                                        {reason.title}
+                                    </Tag>
+                                </Space>
+                                <Paragraph
+                                    className="autopurchase-reason-text"
+                                    ellipsis={{
+                                        rows: 2,
+                                        expandable: true,
+                                        symbol: 'ещё',
+                                    }}
+                                >
+                                    {reason.description}
+                                </Paragraph>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             </div>
-        </div>
-    ), []);
+        );
+    }, []);
 
     const renderRowActions = useCallback((row, options = {}) => {
         const { stacked = false } = options;
@@ -1115,11 +1212,14 @@ const AutopurchasePage = () => {
         setSendGroupLoadingKey(group.supplier_key);
         try {
             const orderComment = `АвтоЗаказ run #${selectedRunId} · ${group.provider_name || 'Dragonzap'}`;
+            // Для заказа на сайт используем реквизиты найденного предложения
+            // (site_*): для Dragonzap-позиций это бренд-синоним, под которым
+            // позиция реально продаётся на сайте.
             const payload = activeItems.map((item) => ({
                 autopart_id: item.autopart_id ?? null,
-                oem_number: item.oem_number,
-                brand_name: item.brand_name,
-                autopart_name: item.autopart_name,
+                oem_number: item.site_oem_number || item.oem_number,
+                brand_name: item.site_brand_name || item.brand_name,
+                autopart_name: item.site_autopart_name || item.autopart_name,
                 supplier_id: item.external_supplier_id ?? group.external_supplier_id ?? null,
                 supplier_name: group.provider_name,
                 quantity: Number(item.proposed_order_qty),
@@ -2156,6 +2256,23 @@ const AutopurchasePage = () => {
                                                         >
                                                             {item.autopart_name || '—'}
                                                         </div>
+                                                        {item.site_brand_name
+                                                            && item.site_brand_name !== item.brand_name ? (
+                                                                <div style={{ marginTop: 2 }}>
+                                                                    <Tag color="geekblue">
+                                                                        Закажем как: {item.site_brand_name}
+                                                                        {' '}
+                                                                        {item.site_oem_number || item.oem_number}
+                                                                    </Tag>
+                                                                </div>
+                                                            ) : null}
+                                                        {Number(item.open_customer_backlog_qty || 0) > 0 ? (
+                                                            <div style={{ marginTop: 2 }}>
+                                                                <Tag color="volcano">
+                                                                    Клиентский backlog: {item.open_customer_backlog_qty} шт
+                                                                </Tag>
+                                                            </div>
+                                                        ) : null}
                                                     </div>
                                                 ),
                                             },

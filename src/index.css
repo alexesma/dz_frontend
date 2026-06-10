@@ -511,6 +511,10 @@ body {
   gap: 6px;
 }
 
+.autopurchase-expanded-card-wide {
+  grid-column: 1 / -1;
+}
+
 .autopurchase-expanded-title {
   font-weight: 700;
   font-size: 13px;
@@ -518,14 +522,111 @@ body {
   color: #0f172a;
 }
 
+.autopurchase-mini-table-wrap {
+  overflow-x: auto;
+}
+
+.autopurchase-mini-table {
+  width: 100%;
+  min-width: 480px;
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.autopurchase-mini-table th,
+.autopurchase-mini-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #dbe4f0;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.autopurchase-mini-table th:first-child,
+.autopurchase-mini-table td:first-child {
+  text-align: left;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.autopurchase-mini-table thead th {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  background: rgba(226, 232, 240, 0.55);
+}
+
+.autopurchase-mini-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.autopurchase-mini-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 24px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.autopurchase-mini-cell--muted {
+  background: #f1f5f9;
+  color: #94a3b8;
+}
+
+.autopurchase-mini-cell--low {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.autopurchase-mini-cell--mid {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.autopurchase-mini-cell--high {
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
+.autopurchase-mini-cell--best {
+  background: #ecfdf3;
+  color: #166534;
+}
+
+.autopurchase-mini-cell--worst {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
 .autopurchase-expanded-reasons {
   display: grid;
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px 12px;
 }
 
 .autopurchase-expanded-reason {
   display: grid;
   gap: 4px;
+  align-content: start;
+  padding: 10px;
+  border: 1px solid #dbe4f0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.autopurchase-reason-text {
+  margin-bottom: 0 !important;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.autopurchase-reason-text .ant-typography-expand,
+.autopurchase-reason-text .ant-typography-collapse {
+  color: #1d4ed8;
+  font-weight: 600;
 }
 
 .autopurchase-card-list {
