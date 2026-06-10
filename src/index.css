@@ -462,6 +462,92 @@ body {
   line-height: 1.2;
 }
 
+.autopurchase-runs-table .ant-table-thead > tr > th,
+.autopurchase-runs-table .ant-table-tbody > tr > td {
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.autopurchase-runs-table .ant-table-selection-column {
+  width: 40px;
+}
+
+.autopurchase-compact-stack {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.autopurchase-compact-title {
+  font-weight: 700;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.autopurchase-compact-muted {
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.autopurchase-reasons-preview {
+  display: grid;
+  gap: 6px;
+}
+
+.autopurchase-expanded-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.autopurchase-expanded-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.autopurchase-expanded-title {
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1.2;
+  color: #0f172a;
+}
+
+.autopurchase-expanded-reasons {
+  display: grid;
+  gap: 10px;
+}
+
+.autopurchase-expanded-reason {
+  display: grid;
+  gap: 4px;
+}
+
+.autopurchase-card-list {
+  display: grid;
+  gap: 12px;
+}
+
+.autopurchase-mobile-card {
+  border-radius: 14px;
+}
+
+.autopurchase-mobile-card-review {
+  border-color: #ffd591;
+  background: #fffaf0;
+}
+
+.autopurchase-mobile-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+
 .tracking-orders-row-success td {
   background: #f6ffed !important;
 }

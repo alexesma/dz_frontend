@@ -4,12 +4,14 @@ import {
     Button,
     Card,
     Checkbox,
+    Grid,
     Input,
     InputNumber,
     Modal,
     Popconfirm,
     Progress,
     Select,
+    Segmented,
     Space,
     Table,
     Tag,
@@ -34,6 +36,7 @@ import {
 } from '../api/orderTracking';
 
 const { Title, Text } = Typography;
+const { useBreakpoint } = Grid;
 
 const MODE_OPTIONS = [
     { value: 'draft_only', label: 'Только черновики' },
@@ -78,6 +81,23 @@ const formatQty = (value) => {
         return '—';
     }
     return `${value} шт`;
+};
+
+const formatMoneyWithRub = (value) => (
+    value != null ? `${formatMoney(value)} руб.` : '—'
+);
+
+const decisionStatusLabel = (value) => {
+    if (value === 'blocked') {
+        return 'Заблокировано';
+    }
+    if (value === 'needs_review') {
+        return 'На проверку';
+    }
+    if (value === 'auto_approved') {
+        return 'Подтверждено';
+    }
+    return 'Ожидание';
 };
 
 const getApproveUnavailableReason = (row) => {
@@ -173,7 +193,10 @@ const formatSupplierBadge = (supplier) => {
     if (!supplier?.provider_name) {
         return '—';
     }
-    const bits = [supplier.provider_name];
+    const bits = [];
+    if (supplier.current_brand_name) {
+        bits.push(`бренд: ${supplier.current_brand_name}`);
+    }
     if (supplier.current_provider_config_name) {
         bits.push(supplier.current_provider_config_name);
     }
@@ -181,12 +204,12 @@ const formatSupplierBadge = (supplier) => {
         bits.push(`${formatMoney(supplier.current_price)} руб.`);
     }
     if (supplier.current_qty != null) {
-        bits.push(`${supplier.current_qty} шт`);
+        bits.push(`остаток поставщика: ${supplier.current_qty} шт`);
     }
     if (supplier.effective_lead_days != null) {
         bits.push(`${supplier.effective_lead_days} дн`);
     }
-    return bits.join(' · ');
+    return bits.length ? bits.join(' · ') : supplier.provider_name;
 };
 
 const SummaryStatCard = ({ title, value, color = '#0f172a' }) => (
@@ -204,6 +227,7 @@ const SummaryStatCard = ({ title, value, color = '#0f172a' }) => (
 );
 
 const AutopurchasePage = () => {
+    const screens = useBreakpoint();
     const navigate = useNavigate();
     const [runsLoading, setRunsLoading] = useState(false);
     const [rowsLoading, setRowsLoading] = useState(false);
@@ -224,7 +248,10 @@ const AutopurchasePage = () => {
     const [selectedRowKeys, setSelectedRowKeys] = useState([]);
     const [selectedDraftGroupKeys, setSelectedDraftGroupKeys] = useState([]);
     const [showOnlyPendingRows, setShowOnlyPendingRows] = useState(false);
+    const [showOnlyNeedsReviewRows, setShowOnlyNeedsReviewRows] = useState(false);
     const [showOnlySendableDraftGroups, setShowOnlySendableDraftGroups] = useState(false);
+    const [rowsViewMode, setRowsViewMode] = useState('compact');
+    const [expandedRowKeys, setExpandedRowKeys] = useState([]);
     const [activeRunProgress, setActiveRunProgress] = useState(null);
     const [runElapsedSec, setRunElapsedSec] = useState(0);
     const [aiModalState, setAiModalState] = useState({
@@ -609,6 +636,18 @@ const AutopurchasePage = () => {
         [runPayload?.rows]
     );
 
+    const toggleRowSelected = useCallback((rowId, checked) => {
+        setSelectedRowKeys((prev) => {
+            const normalizedRowId = Number(rowId);
+            if (checked) {
+                return prev.includes(normalizedRowId)
+                    ? prev
+                    : [...prev, normalizedRowId];
+            }
+            return prev.filter((key) => Number(key) !== normalizedRowId);
+        });
+    }, []);
+
     const handleItemStatusChange = useCallback(async (itemId, decisionStatus) => {
         if (!selectedRunId) {
             return;
@@ -680,16 +719,32 @@ const AutopurchasePage = () => {
     ), [run]);
     const visibleRows = useMemo(
         () => (
-            showOnlyPendingRows
-                ? rows.filter((row) => !row?.sent_to_site_at)
-                : rows
+            rows.filter((row) => {
+                if (showOnlyPendingRows && row?.sent_to_site_at) {
+                    return false;
+                }
+                if (showOnlyNeedsReviewRows && row?.decision_status !== 'needs_review') {
+                    return false;
+                }
+                return true;
+            })
         ),
-        [rows, showOnlyPendingRows]
+        [rows, showOnlyNeedsReviewRows, showOnlyPendingRows]
     );
     useEffect(() => {
         const availableKeys = new Set(rows.map((row) => row.id));
         setSelectedRowKeys((prev) => prev.filter((key) => availableKeys.has(key)));
+        setExpandedRowKeys((prev) => prev.filter((key) => availableKeys.has(key)));
     }, [rows]);
+    const effectiveExpandedRowKeys = useMemo(
+        () => (
+            rowsViewMode === 'detailed'
+                ? visibleRows.map((row) => row.id)
+                : expandedRowKeys
+        ),
+        [expandedRowKeys, rowsViewMode, visibleRows]
+    );
+    const isNarrowRowsLayout = !screens.lg;
 
     const runOptions = runs.map((item) => ({
         value: item.id,
@@ -709,6 +764,23 @@ const AutopurchasePage = () => {
             return null;
         }
         if (rows.length > 0) {
+            if (visibleRows.length > 0) {
+                return null;
+            }
+            const localFilterBits = [];
+            if (showOnlyPendingRows) {
+                localFilterBits.push('только неотправленные');
+            }
+            if (showOnlyNeedsReviewRows) {
+                localFilterBits.push('только на проверку');
+            }
+            if (localFilterBits.length > 0) {
+                return {
+                    type: 'info',
+                    message: 'Строки есть, но их скрыли быстрые фильтры',
+                    description: `Сейчас активны фильтры: ${localFilterBits.join(', ')}.`,
+                };
+            }
             return null;
         }
         const activeFilterBits = [];
@@ -751,7 +823,202 @@ const AutopurchasePage = () => {
             description:
                 'Скорее всего это старый пустой или неудачный запуск. Для работы лучше использовать новый расчёт.',
         };
-    }, [filters.decision_status, filters.q, rows, rowsLoading, run]);
+    }, [
+        filters.decision_status,
+        filters.q,
+        rows,
+        rowsLoading,
+        run,
+        showOnlyNeedsReviewRows,
+        showOnlyPendingRows,
+        visibleRows.length,
+    ]);
+
+    const renderStatusTags = useCallback((row) => (
+        <Space wrap size={[4, 4]}>
+            <Tag color={statusColor[row?.decision_status] || 'default'}>
+                {decisionStatusLabel(row?.decision_status)}
+            </Tag>
+            {row?.sent_to_site_at ? (
+                <Tag color="green">
+                    Отправлено{row?.sent_order_number ? ` · ${row.sent_order_number}` : ''}
+                </Tag>
+            ) : null}
+        </Space>
+    ), []);
+
+    const renderExpandedContent = useCallback((row) => (
+        <div className="autopurchase-expanded-grid">
+            <div className="autopurchase-expanded-card">
+                <div className="autopurchase-expanded-title">Остаток и спрос</div>
+                <div className="autopurchase-compact-muted">
+                    Остаток: {formatQty(row.current_quantity)}
+                </div>
+                <div className="autopurchase-compact-muted">
+                    В пути: {formatQty(row.in_transit_qty)}
+                </div>
+                <div className="autopurchase-compact-muted">
+                    Спрос: {row.avg_daily_blended != null ? `${row.avg_daily_blended} шт/д` : '—'}
+                </div>
+                <div className="autopurchase-compact-muted">
+                    Продажи: 30д {row.sold_last_30_days || 0} · 90д {row.sold_last_90_days || 0}
+                </div>
+            </div>
+            <div className="autopurchase-expanded-card">
+                <div className="autopurchase-expanded-title">Заказы и цены</div>
+                <div className="autopurchase-compact-muted">
+                    Заказы: 30д {row.order_count_30_days || 0} · 90д {row.order_count_90_days || 0}
+                </div>
+                <div className="autopurchase-compact-muted">
+                    Заказы: 180д {row.order_count_180_days || 0} · 365д {row.order_count_365_days || 0}
+                </div>
+                <div className="autopurchase-compact-muted">
+                    Мин. цена: 30д {formatMoneyWithRub(row.min_sale_price_30_days)} · 90д {formatMoneyWithRub(row.min_sale_price_90_days)}
+                </div>
+                <div className="autopurchase-compact-muted">
+                    Мин. цена: 180д {formatMoneyWithRub(row.min_sale_price_180_days)} · 365д {formatMoneyWithRub(row.min_sale_price_365_days)}
+                </div>
+                <div className="autopurchase-compact-muted">
+                    Текущая цена: {formatMoneyWithRub(row.latest_price)}
+                </div>
+            </div>
+            <div className="autopurchase-expanded-card">
+                <div className="autopurchase-expanded-title">План пополнения</div>
+                <div className="autopurchase-compact-muted">
+                    Точка заказа: {row.reorder_point != null ? row.reorder_point : '—'}
+                </div>
+                <div className="autopurchase-compact-muted">
+                    Цель: {row.target_stock != null ? formatQty(row.target_stock) : '—'}
+                </div>
+                <div className="autopurchase-compact-muted">
+                    К заказу: {formatQty(row.recommended_order_qty)}
+                </div>
+                <div className="autopurchase-compact-muted">
+                    Кратность: {row.multiplicity || 1} · срок: {row.lead_time_days_used != null ? `${row.lead_time_days_used} дн` : '—'}
+                </div>
+            </div>
+            <div className="autopurchase-expanded-card">
+                <div className="autopurchase-expanded-title">Поставщик</div>
+                <div className="autopurchase-compact-muted">
+                    {formatSupplierBadge(row.recommended_supplier)}
+                </div>
+                {row.draft_purchase_order ? (
+                    <>
+                        <div className="autopurchase-compact-muted">
+                            Сможем заказать сейчас: {formatQty(row.draft_purchase_order.proposed_order_qty)}
+                        </div>
+                        <div className="autopurchase-compact-muted">
+                            Остаток дефицита: {formatQty(row.draft_purchase_order.remaining_gap_qty)}
+                        </div>
+                    </>
+                ) : null}
+            </div>
+            <div className="autopurchase-expanded-card">
+                <div className="autopurchase-expanded-title">Причины и детали</div>
+                <div className="autopurchase-expanded-reasons">
+                    {(row.reasons || []).map((reason) => (
+                        <div key={reason.code} className="autopurchase-expanded-reason">
+                            <Space wrap size={[4, 4]}>
+                                <Tag color={
+                                    reason.severity === 'critical'
+                                        ? 'red'
+                                        : reason.severity === 'warning'
+                                            ? 'orange'
+                                            : 'blue'
+                                }>
+                                    {reason.title}
+                                </Tag>
+                            </Space>
+                            <div className="autopurchase-compact-muted">
+                                {reason.description}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    ), []);
+
+    const renderRowActions = useCallback((row, options = {}) => {
+        const { stacked = false } = options;
+        const isSent = Boolean(row?.sent_to_site_at);
+        const approveUnavailableReason = getApproveUnavailableReason(row);
+        const approveDisabled = isSent || Boolean(approveUnavailableReason);
+        return (
+            <Space wrap size={6} direction={stacked ? 'vertical' : 'horizontal'}>
+                <Tooltip title={approveUnavailableReason}>
+                    <span>
+                        <Popconfirm
+                            title="Подтвердить строку автозаказа?"
+                            description="Строка попадёт в черновики заказа по выбранному site-поставщику."
+                            onConfirm={() => handleItemStatusChange(row.id, 'auto_approved')}
+                            disabled={approveDisabled}
+                        >
+                            <Button
+                                type={row.decision_status === 'auto_approved' ? 'primary' : 'default'}
+                                size="small"
+                                disabled={approveDisabled}
+                            >
+                                Подтв.
+                            </Button>
+                        </Popconfirm>
+                    </span>
+                </Tooltip>
+                <Popconfirm
+                    title="Вернуть строку на ручную проверку?"
+                    onConfirm={() => handleItemStatusChange(row.id, 'needs_review')}
+                    disabled={isSent}
+                >
+                    <Button
+                        type={row.decision_status === 'needs_review' ? 'primary' : 'default'}
+                        size="small"
+                        disabled={isSent}
+                    >
+                        Проверка
+                    </Button>
+                </Popconfirm>
+                <Popconfirm
+                    title="Заблокировать строку?"
+                    description="Строка не попадёт в черновик автозаказа."
+                    onConfirm={() => handleItemStatusChange(row.id, 'blocked')}
+                    disabled={isSent}
+                >
+                    <Button
+                        danger
+                        type={row.decision_status === 'blocked' ? 'primary' : 'default'}
+                        size="small"
+                        disabled={isSent}
+                    >
+                        Блок
+                    </Button>
+                </Popconfirm>
+                <Button
+                    size="small"
+                    onClick={() => {
+                        void handleOpenAiExplanation(row);
+                    }}
+                >
+                    AI
+                </Button>
+                <Button
+                    type="link"
+                    size="small"
+                    onClick={() => {
+                        const params = new URLSearchParams({
+                            oem: row.oem_number || '',
+                            auto: '1',
+                        });
+                        if (row.brand_name) {
+                            params.set('brand', row.brand_name);
+                        }
+                        navigate(`/autoparts/offers?${params.toString()}`);
+                    }}
+                >
+                    Открыть
+                </Button>
+            </Space>
+        );
+    }, [handleItemStatusChange, handleOpenAiExplanation, navigate]);
     const draftEmptyState = useMemo(() => {
         if (!run || draftsLoading) {
             return null;
@@ -1103,223 +1370,124 @@ const AutopurchasePage = () => {
     const columns = useMemo(
         () => [
             {
-                title: 'Статус',
-                dataIndex: 'decision_status',
-                width: 140,
-                render: (value, row) => (
-                    <Space direction="vertical" size={4}>
-                        <Tag color={statusColor[value] || 'default'}>
-                            {value === 'blocked'
-                                ? 'Заблокировано'
-                                : value === 'needs_review'
-                                    ? 'На проверку'
-                                    : value === 'auto_approved'
-                                        ? 'Подтверждено'
-                                        : 'Ожидание'}
-                        </Tag>
-                        {row?.sent_to_site_at ? (
-                            <>
-                                <Tag color="green">
-                                    Отправлено{row?.sent_order_number ? ` · ${row.sent_order_number}` : ''}
-                                </Tag>
-                                {row?.sent_order_id ? (
-                                    <Button
-                                        type="link"
-                                        size="small"
-                                        style={{ padding: 0, height: 'auto' }}
-                                        onClick={() => {
-                                            navigate(`/orders/${row.sent_order_id}`);
-                                        }}
-                                    >
-                                        Открыть заказ
-                                    </Button>
-                                ) : null}
-                            </>
-                        ) : null}
-                    </Space>
-                ),
-            },
-            {
                 title: 'Позиция',
                 key: 'position',
-                width: 230,
+                width: '22%',
                 render: (_, row) => (
-                    <div>
-                        <div style={{ fontWeight: 700 }}>
+                    <div className="autopurchase-compact-stack">
+                        <div className="autopurchase-compact-title">
                             {row.brand_name || '—'} {row.oem_number}
                         </div>
-                        <div style={{ color: '#64748b', fontSize: 12 }}>
+                        <div className="autopurchase-compact-muted">
                             {row.autopart_name || '—'}
                         </div>
                         {row.abc_xyz?.abc_class || row.abc_xyz?.xyz_class ? (
-                            <div style={{ color: '#64748b', fontSize: 12 }}>
-                                {row.abc_xyz?.abc_class || '—'} / {row.abc_xyz?.xyz_class || '—'}
+                            <div className="autopurchase-compact-muted">
+                                ABC/XYZ: {row.abc_xyz?.abc_class || '—'} / {row.abc_xyz?.xyz_class || '—'}
                             </div>
                         ) : null}
                     </div>
                 ),
             },
             {
-                title: 'Остаток',
-                key: 'stock',
-                width: 130,
+                title: 'Потребность',
+                key: 'need',
+                width: '22%',
                 render: (_, row) => (
-                    <div>
-                        <div>{formatQty(row.current_quantity)}</div>
-                        <div style={{ color: '#64748b', fontSize: 12 }}>
-                            в пути: {formatQty(row.in_transit_qty)}
+                    <div className="autopurchase-compact-stack">
+                        <div className="autopurchase-compact-title">
+                            К заказу: {formatQty(row.recommended_order_qty)}
+                        </div>
+                        <div className="autopurchase-compact-muted">
+                            Остаток: {formatQty(row.current_quantity)} · в пути: {formatQty(row.in_transit_qty)}
+                        </div>
+                        <div className="autopurchase-compact-muted">
+                            Спрос: {row.avg_daily_blended != null ? `${row.avg_daily_blended} шт/д` : '—'}
+                            {' · '}30д: {row.sold_last_30_days || 0}
+                            {' · '}90д: {row.sold_last_90_days || 0}
+                        </div>
+                        <div className="autopurchase-compact-muted">
+                            Точка: {row.reorder_point != null ? row.reorder_point : '—'}
+                            {' · '}цель: {row.target_stock != null ? formatQty(row.target_stock) : '—'}
+                            {' · '}кратн.: {row.multiplicity || 1}
                         </div>
                     </div>
                 ),
             },
             {
-                title: 'Спрос',
-                key: 'demand',
-                width: 140,
-                render: (_, row) => (
-                    <div>
-                        <div>{row.avg_daily_blended != null ? `${row.avg_daily_blended} шт/д` : '—'}</div>
-                        <div style={{ color: '#64748b', fontSize: 12 }}>
-                            30д: {row.sold_last_30_days || 0} · 90д: {row.sold_last_90_days || 0}
-                        </div>
-                    </div>
-                ),
-            },
-            {
-                title: 'Точка / цель',
-                key: 'target',
-                width: 150,
-                render: (_, row) => (
-                    <div>
-                        <div>точка: {row.reorder_point != null ? row.reorder_point : '—'}</div>
-                        <div style={{ color: '#64748b', fontSize: 12 }}>
-                            цель: {row.target_stock != null ? formatQty(row.target_stock) : '—'}
-                        </div>
-                    </div>
-                ),
-            },
-            {
-                title: 'К заказу',
-                key: 'recommended',
-                width: 120,
-                render: (_, row) => (
-                    <div>
-                        <div style={{ fontWeight: 700 }}>
-                            {formatQty(row.recommended_order_qty)}
-                        </div>
-                        <div style={{ color: '#64748b', fontSize: 12 }}>
-                            кратн.: {row.multiplicity || 1}
-                        </div>
-                    </div>
-                ),
-            },
-            {
-                title: 'Поставщик с сайта',
+                title: 'Поставщик с сайта / остаток',
                 key: 'supplier',
-                width: 260,
+                width: '20%',
                 render: (_, row) => (
-                    <span>{formatSupplierBadge(row.recommended_supplier)}</span>
+                    <div className="autopurchase-compact-stack">
+                        <div className="autopurchase-compact-title">
+                            {row.recommended_supplier?.provider_name || '—'}
+                        </div>
+                        <div className="autopurchase-compact-muted">
+                            {formatSupplierBadge(row.recommended_supplier)}
+                        </div>
+                    </div>
                 ),
             },
             {
                 title: 'Причины',
-                dataIndex: 'reason_titles',
-                width: 320,
-                render: (items) => (
-                    <Space wrap size={[4, 4]}>
-                        {(items || []).map((item) => (
-                            <Tag key={item}>{item}</Tag>
-                        ))}
-                    </Space>
-                ),
+                key: 'reasons',
+                width: '16%',
+                render: (_, row) => {
+                    const titles = Array.isArray(row.reason_titles) ? row.reason_titles : [];
+                    const previewTitles = titles.slice(0, 2);
+                    const hiddenCount = Math.max(titles.length - previewTitles.length, 0);
+                    const firstDescription = Array.isArray(row.reasons) && row.reasons.length
+                        ? row.reasons[0]?.description
+                        : null;
+                    return (
+                        <div className="autopurchase-reasons-preview">
+                            <Space wrap size={[4, 4]}>
+                                {previewTitles.map((item) => (
+                                    <Tag key={item}>{item}</Tag>
+                                ))}
+                                {hiddenCount > 0 ? (
+                                    <Tooltip title={titles.slice(previewTitles.length).join(' · ')}>
+                                        <Tag>+{hiddenCount} ещё</Tag>
+                                    </Tooltip>
+                                ) : null}
+                            </Space>
+                            {firstDescription ? (
+                                <div className="autopurchase-compact-muted">
+                                    {firstDescription}
+                                </div>
+                            ) : null}
+                        </div>
+                    );
+                },
             },
             {
-                title: 'Действие',
-                key: 'actions',
-                width: 280,
-                fixed: 'right',
+                title: 'Статус / действия',
+                key: 'status_actions',
+                width: '20%',
                 render: (_, row) => {
-                    const isSent = Boolean(row?.sent_to_site_at);
-                    const approveUnavailableReason = getApproveUnavailableReason(row);
-                    const approveDisabled = isSent || Boolean(approveUnavailableReason);
                     return (
-                        <Space wrap size={6}>
-                            <Tooltip title={approveUnavailableReason}>
-                                <span>
-                                    <Popconfirm
-                                        title="Подтвердить строку автозаказа?"
-                                        description="Строка попадёт в черновики заказа по выбранному site-поставщику."
-                                        onConfirm={() => handleItemStatusChange(row.id, 'auto_approved')}
-                                        disabled={approveDisabled}
-                                    >
-                                        <Button
-                                            type={row.decision_status === 'auto_approved' ? 'primary' : 'default'}
-                                            size="small"
-                                            disabled={approveDisabled}
-                                        >
-                                            Подтв.
-                                        </Button>
-                                    </Popconfirm>
-                                </span>
-                            </Tooltip>
-                            <Popconfirm
-                                title="Вернуть строку на ручную проверку?"
-                                onConfirm={() => handleItemStatusChange(row.id, 'needs_review')}
-                                disabled={isSent}
-                            >
+                        <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                            {renderStatusTags(row)}
+                            {row?.sent_order_id ? (
                                 <Button
-                                    type={row.decision_status === 'needs_review' ? 'primary' : 'default'}
+                                    type="link"
                                     size="small"
-                                    disabled={isSent}
+                                    style={{ padding: 0, height: 'auto', alignSelf: 'flex-start' }}
+                                    onClick={() => {
+                                        navigate(`/orders/${row.sent_order_id}`);
+                                    }}
                                 >
-                                    Проверка
+                                    Открыть заказ
                                 </Button>
-                            </Popconfirm>
-                            <Popconfirm
-                                title="Заблокировать строку?"
-                                description="Строка не попадёт в черновик автозаказа."
-                                onConfirm={() => handleItemStatusChange(row.id, 'blocked')}
-                                disabled={isSent}
-                            >
-                                <Button
-                                    danger
-                                    type={row.decision_status === 'blocked' ? 'primary' : 'default'}
-                                    size="small"
-                                    disabled={isSent}
-                                >
-                                    Блок
-                                </Button>
-                            </Popconfirm>
-                            <Button
-                                size="small"
-                                onClick={() => {
-                                    void handleOpenAiExplanation(row);
-                                }}
-                            >
-                                AI
-                            </Button>
-                            <Button
-                                type="link"
-                                size="small"
-                                onClick={() => {
-                                    const params = new URLSearchParams({
-                                        oem: row.oem_number || '',
-                                        auto: '1',
-                                    });
-                                    if (row.brand_name) {
-                                        params.set('brand', row.brand_name);
-                                    }
-                                    navigate(`/autoparts/offers?${params.toString()}`);
-                                }}
-                            >
-                                Открыть
-                            </Button>
+                            ) : null}
+                            {renderRowActions(row)}
                         </Space>
                     );
                 },
             },
         ],
-        [handleItemStatusChange, handleOpenAiExplanation, navigate]
+        [navigate, renderRowActions, renderStatusTags]
     );
 
     const draftColumns = useMemo(
@@ -1550,6 +1718,20 @@ const AutopurchasePage = () => {
                         >
                             Только неотправленные
                         </Checkbox>
+                        <Checkbox
+                            checked={showOnlyNeedsReviewRows}
+                            onChange={(event) => setShowOnlyNeedsReviewRows(event.target.checked)}
+                        >
+                            Только на проверке
+                        </Checkbox>
+                        <Segmented
+                            value={rowsViewMode}
+                            options={[
+                                { value: 'compact', label: 'Компактно' },
+                                { value: 'detailed', label: 'Подробно' },
+                            ]}
+                            onChange={(value) => setRowsViewMode(String(value))}
+                        />
                         <Input.Search
                             allowClear
                             placeholder="Поиск OEM / бренда / поставщика"
@@ -1688,24 +1870,122 @@ const AutopurchasePage = () => {
                     </Button>
                 </Space>
 
-                <Table
-                    rowKey="id"
-                    loading={rowsLoading}
-                    columns={columns}
-                    dataSource={visibleRows}
-                    rowClassName={(record) =>
-                        record?.decision_status === 'needs_review' ? 'row-needs-review' : ''
-                    }
-                    rowSelection={{
-                        selectedRowKeys,
-                        onChange: (keys) => setSelectedRowKeys(keys),
-                        getCheckboxProps: (record) => ({
-                            disabled: Boolean(record?.sent_to_site_at),
-                        }),
-                    }}
-                    pagination={{ pageSize: 25 }}
-                    scroll={{ x: 1380 }}
-                />
+                {isNarrowRowsLayout ? (
+                    <div className="autopurchase-card-list">
+                        {visibleRows.map((row) => {
+                            const isExpanded = rowsViewMode === 'detailed'
+                                || effectiveExpandedRowKeys.includes(row.id);
+                            const isSelected = selectedRowKeys.includes(row.id);
+                            const isSent = Boolean(row?.sent_to_site_at);
+                            return (
+                                <Card
+                                    key={row.id}
+                                    size="small"
+                                    className={`autopurchase-mobile-card ${row?.decision_status === 'needs_review' ? 'autopurchase-mobile-card-review' : ''}`}
+                                >
+                                    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                                        <Space
+                                            align="start"
+                                            style={{ justifyContent: 'space-between', width: '100%' }}
+                                        >
+                                            <Checkbox
+                                                checked={isSelected}
+                                                disabled={isSent}
+                                                onChange={(event) =>
+                                                    toggleRowSelected(row.id, event.target.checked)
+                                                }
+                                            />
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div className="autopurchase-compact-title">
+                                                    {row.brand_name || '—'} {row.oem_number}
+                                                </div>
+                                                <div className="autopurchase-compact-muted">
+                                                    {row.autopart_name || '—'}
+                                                </div>
+                                            </div>
+                                            {renderStatusTags(row)}
+                                        </Space>
+                                        <div className="autopurchase-mobile-card-grid">
+                                            <div className="autopurchase-compact-stack">
+                                                <div className="autopurchase-compact-muted">К заказу</div>
+                                                <div className="autopurchase-compact-title">
+                                                    {formatQty(row.recommended_order_qty)}
+                                                </div>
+                                            </div>
+                                            <div className="autopurchase-compact-stack">
+                                                <div className="autopurchase-compact-muted">Спрос</div>
+                                                <div className="autopurchase-compact-title">
+                                                    {row.avg_daily_blended != null ? `${row.avg_daily_blended} шт/д` : '—'}
+                                                </div>
+                                            </div>
+                                            <div className="autopurchase-compact-stack">
+                                                <div className="autopurchase-compact-muted">Поставщик</div>
+                                                <div className="autopurchase-compact-title">
+                                                    {row.recommended_supplier?.provider_name || '—'}
+                                                </div>
+                                            </div>
+                                            <div className="autopurchase-compact-stack">
+                                                <div className="autopurchase-compact-muted">Причины</div>
+                                                <div className="autopurchase-compact-title">
+                                                    {Array.isArray(row.reason_titles) && row.reason_titles.length
+                                                        ? row.reason_titles[0]
+                                                        : '—'}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <Space wrap size={[6, 6]}>
+                                            {renderRowActions(row)}
+                                            {rowsViewMode === 'compact' ? (
+                                                <Button
+                                                    size="small"
+                                                    onClick={() => {
+                                                        setExpandedRowKeys((prev) => (
+                                                            prev.includes(row.id)
+                                                                ? prev.filter((key) => key !== row.id)
+                                                                : [...prev, row.id]
+                                                        ));
+                                                    }}
+                                                >
+                                                    {isExpanded ? 'Скрыть' : 'Подробнее'}
+                                                </Button>
+                                            ) : null}
+                                        </Space>
+                                        {isExpanded ? renderExpandedContent(row) : null}
+                                    </Space>
+                                </Card>
+                            );
+                        })}
+                    </div>
+                ) : (
+                    <Table
+                        className="autopurchase-runs-table"
+                        size="small"
+                        rowKey="id"
+                        loading={rowsLoading}
+                        columns={columns}
+                        dataSource={visibleRows}
+                        tableLayout="fixed"
+                        rowClassName={(record) =>
+                            record?.decision_status === 'needs_review' ? 'row-needs-review' : ''
+                        }
+                        rowSelection={{
+                            selectedRowKeys,
+                            onChange: (keys) => setSelectedRowKeys(keys),
+                            getCheckboxProps: (record) => ({
+                                disabled: Boolean(record?.sent_to_site_at),
+                            }),
+                        }}
+                        expandable={{
+                            expandedRowRender: renderExpandedContent,
+                            expandedRowKeys: effectiveExpandedRowKeys,
+                            onExpandedRowsChange: (keys) => {
+                                setExpandedRowKeys(keys.map((key) => Number(key)));
+                            },
+                            showExpandColumn: rowsViewMode !== 'detailed',
+                        }}
+                        pagination={{ pageSize: 25 }}
+                    />
+                )}
                 {rowsEmptyState ? (
                     <Alert
                         type={rowsEmptyState.type}
