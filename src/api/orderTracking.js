@@ -41,6 +41,12 @@ export const updateAutoPurchaseRunItems = (runId, payload) =>
 export const updateAutoPurchaseRunItem = (runId, itemId, payload) =>
     api.patch(`/order/autopurchase-runs/${runId}/items/${itemId}`, payload);
 
+export const updateAutoPurchaseRunItemAllocations = (runId, itemId, payload) =>
+    api.patch(
+        `/order/autopurchase-runs/${runId}/items/${itemId}/allocations`,
+        payload
+    );
+
 export const getAutoPurchaseRunDraftOrders = (runId) =>
     api.get(`/order/autopurchase-runs/${runId}/draft-orders`);
 

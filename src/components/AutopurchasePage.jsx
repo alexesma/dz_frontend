@@ -33,6 +33,7 @@ import {
     markAutoPurchaseRunItemsSent,
     updateAutoPurchaseRunItems,
     updateAutoPurchaseRunItem,
+    updateAutoPurchaseRunItemAllocations,
 } from '../api/orderTracking';
 
 const { Title, Text, Paragraph } = Typography;
@@ -231,29 +232,6 @@ const showAutopurchaseRunLockedMessage = () => {
     message.warning(
         'Сейчас другой менеджер уже запустил расчёт автозаказа. Дождись его завершения и попробуй снова через несколько секунд.'
     );
-};
-
-const formatSupplierBadge = (supplier) => {
-    if (!supplier?.provider_name) {
-        return '—';
-    }
-    const bits = [];
-    if (supplier.current_brand_name) {
-        bits.push(`бренд: ${supplier.current_brand_name}`);
-    }
-    if (supplier.current_provider_config_name) {
-        bits.push(supplier.current_provider_config_name);
-    }
-    if (supplier.current_price != null) {
-        bits.push(`${formatMoney(supplier.current_price)} руб.`);
-    }
-    if (supplier.current_qty != null) {
-        bits.push(`остаток поставщика: ${supplier.current_qty} шт`);
-    }
-    if (supplier.effective_lead_days != null) {
-        bits.push(`${supplier.effective_lead_days} дн`);
-    }
-    return bits.length ? bits.join(' · ') : supplier.provider_name;
 };
 
 const SummaryStatCard = ({ title, value, color = '#0f172a' }) => (
@@ -891,6 +869,85 @@ const AutopurchasePage = () => {
         </Space>
     ), []);
 
+    // Ручной выбор предложений из топ-10: { [itemId]: { [offerIndex]: qty } }
+    const [offerSelections, setOfferSelections] = useState({});
+    const [allocationsSavingItemId, setAllocationsSavingItemId] = useState(null);
+
+    const toggleOfferSelection = useCallback((row, offerIndex) => {
+        setOfferSelections((prev) => {
+            const current = { ...(prev[row.id] || {}) };
+            if (current[offerIndex] != null) {
+                delete current[offerIndex];
+            } else {
+                const offer = (row.top_site_offers || [])[offerIndex] || {};
+                const selectedTotal = Object.values(current).reduce(
+                    (sum, qty) => sum + Number(qty || 0),
+                    0
+                );
+                const remaining = Math.max(
+                    Number(row.recommended_order_qty || 0) - selectedTotal,
+                    0
+                );
+                const maxQty = Math.max(Number(offer.current_qty || 0), 0);
+                const minQty = Math.max(Number(offer.current_min_qnt || 1), 1);
+                const desired = remaining > 0 ? remaining : minQty;
+                current[offerIndex] = Math.max(
+                    Math.min(Math.max(desired, minQty), maxQty),
+                    0
+                );
+            }
+            return { ...prev, [row.id]: current };
+        });
+    }, []);
+
+    const setOfferSelectionQty = useCallback((rowId, offerIndex, qty) => {
+        setOfferSelections((prev) => ({
+            ...prev,
+            [rowId]: {
+                ...(prev[rowId] || {}),
+                [offerIndex]: Number(qty || 0),
+            },
+        }));
+    }, []);
+
+    const handleApplyAllocations = useCallback(async (row) => {
+        const selections = offerSelections[row.id] || {};
+        const allocations = Object.entries(selections)
+            .map(([offerIndex, quantity]) => ({
+                offer_index: Number(offerIndex),
+                quantity: Number(quantity || 0),
+            }))
+            .filter((allocation) => allocation.quantity > 0);
+        if (!allocations.length) {
+            message.warning('Выберите хотя бы одно предложение и количество');
+            return;
+        }
+        setAllocationsSavingItemId(row.id);
+        try {
+            await updateAutoPurchaseRunItemAllocations(selectedRunId, row.id, {
+                allocations,
+            });
+            message.success(
+                'Выбор сохранён: строка подтверждена с ручным распределением'
+            );
+            setOfferSelections((prev) => ({ ...prev, [row.id]: {} }));
+            await fetchRunItems(selectedRunId, filters);
+            await fetchDraftOrders(selectedRunId);
+        } catch (error) {
+            message.error(
+                extractRequestError(error, 'Не удалось сохранить выбор предложений')
+            );
+        } finally {
+            setAllocationsSavingItemId(null);
+        }
+    }, [
+        fetchDraftOrders,
+        fetchRunItems,
+        filters,
+        offerSelections,
+        selectedRunId,
+    ]);
+
     const renderExpandedContent = useCallback((row) => {
         const orderValues = [
             row.order_count_30_days,
@@ -912,30 +969,178 @@ const AutopurchasePage = () => {
             </span>
         );
 
+        const offers = Array.isArray(row.top_site_offers) ? row.top_site_offers : [];
+        const selections = offerSelections[row.id] || {};
+        const selectedEntries = Object.entries(selections).filter(
+            ([, qty]) => Number(qty || 0) > 0
+        );
+        const selectedTotalQty = selectedEntries.reduce(
+            (sum, [, qty]) => sum + Number(qty || 0),
+            0
+        );
+        const isSent = Boolean(row.sent_to_site_at);
+        const recommendedHash = row.recommended_supplier?.hash_key
+            || row.recommended_supplier?.system_hash;
+        const appliedAllocations = row.draft_purchase_order?.allocations || [];
+
         return (
             <div className="autopurchase-expanded-grid">
-                <div className="autopurchase-expanded-card">
-                    <div className="autopurchase-expanded-title">Остаток и спрос</div>
-                    <div className="autopurchase-compact-muted">
-                        Остаток: {formatQty(row.current_quantity)}
-                    </div>
-                    <div className="autopurchase-compact-muted">
-                        В пути: {formatQty(row.in_transit_qty)}
-                    </div>
-                    {Number(row.open_customer_backlog_qty || 0) > 0 ? (
-                        <div className="autopurchase-compact-muted">
-                            <Tag color="volcano">
-                                Клиентский backlog: {row.open_customer_backlog_qty} шт
-                            </Tag>
+                {row.cross_group?.items?.length ? (
+                    <div className="autopurchase-expanded-card autopurchase-expanded-card-wide">
+                        <div className="autopurchase-expanded-title">
+                            Наличие с кроссами Dragonzap: {row.cross_group.group_quantity} шт
+                            <Text type="secondary" style={{ fontWeight: 400, marginLeft: 8 }}>
+                                свой остаток {row.cross_group.own_quantity} шт
+                                {' + '}кроссы {row.cross_group.cross_quantity} шт
+                                {Number(row.cross_group.cross_in_transit_qty || 0) > 0
+                                    ? ` (+${row.cross_group.cross_in_transit_qty} шт кроссов в пути)`
+                                    : ''}
+                            </Text>
                         </div>
-                    ) : null}
-                    <div className="autopurchase-compact-muted">
-                        Спрос: {row.avg_daily_blended != null ? `${row.avg_daily_blended} шт/д` : '—'}
+                        <div className="autopurchase-metric-row">
+                            {row.cross_group.items.map((cross) => (
+                                <Tooltip
+                                    key={cross.oem_number}
+                                    title={cross.autopart_name || null}
+                                >
+                                    <Tag color="geekblue">
+                                        {cross.oem_number}: {cross.quantity} шт
+                                        {Number(cross.in_transit_qty || 0) > 0
+                                            ? ` (+${cross.in_transit_qty} в пути)`
+                                            : ''}
+                                    </Tag>
+                                </Tooltip>
+                            ))}
+                        </div>
                     </div>
-                    <div className="autopurchase-compact-muted">
-                        Продажи: 30д {row.sold_last_30_days || 0} · 90д {row.sold_last_90_days || 0}
+                ) : null}
+                {offers.length ? (
+                    <div className="autopurchase-expanded-card autopurchase-expanded-card-wide">
+                        <div className="autopurchase-expanded-title">
+                            Лучшие предложения сайта ({offers.length})
+                            {appliedAllocations.length ? (
+                                <Tag color="purple" style={{ marginLeft: 8 }}>
+                                    Ручное распределение: {appliedAllocations.length} предл.
+                                </Tag>
+                            ) : null}
+                        </div>
+                        <Table
+                            size="small"
+                            rowKey="__idx"
+                            pagination={false}
+                            dataSource={offers.map((offer, index) => ({
+                                ...offer,
+                                __idx: index,
+                            }))}
+                            columns={[
+                                {
+                                    title: '',
+                                    key: 'pick',
+                                    width: 44,
+                                    render: (_, offer) => (
+                                        <Checkbox
+                                            checked={selections[offer.__idx] != null}
+                                            disabled={isSent}
+                                            onChange={() => toggleOfferSelection(row, offer.__idx)}
+                                        />
+                                    ),
+                                },
+                                {
+                                    title: 'Поставщик',
+                                    key: 'provider',
+                                    render: (_, offer) => (
+                                        <Space size={6} wrap>
+                                            <span style={{ fontWeight: 600 }}>
+                                                {offer.provider_name || '—'}
+                                            </span>
+                                            {recommendedHash
+                                                && (offer.hash_key === recommendedHash
+                                                    || offer.system_hash === recommendedHash) ? (
+                                                    <Tag color="green">выбор автозаказа</Tag>
+                                                ) : null}
+                                        </Space>
+                                    ),
+                                },
+                                {
+                                    title: 'Бренд / номер',
+                                    key: 'offer_position',
+                                    render: (_, offer) => (
+                                        <span className="autopurchase-compact-muted">
+                                            {offer.current_brand_name || '—'}
+                                            {' '}
+                                            {offer.current_oem_number || ''}
+                                        </span>
+                                    ),
+                                },
+                                {
+                                    title: 'Цена',
+                                    key: 'price',
+                                    width: 110,
+                                    render: (_, offer) =>
+                                        formatMoneyWithRub(offer.current_price),
+                                },
+                                {
+                                    title: 'Остаток',
+                                    key: 'qty',
+                                    width: 90,
+                                    render: (_, offer) => formatQty(offer.current_qty),
+                                },
+                                {
+                                    title: 'Срок',
+                                    key: 'lead',
+                                    width: 80,
+                                    render: (_, offer) =>
+                                        offer.effective_lead_days != null
+                                            ? `${offer.effective_lead_days} дн`
+                                            : '—',
+                                },
+                                {
+                                    title: 'Мин.',
+                                    key: 'min_qnt',
+                                    width: 70,
+                                    render: (_, offer) => offer.current_min_qnt || 1,
+                                },
+                                {
+                                    title: 'Кол-во',
+                                    key: 'alloc_qty',
+                                    width: 110,
+                                    render: (_, offer) =>
+                                        selections[offer.__idx] != null ? (
+                                            <InputNumber
+                                                size="small"
+                                                min={Math.max(Number(offer.current_min_qnt || 1), 1)}
+                                                max={Math.max(Number(offer.current_qty || 0), 1)}
+                                                value={selections[offer.__idx]}
+                                                disabled={isSent}
+                                                onChange={(value) =>
+                                                    setOfferSelectionQty(row.id, offer.__idx, value)
+                                                }
+                                            />
+                                        ) : null,
+                                },
+                            ]}
+                        />
+                        <Space wrap size={8}>
+                            <Button
+                                type="primary"
+                                size="small"
+                                disabled={isSent || !selectedEntries.length}
+                                loading={allocationsSavingItemId === row.id}
+                                onClick={() => {
+                                    void handleApplyAllocations(row);
+                                }}
+                            >
+                                Применить выбор
+                                {selectedTotalQty > 0 ? ` (${selectedTotalQty} шт)` : ''}
+                            </Button>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                Потребность: {formatQty(row.recommended_order_qty)}.
+                                Можно выбрать одно предложение или распределить
+                                количество на несколько.
+                            </Text>
+                        </Space>
                     </div>
-                </div>
+                ) : null}
                 <div className="autopurchase-expanded-card autopurchase-expanded-card-wide">
                     <div className="autopurchase-expanded-title">Заказы и цены</div>
                     <div className="autopurchase-metric-row">
@@ -974,37 +1179,6 @@ const AutopurchasePage = () => {
                         ) : null}
                     </div>
                 </div>
-                <div className="autopurchase-expanded-card">
-                    <div className="autopurchase-expanded-title">План пополнения</div>
-                    <div className="autopurchase-compact-muted">
-                        Точка заказа: {row.reorder_point != null ? row.reorder_point : '—'}
-                    </div>
-                    <div className="autopurchase-compact-muted">
-                        Цель: {row.target_stock != null ? formatQty(row.target_stock) : '—'}
-                    </div>
-                    <div className="autopurchase-compact-muted">
-                        К заказу: {formatQty(row.recommended_order_qty)}
-                    </div>
-                    <div className="autopurchase-compact-muted">
-                        Кратность: {row.multiplicity || 1} · срок: {row.lead_time_days_used != null ? `${row.lead_time_days_used} дн` : '—'}
-                    </div>
-                </div>
-                <div className="autopurchase-expanded-card">
-                    <div className="autopurchase-expanded-title">Поставщик</div>
-                    <div className="autopurchase-compact-muted">
-                        {formatSupplierBadge(row.recommended_supplier)}
-                    </div>
-                    {row.draft_purchase_order ? (
-                        <>
-                            <div className="autopurchase-compact-muted">
-                                Сможем заказать сейчас: {formatQty(row.draft_purchase_order.proposed_order_qty)}
-                            </div>
-                            <div className="autopurchase-compact-muted">
-                                Остаток дефицита: {formatQty(row.draft_purchase_order.remaining_gap_qty)}
-                            </div>
-                        </>
-                    ) : null}
-                </div>
                 <div className="autopurchase-expanded-card autopurchase-expanded-card-wide">
                     <div className="autopurchase-expanded-title">Причины и детали</div>
                     <div className="autopurchase-expanded-reasons">
@@ -1037,7 +1211,13 @@ const AutopurchasePage = () => {
                 </div>
             </div>
         );
-    }, []);
+    }, [
+        allocationsSavingItemId,
+        handleApplyAllocations,
+        offerSelections,
+        setOfferSelectionQty,
+        toggleOfferSelection,
+    ]);
 
     const renderRowActions = useCallback((row, options = {}) => {
         const { stacked = false } = options;
@@ -1475,89 +1655,134 @@ const AutopurchasePage = () => {
             {
                 title: 'Позиция',
                 key: 'position',
-                width: '22%',
+                width: '20%',
+                render: (_, row) => {
+                    const criticalReason = (row.reasons || []).find(
+                        (reason) => reason?.severity === 'critical'
+                    );
+                    return (
+                        <div className="autopurchase-compact-stack">
+                            <div className="autopurchase-compact-title">
+                                {row.brand_name || '—'} {row.oem_number}
+                            </div>
+                            <div className="autopurchase-compact-muted">
+                                {row.autopart_name || '—'}
+                            </div>
+                            {renderStatusTags(row)}
+                            {criticalReason ? (
+                                <Tooltip title={criticalReason.description}>
+                                    <Tag color="red">{criticalReason.title}</Tag>
+                                </Tooltip>
+                            ) : null}
+                        </div>
+                    );
+                },
+            },
+            {
+                title: 'Наличие',
+                key: 'stock',
+                width: '16%',
+                render: (_, row) => {
+                    const groupQty = row.cross_group?.group_quantity;
+                    const daysLeft = row.estimated_days_left_30_days;
+                    const daysColor = daysLeft == null
+                        ? 'default'
+                        : daysLeft <= 7
+                            ? 'red'
+                            : daysLeft <= 14
+                                ? 'orange'
+                                : 'green';
+                    return (
+                        <div className="autopurchase-compact-stack">
+                            <div className="autopurchase-compact-title">
+                                {groupQty != null && groupQty !== row.current_quantity ? (
+                                    <Tooltip
+                                        title={`Свой остаток ${row.current_quantity} шт + кроссы Dragonzap ${row.cross_group?.cross_quantity || 0} шт`}
+                                    >
+                                        {formatQty(groupQty)} с кроссами
+                                    </Tooltip>
+                                ) : (
+                                    formatQty(row.current_quantity)
+                                )}
+                            </div>
+                            <div className="autopurchase-compact-muted">
+                                В пути: {formatQty(row.in_transit_qty)}
+                            </div>
+                            <Space wrap size={[4, 4]}>
+                                {daysLeft != null ? (
+                                    <Tag color={daysColor}>запаса {daysLeft} дн</Tag>
+                                ) : null}
+                                {Number(row.open_customer_backlog_qty || 0) > 0 ? (
+                                    <Tag color="volcano">
+                                        backlog {row.open_customer_backlog_qty} шт
+                                    </Tag>
+                                ) : null}
+                            </Space>
+                        </div>
+                    );
+                },
+            },
+            {
+                title: 'Спрос',
+                key: 'demand',
+                width: '13%',
                 render: (_, row) => (
                     <div className="autopurchase-compact-stack">
                         <div className="autopurchase-compact-title">
-                            {row.brand_name || '—'} {row.oem_number}
+                            {row.avg_daily_blended != null
+                                ? `${row.avg_daily_blended} шт/день`
+                                : '—'}
                         </div>
                         <div className="autopurchase-compact-muted">
-                            {row.autopart_name || '—'}
+                            30д: {row.sold_last_30_days || 0} · 90д: {row.sold_last_90_days || 0}
                         </div>
                         {row.abc_xyz?.abc_class || row.abc_xyz?.xyz_class ? (
                             <div className="autopurchase-compact-muted">
-                                ABC/XYZ: {row.abc_xyz?.abc_class || '—'} / {row.abc_xyz?.xyz_class || '—'}
+                                {row.abc_xyz?.abc_class || '—'}/{row.abc_xyz?.xyz_class || '—'}
                             </div>
                         ) : null}
                     </div>
                 ),
             },
             {
-                title: 'Потребность',
-                key: 'need',
-                width: '22%',
-                render: (_, row) => (
-                    <div className="autopurchase-compact-stack">
-                        <div className="autopurchase-compact-title">
-                            К заказу: {formatQty(row.recommended_order_qty)}
-                        </div>
-                        <div className="autopurchase-compact-muted">
-                            Остаток: {formatQty(row.current_quantity)} · в пути: {formatQty(row.in_transit_qty)}
-                        </div>
-                        <div className="autopurchase-compact-muted">
-                            Спрос: {row.avg_daily_blended != null ? `${row.avg_daily_blended} шт/д` : '—'}
-                            {' · '}30д: {row.sold_last_30_days || 0}
-                            {' · '}90д: {row.sold_last_90_days || 0}
-                        </div>
-                        <div className="autopurchase-compact-muted">
-                            Точка: {row.reorder_point != null ? row.reorder_point : '—'}
-                            {' · '}цель: {row.target_stock != null ? formatQty(row.target_stock) : '—'}
-                            {' · '}кратн.: {row.multiplicity || 1}
-                        </div>
-                    </div>
-                ),
-            },
-            {
-                title: 'Поставщик с сайта / остаток',
-                key: 'supplier',
-                width: '20%',
-                render: (_, row) => (
-                    <div className="autopurchase-compact-stack">
-                        <div className="autopurchase-compact-title">
-                            {row.recommended_supplier?.provider_name || '—'}
-                        </div>
-                        <div className="autopurchase-compact-muted">
-                            {formatSupplierBadge(row.recommended_supplier)}
-                        </div>
-                    </div>
-                ),
-            },
-            {
-                title: 'Причины',
-                key: 'reasons',
-                width: '16%',
+                title: 'План закупки',
+                key: 'plan',
+                width: '17%',
                 render: (_, row) => {
-                    const titles = Array.isArray(row.reason_titles) ? row.reason_titles : [];
-                    const previewTitles = titles.slice(0, 2);
-                    const hiddenCount = Math.max(titles.length - previewTitles.length, 0);
-                    const firstDescription = Array.isArray(row.reasons) && row.reasons.length
-                        ? row.reasons[0]?.description
+                    const proposed = row.draft_purchase_order?.proposed_order_qty;
+                    const price = row.draft_purchase_order?.price
+                        ?? row.recommended_supplier?.current_price;
+                    const marginPct = price != null
+                        && row.latest_price != null
+                        && Number(row.latest_price) > 0
+                        ? Math.round(
+                            ((Number(row.latest_price) - Number(price))
+                                / Number(row.latest_price)) * 100
+                        )
                         : null;
                     return (
-                        <div className="autopurchase-reasons-preview">
-                            <Space wrap size={[4, 4]}>
-                                {previewTitles.map((item) => (
-                                    <Tag key={item}>{item}</Tag>
-                                ))}
-                                {hiddenCount > 0 ? (
-                                    <Tooltip title={titles.slice(previewTitles.length).join(' · ')}>
-                                        <Tag>+{hiddenCount} ещё</Tag>
-                                    </Tooltip>
-                                ) : null}
-                            </Space>
-                            {firstDescription ? (
+                        <div className="autopurchase-compact-stack">
+                            <div className="autopurchase-compact-title">
+                                К заказу: {formatQty(row.recommended_order_qty)}
+                                {proposed != null
+                                    && proposed !== row.recommended_order_qty
+                                    ? ` → ${proposed} шт`
+                                    : ''}
+                            </div>
+                            <div className="autopurchase-compact-muted">
+                                Цель (1,5 мес): {row.target_stock != null ? formatQty(row.target_stock) : '—'}
+                            </div>
+                            {price != null ? (
                                 <div className="autopurchase-compact-muted">
-                                    {firstDescription}
+                                    Закупка: {formatMoney(price)} руб.
+                                    {marginPct != null ? (
+                                        <Tag
+                                            color={marginPct >= 20 ? 'green' : marginPct >= 10 ? 'orange' : 'red'}
+                                            style={{ marginLeft: 6 }}
+                                        >
+                                            маржа {marginPct}%
+                                        </Tag>
+                                    ) : null}
                                 </div>
                             ) : null}
                         </div>
@@ -1565,13 +1790,44 @@ const AutopurchasePage = () => {
                 },
             },
             {
-                title: 'Статус / действия',
+                title: 'Поставщик',
+                key: 'supplier',
+                width: '16%',
+                render: (_, row) => (
+                    <div className="autopurchase-compact-stack">
+                        <div className="autopurchase-compact-title">
+                            {row.recommended_supplier?.provider_name || '—'}
+                        </div>
+                        {row.recommended_supplier?.current_brand_name ? (
+                            <div className="autopurchase-compact-muted">
+                                {row.recommended_supplier.current_brand_name}
+                                {' '}
+                                {row.recommended_supplier.current_oem_number || ''}
+                            </div>
+                        ) : null}
+                        <div className="autopurchase-compact-muted">
+                            {row.recommended_supplier?.current_qty != null
+                                ? `${row.recommended_supplier.current_qty} шт`
+                                : ''}
+                            {row.recommended_supplier?.effective_lead_days != null
+                                ? ` · ${row.recommended_supplier.effective_lead_days} дн`
+                                : ''}
+                        </div>
+                        {(row.top_site_offers || []).length > 1 ? (
+                            <div className="autopurchase-compact-muted">
+                                ещё {(row.top_site_offers || []).length - 1} предл. — разверни строку
+                            </div>
+                        ) : null}
+                    </div>
+                ),
+            },
+            {
+                title: 'Действия',
                 key: 'status_actions',
-                width: '20%',
+                width: '18%',
                 render: (_, row) => {
                     return (
                         <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                            {renderStatusTags(row)}
                             {row?.sent_order_id ? (
                                 <Button
                                     type="link"
