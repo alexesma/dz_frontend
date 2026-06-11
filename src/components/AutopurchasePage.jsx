@@ -936,39 +936,42 @@ const AutopurchasePage = () => {
                         Продажи: 30д {row.sold_last_30_days || 0} · 90д {row.sold_last_90_days || 0}
                     </div>
                 </div>
-                <div className="autopurchase-expanded-card">
+                <div className="autopurchase-expanded-card autopurchase-expanded-card-wide">
                     <div className="autopurchase-expanded-title">Заказы и цены</div>
-                    <div className="autopurchase-mini-table-wrap">
-                        <table className="autopurchase-mini-table">
-                            <thead>
-                                <tr>
-                                    <th>Метрика</th>
-                                    <th>30д</th>
-                                    <th>90д</th>
-                                    <th>180д</th>
-                                    <th>365д</th>
-                                    <th>Текущая</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td>Заказы</td>
-                                    <td>{renderHeatCell(row.order_count_30_days || 0, resolveOrderHeatTone(row.order_count_30_days, orderValues), (cellValue) => cellValue || 0)}</td>
-                                    <td>{renderHeatCell(row.order_count_90_days || 0, resolveOrderHeatTone(row.order_count_90_days, orderValues), (cellValue) => cellValue || 0)}</td>
-                                    <td>{renderHeatCell(row.order_count_180_days || 0, resolveOrderHeatTone(row.order_count_180_days, orderValues), (cellValue) => cellValue || 0)}</td>
-                                    <td>{renderHeatCell(row.order_count_365_days || 0, resolveOrderHeatTone(row.order_count_365_days, orderValues), (cellValue) => cellValue || 0)}</td>
-                                    <td>{renderHeatCell(null, 'muted')}</td>
-                                </tr>
-                                <tr>
-                                    <td>Мин. цена</td>
-                                    <td>{renderHeatCell(row.min_sale_price_30_days, resolvePriceHeatTone(row.min_sale_price_30_days, priceValues), formatMoneyWithRub)}</td>
-                                    <td>{renderHeatCell(row.min_sale_price_90_days, resolvePriceHeatTone(row.min_sale_price_90_days, priceValues), formatMoneyWithRub)}</td>
-                                    <td>{renderHeatCell(row.min_sale_price_180_days, resolvePriceHeatTone(row.min_sale_price_180_days, priceValues), formatMoneyWithRub)}</td>
-                                    <td>{renderHeatCell(row.min_sale_price_365_days, resolvePriceHeatTone(row.min_sale_price_365_days, priceValues), formatMoneyWithRub)}</td>
-                                    <td>{renderHeatCell(row.latest_price, resolvePriceHeatTone(row.latest_price, priceValues), formatMoneyWithRub)}</td>
-                                </tr>
-                            </tbody>
-                        </table>
+                    <div className="autopurchase-metric-row">
+                        <span className="autopurchase-metric-label">Заказы:</span>
+                        {[
+                            ['30д', row.order_count_30_days],
+                            ['90д', row.order_count_90_days],
+                            ['180д', row.order_count_180_days],
+                            ['365д', row.order_count_365_days],
+                        ].map(([label, value]) => (
+                            <span key={label} className="autopurchase-metric-chip">
+                                <span className="autopurchase-metric-chip-label">{label}</span>
+                                {renderHeatCell(value || 0, resolveOrderHeatTone(value, orderValues), (cellValue) => cellValue || 0)}
+                            </span>
+                        ))}
+                    </div>
+                    <div className="autopurchase-metric-row">
+                        <span className="autopurchase-metric-label">Мин. цена:</span>
+                        {[
+                            ['30д', row.min_sale_price_30_days],
+                            ['90д', row.min_sale_price_90_days],
+                            ['180д', row.min_sale_price_180_days],
+                            ['365д', row.min_sale_price_365_days],
+                            ['тек.', row.latest_price],
+                        ].map(([label, value]) => (
+                            <span key={label} className="autopurchase-metric-chip">
+                                <span className="autopurchase-metric-chip-label">{label}</span>
+                                {renderHeatCell(value, resolvePriceHeatTone(value, priceValues), formatMoneyWithRub)}
+                            </span>
+                        ))}
+                        {row.last_receipt_price != null ? (
+                            <span className="autopurchase-metric-chip">
+                                <span className="autopurchase-metric-chip-label">закуп. (поступление)</span>
+                                {renderHeatCell(row.last_receipt_price, 'muted', formatMoneyWithRub)}
+                            </span>
+                        ) : null}
                     </div>
                 </div>
                 <div className="autopurchase-expanded-card">
