@@ -1095,7 +1095,7 @@ const AutopurchasePage = () => {
                                             : '—',
                                 },
                                 {
-                                    title: 'Мин.',
+                                    title: 'Партия',
                                     key: 'min_qnt',
                                     width: 70,
                                     render: (_, offer) => offer.current_min_qnt || 1,
@@ -1110,6 +1110,7 @@ const AutopurchasePage = () => {
                                                 size="small"
                                                 min={Math.max(Number(offer.current_min_qnt || 1), 1)}
                                                 max={Math.max(Number(offer.current_qty || 0), 1)}
+                                                step={Math.max(Number(offer.current_min_qnt || 1), 1)}
                                                 value={selections[offer.__idx]}
                                                 disabled={isSent}
                                                 onChange={(value) =>
@@ -1136,7 +1137,8 @@ const AutopurchasePage = () => {
                             <Text type="secondary" style={{ fontSize: 12 }}>
                                 Потребность: {formatQty(row.recommended_order_qty)}.
                                 Можно выбрать одно предложение или распределить
-                                количество на несколько.
+                                количество на несколько. Заказ идёт целыми
+                                партиями — количество округляется вверх.
                             </Text>
                         </Space>
                     </div>
