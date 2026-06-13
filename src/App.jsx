@@ -23,6 +23,7 @@ import OrdersTrackingPage from './components/OrdersTrackingPage';
 import OrderDetailPage from './components/OrderDetailPage';
 import OrderExceptionsQueuePage from './components/OrderExceptionsQueuePage';
 import AutopurchasePage from './components/AutopurchasePage';
+import InventoryControlPage from './components/InventoryControlPage';
 import StockOrdersPage from './components/StockOrdersPage';
 import SupplierReceiptsPage from './components/SupplierReceiptsPage';
 import IncomingSupplierDocumentsPage from './components/IncomingSupplierDocumentsPage';
@@ -127,6 +128,7 @@ const AppRoutes = () => (
         <Route path="/orders/tracking" element={<RequireAuth><OrdersTrackingPage /></RequireAuth>} />
         <Route path="/orders/exceptions" element={<RequireAuth><OrderExceptionsQueuePage /></RequireAuth>} />
         <Route path="/orders/autopurchase" element={<RequireAuth><AutopurchasePage /></RequireAuth>} />
+        <Route path="/orders/inventory-control" element={<RequireAuth><InventoryControlPage /></RequireAuth>} />
         <Route path="/customer-orders" element={<RequireAuth><CustomerOrdersPage /></RequireAuth>} />
         <Route path="/customer-orders/:orderId" element={<RequireAuth><CustomerOrderDetailPage /></RequireAuth>} />
         <Route path="/customer-orders/stock" element={<RequireAuth><StockOrdersPage /></RequireAuth>} />

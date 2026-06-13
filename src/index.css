@@ -966,3 +966,24 @@ body {
 .row-needs-review td {
   background: #fff7e6 !important;
 }
+
+.inventory-abc-matrix {
+  border-collapse: collapse;
+  margin-top: 10px;
+  width: auto;
+}
+
+.inventory-abc-matrix th,
+.inventory-abc-matrix td {
+  border: 1px solid #e2e8f0;
+  padding: 8px 14px;
+  text-align: center;
+  min-width: 72px;
+}
+
+.inventory-abc-matrix thead th,
+.inventory-abc-matrix tbody th {
+  font-weight: 700;
+  color: #475569;
+  background: #f8fafc;
+}

@@ -55,6 +55,7 @@ const Sidebar = () => {
         const path = location.pathname;
         if (path.startsWith('/restock')) return '2';
         if (path.startsWith('/orders/autopurchase')) return 'orders-autopurchase';
+        if (path.startsWith('/orders/inventory-control')) return 'orders-inventory-control';
         if (path.startsWith('/orders/exceptions')) return 'orders-exceptions';
         if (path.startsWith('/orders/tracking')) return 'orders-tracking';
         if (path.startsWith('/orders')) return '3';
@@ -216,6 +217,9 @@ const Sidebar = () => {
                 </Menu.Item>
                 <Menu.Item key="orders-autopurchase" icon={<ClockCircleOutlined />}>
                     <Link to="/orders/autopurchase">Автозаказ</Link>
+                </Menu.Item>
+                <Menu.Item key="orders-inventory-control" icon={<LineChartOutlined />}>
+                    <Link to="/orders/inventory-control">Контроль запасов</Link>
                 </Menu.Item>
                 <Menu.Item key="orders-exceptions" icon={<AuditOutlined />}>
                     <Link to="/orders/exceptions">Очередь исключений</Link>
