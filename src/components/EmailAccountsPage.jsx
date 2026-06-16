@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, message } from 'antd';
+import { Alert, Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, message } from 'antd';
 import {
     createEmailAccount,
     deleteEmailAccount,
@@ -31,6 +31,7 @@ const EmailAccountsPage = () => {
     const [modalOpen, setModalOpen] = useState(false);
     const [editing, setEditing] = useState(null);
     const [testLoading, setTestLoading] = useState(false);
+    const [testResult, setTestResult] = useState(null);
     const [testSendOpen, setTestSendOpen] = useState(false);
     const [tokenLoading, setTokenLoading] = useState(false);
     const [form] = Form.useForm();
@@ -54,6 +55,7 @@ const EmailAccountsPage = () => {
 
     const openModal = (record = null) => {
         setEditing(record);
+        setTestResult(null);
         if (record) {
             form.setFieldsValue({
                 ...record,
@@ -107,6 +109,7 @@ const EmailAccountsPage = () => {
             }
             setModalOpen(false);
             setEditing(null);
+            setTestResult(null);
             form.resetFields();
             fetchAccounts();
         } catch (error) {
@@ -144,6 +147,7 @@ const EmailAccountsPage = () => {
     const handleTest = async () => {
         if (!editing) return;
         setTestLoading(true);
+        setTestResult(null);
         try {
             const { data } = await testEmailAccount(editing.id, {
                 imap: true,
@@ -180,6 +184,12 @@ const EmailAccountsPage = () => {
             if (data.outbound_note) {
                 lines.push(data.outbound_note);
             }
+            setTestResult({
+                ...data,
+                lines,
+                inboundLabel,
+                outboundLabel,
+            });
             if (data.imap_ok && data.smtp_ok) {
                 message.success('Проверка учетной записи пройдена');
             } else {
@@ -196,6 +206,11 @@ const EmailAccountsPage = () => {
             }
         } catch (error) {
             console.error('Test email account failed:', error);
+            const detail = error?.response?.data?.detail || error.message;
+            setTestResult({
+                request_error: detail || 'Не удалось проверить почту',
+                lines: [detail || 'Не удалось проверить почту'],
+            });
             message.error('Не удалось проверить почту');
         } finally {
             setTestLoading(false);
@@ -359,6 +374,19 @@ const EmailAccountsPage = () => {
         },
     ];
 
+    const testResultType = testResult?.request_error
+        || testResult?.imap_ok === false
+        || testResult?.smtp_ok === false
+        ? 'error'
+        : testResult?.imap_ok || testResult?.smtp_ok
+            ? 'success'
+            : 'info';
+    const testResultTitle = testResultType === 'success'
+        ? 'Проверка почты пройдена'
+        : testResultType === 'error'
+            ? 'Проверка почты нашла проблему'
+            : 'Результат проверки почты';
+
     return (
         <div className="page-shell">
         <Card
@@ -375,7 +403,10 @@ const EmailAccountsPage = () => {
             <Modal
                 open={modalOpen}
                 title={editing ? 'Редактировать аккаунт' : 'Новый аккаунт'}
-                onCancel={() => setModalOpen(false)}
+                onCancel={() => {
+                    setModalOpen(false);
+                    setTestResult(null);
+                }}
                 footer={null}
                 destroyOnClose
                 width={720}
@@ -550,6 +581,21 @@ const EmailAccountsPage = () => {
                             Сохранить
                         </Button>
                     </Space>
+                    {testResult ? (
+                        <Alert
+                            style={{ marginTop: 16 }}
+                            type={testResultType}
+                            showIcon
+                            message={testResultTitle}
+                            description={(
+                                <div>
+                                    {(testResult.lines || []).map((line) => (
+                                        <div key={line}>{line}</div>
+                                    ))}
+                                </div>
+                            )}
+                        />
+                    ) : null}
                 </Form>
             </Modal>
             <Modal
