@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
     Alert,
     AutoComplete,
+    Badge,
     Card,
+    Collapse,
     Form,
     Input,
     InputNumber,
@@ -17,6 +19,7 @@ import {
     Spin,
     Tooltip,
     Modal,
+    Popover,
     Popconfirm,
 } from 'antd';
 import {
@@ -63,6 +66,7 @@ const STATE_STORAGE_KEY = 'autopart_offers_state_v2';
 const MAX_PERSISTED_CART_ITEMS = 200;
 const MAX_SITE_EXACT_CROSS_REQUESTS = 3;
 const SITE_RECOMMENDATION_LOW_STOCK_QTY = 10;
+const TOYOTA_BRAND_TOKEN = 'TOYOTA';
 
 const buildCartKey = (sourceType, record) => {
     if (sourceType === 'supplier') {
@@ -720,6 +724,7 @@ const AutopartOffers = () => {
     const [crossActionLoadingKey, setCrossActionLoadingKey] = useState('');
     const [showAllSummaryCrosses, setShowAllSummaryCrosses] = useState(false);
     const [cartItems, setCartItems] = useState([]);
+    const [cartPopoverOpen, setCartPopoverOpen] = useState(false);
     const [selectedCartKeys, setSelectedCartKeys] = useState([]);
     const [loading, setLoading] = useState(false);
     const [remoteOffers, setRemoteOffers] = useState([]);
@@ -743,6 +748,7 @@ const AutopartOffers = () => {
     const [showCrosses, setShowCrosses] = useState(false);
     const [restrictCrossBrand, setRestrictCrossBrand] = useState(false);
     const [partialSearch, setPartialSearch] = useState(false);
+    const [supplierScoreExpanded, setSupplierScoreExpanded] = useState(false);
     const [currentOem, setCurrentOem] = useState('');
     const [siteBrandCandidates, setSiteBrandCandidates] = useState([]);
     const [nomenclatureInfo, setNomenclatureInfo] = useState(null); // { in_nomenclature, id, brand, name }
@@ -2415,13 +2421,40 @@ const AutopartOffers = () => {
         }
     }, [fetchTrackingInsights, pushOemHistory]);
 
-    const handleSearch = async (values) => {
+    const handleSearch = async (values, options = {}) => {
         const oemValue = (values.oem || '').trim();
-        await executeSearch(oemValue, partialSearch);
+        const effectivePartialSearch =
+            options.partialSearch ?? partialSearch;
+        const resolvedBrand = await executeSearch(
+            oemValue,
+            effectivePartialSearch
+        );
+        if (!oemValue) {
+            return;
+        }
+        const brandFamily = resolvedBrand
+            ? await resolveBrandFamilyNames(resolvedBrand)
+            : [];
+        const shouldRestrictCrossBrand = brandFamily.some(
+            (brand) => normalizeBrandToken(brand) === TOYOTA_BRAND_TOKEN
+        );
+        setShowCrosses(true);
+        setRestrictCrossBrand(shouldRestrictCrossBrand);
+        await requestDragonzapOffers(oemValue, resolvedBrand, {
+            showCrosses: true,
+            restrictCrossBrand: shouldRestrictCrossBrand,
+        });
     };
 
-    const requestDragonzapOffers = useCallback(async (oemValue, brandValue) => {
+    const requestDragonzapOffers = useCallback(async (
+        oemValue,
+        brandValue,
+        options = {}
+    ) => {
         let effectiveBrand = String(brandValue || '').trim();
+        const effectiveShowCrosses = options.showCrosses ?? showCrosses;
+        const effectiveRestrictCrossBrand =
+            options.restrictCrossBrand ?? restrictCrossBrand;
         if (!oemValue) {
             message.warning('Введите OEM номер');
             return;
@@ -2458,7 +2491,7 @@ const AutopartOffers = () => {
             candidates: [],
         });
         try {
-            const allowedBrandFamilyNames = restrictCrossBrand
+            const allowedBrandFamilyNames = effectiveRestrictCrossBrand
                 ? await resolveBrandFamilyNames(
                     effectiveBrand || selectedBrand || brandValue || ''
                 )
@@ -2609,7 +2642,7 @@ const AutopartOffers = () => {
                 effectiveBrand,
                 false
             );
-            const crossParsed = showCrosses
+            const crossParsed = effectiveShowCrosses
                 ? normalizeSiteResponse(
                     (
                         await getDragonzapOffers(
@@ -2639,7 +2672,7 @@ const AutopartOffers = () => {
                     offer?.make_name || offer?.brand_name
                 );
                 if (
-                    restrictCrossBrand &&
+                    effectiveRestrictCrossBrand &&
                     allowedBrandFamilySet.size &&
                     normalizedOfferBrand &&
                     !allowedBrandFamilySet.has(normalizedOfferBrand)
@@ -2662,7 +2695,7 @@ const AutopartOffers = () => {
             });
             crossParsed.offers = filteredCrossOffers;
             crossParsed.shownCount = filteredCrossOffers.length;
-            const activeParsed = showCrosses ? crossParsed : exactParsed;
+            const activeParsed = effectiveShowCrosses ? crossParsed : exactParsed;
             const nextSiteCrossOems = extractUniqueCrossOems(
                 crossParsed.offers,
                 oemValue
@@ -2743,14 +2776,17 @@ const AutopartOffers = () => {
                 trackingInsightsPayload?.cross_offer_rows,
                 oemValue
             ).filter((item) => {
-                if (!restrictCrossBrand || !allowedBrandFamilySet.size) {
+                if (
+                    !effectiveRestrictCrossBrand ||
+                    !allowedBrandFamilySet.size
+                ) {
                     return true;
                 }
                 return allowedBrandFamilySet.has(
                     normalizeBrandToken(item?.brand_name)
                 );
             });
-            if (showCrosses && crossLookupCandidates.length) {
+            if (effectiveShowCrosses && crossLookupCandidates.length) {
                 setSiteCrossFollowupStatus({
                     active: true,
                     total: crossLookupCandidates.length,
@@ -2766,7 +2802,7 @@ const AutopartOffers = () => {
                 });
             }
             let nextSiteExactCrossOffers = [];
-            if (showCrosses && crossLookupCandidates.length) {
+            if (effectiveShowCrosses && crossLookupCandidates.length) {
                 const siteBrandCandidatesByOem = new Map();
                 for (const offer of filteredCrossOffers) {
                     const candidateOem = String(
@@ -2852,15 +2888,23 @@ const AutopartOffers = () => {
                 ? trackingResponse.data
                 : [];
             setTrackingHistory(trackingRows);
-            if (!showCrosses && !exactParsed.offers.length) {
+            if (!effectiveShowCrosses && !exactParsed.offers.length) {
                 message.info(
                     'Сайт ничего не показал по точному OEM и выбранному бренду.'
                 );
-            } else if (showCrosses && !exactParsed.offers.length && crossParsed.offers.length) {
+            } else if (
+                effectiveShowCrosses &&
+                !exactParsed.offers.length &&
+                crossParsed.offers.length
+            ) {
                 message.info(
                     'По точному OEM сайт ничего не вернул. Показаны предложения с учетом кроссов.'
                 );
-            } else if (showCrosses && !exactParsed.offers.length && !crossParsed.offers.length) {
+            } else if (
+                effectiveShowCrosses &&
+                !exactParsed.offers.length &&
+                !crossParsed.offers.length
+            ) {
                 message.info(
                     'Сайт ничего не показал ни по точному OEM, ни по запросу с учетом кроссов.'
                 );
@@ -2960,10 +3004,25 @@ const AutopartOffers = () => {
             );
             const effectiveBrand = brandValue || resolvedBrand;
             if (effectiveBrand) {
-                await requestDragonzapOffers(oemValue, effectiveBrand);
+                const brandFamily = await resolveBrandFamilyNames(effectiveBrand);
+                const shouldRestrictCrossBrand = brandFamily.some(
+                    (brand) => normalizeBrandToken(brand) === TOYOTA_BRAND_TOKEN
+                );
+                setShowCrosses(true);
+                setRestrictCrossBrand(shouldRestrictCrossBrand);
+                await requestDragonzapOffers(oemValue, effectiveBrand, {
+                    showCrosses: true,
+                    restrictCrossBrand: shouldRestrictCrossBrand,
+                });
             }
         })();
-    }, [executeSearch, form, requestDragonzapOffers, searchParams]);
+    }, [
+        executeSearch,
+        form,
+        requestDragonzapOffers,
+        resolveBrandFamilyNames,
+        searchParams,
+    ]);
 
     const filteredOffers = useMemo(() => {
         const brandNeedle = localFilters.brand.trim().toLowerCase();
@@ -3840,62 +3899,113 @@ const AutopartOffers = () => {
         },
     ];
 
+    const cartPreview = (
+        <div className="autopart-offers-cart-popover">
+            <div className="autopart-offers-cart-popover-summary">
+                Всего: {cartSummary.total} · из прайсов: {cartSummary.supplier} · с сайта: {cartSummary.dragonzap} · сумма: {cartSummary.sum.toFixed(2)}
+            </div>
+            <Table
+                rowKey="cart_key"
+                columns={cartColumns}
+                dataSource={cartItems}
+                size="small"
+                pagination={false}
+                tableLayout="fixed"
+                rowSelection={{
+                    selectedRowKeys: selectedCartKeys,
+                    onChange: (keys) => setSelectedCartKeys(keys),
+                }}
+                locale={{
+                    emptyText: 'Корзина пуста',
+                }}
+                scroll={{ x: 840, y: 360 }}
+            />
+        </div>
+    );
+
     return (
         <Card title="Поиск позиций по артикулу" style={{ margin: '20px' }}>
-            <Form
-                form={form}
-                layout="inline"
-                onFinish={handleSearch}
-                style={{ marginBottom: 16, rowGap: 12 }}
-            >
-                <Form.Item
-                    name="oem"
-                    rules={[{ required: true, message: 'Введите OEM' }]}
+            <div className="autopart-offers-search-sticky">
+                <Form
+                    form={form}
+                    layout="inline"
+                    onFinish={handleSearch}
+                    className="autopart-offers-search-form"
                 >
-                    <AutoComplete
-                        options={oemOptions}
-                        style={{ width: 220 }}
-                        placeholder="OEM номер"
-                        onSearch={(value) => setOemInput(value)}
-                        onChange={(value) => setOemInput(value)}
-                        onSelect={(value) => {
-                            const normalized = String(value || '').trim();
+                    <Form.Item
+                        name="oem"
+                        rules={[{ required: true, message: 'Введите OEM' }]}
+                    >
+                        <AutoComplete
+                            options={oemOptions}
+                            style={{ width: 220 }}
+                            placeholder="OEM номер"
+                            onSearch={(value) => setOemInput(value)}
+                            onChange={(value) => setOemInput(value)}
+                            onSelect={(value) => {
+                                const normalized = String(value || '').trim();
                             form.setFieldsValue({ oem: normalized });
                             setOemInput(normalized);
                             setPartialSearch(false);
-                            void executeSearch(normalized, false);
+                            void handleSearch(
+                                { oem: normalized },
+                                { partialSearch: false }
+                            );
                         }}
-                        notFoundContent={
-                            lookupLoading ? 'Поиск...' : undefined
-                        }
-                        filterOption={(inputValue, option) =>
-                            option?.value
-                                ?.toLowerCase()
-                                .includes(inputValue.toLowerCase())
-                        }
-                    >
-                        <Input />
-                    </AutoComplete>
-                </Form.Item>
-                <Form.Item style={{ marginRight: 0 }}>
-                    <Checkbox
-                        checked={partialSearch}
-                        onChange={(e) => setPartialSearch(e.target.checked)}
-                    >
-                        Искать по части номера
-                    </Checkbox>
-                </Form.Item>
-                <Form.Item>
+                            notFoundContent={
+                                lookupLoading ? 'Поиск...' : undefined
+                            }
+                            filterOption={(inputValue, option) =>
+                                option?.value
+                                    ?.toLowerCase()
+                                    .includes(inputValue.toLowerCase())
+                            }
+                        >
+                            <Input />
+                        </AutoComplete>
+                    </Form.Item>
+                    <Form.Item style={{ marginRight: 0 }}>
+                        <Checkbox
+                            checked={partialSearch}
+                            onChange={(e) => setPartialSearch(e.target.checked)}
+                        >
+                            Искать по части номера
+                        </Checkbox>
+                    </Form.Item>
+                    <Form.Item>
+                        <Button
+                            type="primary"
+                            icon={<SearchOutlined />}
+                            htmlType="submit"
+                            loading={loading || remoteLoading}
+                        >
+                            Найти в прайсах
+                        </Button>
+                    </Form.Item>
+                </Form>
+                <Popover
+                    open={cartPopoverOpen}
+                    onOpenChange={setCartPopoverOpen}
+                    trigger="click"
+                    placement="bottomRight"
+                    content={cartPreview}
+                    title="Корзина заказа"
+                >
                     <Button
-                        type="primary"
-                        icon={<SearchOutlined />}
-                        htmlType="submit"
-                        loading={loading}
-                    >
-                        Найти в прайсах
-                    </Button>
-                </Form.Item>
-            </Form>
+                        shape="circle"
+                        icon={(
+                            <Badge
+                                size="small"
+                                count={cartSummary.total}
+                                offset={[6, -6]}
+                            >
+                                <ShoppingCartOutlined />
+                            </Badge>
+                        )}
+                        aria-label="Открыть корзину"
+                    />
+                </Popover>
+            </div>
 
             {selectedBrand ? (
                 <div style={{ marginBottom: 12, color: '#6b7280' }}>
@@ -4485,33 +4595,56 @@ const AutopartOffers = () => {
                             ) : null}
 
                             {supplierScoreRows.length ? (
-                                <Card
+                                <Collapse
                                     size="small"
-                                    title="Сравнение поставщиков для заказа"
-                                    style={{ borderRadius: 10 }}
-                                >
-                                    <div
-                                        style={{
-                                            color: '#6b7280',
-                                            fontSize: 12,
-                                            marginBottom: 8,
-                                        }}
-                                    >
-                                        Здесь просто сравниваем поставщиков по понятным вещам:
-                                        текущая цена, наличие, фактический срок, исполнение
-                                        прошлых заказов и сколько раз уже заказывали у них.
-                                    </div>
-                                    <Table
-                                        rowKey={(row) =>
-                                            `${row.provider_id || row.provider_name}:${row.current_provider_config_id || 'base'}`
-                                        }
-                                        columns={supplierScoreColumns}
-                                        dataSource={supplierScoreRows}
-                                        size="small"
-                                        pagination={{ pageSize: 5, showSizeChanger: false }}
-                                        scroll={{ x: 760 }}
-                                    />
-                                </Card>
+                                    activeKey={supplierScoreExpanded ? ['supplier-score'] : []}
+                                    onChange={(keys) => {
+                                        const nextKeys = Array.isArray(keys)
+                                            ? keys
+                                            : [keys];
+                                        setSupplierScoreExpanded(
+                                            nextKeys.includes('supplier-score')
+                                        );
+                                    }}
+                                    items={[
+                                        {
+                                            key: 'supplier-score',
+                                            label: (
+                                                <span>
+                                                    Сравнение поставщиков для заказа · {supplierScoreRows.length}
+                                                </span>
+                                            ),
+                                            children: (
+                                                <Space
+                                                    direction="vertical"
+                                                    size="small"
+                                                    style={{ width: '100%' }}
+                                                >
+                                                    <div
+                                                        style={{
+                                                            color: '#6b7280',
+                                                            fontSize: 12,
+                                                        }}
+                                                    >
+                                                        Сравниваем текущую цену, наличие,
+                                                        фактический срок, исполнение прошлых
+                                                        заказов и частоту заказов.
+                                                    </div>
+                                                    <Table
+                                                        rowKey={(row) =>
+                                                            `${row.provider_id || row.provider_name}:${row.current_provider_config_id || 'base'}`
+                                                        }
+                                                        columns={supplierScoreColumns}
+                                                        dataSource={supplierScoreRows}
+                                                        size="small"
+                                                        pagination={{ pageSize: 5, showSizeChanger: false }}
+                                                        scroll={{ x: 760 }}
+                                                    />
+                                                </Space>
+                                            ),
+                                        },
+                                    ]}
+                                />
                             ) : null}
                         </Space>
                     ) : null}

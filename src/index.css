@@ -415,6 +415,49 @@ body {
   height: 28px;
 }
 
+.autopart-offers-search-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -4px -4px 16px;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(8px);
+}
+
+.autopart-offers-search-form {
+  row-gap: 12px;
+  flex: 1;
+}
+
+.autopart-offers-cart-popover {
+  width: min(900px, 86vw);
+}
+
+.autopart-offers-cart-popover-summary {
+  margin-bottom: 8px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .autopart-offers-search-sticky {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .autopart-offers-cart-popover {
+    width: 92vw;
+  }
+}
+
 .autopart-offers-source-cell {
   display: grid;
   gap: 2px;
