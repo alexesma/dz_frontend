@@ -315,7 +315,9 @@ const CrossesPage = () => {
                     ? JSON.stringify(detail)
                     : '';
             const status = error?.response?.status;
-            const fallback = error?.request && !error?.response
+            const fallback = status === 413
+                ? 'Файл слишком большой для текущего лимита загрузки nginx/proxy. Увеличьте client_max_body_size и повторите импорт.'
+                : error?.request && !error?.response
                 ? 'Запрос не получил ответ от сервера. Проверьте backend/nginx и размер файла.'
                 : 'Не удалось обработать файл кроссов';
             const errorText = [
