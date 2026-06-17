@@ -15,6 +15,16 @@ export const updateCross = (id, data) =>
 export const deleteCross = (id) =>
     api.delete(`/crosses/${id}`);
 
+export const importCrosses = (file, dryRun = true) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/crosses/import', formData, {
+        params: { dry_run: dryRun },
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 600000,
+    });
+};
+
 export const listInvalidCrosses = (params = {}) =>
     api.get('/invalid-crosses/', { params });
 

@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+    Alert,
     Button,
     Card,
+    Descriptions,
     Form,
     Input,
     List,
@@ -12,11 +14,13 @@ import {
     Space,
     Table,
     Tag,
+    Upload,
     message,
 } from 'antd';
 import {
     DeleteOutlined,
     EditOutlined,
+    ImportOutlined,
     PlusOutlined,
     ReloadOutlined,
 } from '@ant-design/icons';
@@ -24,6 +28,7 @@ import { searchAutopartsByOem } from '../api/autoparts';
 import {
     createCross,
     deleteCross,
+    importCrosses,
     listCrossGroups,
     listCrosses,
     updateCross,
@@ -40,6 +45,11 @@ const CrossesPage = () => {
     const [sourceOptions, setSourceOptions] = useState([]);
     const [targetOptions, setTargetOptions] = useState([]);
     const [form] = Form.useForm();
+    const [importOpen, setImportOpen] = useState(false);
+    const [importFile, setImportFile] = useState(null);
+    const [importPreview, setImportPreview] = useState(null);
+    const [importLoading, setImportLoading] = useState(false);
+    const [importApplying, setImportApplying] = useState(false);
 
     const loadRows = useCallback(async () => {
         setLoading(true);
@@ -249,6 +259,40 @@ const CrossesPage = () => {
             },
         ];
 
+    const openImportModal = () => {
+        setImportFile(null);
+        setImportPreview(null);
+        setImportOpen(true);
+    };
+
+    const runImport = async (dryRun) => {
+        if (!importFile) {
+            message.warning('Выберите файл с кроссами');
+            return;
+        }
+        if (dryRun) {
+            setImportLoading(true);
+        } else {
+            setImportApplying(true);
+        }
+        try {
+            const { data } = await importCrosses(importFile, dryRun);
+            setImportPreview(data);
+            if (!dryRun) {
+                message.success(
+                    `Загружено: создано ${data.crosses_created} кроссов`
+                );
+                await loadRows();
+            }
+        } catch (error) {
+            const detail = error?.response?.data?.detail;
+            message.error(detail || 'Не удалось обработать файл кроссов');
+        } finally {
+            setImportLoading(false);
+            setImportApplying(false);
+        }
+    };
+
     return (
         <Card title="Кроссы" style={{ margin: 20 }}>
             <Space style={{ marginBottom: 16 }} wrap>
@@ -267,10 +311,116 @@ const CrossesPage = () => {
                 >
                     Добавить кросс
                 </Button>
+                <Button icon={<ImportOutlined />} onClick={openImportModal}>
+                    Импорт из файла
+                </Button>
                 <Button icon={<ReloadOutlined />} onClick={loadRows} loading={loading}>
                     Обновить
                 </Button>
             </Space>
+
+            <Modal
+                title="Импорт кроссов из файла"
+                open={importOpen}
+                onCancel={() => setImportOpen(false)}
+                width={640}
+                footer={[
+                    <Button key="cancel" onClick={() => setImportOpen(false)}>
+                        Закрыть
+                    </Button>,
+                    <Button
+                        key="preview"
+                        onClick={() => runImport(true)}
+                        loading={importLoading}
+                        disabled={!importFile}
+                    >
+                        Проверить (превью)
+                    </Button>,
+                    <Button
+                        key="apply"
+                        type="primary"
+                        onClick={() => runImport(false)}
+                        loading={importApplying}
+                        disabled={!importFile || !importPreview}
+                    >
+                        Загрузить
+                    </Button>,
+                ]}
+            >
+                <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                    <Alert
+                        type="info"
+                        showIcon
+                        message="Формат файла: 2 колонки — идентификатор группы и № по каталогу (OEM)."
+                        description="Номера с одним идентификатором — кроссы друг друга. Бренд не важен: номера сопоставляются с нашими позициями по OEM. Сначала нажмите «Проверить» — увидите, сколько кроссов создастся, потом «Загрузить»."
+                    />
+                    <Upload.Dragger
+                        accept=".xlsx,.xls,.csv"
+                        maxCount={1}
+                        beforeUpload={(file) => {
+                            setImportFile(file);
+                            setImportPreview(null);
+                            return false;
+                        }}
+                        onRemove={() => {
+                            setImportFile(null);
+                            setImportPreview(null);
+                        }}
+                        fileList={importFile ? [importFile] : []}
+                    >
+                        <p className="ant-upload-drag-icon">
+                            <ImportOutlined />
+                        </p>
+                        <p className="ant-upload-text">
+                            Перетащите файл или нажмите для выбора
+                        </p>
+                        <p className="ant-upload-hint">xlsx, xls или csv</p>
+                    </Upload.Dragger>
+
+                    {importPreview ? (
+                        <Descriptions
+                            size="small"
+                            column={2}
+                            bordered
+                            title={
+                                importPreview.dry_run
+                                    ? 'Превью (ничего не записано)'
+                                    : 'Загружено'
+                            }
+                        >
+                            <Descriptions.Item label="Групп всего">
+                                {importPreview.total_groups}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Групп с кроссами">
+                                {importPreview.groups_with_pair}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Номеров всего">
+                                {importPreview.total_numbers}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Найдено в базе">
+                                {importPreview.matched_numbers}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Не найдено">
+                                <Tag color={importPreview.unmatched_numbers ? 'orange' : 'green'}>
+                                    {importPreview.unmatched_numbers}
+                                </Tag>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Групп связано">
+                                {importPreview.groups_linked}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Кроссов создастся / создано">
+                                <Tag color="blue">{importPreview.crosses_created}</Tag>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Уже было">
+                                {importPreview.crosses_already_existed}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Пропущено (невалидные)" span={2}>
+                                {importPreview.crosses_skipped_invalid}
+                            </Descriptions.Item>
+                        </Descriptions>
+                    ) : null}
+                </Space>
+            </Modal>
 
             {String(query || '').trim() ? (
                 <Card
