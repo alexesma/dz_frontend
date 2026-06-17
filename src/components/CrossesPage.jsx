@@ -14,6 +14,7 @@ import {
     Space,
     Table,
     Tag,
+    Typography,
     Upload,
     message,
 } from 'antd';
@@ -48,6 +49,7 @@ const CrossesPage = () => {
     const [importOpen, setImportOpen] = useState(false);
     const [importFile, setImportFile] = useState(null);
     const [importPreview, setImportPreview] = useState(null);
+    const [importError, setImportError] = useState('');
     const [importLoading, setImportLoading] = useState(false);
     const [importApplying, setImportApplying] = useState(false);
 
@@ -262,6 +264,7 @@ const CrossesPage = () => {
     const openImportModal = () => {
         setImportFile(null);
         setImportPreview(null);
+        setImportError('');
         setImportOpen(true);
     };
 
@@ -270,23 +273,63 @@ const CrossesPage = () => {
             message.warning('Выберите файл с кроссами');
             return;
         }
+        const fileForUpload = importFile?.originFileObj || importFile;
+        if (!fileForUpload) {
+            message.error('Файл выбран некорректно. Выберите файл ещё раз.');
+            return;
+        }
+        const messageKey = dryRun ? 'cross-import-preview' : 'cross-import-apply';
+        setImportError('');
         if (dryRun) {
             setImportLoading(true);
         } else {
             setImportApplying(true);
         }
         try {
-            const { data } = await importCrosses(importFile, dryRun);
+            message.open({
+                key: messageKey,
+                type: 'loading',
+                content: dryRun
+                    ? 'Проверяем файл кроссов...'
+                    : 'Загружаем кроссы...',
+                duration: 0,
+            });
+            const { data } = await importCrosses(fileForUpload, dryRun);
             setImportPreview(data);
+            message.open({
+                key: messageKey,
+                type: 'success',
+                content: dryRun
+                    ? `Проверка готова: будет создано ${data.crosses_created} кроссов`
+                    : `Загружено: создано ${data.crosses_created} кроссов`,
+                duration: 5,
+            });
             if (!dryRun) {
-                message.success(
-                    `Загружено: создано ${data.crosses_created} кроссов`
-                );
                 await loadRows();
             }
         } catch (error) {
             const detail = error?.response?.data?.detail;
-            message.error(detail || 'Не удалось обработать файл кроссов');
+            const detailText = typeof detail === 'string'
+                ? detail
+                : detail
+                    ? JSON.stringify(detail)
+                    : '';
+            const status = error?.response?.status;
+            const fallback = error?.request && !error?.response
+                ? 'Запрос не получил ответ от сервера. Проверьте backend/nginx и размер файла.'
+                : 'Не удалось обработать файл кроссов';
+            const errorText = [
+                status ? `HTTP ${status}` : '',
+                detailText || fallback,
+            ].filter(Boolean).join(': ');
+            console.error('Cross import error:', error);
+            setImportError(errorText);
+            message.open({
+                key: messageKey,
+                type: 'error',
+                content: errorText,
+                duration: 8,
+            });
         } finally {
             setImportLoading(false);
             setImportApplying(false);
@@ -360,11 +403,13 @@ const CrossesPage = () => {
                         beforeUpload={(file) => {
                             setImportFile(file);
                             setImportPreview(null);
+                            setImportError('');
                             return false;
                         }}
                         onRemove={() => {
                             setImportFile(null);
                             setImportPreview(null);
+                            setImportError('');
                         }}
                         fileList={importFile ? [importFile] : []}
                     >
@@ -376,6 +421,26 @@ const CrossesPage = () => {
                         </p>
                         <p className="ant-upload-hint">xlsx, xls или csv</p>
                     </Upload.Dragger>
+                    {importFile ? (
+                        <Alert
+                            type="success"
+                            showIcon
+                            message="Файл выбран"
+                            description={(
+                                <Typography.Text>
+                                    {importFile.name || 'Без имени'} · {Math.round((importFile.size || 0) / 1024)} КБ
+                                </Typography.Text>
+                            )}
+                        />
+                    ) : null}
+                    {importError ? (
+                        <Alert
+                            type="error"
+                            showIcon
+                            message="Импорт кроссов не выполнен"
+                            description={importError}
+                        />
+                    ) : null}
 
                     {importPreview ? (
                         <Descriptions
