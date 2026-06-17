@@ -18,9 +18,10 @@ export const deleteCross = (id) =>
 export const importCrosses = (file, dryRun = true) => {
     const formData = new FormData();
     formData.append('file', file);
+    // Content-Type НЕ задаём вручную: axios/браузер сам проставит
+    // multipart/form-data с корректным boundary (иначе бэкенд не разберёт).
     return api.post('/crosses/import', formData, {
         params: { dry_run: dryRun },
-        headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 600000,
     });
 };
