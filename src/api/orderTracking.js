@@ -15,6 +15,24 @@ export const getAutoPurchasePreview = (params) =>
 export const createAutoPurchaseRun = (params) =>
     api.post('/order/autopurchase-runs', null, { params });
 
+export const listAutoPurchaseTopItems = (params) =>
+    api.get('/order/autopurchase-top/items', { params });
+
+export const listCurrentAutoPurchaseTopItems = (params) =>
+    api.get('/order/autopurchase-top/current', { params });
+
+export const createAutoPurchaseTopItem = (payload) =>
+    api.post('/order/autopurchase-top/items', payload);
+
+export const updateAutoPurchaseTopItem = (itemId, payload) =>
+    api.patch(`/order/autopurchase-top/items/${itemId}`, payload);
+
+export const importAutoPurchaseTopItems = (formData, params) =>
+    api.post('/order/autopurchase-top/import', formData, {
+        params,
+        headers: { 'Content-Type': 'multipart/form-data' },
+    });
+
 export const listAutoPurchaseRuns = (params) =>
     api.get('/order/autopurchase-runs', { params });
 

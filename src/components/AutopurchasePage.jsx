@@ -19,7 +19,11 @@ import {
     Typography,
     message,
 } from 'antd';
-import { PlayCircleOutlined, ReloadOutlined, SendOutlined } from '@ant-design/icons';
+import {
+    PlayCircleOutlined,
+    ReloadOutlined,
+    SendOutlined,
+} from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { sendDragonzapOrder } from '../api/autoparts';
 import { getCustomersSummary } from '../api/customers';
@@ -506,6 +510,9 @@ const AutopurchasePage = () => {
                 limit: settings.limit || filters.limit || 300,
                 budget_limit: settings.budget_limit || undefined,
                 position_limit: settings.position_limit || undefined,
+                top_source: settings.top_source || undefined,
+                top_limit: settings.top_limit || undefined,
+                top_days: settings.top_days || undefined,
             });
             message.success('Новый запуск автозаказа создан и поставлен в очередь');
             await fetchRuns();
