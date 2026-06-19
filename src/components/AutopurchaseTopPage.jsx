@@ -63,6 +63,8 @@ const AutopurchaseTopPage = () => {
     const [topSource, setTopSource] = useState('file');
     const [topLimit, setTopLimit] = useState(50);
     const [topDays, setTopDays] = useState(365);
+    const [brandFilterDraft, setBrandFilterDraft] = useState('');
+    const [brandFilter, setBrandFilter] = useState('');
     const [topPayload, setTopPayload] = useState({ rows: [], total_items: 0 });
     const [topLoading, setTopLoading] = useState(false);
     const [topImportLoading, setTopImportLoading] = useState(false);
@@ -85,12 +87,18 @@ const AutopurchaseTopPage = () => {
     const fetchTopItems = useCallback(async () => {
         setTopLoading(true);
         try {
+            const normalizedBrand = brandFilter.trim() || undefined;
             const request = topSource === 'current'
-                ? listCurrentAutoPurchaseTopItems({ limit: topLimit, days: topDays })
+                ? listCurrentAutoPurchaseTopItems({
+                    limit: topLimit,
+                    days: topDays,
+                    brand: normalizedBrand,
+                })
                 : listAutoPurchaseTopItems({
                     source: 'file',
                     limit: topLimit,
                     active_only: true,
+                    brand: normalizedBrand,
                 });
             const { data } = await request;
             const rows = Array.isArray(data?.rows) ? data.rows : [];
@@ -111,7 +119,7 @@ const AutopurchaseTopPage = () => {
         } finally {
             setTopLoading(false);
         }
-    }, [topDays, topLimit, topSource]);
+    }, [brandFilter, topDays, topLimit, topSource]);
 
     useEffect(() => {
         void fetchTopItems();
@@ -128,6 +136,7 @@ const AutopurchaseTopPage = () => {
                 top_source: topSource,
                 top_limit: topLimit,
                 top_days: topSource === 'current' ? topDays : undefined,
+                top_brand: brandFilter.trim() || undefined,
             });
             message.success(`Запуск автозаказа по топ-${topLimit} создан`);
             navigate('/orders/autopurchase', {
@@ -389,6 +398,23 @@ const AutopurchaseTopPage = () => {
                                     onChange={(value) => setTopDays(Number(value))}
                                 />
                             ) : null}
+                            <Input.Search
+                                allowClear
+                                placeholder="Бренд, например DRAGONZAP"
+                                value={brandFilterDraft}
+                                style={{ width: 260 }}
+                                enterButton="Фильтр"
+                                onChange={(event) => {
+                                    const nextValue = event.target.value;
+                                    setBrandFilterDraft(nextValue);
+                                    if (!nextValue) {
+                                        setBrandFilter('');
+                                    }
+                                }}
+                                onSearch={(value) => {
+                                    setBrandFilter(String(value || '').trim());
+                                }}
+                            />
                         </Space>
                         <Space wrap>
                             {topSource === 'file' ? (
