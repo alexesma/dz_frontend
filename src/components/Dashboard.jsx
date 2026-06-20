@@ -14,7 +14,6 @@ import {
     Row,
     Select,
     Space,
-    Spin,
     Statistic,
     Table,
     Tag,
@@ -22,7 +21,7 @@ import {
     message,
 } from 'antd';
 import { getCustomersSummary } from '../api/customers';
-import { getDragonzapOffers, sendDragonzapOrder } from '../api/autoparts';
+import { sendDragonzapOrder } from '../api/autoparts';
 import {
     getInventoryControl,
     getOrderDynamics,
@@ -61,6 +60,7 @@ const formatDateTime = (value) => {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return String(value);
     return parsed.toLocaleString('ru-RU', {
+        timeZone: 'Europe/Moscow',
         day: '2-digit',
         month: '2-digit',
         hour: '2-digit',
@@ -112,7 +112,7 @@ const normalizeSiteOffers = (payload, watchItem) => {
             oem_number: row.oem || row.oem_number || watchItem.oem,
             autopart_name: row.detail_name || row.name || `${watchItem.brand} ${watchItem.oem}`,
             price: Number(row.price),
-            quantity: Number(row.qnt ?? row.quantity ?? 0),
+            quantity: Number(row.qnt ?? row.qty ?? row.quantity ?? 0),
             min_qnt: Math.max(Number(row.min_qnt || 1), 1),
             min_delivery_day: row.min_delivery_day ?? null,
             max_delivery_day: row.max_delivery_day ?? null,
@@ -154,7 +154,6 @@ const MetricHistory = ({ points, valueKey, suffix = '', digits = 0 }) => {
 
 const Dashboard = () => {
     const [loading, setLoading] = useState(false);
-    const [watchOffersLoading, setWatchOffersLoading] = useState({});
     const [watchSendingKey, setWatchSendingKey] = useState(null);
     const [days, setDays] = useState(30);
     const [pointsLimit, setPointsLimit] = useState(8);
@@ -173,39 +172,6 @@ const Dashboard = () => {
     const [schedulerErrorTraces, setSchedulerErrorTraces] = useState([]);
     const [providerPricelistTraces, setProviderPricelistTraces] = useState([]);
     const [selectedProviderConfigIds, setSelectedProviderConfigIds] = useState([]);
-
-    const loadWatchOffers = useCallback(async (items) => {
-        setWatchOffers({});
-        setWatchOffersLoading(
-            items.reduce((acc, item) => ({ ...acc, [item.id]: true }), {})
-        );
-        for (let offset = 0; offset < items.length; offset += 2) {
-            const batch = items.slice(offset, offset + 2);
-            await Promise.all(batch.map(async (item) => {
-                try {
-                    const response = await getDragonzapOffers(
-                        item.oem,
-                        item.brand,
-                        true
-                    );
-                    const offers = normalizeSiteOffers(response?.data, item);
-                    setWatchOffers((prev) => ({ ...prev, [item.id]: offers }));
-                    setWatchOrderQty((prev) => {
-                        const next = { ...prev };
-                        offers.forEach((offer) => {
-                            const key = `${item.id}:${offer.key}`;
-                            if (next[key] == null) next[key] = offer.min_qnt;
-                        });
-                        return next;
-                    });
-                } catch {
-                    setWatchOffers((prev) => ({ ...prev, [item.id]: [] }));
-                } finally {
-                    setWatchOffersLoading((prev) => ({ ...prev, [item.id]: false }));
-                }
-            }));
-        }
-    }, []);
 
     const loadData = useCallback(async () => {
         setLoading(true);
@@ -288,6 +254,20 @@ const Dashboard = () => {
                     : []
             );
             setWatchItems(nextWatchItems);
+            const savedOffers = {};
+            const savedQuantities = {};
+            nextWatchItems.forEach((item) => {
+                const offers = normalizeSiteOffers(
+                    item.last_seen_site_offers,
+                    item
+                );
+                savedOffers[item.id] = offers;
+                offers.forEach((offer) => {
+                    savedQuantities[`${item.id}:${offer.key}`] = offer.min_qnt;
+                });
+            });
+            setWatchOffers(savedOffers);
+            setWatchOrderQty(savedQuantities);
             setCustomers(nextCustomers);
             setProfitRows(
                 Array.isArray(profitResponse?.data) ? profitResponse.data : []
@@ -309,14 +289,13 @@ const Dashboard = () => {
                 );
                 return zzap?.id ?? nextCustomers[0]?.id ?? null;
             });
-            void loadWatchOffers(nextWatchItems);
         } catch (error) {
             const detail = error?.response?.data?.detail;
             message.error(detail || 'Не удалось загрузить данные Dashboard');
         } finally {
             setLoading(false);
         }
-    }, [days, loadWatchOffers, pointsLimit, smoothWindow]);
+    }, [days, pointsLimit, smoothWindow]);
 
     useEffect(() => {
         void loadData();
@@ -764,8 +743,9 @@ const Dashboard = () => {
     const reliabilityColumns = [
         { title: 'Поставщик', dataIndex: 'provider_name', ellipsis: true, render: (value) => <Text strong>{value}</Text> },
         { title: 'Заказов', dataIndex: 'order_count', width: 80 },
-        { title: 'Заказано', dataIndex: 'ordered_qty', width: 90, render: (value) => `${formatNumber(value)} шт.` },
-        { title: 'В работе', dataIndex: 'pending_qty', width: 90, render: (value) => `${formatNumber(value)} шт.` },
+        { title: 'Заказано, руб.', dataIndex: 'ordered_sum', width: 140, render: formatMoney },
+        { title: 'Получено, руб.', dataIndex: 'received_sum', width: 140, render: formatMoney },
+        { title: 'В работе, руб.', dataIndex: 'pending_sum', width: 140, render: formatMoney },
         {
             title: 'Исполнение',
             dataIndex: 'fill_rate_pct',
@@ -985,7 +965,7 @@ const Dashboard = () => {
                         type="info"
                         showIcon
                         style={{ marginBottom: 12 }}
-                        message="Показываем первые 10 отслеживаемых позиций и до 5 лучших предложений сайта по каждой. Запросы выполняются по две позиции одновременно, чтобы не перегружать сервер."
+                        message="Показываем первые 10 отслеживаемых позиций и до 5 предложений из последней регламентной проверки сайта. Открытие Dashboard не запускает новый запрос."
                     />
                     <Table
                         rowKey="id"
@@ -998,23 +978,23 @@ const Dashboard = () => {
                             expandedRowKeys: watchItems.map((item) => item.id),
                             showExpandColumn: false,
                             expandedRowRender: (watchItem) => (
-                                <Spin spinning={Boolean(watchOffersLoading[watchItem.id])}>
-                                    {(watchOffers[watchItem.id] || []).length ? (
-                                        <Table
-                                            rowKey="key"
-                                            size="small"
-                                            columns={watchOfferColumns(watchItem)}
-                                            dataSource={watchOffers[watchItem.id] || []}
-                                            pagination={false}
-                                            scroll={{ x: 1100 }}
-                                        />
-                                    ) : (
-                                        <Empty
-                                            image={Empty.PRESENTED_IMAGE_SIMPLE}
-                                            description="Предложения сайта не найдены или ещё загружаются"
-                                        />
-                                    )}
-                                </Spin>
+                                (watchOffers[watchItem.id] || []).length ? (
+                                    <Table
+                                        rowKey="key"
+                                        size="small"
+                                        columns={watchOfferColumns(watchItem)}
+                                        dataSource={watchOffers[watchItem.id] || []}
+                                        pagination={false}
+                                        scroll={{ x: 1100 }}
+                                    />
+                                ) : (
+                                    <Empty
+                                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                                        description={watchItem.last_seen_site_at
+                                            ? `Последняя подходящая цена ${formatMoney(watchItem.last_seen_site_price)} найдена ${formatDateTime(watchItem.last_seen_site_at)}. Подробный снимок появится после следующей регламентной проверки.`
+                                            : 'Регламентная проверка ещё не находила подходящих предложений'}
+                                    />
+                                )
                             ),
                         }}
                     />
@@ -1181,7 +1161,7 @@ const Dashboard = () => {
                         type="info"
                         showIcon
                         style={{ marginBottom: 12 }}
-                        message="Исполнение считается только по полученным строкам и строкам, чей обещанный срок уже истёк. Незавершённые заказы показаны отдельно в колонке «В работе»."
+                        message="Денежное исполнение считается по стоимости полученного объёма относительно созревших к оценке заказов. Незавершённая сумма показана отдельно в колонке «В работе»."
                     />
                     <Table
                         rowKey="provider_id"
