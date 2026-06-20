@@ -5,3 +5,9 @@ export const getSupplierPriceTrends = (params = {}) =>
 
 export const getInventoryControl = (params = {}) =>
     api.get('/dashboard/inventory-control', { params });
+
+export const getOrderDynamics = (params = {}) =>
+    api.get('/dashboard/order-dynamics', { params });
+
+export const getSupplierReliability = (params = {}) =>
+    api.get('/dashboard/supplier-reliability', { params });

@@ -1,87 +1,65 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ReloadOutlined } from '@ant-design/icons';
 import {
+    ReloadOutlined,
+    ShoppingCartOutlined,
+    WarningOutlined,
+} from '@ant-design/icons';
+import {
+    Alert,
     Button,
     Card,
+    Col,
     Empty,
     InputNumber,
+    Row,
     Select,
     Space,
     Spin,
+    Statistic,
+    Table,
     Tag,
     Typography,
     message,
 } from 'antd';
-import { getSupplierPriceTrends } from '../api/dashboard';
+import { getCustomersSummary } from '../api/customers';
+import { getDragonzapOffers, sendDragonzapOrder } from '../api/autoparts';
+import {
+    getInventoryControl,
+    getOrderDynamics,
+    getSupplierPriceTrends,
+    getSupplierReliability,
+} from '../api/dashboard';
+import { getShipmentProfitReport } from '../api/inventory';
 import { getExecutionTraces } from '../api/settings';
+import { getWatchItems } from '../api/watchlist';
 
-const COLORS = [
-    '#1d39c4',
-    '#389e0d',
-    '#cf1322',
-    '#08979c',
-    '#d46b08',
-    '#531dab',
-    '#096dd9',
-    '#ad4e00',
-    '#7cb305',
-    '#13a8a8',
-];
+const { Title, Text } = Typography;
 
-const formatValue = (value, digits = 2) => {
-    if (value === null || value === undefined) return '-';
-    const num = Number(value);
-    if (!Number.isFinite(num)) return '-';
-    return num.toFixed(digits);
+const TRACE_STATUS_COLOR = {
+    success: 'green',
+    error: 'red',
+    running: 'blue',
 };
 
-const formatDurationMs = (value) => {
-    const ms = Number(value);
-    if (!Number.isFinite(ms) || ms < 0) {
-        return '—';
-    }
-    if (ms < 1000) {
-        return `${ms} мс`;
-    }
-    const sec = ms / 1000;
-    if (sec < 60) {
-        return `${sec.toFixed(1)} с`;
-    }
-    const minutes = Math.floor(sec / 60);
-    const seconds = Math.round(sec % 60);
-    return `${minutes} мин ${seconds} с`;
+const formatNumber = (value, digits = 0) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return '—';
+    return new Intl.NumberFormat('ru-RU', {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits,
+    }).format(numeric);
 };
 
-const formatMemoryMb = (value) => {
-    const mb = Number(value);
-    if (!Number.isFinite(mb)) {
-        return '—';
-    }
-    return `${mb.toFixed(1)} MB`;
-};
-
-const formatFileSize = (value) => {
-    const bytes = Number(value);
-    if (!Number.isFinite(bytes) || bytes < 0) {
-        return '—';
-    }
-    if (bytes < 1024) {
-        return `${bytes} B`;
-    }
-    if (bytes < 1024 * 1024) {
-        return `${(bytes / 1024).toFixed(1)} KB`;
-    }
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-};
+const formatMoney = (value) => (
+    Number.isFinite(Number(value))
+        ? `${formatNumber(value, 2)} руб.`
+        : '—'
+);
 
 const formatDateTime = (value) => {
-    if (!value) {
-        return '—';
-    }
+    if (!value) return '—';
     const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) {
-        return String(value);
-    }
+    if (Number.isNaN(parsed.getTime())) return String(value);
     return parsed.toLocaleString('ru-RU', {
         day: '2-digit',
         month: '2-digit',
@@ -90,380 +68,210 @@ const formatDateTime = (value) => {
     });
 };
 
-const TRACE_STATUS_COLOR = {
-    success: 'green',
-    error: 'red',
-    running: 'blue',
+const formatShortDate = (value) => {
+    if (!value) return '—';
+    const parsed = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return String(value);
+    return parsed.toLocaleDateString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+    });
 };
 
-const jobLabel = (trace) => trace?.job_name || trace?.job_key || '—';
+const formatDurationMs = (value) => {
+    const ms = Number(value);
+    if (!Number.isFinite(ms) || ms < 0) return '—';
+    if (ms < 1000) return `${Math.round(ms)} мс`;
+    if (ms < 60000) return `${(ms / 1000).toFixed(1)} с`;
+    return `${Math.floor(ms / 60000)} мин ${Math.round((ms % 60000) / 1000)} с`;
+};
 
-const TraceListCard = ({
-    title,
-    subtitle,
-    traces,
-    renderBody,
-    emptyDescription = 'Нет данных',
-}) => (
-    <Card title={title} style={{ marginBottom: 16 }} extra={
-        subtitle ? <Typography.Text type="secondary">{subtitle}</Typography.Text> : null
-    }>
-        {!traces.length ? (
-            <Empty
-                description={emptyDescription}
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-            />
-        ) : (
-            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                {traces.map((trace) => (
-                    <Card
-                        key={trace.id}
-                        size="small"
-                        style={{ background: '#fafafa' }}
-                    >
-                        <Space
-                            direction="vertical"
-                            size={6}
-                            style={{ width: '100%' }}
-                        >
-                            <Space wrap>
-                                <Tag color={TRACE_STATUS_COLOR[trace.status] || 'default'}>
-                                    {trace.status}
-                                </Tag>
-                                <Typography.Text strong>{jobLabel(trace)}</Typography.Text>
-                            </Space>
-                            {renderBody(trace)}
-                        </Space>
-                    </Card>
-                ))}
-            </Space>
-        )}
-    </Card>
+const formatMemoryMb = (value) => (
+    Number.isFinite(Number(value)) ? `${Number(value).toFixed(0)} MB` : '—'
 );
 
-const joinLabel = (item) => {
+const joinProviderLabel = (item) => {
     const provider = item.provider_name || 'Без поставщика';
     const config = item.provider_config_name || `#${item.provider_config_id}`;
     return `${provider} / ${config}`;
 };
 
-const LineChartCard = ({
-    title,
-    subtitle,
-    details,
-    series,
-    valueKey,
-    suffix = '',
-    digits = 2,
-}) => {
-    const prepared = useMemo(() => {
-        const dateSet = new Set();
-        series.forEach((item) => {
-            (item.points || []).forEach((point) => {
-                if (point?.date) {
-                    dateSet.add(point.date);
-                }
-            });
-        });
-        const dates = Array.from(dateSet).sort();
-        if (!dates.length) {
-            return {
-                dates: [],
-                values: [],
-                min: 0,
-                max: 0,
-            };
-        }
+const normalizeSiteOffers = (payload, watchItem) => {
+    const rawRows = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.data)
+            ? payload.data
+            : [];
+    return rawRows
+        .map((row, index) => ({
+            key: row.hash_key || row.system_hash || `${watchItem.id}-${index}`,
+            supplier_id: row.supplier_id ?? null,
+            supplier_name:
+                row.sup_logo || row.supplier_name || row.provider_name || 'Dragonzap',
+            brand_name: row.make_name || row.brand_name || watchItem.brand,
+            oem_number: row.oem || row.oem_number || watchItem.oem,
+            autopart_name: row.detail_name || row.name || `${watchItem.brand} ${watchItem.oem}`,
+            price: Number(row.price),
+            quantity: Number(row.qnt ?? row.quantity ?? 0),
+            min_qnt: Math.max(Number(row.min_qnt || 1), 1),
+            min_delivery_day: row.min_delivery_day ?? null,
+            max_delivery_day: row.max_delivery_day ?? null,
+            hash_key: row.hash_key || null,
+            system_hash: row.system_hash || null,
+        }))
+        .filter((row) => row.price > 0 && row.quantity > 0)
+        .sort((a, b) => (
+            a.price - b.price
+            || Number(a.max_delivery_day || 999) - Number(b.max_delivery_day || 999)
+            || b.quantity - a.quantity
+        ))
+        .slice(0, 5);
+};
 
-        const values = series.map((item, idx) => {
-            const pointMap = new Map();
-            (item.points || []).forEach((point) => {
-                if (point?.date) {
-                    pointMap.set(point.date, point);
-                }
-            });
-            return {
-                color: COLORS[idx % COLORS.length],
-                label: joinLabel(item),
-                points: dates.map((date) => {
-                    const point = pointMap.get(date) || null;
-                    const value = Number(point?.[valueKey]);
-                    return {
-                        value: Number.isFinite(value) ? value : null,
-                        point,
-                    };
-                }),
-            };
-        });
-
-        const numeric = [];
-        values.forEach((item) => {
-            item.points.forEach((value) => {
-                if (value.value !== null) {
-                    numeric.push(value.value);
-                }
-            });
-        });
-        if (!numeric.length) {
-            return {
-                dates,
-                values,
-                min: 0,
-                max: 0,
-            };
-        }
-        let min = Math.min(...numeric);
-        let max = Math.max(...numeric);
-        if (min === max) {
-            min -= 1;
-            max += 1;
-        }
-        return {
-            dates,
-            values,
-            min,
-            max,
-        };
-    }, [series, valueKey]);
-
-    const width = 980;
-    const height = 290;
-    const padLeft = 54;
-    const padRight = 16;
-    const padTop = 20;
-    const padBottom = 36;
-    const innerWidth = width - padLeft - padRight;
-    const innerHeight = height - padTop - padBottom;
-    const dates = prepared.dates;
-
-    const xForIndex = (idx) => {
-        if (dates.length <= 1) {
-            return padLeft + innerWidth / 2;
-        }
-        return padLeft + (idx * innerWidth) / (dates.length - 1);
-    };
-    const yForValue = (value) => {
-        const ratio = (value - prepared.min) / (prepared.max - prepared.min);
-        return padTop + innerHeight - ratio * innerHeight;
-    };
-    const yTicks = 5;
-    const yLabels = Array.from({ length: yTicks + 1 }).map((_, idx) => {
-        const ratio = idx / yTicks;
-        const value = prepared.max - ratio * (prepared.max - prepared.min);
-        return {
-            y: padTop + ratio * innerHeight,
-            value,
-        };
-    });
-
+const MetricHistory = ({ points, valueKey, suffix = '', digits = 0 }) => {
+    const values = (points || []).slice(-8);
+    if (!values.length) return <Text type="secondary">Нет данных</Text>;
     return (
-        <Card
-            title={title}
-            style={{ marginBottom: 16 }}
-            extra={
-                <Typography.Text type="secondary">{subtitle}</Typography.Text>
-            }
-        >
-            {!dates.length ? (
-                <Empty description="Нет данных для графика" />
-            ) : (
-                <>
-                    <svg
-                        width="100%"
-                        viewBox={`0 0 ${width} ${height}`}
-                        style={{ border: '1px solid #f0f0f0', borderRadius: 8 }}
+        <div className="dashboard-history-strip">
+            {values.map((point) => {
+                const numeric = Number(point?.[valueKey]);
+                const value = Number.isFinite(numeric)
+                    ? `${formatNumber(numeric, digits)}${suffix}`
+                    : '—';
+                return (
+                    <div
+                        key={`${point.pricelist_id}-${valueKey}`}
+                        className="dashboard-history-cell"
                     >
-                        {yLabels.map((tick, idx) => (
-                            <g key={`y-${idx}`}>
-                                <line
-                                    x1={padLeft}
-                                    y1={tick.y}
-                                    x2={width - padRight}
-                                    y2={tick.y}
-                                    stroke="#f0f0f0"
-                                    strokeWidth="1"
-                                />
-                                <text
-                                    x={padLeft - 8}
-                                    y={tick.y + 4}
-                                    fontSize="11"
-                                    fill="#8c8c8c"
-                                    textAnchor="end"
-                                >
-                                    {formatValue(tick.value, digits)}
-                                    {suffix}
-                                </text>
-                            </g>
-                        ))}
-                        {prepared.values.map((row, rowIdx) => {
-                            const segments = [];
-                            let current = [];
-                            row.points.forEach((item, idx) => {
-                                if (item.value === null) {
-                                    if (current.length > 1) {
-                                        segments.push(current);
-                                    }
-                                    current = [];
-                                    return;
-                                }
-                                current.push([
-                                    xForIndex(idx),
-                                    yForValue(item.value),
-                                ]);
-                            });
-                            if (current.length > 1) {
-                                segments.push(current);
-                            }
-                            return (
-                                <g key={`line-${rowIdx}`}>
-                                    {segments.map((segment, segIdx) => (
-                                        <polyline
-                                            key={`seg-${segIdx}`}
-                                            fill="none"
-                                            stroke={row.color}
-                                            strokeWidth="2"
-                                            points={segment
-                                                .map((pair) => `${pair[0]},${pair[1]}`)
-                                                .join(' ')}
-                                        />
-                                    ))}
-                                    {row.points.map((item, idx) => {
-                                        if (item.value === null) {
-                                            return null;
-                                        }
-                                        const point = item.point || {};
-                                        const valueText = (
-                                            `${formatValue(item.value, digits)}`
-                                            + suffix
-                                        );
-                                        const tooltipRows = [
-                                            row.label,
-                                            `Дата: ${dates[idx]}`,
-                                            `Значение: ${valueText}`,
-                                            `SKU: ${point.sku_count ?? '-'}`,
-                                            `Остаток: ${point.stock_total_qty ?? '-'}`,
-                                        ];
-                                        if (point.coverage_pct !== null
-                                            && point.coverage_pct !== undefined) {
-                                            tooltipRows.push(
-                                                `Покрытие: ${formatValue(point.coverage_pct, 2)}%`
-                                            );
-                                        }
-                                        if (
-                                            valueKey === 'step_index_smooth_pct'
-                                            && point.step_index_pct !== null
-                                            && point.step_index_pct !== undefined
-                                        ) {
-                                            tooltipRows.push(
-                                                `Сырой индекс: ${formatValue(point.step_index_pct, 2)}%`
-                                            );
-                                        }
-                                        return (
-                                            <circle
-                                                key={`dot-${idx}`}
-                                                cx={xForIndex(idx)}
-                                                cy={yForValue(item.value)}
-                                                r="2.8"
-                                                fill={row.color}
-                                            >
-                                                <title>
-                                                    {tooltipRows.join('\n')}
-                                                </title>
-                                            </circle>
-                                        );
-                                    })}
-                                </g>
-                            );
-                        })}
-                        {dates.map((date, idx) => {
-                            const every = Math.max(
-                                1,
-                                Math.ceil(dates.length / 8)
-                            );
-                            if (idx % every !== 0 && idx !== dates.length - 1) {
-                                return null;
-                            }
-                            return (
-                                <text
-                                    key={`x-${date}`}
-                                    x={xForIndex(idx)}
-                                    y={height - 12}
-                                    fontSize="11"
-                                    fill="#8c8c8c"
-                                    textAnchor="middle"
-                                >
-                                    {date}
-                                </text>
-                            );
-                        })}
-                    </svg>
-                    <Space wrap size={[8, 8]} style={{ marginTop: 12 }}>
-                        {prepared.values.map((row) => (
-                            <Tag key={row.label} color={row.color}>
-                                {row.label}
-                            </Tag>
-                        ))}
-                    </Space>
-                    {details ? (
-                        <Typography.Paragraph
-                            type="secondary"
-                            style={{ marginTop: 12, marginBottom: 0 }}
-                        >
-                            {details}
-                        </Typography.Paragraph>
-                    ) : null}
-                </>
-            )}
-        </Card>
+                        <span>{formatShortDate(point.date)}</span>
+                        <strong>{value}</strong>
+                    </div>
+                );
+            })}
+        </div>
     );
 };
 
 const Dashboard = () => {
     const [loading, setLoading] = useState(false);
+    const [watchOffersLoading, setWatchOffersLoading] = useState({});
+    const [watchSendingKey, setWatchSendingKey] = useState(null);
     const [days, setDays] = useState(30);
-    const [pointsLimit, setPointsLimit] = useState(10);
-    const [smoothWindow, setSmoothWindow] = useState(3);
+    const [pointsLimit, setPointsLimit] = useState(8);
+    const smoothWindow = 3;
     const [series, setSeries] = useState([]);
+    const [orderDynamics, setOrderDynamics] = useState(null);
+    const [profitRows, setProfitRows] = useState([]);
+    const [inventoryControl, setInventoryControl] = useState(null);
+    const [supplierReliability, setSupplierReliability] = useState([]);
+    const [watchItems, setWatchItems] = useState([]);
+    const [watchOffers, setWatchOffers] = useState({});
+    const [watchOrderQty, setWatchOrderQty] = useState({});
+    const [customers, setCustomers] = useState([]);
+    const [selectedCustomerId, setSelectedCustomerId] = useState(null);
     const [schedulerJobTraces, setSchedulerJobTraces] = useState([]);
     const [schedulerErrorTraces, setSchedulerErrorTraces] = useState([]);
     const [providerPricelistTraces, setProviderPricelistTraces] = useState([]);
-    const [selectedProviderConfigIds, setSelectedProviderConfigIds] = useState(
-        []
-    );
+    const [selectedProviderConfigIds, setSelectedProviderConfigIds] = useState([]);
+
+    const loadWatchOffers = useCallback(async (items) => {
+        setWatchOffers({});
+        setWatchOffersLoading(
+            items.reduce((acc, item) => ({ ...acc, [item.id]: true }), {})
+        );
+        for (let offset = 0; offset < items.length; offset += 2) {
+            const batch = items.slice(offset, offset + 2);
+            await Promise.all(batch.map(async (item) => {
+                try {
+                    const response = await getDragonzapOffers(
+                        item.oem,
+                        item.brand,
+                        true
+                    );
+                    const offers = normalizeSiteOffers(response?.data, item);
+                    setWatchOffers((prev) => ({ ...prev, [item.id]: offers }));
+                    setWatchOrderQty((prev) => {
+                        const next = { ...prev };
+                        offers.forEach((offer) => {
+                            const key = `${item.id}:${offer.key}`;
+                            if (next[key] == null) next[key] = offer.min_qnt;
+                        });
+                        return next;
+                    });
+                } catch {
+                    setWatchOffers((prev) => ({ ...prev, [item.id]: [] }));
+                } finally {
+                    setWatchOffersLoading((prev) => ({ ...prev, [item.id]: false }));
+                }
+            }));
+        }
+    }, []);
 
     const loadData = useCallback(async () => {
         setLoading(true);
         try {
-            const [
-                trendsResponse,
-                schedulerTracesResponse,
-                schedulerErrorsResponse,
-                providerTracesResponse,
-            ] = await Promise.all([
+            const requests = await Promise.allSettled([
                 getSupplierPriceTrends({
                     days,
                     points_limit: pointsLimit,
                     smooth_window: smoothWindow,
                 }),
-                getExecutionTraces({
-                    trace_type: 'scheduler_job',
-                    limit: 200,
-                }),
+                getOrderDynamics({ days: 14, partner_limit: 10 }),
+                getExecutionTraces({ trace_type: 'scheduler_job', limit: 200 }),
                 getExecutionTraces({
                     trace_type: 'scheduler_job',
                     status: 'error',
                     limit: 50,
                 }),
-                getExecutionTraces({
-                    trace_type: 'provider_pricelist',
-                    limit: 250,
+                getExecutionTraces({ trace_type: 'provider_pricelist', limit: 250 }),
+                getWatchItems({ page: 1, page_size: 10 }),
+                getCustomersSummary({ page: 1, page_size: 200 }),
+                getShipmentProfitReport({
+                    period: 'day',
+                    group_by_customer: true,
+                    group_by_provider: false,
+                    group_by_brand: false,
+                    group_by_autopart: false,
+                    date_from: new Date(
+                        Date.now() - (29 * 24 * 60 * 60 * 1000)
+                    ).toISOString(),
                 }),
+                getInventoryControl(),
+                getSupplierReliability({ days: 90 }),
             ]);
-            setSeries(
-                Array.isArray(trendsResponse?.data?.series)
-                    ? trendsResponse.data.series
-                    : []
-            );
+            const [
+                trendsResponse,
+                orderDynamicsResponse,
+                schedulerTracesResponse,
+                schedulerErrorsResponse,
+                providerTracesResponse,
+                watchResponse,
+                customersResponse,
+                profitResponse,
+                inventoryResponse,
+                reliabilityResponse,
+            ] = requests.map((result) => (
+                result.status === 'fulfilled' ? result.value : null
+            ));
+            const failedSections = requests.filter(
+                (result) => result.status === 'rejected'
+            ).length;
+            if (failedSections) {
+                message.warning(
+                    `Часть сводки временно недоступна: ${failedSections} разд.`
+                );
+            }
+            const nextSeries = Array.isArray(trendsResponse?.data?.series)
+                ? trendsResponse.data.series
+                : [];
+            const nextWatchItems = Array.isArray(watchResponse?.data?.items)
+                ? watchResponse.data.items
+                : [];
+            const nextCustomers = Array.isArray(customersResponse?.data?.items)
+                ? customersResponse.data.items
+                : [];
+            setSeries(nextSeries);
+            setOrderDynamics(orderDynamicsResponse?.data || null);
             setSchedulerJobTraces(
                 Array.isArray(schedulerTracesResponse?.data)
                     ? schedulerTracesResponse.data
@@ -479,53 +287,72 @@ const Dashboard = () => {
                     ? providerTracesResponse.data
                     : []
             );
-        } catch {
-            message.error('Не удалось загрузить данные Dashboard');
+            setWatchItems(nextWatchItems);
+            setCustomers(nextCustomers);
+            setProfitRows(
+                Array.isArray(profitResponse?.data) ? profitResponse.data : []
+            );
+            setInventoryControl(inventoryResponse?.data || null);
+            setSupplierReliability(
+                Array.isArray(reliabilityResponse?.data?.suppliers)
+                    ? reliabilityResponse.data.suppliers
+                    : []
+            );
+            setSelectedCustomerId((previous) => {
+                if (previous && nextCustomers.some((item) => item.id === previous)) {
+                    return previous;
+                }
+                const zzap = nextCustomers.find(
+                    (item) => String(item.name || '').trim().toLowerCase() === 'zzap'
+                ) || nextCustomers.find(
+                    (item) => String(item.name || '').toLowerCase().includes('zzap')
+                );
+                return zzap?.id ?? nextCustomers[0]?.id ?? null;
+            });
+            void loadWatchOffers(nextWatchItems);
+        } catch (error) {
+            const detail = error?.response?.data?.detail;
+            message.error(detail || 'Не удалось загрузить данные Dashboard');
         } finally {
             setLoading(false);
         }
-    }, [days, pointsLimit, smoothWindow]);
+    }, [days, loadWatchOffers, pointsLimit, smoothWindow]);
 
     useEffect(() => {
-        loadData();
+        void loadData();
     }, [loadData]);
 
     useEffect(() => {
-        setSelectedProviderConfigIds((prev) => {
-            const availableIds = series.map((item) => item.provider_config_id);
-            const kept = prev.filter((id) => availableIds.includes(id));
-            if (kept.length) {
-                return kept;
-            }
-            return availableIds;
+        setSelectedProviderConfigIds((previous) => {
+            const available = series.map((item) => item.provider_config_id);
+            const kept = previous.filter((id) => available.includes(id));
+            return kept.length ? kept : available;
         });
     }, [series]);
 
-    const providerOptions = useMemo(() => {
-        return series.map((item) => ({
-            value: item.provider_config_id,
-            label: joinLabel(item),
-        }));
-    }, [series]);
-
     const visibleSeries = useMemo(() => {
-        if (!selectedProviderConfigIds.length) {
-            return [];
-        }
         const selected = new Set(selectedProviderConfigIds);
         return series.filter((item) => selected.has(item.provider_config_id));
-    }, [series, selectedProviderConfigIds]);
+    }, [selectedProviderConfigIds, series]);
+
+    const providerOptions = useMemo(
+        () => series.map((item) => ({
+            value: item.provider_config_id,
+            label: joinProviderLabel(item),
+        })),
+        [series]
+    );
 
     const slowestSchedulerJobs = useMemo(
         () => [...schedulerJobTraces]
             .filter((item) => Number(item.duration_ms || 0) > 0)
             .sort((a, b) => Number(b.duration_ms || 0) - Number(a.duration_ms || 0))
-            .slice(0, 5),
+            .slice(0, 10),
         [schedulerJobTraces]
     );
 
     const latestSchedulerErrors = useMemo(
-        () => schedulerErrorTraces.slice(0, 5),
+        () => schedulerErrorTraces.slice(0, 10),
         [schedulerErrorTraces]
     );
 
@@ -533,250 +360,920 @@ const Dashboard = () => {
         () => [...providerPricelistTraces]
             .filter((item) => Number(item.duration_ms || 0) > 0)
             .sort((a, b) => Number(b.duration_ms || 0) - Number(a.duration_ms || 0))
-            .slice(0, 7),
+            .slice(0, 10),
         [providerPricelistTraces]
     );
 
-    return (
-        <Space direction="vertical" size="large" style={{ width: '100%' }}>
-            <Card
-                title="Тяжёлые регламенты и прайсы"
-                extra={
-                    <Button
-                        icon={<ReloadOutlined />}
-                        onClick={loadData}
-                        loading={loading}
-                    >
-                        Обновить
-                    </Button>
-                }
-                style={{ margin: '20px 20px 0 20px' }}
-            >
-                <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-                    Храним traces только за последние 3 дня. Здесь видно, какой регламент
-                    выполнялся дольше всего, какие job падали и какой прайс поставщика
-                    дал самый тяжёлый прогон.
-                </Typography.Paragraph>
+    const profitAnalytics = useMemo(() => {
+        const totals = {
+            revenue: 0,
+            cost: 0,
+            grossProfit: 0,
+            quantity: 0,
+            costedQuantity: 0,
+            uncostedQuantity: 0,
+        };
+        const dailyMap = new Map();
+        const customerMap = new Map();
+        profitRows.forEach((row) => {
+            const revenue = Number(row.revenue_total || 0);
+            const cost = Number(row.cost_total || 0);
+            const quantity = Number(row.quantity || 0);
+            const costedQuantity = Number(row.costed_quantity || 0);
+            const uncostedQuantity = Number(row.uncosted_quantity || 0);
+            totals.revenue += revenue;
+            totals.cost += cost;
+            totals.quantity += quantity;
+            totals.costedQuantity += costedQuantity;
+            totals.uncostedQuantity += uncostedQuantity;
+            if (uncostedQuantity === 0) totals.grossProfit += revenue - cost;
 
-                {loading ? (
-                    <Spin />
-                ) : (
-                    <>
-                        <TraceListCard
-                            title="Самые тяжёлые регламенты"
-                            subtitle="Топ по длительности за последние 3 дня"
-                            traces={slowestSchedulerJobs}
-                            emptyDescription="За последние 3 дня нет записей по регламентам."
-                            renderBody={(trace) => (
-                                <>
-                                    <Typography.Text type="secondary">
-                                        Старт: {formatDateTime(trace.started_at)}
-                                        {' · '}
-                                        Длительность: {formatDurationMs(trace.duration_ms)}
-                                        {' · '}
-                                        Память: {formatMemoryMb(trace.rss_before_mb)} → {formatMemoryMb(trace.rss_after_mb)}
-                                    </Typography.Text>
-                                    {trace.details?.summary ? (
-                                        <Typography.Text type="secondary">
-                                            Summary: {JSON.stringify(trace.details.summary)}
-                                        </Typography.Text>
-                                    ) : null}
-                                    {trace.details?.error ? (
-                                        <Typography.Text type="danger">
-                                            Ошибка: {trace.details.error}
-                                        </Typography.Text>
-                                    ) : null}
-                                </>
-                            )}
-                        />
+            const date = String(row.period_start || '').slice(0, 10) || 'Без даты';
+            const daily = dailyMap.get(date) || {
+                date,
+                revenue: 0,
+                cost: 0,
+                gross_profit: 0,
+                quantity: 0,
+                uncosted_quantity: 0,
+            };
+            daily.revenue += revenue;
+            daily.cost += cost;
+            daily.quantity += quantity;
+            daily.uncosted_quantity += uncostedQuantity;
+            if (uncostedQuantity === 0) daily.gross_profit += revenue - cost;
+            dailyMap.set(date, daily);
 
-                        <TraceListCard
-                            title="Последние ошибки регламентов"
-                            subtitle="Если job подвисает или падает, это будет видно здесь"
-                            traces={latestSchedulerErrors}
-                            emptyDescription="За последние 3 дня ошибок регламентов не зафиксировано."
-                            renderBody={(trace) => (
-                                <>
-                                    <Typography.Text type="secondary">
-                                        Старт: {formatDateTime(trace.started_at)}
-                                        {' · '}
-                                        Длительность: {formatDurationMs(trace.duration_ms)}
-                                    </Typography.Text>
-                                    <Typography.Text type="danger">
-                                        {trace.details?.error || 'Без текста ошибки'}
-                                    </Typography.Text>
-                                </>
-                            )}
-                        />
+            const customerKey = row.customer_id ?? row.customer_name ?? 'unknown';
+            const customer = customerMap.get(customerKey) || {
+                key: customerKey,
+                customer_name: row.customer_name || 'Без клиента',
+                revenue: 0,
+                cost: 0,
+                quantity: 0,
+                uncosted_quantity: 0,
+            };
+            customer.revenue += revenue;
+            customer.cost += cost;
+            customer.quantity += quantity;
+            customer.uncosted_quantity += uncostedQuantity;
+            customerMap.set(customerKey, customer);
+        });
+        const marginPct = totals.revenue > 0 && totals.uncostedQuantity === 0
+            ? ((totals.revenue - totals.cost) / totals.revenue) * 100
+            : null;
+        const costCoveragePct = totals.quantity > 0
+            ? (totals.costedQuantity / totals.quantity) * 100
+            : null;
+        const customers = [...customerMap.values()].map((row) => ({
+            ...row,
+            gross_profit: row.revenue - row.cost,
+            margin_pct: row.revenue > 0 && row.uncosted_quantity === 0
+                ? ((row.revenue - row.cost) / row.revenue) * 100
+                : null,
+        })).sort((a, b) => (
+            (a.margin_pct ?? -999) - (b.margin_pct ?? -999)
+            || b.revenue - a.revenue
+        ));
+        return {
+            totals: { ...totals, marginPct, costCoveragePct },
+            daily: [...dailyMap.values()].sort(
+                (a, b) => b.date.localeCompare(a.date)
+            ).slice(0, 14),
+            customers: customers.slice(0, 10),
+        };
+    }, [profitRows]);
 
-                        <TraceListCard
-                            title="Самые медленные прайсы поставщиков"
-                            subtitle="Какие конкретно прайсы съедают больше всего времени"
-                            traces={slowestPricelists}
-                            emptyDescription="За последние 3 дня не было записей по обработке входящих прайсов поставщиков."
-                            renderBody={(trace) => {
-                                const stats = trace.details?.stats || {};
-                                return (
-                                    <>
-                                        <Typography.Text strong>
-                                            {trace.details?.provider_name || 'Поставщик'}{trace.details?.provider_config_name ? ` · ${trace.details.provider_config_name}` : ''}
-                                        </Typography.Text>
-                                        <Typography.Text type="secondary">
-                                            Файл: {trace.source_filename || '—'}
-                                            {' · '}
-                                            Старт: {formatDateTime(trace.started_at)}
-                                            {' · '}
-                                            Длительность: {formatDurationMs(trace.duration_ms)}
-                                        </Typography.Text>
-                                        <Typography.Text type="secondary">
-                                            Размер: {formatFileSize(trace.details?.file_size_bytes)}
-                                            {' · '}
-                                            Строк до фильтров: {stats.rows_total ?? '—'}
-                                            {' · '}
-                                            После фильтров: {stats.rows_after_filters ?? '—'}
-                                        </Typography.Text>
-                                        <Typography.Text type="secondary">
-                                            Память: {formatMemoryMb(trace.rss_before_mb)} → {formatMemoryMb(trace.rss_after_mb)}
-                                            {' · '}
-                                            Δ: {formatMemoryMb(trace.memory_delta_mb)}
-                                        </Typography.Text>
-                                        {trace.details?.error ? (
-                                            <Typography.Text type="danger">
-                                                Ошибка: {trace.details.error}
-                                            </Typography.Text>
-                                        ) : null}
-                                    </>
-                                );
-                            }}
-                        />
-                    </>
-                )}
-            </Card>
+    const frozenStockRows = useMemo(
+        () => [
+            ...(inventoryControl?.dead_stock || []),
+            ...(inventoryControl?.slow_movers || []),
+        ].sort(
+            (a, b) => Number(b.frozen_value || 0) - Number(a.frozen_value || 0)
+        ).slice(0, 10),
+        [inventoryControl]
+    );
 
-            <Card
-                title="Мониторинг прайсов поставщиков"
-                extra={
-                    <Button
-                        icon={<ReloadOutlined />}
-                        onClick={loadData}
-                        loading={loading}
-                    >
-                        Обновить
-                    </Button>
-                }
-                style={{ margin: '20px' }}
-            >
-                <Space wrap size="middle" style={{ marginBottom: 12 }}>
-                    <div>
-                        <Typography.Text type="secondary">
-                            Период, дней
-                        </Typography.Text>
-                        <br />
-                        <InputNumber
-                            min={1}
-                            max={365}
-                            value={days}
-                            onChange={(value) => setDays(Number(value || 1))}
-                        />
-                    </div>
-                    <div>
-                        <Typography.Text type="secondary">
-                            Точек на источник
-                        </Typography.Text>
-                        <br />
-                        <InputNumber
-                            min={2}
-                            max={40}
-                            value={pointsLimit}
-                            onChange={(value) =>
-                                setPointsLimit(Number(value || 2))
-                            }
-                        />
-                    </div>
-                    <div style={{ minWidth: 420 }}>
-                        <Typography.Text type="secondary">
-                            Отображаемые источники
-                        </Typography.Text>
-                        <Select
-                            mode="multiple"
-                            value={selectedProviderConfigIds}
-                            onChange={setSelectedProviderConfigIds}
-                            options={providerOptions}
-                            placeholder="Выберите источники"
-                            style={{ width: '100%' }}
-                            maxTagCount={3}
-                        />
-                    </div>
-                    <div>
-                        <Typography.Text type="secondary">
-                            Окно сглаживания индекса
-                        </Typography.Text>
-                        <br />
-                        <InputNumber
-                            min={1}
-                            max={15}
-                            value={smoothWindow}
-                            onChange={(value) =>
-                                setSmoothWindow(Number(value || 1))
-                            }
-                        />
-                    </div>
+    const lostDemandRows = useMemo(
+        () => (inventoryControl?.out_of_stock_with_demand || []).map((row) => {
+            const estimatedQty30 = Number(row.avg_daily || 0) * 30;
+            return {
+                ...row,
+                estimated_qty_30: estimatedQty30,
+                estimated_revenue_30: estimatedQty30 * Number(row.sale_price || 0),
+            };
+        }).sort(
+            (a, b) => b.estimated_revenue_30 - a.estimated_revenue_30
+        ).slice(0, 10),
+        [inventoryControl]
+    );
+
+    const refreshOrderDynamics = useCallback(async () => {
+        const response = await getOrderDynamics({ days: 14, partner_limit: 10 });
+        setOrderDynamics(response?.data || null);
+    }, []);
+
+    const sendWatchOffer = useCallback(async (watchItem, offer) => {
+        if (!selectedCustomerId) {
+            message.warning('Выберите клиента для оформления заказа');
+            return;
+        }
+        if (!offer.hash_key) {
+            message.warning('У предложения нет hash_key, отправка с Dashboard недоступна');
+            return;
+        }
+        const offerKey = `${watchItem.id}:${offer.key}`;
+        const quantity = Math.max(
+            Number(watchOrderQty[offerKey] || offer.min_qnt || 1),
+            Number(offer.min_qnt || 1)
+        );
+        setWatchSendingKey(offerKey);
+        try {
+            const response = await sendDragonzapOrder(
+                [{
+                    autopart_id: null,
+                    oem_number: offer.oem_number,
+                    brand_name: offer.brand_name,
+                    autopart_name: offer.autopart_name,
+                    supplier_id: offer.supplier_id,
+                    supplier_name: offer.supplier_name,
+                    quantity,
+                    confirmed_price: offer.price,
+                    min_delivery_day: offer.min_delivery_day,
+                    max_delivery_day: offer.max_delivery_day,
+                    status: 'Send',
+                    tracking_uuid: `dw${watchItem.id}${Date.now().toString().slice(-8)}`,
+                    hash_key: offer.hash_key,
+                    system_hash: offer.system_hash,
+                }],
+                selectedCustomerId,
+                `Dashboard: ${watchItem.brand} ${watchItem.oem}`
+            );
+            if (Number(response?.data?.successful_items || 0) > 0) {
+                message.success(
+                    `Заказ оформлен: ${watchItem.brand} ${watchItem.oem}, ${quantity} шт.`
+                );
+                await refreshOrderDynamics();
+            } else {
+                const firstError = response?.data?.results?.find(
+                    (item) => item.status !== 'success'
+                )?.message;
+                message.warning(firstError || 'Позиция не была отправлена в заказ');
+            }
+        } catch (error) {
+            message.error(
+                error?.response?.data?.detail || 'Не удалось оформить заказ'
+            );
+        } finally {
+            setWatchSendingKey(null);
+        }
+    }, [refreshOrderDynamics, selectedCustomerId, watchOrderQty]);
+
+    const watchColumns = [
+        {
+            title: 'Позиция',
+            key: 'position',
+            width: 260,
+            render: (_, row) => (
+                <Space direction="vertical" size={0}>
+                    <Text strong>{row.brand} {row.oem}</Text>
+                    <Text type="secondary">Контрольная цена: {formatMoney(row.max_price)}</Text>
                 </Space>
+            ),
+        },
+        {
+            title: 'Прайсы поставщиков',
+            key: 'provider',
+            width: 220,
+            render: (_, row) => (
+                <Space direction="vertical" size={0}>
+                    <Text>{formatMoney(row.last_seen_provider_price)}</Text>
+                    <Text type="secondary">{formatDateTime(row.last_seen_provider_at)}</Text>
+                </Space>
+            ),
+        },
+        {
+            title: 'Сайт',
+            key: 'site',
+            width: 220,
+            render: (_, row) => (
+                <Space direction="vertical" size={0}>
+                    <Text>{formatMoney(row.last_seen_site_price)}</Text>
+                    <Text type="secondary">{formatDateTime(row.last_seen_site_at)}</Text>
+                </Space>
+            ),
+        },
+        {
+            title: 'Сигнал',
+            key: 'signal',
+            width: 170,
+            render: (_, row) => {
+                const prices = [row.last_seen_provider_price, row.last_seen_site_price]
+                    .map(Number)
+                    .filter((value) => Number.isFinite(value) && value > 0);
+                const bestPrice = prices.length ? Math.min(...prices) : null;
+                const limitReached = bestPrice != null
+                    && row.max_price != null
+                    && bestPrice <= Number(row.max_price);
+                return limitReached
+                    ? <Tag color="green">Цена достигнута</Tag>
+                    : <Tag color={bestPrice != null ? 'blue' : 'default'}>
+                        {bestPrice != null ? `Лучшая ${formatMoney(bestPrice)}` : 'Нет цены'}
+                    </Tag>;
+            },
+        },
+    ];
 
-                <Typography.Paragraph type="secondary">
-                    Шаговый индекс цен считается между двумя соседними
-                    загрузками прайса как медиана процента изменения цен по
-                    одинаковым SKU. Покрытие показывает долю SKU, которые
-                    присутствуют и в текущей, и в предыдущей загрузке.
-                </Typography.Paragraph>
+    const watchOfferColumns = (watchItem) => [
+        {
+            title: 'Поставщик',
+            dataIndex: 'supplier_name',
+            width: 170,
+            render: (value) => <Text strong>{value}</Text>,
+        },
+        {
+            title: 'Бренд / OEM',
+            key: 'identity',
+            width: 210,
+            render: (_, row) => `${row.brand_name} ${row.oem_number}`,
+        },
+        {
+            title: 'Цена',
+            dataIndex: 'price',
+            width: 130,
+            render: formatMoney,
+        },
+        {
+            title: 'Остаток',
+            dataIndex: 'quantity',
+            width: 100,
+            render: (value) => `${formatNumber(value)} шт.`,
+        },
+        {
+            title: 'Кратность',
+            dataIndex: 'min_qnt',
+            width: 90,
+        },
+        {
+            title: 'Срок',
+            key: 'delivery',
+            width: 120,
+            render: (_, row) => (
+                `${row.min_delivery_day ?? '—'}–${row.max_delivery_day ?? '—'} дн.`
+            ),
+        },
+        {
+            title: 'Заказать',
+            key: 'order',
+            width: 230,
+            render: (_, offer) => {
+                const offerKey = `${watchItem.id}:${offer.key}`;
+                return (
+                    <Space>
+                        <InputNumber
+                            min={offer.min_qnt || 1}
+                            max={offer.quantity || undefined}
+                            step={offer.min_qnt || 1}
+                            value={watchOrderQty[offerKey] ?? offer.min_qnt ?? 1}
+                            onChange={(value) => setWatchOrderQty((prev) => ({
+                                ...prev,
+                                [offerKey]: Number(value || offer.min_qnt || 1),
+                            }))}
+                            style={{ width: 82 }}
+                        />
+                        <Button
+                            type="primary"
+                            size="small"
+                            icon={<ShoppingCartOutlined />}
+                            disabled={!offer.hash_key}
+                            loading={watchSendingKey === offerKey}
+                            onClick={() => void sendWatchOffer(watchItem, offer)}
+                        >
+                            В заказ
+                        </Button>
+                    </Space>
+                );
+            },
+        },
+    ];
 
-                {loading ? (
-                    <Spin />
-                ) : (
-                    <>
-                        <LineChartCard
-                            title="Количество SKU"
-                            subtitle="Позиции с остатком > 0"
-                            details={
-                                'График показывает число уникальных SKU в каждой загрузке прайса. '
-                                + 'Если линия резко падает, поставщик убрал часть позиций, обнулил остатки '
-                                + 'или изменил состав файла.'
-                            }
-                            series={visibleSeries}
-                            valueKey="sku_count"
-                            digits={0}
+    const orderSummary = orderDynamics?.summary || {};
+    const dailyColumns = [
+        {
+            title: 'Дата',
+            dataIndex: 'date',
+            width: 90,
+            fixed: 'left',
+            render: formatShortDate,
+        },
+        {
+            title: 'Клиенты',
+            children: [
+                { title: 'Заказов', dataIndex: 'customer_order_count', width: 90 },
+                { title: 'Строк', dataIndex: 'customer_position_count', width: 80 },
+                { title: 'Штук', dataIndex: 'customer_qty', width: 90 },
+                {
+                    title: 'Сумма',
+                    dataIndex: 'customer_sum',
+                    width: 140,
+                    render: formatMoney,
+                },
+            ],
+        },
+        {
+            title: 'Поставщики',
+            children: [
+                { title: 'Заказов', dataIndex: 'supplier_order_count', width: 90 },
+                { title: 'Строк', dataIndex: 'supplier_position_count', width: 80 },
+                { title: 'Штук', dataIndex: 'supplier_qty', width: 90 },
+                {
+                    title: 'Сумма',
+                    dataIndex: 'supplier_sum',
+                    width: 140,
+                    render: formatMoney,
+                },
+            ],
+        },
+    ];
+
+    const partnerColumns = [
+        {
+            title: 'Контрагент',
+            dataIndex: 'partner_name',
+            ellipsis: true,
+            render: (value) => <Text strong>{value}</Text>,
+        },
+        { title: 'Заказов', dataIndex: 'order_count', width: 80 },
+        { title: 'Строк', dataIndex: 'position_count', width: 70 },
+        { title: 'Штук', dataIndex: 'quantity', width: 80 },
+        {
+            title: 'Сумма',
+            dataIndex: 'total_sum',
+            width: 130,
+            render: formatMoney,
+        },
+    ];
+
+    const profitDailyColumns = [
+        { title: 'Дата', dataIndex: 'date', width: 90, render: formatShortDate },
+        { title: 'Продано', dataIndex: 'quantity', width: 90, render: (value) => `${formatNumber(value)} шт.` },
+        { title: 'Выручка', dataIndex: 'revenue', width: 140, render: formatMoney },
+        { title: 'Себестоимость', dataIndex: 'cost', width: 140, render: formatMoney },
+        { title: 'Валовая прибыль', dataIndex: 'gross_profit', width: 150, render: formatMoney },
+        {
+            title: 'Без себестоимости',
+            dataIndex: 'uncosted_quantity',
+            width: 150,
+            render: (value) => value > 0
+                ? <Tag color="orange">{formatNumber(value)} шт.</Tag>
+                : <Tag color="green">0</Tag>,
+        },
+    ];
+
+    const marginRiskColumns = [
+        { title: 'Клиент', dataIndex: 'customer_name', ellipsis: true },
+        { title: 'Выручка', dataIndex: 'revenue', width: 130, render: formatMoney },
+        { title: 'Прибыль', dataIndex: 'gross_profit', width: 130, render: formatMoney },
+        {
+            title: 'Маржа',
+            dataIndex: 'margin_pct',
+            width: 100,
+            render: (value) => value == null
+                ? <Tag color="orange">Нет себест.</Tag>
+                : <Tag color={value < 10 ? 'red' : value < 20 ? 'orange' : 'green'}>{formatNumber(value, 1)}%</Tag>,
+        },
+    ];
+
+    const frozenStockColumns = [
+        {
+            title: 'Позиция',
+            key: 'position',
+            render: (_, row) => (
+                <Space direction="vertical" size={0}>
+                    <Text strong>{row.brand_name} {row.oem_number}</Text>
+                    <Text type="secondary" ellipsis>{row.autopart_name}</Text>
+                </Space>
+            ),
+        },
+        { title: 'Остаток', dataIndex: 'current_quantity', width: 90, render: (value) => `${formatNumber(value)} шт.` },
+        { title: 'Продажи 365д', dataIndex: 'sold_last_365_days', width: 110 },
+        { title: 'Дней покрытия', dataIndex: 'estimated_days_left', width: 120, render: (value) => value ?? 'Нет спроса' },
+        { title: 'Заморожено', dataIndex: 'frozen_value', width: 140, render: formatMoney },
+    ];
+
+    const reliabilityColumns = [
+        { title: 'Поставщик', dataIndex: 'provider_name', ellipsis: true, render: (value) => <Text strong>{value}</Text> },
+        { title: 'Заказов', dataIndex: 'order_count', width: 80 },
+        { title: 'Заказано', dataIndex: 'ordered_qty', width: 90, render: (value) => `${formatNumber(value)} шт.` },
+        { title: 'В работе', dataIndex: 'pending_qty', width: 90, render: (value) => `${formatNumber(value)} шт.` },
+        {
+            title: 'Исполнение',
+            dataIndex: 'fill_rate_pct',
+            width: 110,
+            render: (value) => value == null ? '—' : <Tag color={value < 70 ? 'red' : value < 90 ? 'orange' : 'green'}>{formatNumber(value, 1)}%</Tag>,
+        },
+        {
+            title: 'В срок',
+            dataIndex: 'on_time_pct',
+            width: 100,
+            render: (value) => value == null ? '—' : <Tag color={value < 70 ? 'red' : value < 90 ? 'orange' : 'green'}>{formatNumber(value, 1)}%</Tag>,
+        },
+        { title: 'Просрочено строк', dataIndex: 'late_line_count', width: 130 },
+        { title: 'Факт. срок', dataIndex: 'avg_lead_days', width: 100, render: (value) => value == null ? '—' : `${formatNumber(value, 1)} дн.` },
+    ];
+
+    const lostDemandColumns = [
+        {
+            title: 'Позиция',
+            key: 'position',
+            render: (_, row) => (
+                <Space direction="vertical" size={0}>
+                    <Text strong>{row.brand_name} {row.oem_number}</Text>
+                    <Text type="secondary" ellipsis>{row.autopart_name}</Text>
+                </Space>
+            ),
+        },
+        { title: 'Спрос 30д', dataIndex: 'sold_last_30_days', width: 90 },
+        { title: 'Спрос 365д', dataIndex: 'sold_last_365_days', width: 100 },
+        { title: 'Оценка дефицита 30д', dataIndex: 'estimated_qty_30', width: 150, render: (value) => `${formatNumber(value, 1)} шт.` },
+        { title: 'Цена продажи', dataIndex: 'sale_price', width: 130, render: formatMoney },
+        { title: 'Потенциальная выручка', dataIndex: 'estimated_revenue_30', width: 170, render: formatMoney },
+    ];
+
+    const priceColumns = [
+        {
+            title: 'Поставщик / источник',
+            key: 'provider',
+            fixed: 'left',
+            width: 230,
+            render: (_, row) => {
+                const latest = row.points?.[row.points.length - 1];
+                const previous = row.points?.[row.points.length - 2];
+                const skuDrop = latest && previous && previous.sku_count > 0
+                    ? ((latest.sku_count / previous.sku_count) - 1) * 100
+                    : 0;
+                const risks = [];
+                if (Number(latest?.step_index_pct || 0) >= 5) risks.push('рост цен');
+                if (Number(latest?.coverage_pct || 100) < 70) risks.push('смена состава');
+                if (skuDrop <= -20) risks.push('падение SKU');
+                return (
+                    <Space direction="vertical" size={2}>
+                        <Text strong>{joinProviderLabel(row)}</Text>
+                        <Text type="secondary">Последний: {formatShortDate(latest?.date)}</Text>
+                        {risks.length ? (
+                            <Tag color="red" icon={<WarningOutlined />}>
+                                {risks.join(', ')}
+                            </Tag>
+                        ) : <Tag color="green">Стабильно</Tag>}
+                    </Space>
+                );
+            },
+        },
+        {
+            title: 'SKU по загрузкам',
+            key: 'sku',
+            width: 520,
+            render: (_, row) => (
+                <MetricHistory points={row.points} valueKey="sku_count" />
+            ),
+        },
+        {
+            title: 'Остаток, шт.',
+            key: 'stock',
+            width: 520,
+            render: (_, row) => (
+                <MetricHistory points={row.points} valueKey="stock_total_qty" />
+            ),
+        },
+        {
+            title: 'Индекс цены',
+            key: 'index',
+            width: 520,
+            render: (_, row) => (
+                <MetricHistory
+                    points={row.points}
+                    valueKey="step_index_smooth_pct"
+                    suffix="%"
+                    digits={1}
+                />
+            ),
+        },
+        {
+            title: 'Покрытие',
+            key: 'coverage',
+            width: 520,
+            render: (_, row) => (
+                <MetricHistory
+                    points={row.points}
+                    valueKey="coverage_pct"
+                    suffix="%"
+                    digits={0}
+                />
+            ),
+        },
+    ];
+
+    const traceColumns = [
+        {
+            title: 'Задание',
+            key: 'job',
+            render: (_, row) => row.job_name || row.job_key || '—',
+        },
+        {
+            title: 'Старт',
+            dataIndex: 'started_at',
+            width: 135,
+            render: formatDateTime,
+        },
+        {
+            title: 'Длительность',
+            dataIndex: 'duration_ms',
+            width: 120,
+            render: formatDurationMs,
+        },
+        {
+            title: 'Память',
+            key: 'memory',
+            width: 190,
+            render: (_, row) => (
+                `${formatMemoryMb(row.rss_before_mb)} → ${formatMemoryMb(row.rss_after_mb)}`
+            ),
+        },
+        {
+            title: 'Статус',
+            dataIndex: 'status',
+            width: 100,
+            render: (value) => <Tag color={TRACE_STATUS_COLOR[value]}>{value}</Tag>,
+        },
+    ];
+
+    const pricelistTraceColumns = [
+        {
+            title: 'Поставщик / прайс',
+            key: 'provider',
+            render: (_, row) => (
+                row.details?.provider_name || row.details?.provider_config_name || '—'
+            ),
+        },
+        {
+            title: 'Файл',
+            dataIndex: 'source_filename',
+            ellipsis: true,
+        },
+        {
+            title: 'Старт',
+            dataIndex: 'started_at',
+            width: 135,
+            render: formatDateTime,
+        },
+        {
+            title: 'Длительность',
+            dataIndex: 'duration_ms',
+            width: 120,
+            render: formatDurationMs,
+        },
+        {
+            title: 'Строк после фильтров',
+            key: 'rows',
+            width: 150,
+            render: (_, row) => row.details?.stats?.rows_after_filters ?? '—',
+        },
+        {
+            title: 'Δ памяти',
+            dataIndex: 'memory_delta_mb',
+            width: 110,
+            render: formatMemoryMb,
+        },
+    ];
+
+    return (
+        <div className="dashboard-command-center">
+            <Space direction="vertical" size="large" style={{ width: '100%' }}>
+                <div className="dashboard-command-header">
+                    <div>
+                        <Title level={2} style={{ margin: 0 }}>Оперативная сводка</Title>
+                        <Text type="secondary">
+                            Продажи, закупки, отслеживаемые позиции и изменения прайсов
+                        </Text>
+                    </div>
+                    <Button
+                        type="primary"
+                        icon={<ReloadOutlined />}
+                        loading={loading}
+                        onClick={() => void loadData()}
+                    >
+                        Обновить всё
+                    </Button>
+                </div>
+
+                <Card
+                    title="Отслеживаемые позиции: предложения и быстрый заказ"
+                    extra={(
+                        <Select
+                            value={selectedCustomerId}
+                            style={{ width: 260 }}
+                            placeholder="Клиент для заказа"
+                            options={customers.map((item) => ({
+                                value: item.id,
+                                label: item.name || `Клиент #${item.id}`,
+                            }))}
+                            onChange={setSelectedCustomerId}
                         />
-                        <LineChartCard
-                            title="Шаговый индекс цен"
-                            subtitle="Сглаженный (rolling median)"
-                            details={
-                                'Индекс считается по SKU, которые есть и в текущей, и в предыдущей загрузке: '
-                                + 'медиана((цена_тек / цена_пред - 1) * 100). Значение выше 0% — цены в среднем '
-                                + 'растут, ниже 0% — снижаются. Для подавления «дёргания» '
-                                + `применяется сглаживание медианой по последним ${smoothWindow} шагам.`
-                            }
-                            series={visibleSeries}
-                            valueKey="step_index_smooth_pct"
-                            suffix="%"
-                            digits={2}
+                    )}
+                >
+                    <Alert
+                        type="info"
+                        showIcon
+                        style={{ marginBottom: 12 }}
+                        message="Показываем первые 10 отслеживаемых позиций и до 5 лучших предложений сайта по каждой. Запросы выполняются по две позиции одновременно, чтобы не перегружать сервер."
+                    />
+                    <Table
+                        rowKey="id"
+                        loading={loading}
+                        columns={watchColumns}
+                        dataSource={watchItems}
+                        pagination={false}
+                        scroll={{ x: 900 }}
+                        expandable={{
+                            expandedRowKeys: watchItems.map((item) => item.id),
+                            showExpandColumn: false,
+                            expandedRowRender: (watchItem) => (
+                                <Spin spinning={Boolean(watchOffersLoading[watchItem.id])}>
+                                    {(watchOffers[watchItem.id] || []).length ? (
+                                        <Table
+                                            rowKey="key"
+                                            size="small"
+                                            columns={watchOfferColumns(watchItem)}
+                                            dataSource={watchOffers[watchItem.id] || []}
+                                            pagination={false}
+                                            scroll={{ x: 1100 }}
+                                        />
+                                    ) : (
+                                        <Empty
+                                            image={Empty.PRESENTED_IMAGE_SIMPLE}
+                                            description="Предложения сайта не найдены или ещё загружаются"
+                                        />
+                                    )}
+                                </Spin>
+                            ),
+                        }}
+                    />
+                </Card>
+
+                <Card title="Заказы: динамика за 14 дней">
+                    <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                        <Col xs={12} lg={6}>
+                            <Card size="small"><Statistic title="Заказы клиентов" value={orderSummary.customer_order_count || 0} suffix={`· ${formatNumber(orderSummary.customer_qty || 0)} шт.`} /></Card>
+                        </Col>
+                        <Col xs={12} lg={6}>
+                            <Card size="small"><Statistic title="Сумма клиентского спроса" value={Number(orderSummary.customer_sum || 0)} precision={0} suffix="руб." /></Card>
+                        </Col>
+                        <Col xs={12} lg={6}>
+                            <Card size="small"><Statistic title="Заказы поставщикам" value={orderSummary.supplier_order_count || 0} suffix={`· ${formatNumber(orderSummary.supplier_qty || 0)} шт.`} /></Card>
+                        </Col>
+                        <Col xs={12} lg={6}>
+                            <Card size="small"><Statistic title="Покрытие закупкой" value={orderSummary.purchase_coverage_pct ?? 0} precision={1} suffix="%" /></Card>
+                        </Col>
+                    </Row>
+                    <Table
+                        rowKey="date"
+                        size="small"
+                        columns={dailyColumns}
+                        dataSource={[...(orderDynamics?.daily || [])].reverse()}
+                        pagination={false}
+                        scroll={{ x: 1000 }}
+                    />
+                    <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+                        <Col xs={24} xl={12}>
+                            <Card size="small" title="Кто больше заказывает у нас">
+                                <Table rowKey="partner_id" size="small" columns={partnerColumns} dataSource={orderDynamics?.customers || []} pagination={false} scroll={{ x: 650 }} />
+                            </Card>
+                        </Col>
+                        <Col xs={24} xl={12}>
+                            <Card size="small" title="У кого больше заказываем мы">
+                                <Table rowKey="partner_id" size="small" columns={partnerColumns} dataSource={orderDynamics?.suppliers || []} pagination={false} scroll={{ x: 650 }} />
+                            </Card>
+                        </Col>
+                    </Row>
+                </Card>
+
+                <div>
+                    <Title level={3} style={{ marginBottom: 4 }}>
+                        Управленческие отчёты
+                    </Title>
+                    <Text type="secondary">
+                        Маржа, складской капитал, исполнение поставщиков и риск
+                        потерянных продаж
+                    </Text>
+                </div>
+
+                <Card title="Маржа и утечка прибыли · последние 30 дней">
+                    <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                        <Col xs={12} lg={6}>
+                            <Card size="small">
+                                <Statistic
+                                    title="Выручка"
+                                    value={profitAnalytics.totals.revenue}
+                                    precision={0}
+                                    suffix="руб."
+                                />
+                            </Card>
+                        </Col>
+                        <Col xs={12} lg={6}>
+                            <Card size="small">
+                                <Statistic
+                                    title="Валовая прибыль"
+                                    value={profitAnalytics.totals.grossProfit}
+                                    precision={0}
+                                    suffix="руб."
+                                    valueStyle={{
+                                        color: profitAnalytics.totals.grossProfit < 0
+                                            ? '#cf1322'
+                                            : '#237804',
+                                    }}
+                                />
+                            </Card>
+                        </Col>
+                        <Col xs={12} lg={6}>
+                            <Card size="small">
+                                <Statistic
+                                    title="Валовая маржа"
+                                    value={profitAnalytics.totals.marginPct}
+                                    precision={1}
+                                    suffix="%"
+                                />
+                            </Card>
+                        </Col>
+                        <Col xs={12} lg={6}>
+                            <Card size="small">
+                                <Statistic
+                                    title="Покрытие себестоимостью"
+                                    value={profitAnalytics.totals.costCoveragePct}
+                                    precision={1}
+                                    suffix="%"
+                                />
+                            </Card>
+                        </Col>
+                    </Row>
+                    {profitAnalytics.totals.uncostedQuantity > 0 && (
+                        <Alert
+                            type="warning"
+                            showIcon
+                            style={{ marginBottom: 12 }}
+                            message={`${formatNumber(profitAnalytics.totals.uncostedQuantity)} шт. отгружено без известной себестоимости. Для них прибыль и общая маржа не считаются.`}
                         />
-                        <LineChartCard
-                            title="Покрытие ассортимента"
-                            subtitle="Пересечение SKU с прошлой загрузкой"
-                            details={
-                                'Показывает, какая доля SKU из предыдущей загрузки присутствует в текущей '
-                                + '(overlap / SKU_предыдущей * 100). Низкое покрытие означает сильную смену '
-                                + 'ассортимента и снижает достоверность сравнения индекса цен.'
-                            }
-                            series={visibleSeries}
-                            valueKey="coverage_pct"
-                            suffix="%"
-                            digits={2}
-                        />
-                    </>
-                )}
-            </Card>
-        </Space>
+                    )}
+                    <Row gutter={[16, 16]}>
+                        <Col xs={24} xl={14}>
+                            <Card size="small" title="Динамика по дням">
+                                <Table
+                                    rowKey="date"
+                                    size="small"
+                                    columns={profitDailyColumns}
+                                    dataSource={profitAnalytics.daily}
+                                    pagination={false}
+                                    scroll={{ x: 800 }}
+                                />
+                            </Card>
+                        </Col>
+                        <Col xs={24} xl={10}>
+                            <Card size="small" title="Клиенты с риском утечки маржи">
+                                <Table
+                                    rowKey="key"
+                                    size="small"
+                                    columns={marginRiskColumns}
+                                    dataSource={profitAnalytics.customers}
+                                    pagination={false}
+                                    scroll={{ x: 600 }}
+                                />
+                            </Card>
+                        </Col>
+                    </Row>
+                </Card>
+
+                <Card title="Складской капитал и залежи">
+                    <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                        <Col xs={12} lg={6}>
+                            <Card size="small"><Statistic title="Стоимость склада" value={Number(inventoryControl?.summary?.stock_value || 0)} precision={0} suffix="руб." /></Card>
+                        </Col>
+                        <Col xs={12} lg={6}>
+                            <Card size="small"><Statistic title="Мёртвый запас" value={Number(inventoryControl?.summary?.dead_stock_value || 0)} precision={0} suffix="руб." valueStyle={{ color: '#cf1322' }} /></Card>
+                        </Col>
+                        <Col xs={12} lg={6}>
+                            <Card size="small"><Statistic title="Медленных SKU" value={Number(inventoryControl?.summary?.slow_stock_skus || 0)} suffix="поз." /></Card>
+                        </Col>
+                        <Col xs={12} lg={6}>
+                            <Card size="small"><Statistic title="Оборачиваемость" value={inventoryControl?.summary?.inventory_turnover} precision={2} suffix="раз/год" /></Card>
+                        </Col>
+                    </Row>
+                    <Table
+                        rowKey={(row) => `${row.state}:${row.autopart_id || row.oem_number}`}
+                        size="small"
+                        columns={frozenStockColumns}
+                        dataSource={frozenStockRows}
+                        pagination={false}
+                        scroll={{ x: 850 }}
+                    />
+                </Card>
+
+                <Card title="Надёжность поставщиков · последние 90 дней">
+                    <Alert
+                        type="info"
+                        showIcon
+                        style={{ marginBottom: 12 }}
+                        message="Исполнение считается только по полученным строкам и строкам, чей обещанный срок уже истёк. Незавершённые заказы показаны отдельно в колонке «В работе»."
+                    />
+                    <Table
+                        rowKey="provider_id"
+                        size="small"
+                        columns={reliabilityColumns}
+                        dataSource={supplierReliability}
+                        pagination={{ pageSize: 10, showSizeChanger: true }}
+                        scroll={{ x: 1050 }}
+                    />
+                </Card>
+
+                <Card title="Риск потерянных продаж · нет остатка при наличии спроса">
+                    <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                        <Col xs={12} lg={6}>
+                            <Card size="small"><Statistic title="Дефицитных SKU" value={Number(inventoryControl?.summary?.out_of_stock_with_demand_skus || 0)} suffix="поз." /></Card>
+                        </Col>
+                        <Col xs={12} lg={6}>
+                            <Card size="small"><Statistic title="Уровень наличия" value={inventoryControl?.summary?.service_level_pct} precision={1} suffix="%" /></Card>
+                        </Col>
+                        <Col xs={24} lg={12}>
+                            <Alert
+                                type="warning"
+                                showIcon
+                                message="Потенциальная выручка — оценка по среднему спросу и текущей продажной цене, а не подтверждённая потеря."
+                            />
+                        </Col>
+                    </Row>
+                    <Table
+                        rowKey={(row) => row.autopart_id || row.oem_number}
+                        size="small"
+                        columns={lostDemandColumns}
+                        dataSource={lostDemandRows}
+                        pagination={false}
+                        scroll={{ x: 1050 }}
+                    />
+                </Card>
+
+                <Card
+                    title="Динамика прайсов поставщиков"
+                    extra={(
+                        <Space wrap>
+                            <InputNumber min={7} max={365} value={days} onChange={(value) => setDays(Number(value || 30))} addonAfter="дней" />
+                            <InputNumber min={3} max={12} value={pointsLimit} onChange={(value) => setPointsLimit(Number(value || 8))} addonAfter="загрузок" />
+                            <Select mode="multiple" value={selectedProviderConfigIds} onChange={setSelectedProviderConfigIds} options={providerOptions} maxTagCount={2} style={{ minWidth: 320 }} placeholder="Поставщики" />
+                        </Space>
+                    )}
+                >
+                    <Table
+                        rowKey="provider_config_id"
+                        size="small"
+                        loading={loading}
+                        columns={priceColumns}
+                        dataSource={visibleSeries}
+                        pagination={{ pageSize: 10, showSizeChanger: true }}
+                        scroll={{ x: 2350 }}
+                    />
+                </Card>
+
+                <Card title="Техническая устойчивость">
+                    <Row gutter={[16, 16]}>
+                        <Col xs={24} xl={12}>
+                            <Card size="small" title="Самые тяжёлые регламенты">
+                                <Table rowKey="id" size="small" columns={traceColumns} dataSource={slowestSchedulerJobs} pagination={false} scroll={{ x: 800 }} />
+                            </Card>
+                        </Col>
+                        <Col xs={24} xl={12}>
+                            <Card size="small" title="Последние ошибки регламентов">
+                                <Table
+                                    rowKey="id"
+                                    size="small"
+                                    columns={[
+                                        ...traceColumns.slice(0, 3),
+                                        {
+                                            title: 'Ошибка',
+                                            key: 'error',
+                                            ellipsis: true,
+                                            render: (_, row) => row.details?.error || 'Без текста',
+                                        },
+                                    ]}
+                                    dataSource={latestSchedulerErrors}
+                                    pagination={false}
+                                    scroll={{ x: 800 }}
+                                />
+                            </Card>
+                        </Col>
+                    </Row>
+                    <Card size="small" title="Самые медленные прайсы" style={{ marginTop: 16 }}>
+                        <Table rowKey="id" size="small" columns={pricelistTraceColumns} dataSource={slowestPricelists} pagination={false} scroll={{ x: 900 }} />
+                    </Card>
+                </Card>
+            </Space>
+        </div>
     );
 };
 
