@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
     Alert,
     Button,
@@ -241,8 +241,7 @@ const AutopurchaseTopPage = () => {
         }
     };
 
-    const columns = useMemo(
-        () => [
+    const columns = [
             {
                 title: '#',
                 dataIndex: 'rank',
@@ -349,9 +348,7 @@ const AutopurchaseTopPage = () => {
                     ) : <Text type="secondary">расчётно</Text>
                 ),
             },
-        ],
-        [topActionLoadingId, topDrafts, topSource]
-    );
+        ];
 
     return (
         <Space direction="vertical" size="large" style={{ width: '100%' }}>

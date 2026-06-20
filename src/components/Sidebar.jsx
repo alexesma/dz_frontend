@@ -113,9 +113,48 @@ const Sidebar = () => {
             <Menu.Item key="1">
                 <Link to="/">Dashboard</Link>
             </Menu.Item>
-            <Menu.Item key="2">
-                <Link to="/restock">Формирование заказов</Link>
-            </Menu.Item>
+            <Menu.SubMenu
+                key="autopart-search"
+                icon={<SearchOutlined />}
+                title="Запчасти"
+            >
+                <Menu.Item key="autopart-nomenclature">
+                    <Link to="/autoparts/nomenclature">Номенклатура</Link>
+                </Menu.Item>
+                <Menu.Item key="autopart-crosses" icon={<TagsOutlined />}>
+                    <Link to="/autoparts/crosses">Кроссы</Link>
+                </Menu.Item>
+                <Menu.Item key="autopart-invalid-crosses" icon={<CloseOutlined />}>
+                    <Link to="/autoparts/invalid-crosses">Неверные кроссы</Link>
+                </Menu.Item>
+                <Menu.Item key="autopart-offers">
+                    <Link to="/autoparts/offers">Прайсы по артикулу</Link>
+                </Menu.Item>
+                <Menu.Item key="orders-tracking" icon={<SendOutlined />}>
+                    <Link to="/orders/tracking">Отслеживание заказов</Link>
+                </Menu.Item>
+                <Menu.Item key="watchlist" icon={<EyeOutlined />}>
+                    <Link to="/watchlist">Отслеживаемые позиции</Link>
+                </Menu.Item>
+                <Menu.Item key="orders-autopurchase" icon={<ClockCircleOutlined />}>
+                    <Link to="/orders/autopurchase">Автозаказ</Link>
+                </Menu.Item>
+                <Menu.Item key="orders-autopurchase-top" icon={<TableOutlined />}>
+                    <Link to="/orders/autopurchase-top">Топ для автозаказа</Link>
+                </Menu.Item>
+                <Menu.Item key="orders-inventory-control" icon={<LineChartOutlined />}>
+                    <Link to="/orders/inventory-control">Контроль запасов</Link>
+                </Menu.Item>
+                <Menu.Item key="orders-exceptions" icon={<AuditOutlined />}>
+                    <Link to="/orders/exceptions">Очередь исключений</Link>
+                </Menu.Item>
+                <Menu.Item
+                    key="autopart-price-history"
+                    icon={<LineChartOutlined />}
+                >
+                    <Link to="/autoparts/price-history">График цен</Link>
+                </Menu.Item>
+            </Menu.SubMenu>
             <Menu.Item key="3">
                 <Link to="/orders">Заказы поставщикам</Link>
             </Menu.Item>
@@ -196,48 +235,6 @@ const Sidebar = () => {
                     <Link to="/warehouse/transfer">Перемещение</Link>
                 </Menu.Item>
             </Menu.SubMenu>
-            <Menu.SubMenu
-                key="autopart-search"
-                icon={<SearchOutlined />}
-                title="Запчасти"
-            >
-                <Menu.Item key="autopart-nomenclature">
-                    <Link to="/autoparts/nomenclature">Номенклатура</Link>
-                </Menu.Item>
-                <Menu.Item key="autopart-crosses" icon={<TagsOutlined />}>
-                    <Link to="/autoparts/crosses">Кроссы</Link>
-                </Menu.Item>
-                <Menu.Item key="autopart-invalid-crosses" icon={<CloseOutlined />}>
-                    <Link to="/autoparts/invalid-crosses">Неверные кроссы</Link>
-                </Menu.Item>
-                <Menu.Item key="autopart-offers">
-                    <Link to="/autoparts/offers">Прайсы по артикулу</Link>
-                </Menu.Item>
-                <Menu.Item key="orders-tracking" icon={<SendOutlined />}>
-                    <Link to="/orders/tracking">Отслеживание наших заказов</Link>
-                </Menu.Item>
-                <Menu.Item key="orders-autopurchase" icon={<ClockCircleOutlined />}>
-                    <Link to="/orders/autopurchase">Автозаказ</Link>
-                </Menu.Item>
-                <Menu.Item key="orders-autopurchase-top" icon={<TableOutlined />}>
-                    <Link to="/orders/autopurchase-top">Топ для автозаказа</Link>
-                </Menu.Item>
-                <Menu.Item key="orders-inventory-control" icon={<LineChartOutlined />}>
-                    <Link to="/orders/inventory-control">Контроль запасов</Link>
-                </Menu.Item>
-                <Menu.Item key="orders-exceptions" icon={<AuditOutlined />}>
-                    <Link to="/orders/exceptions">Очередь исключений</Link>
-                </Menu.Item>
-                <Menu.Item
-                    key="autopart-price-history"
-                    icon={<LineChartOutlined />}
-                >
-                    <Link to="/autoparts/price-history">График цен</Link>
-                </Menu.Item>
-            </Menu.SubMenu>
-            <Menu.Item key="watchlist" icon={<EyeOutlined />}>
-                <Link to="/watchlist">Отслеживание позиций</Link>
-            </Menu.Item>
             <Menu.Item key="inbox" icon={<MailOutlined />}>
                 <Link to="/inbox">Входящие письма</Link>
             </Menu.Item>
@@ -276,6 +273,9 @@ const Sidebar = () => {
                     </Menu.Item>
                 </Menu.SubMenu>
             )}
+            <Menu.Item key="2">
+                <Link to="/restock">Формирование заказов</Link>
+            </Menu.Item>
             <Menu.Item key="logout" onClick={handleLogout}>
                 Выйти
             </Menu.Item>

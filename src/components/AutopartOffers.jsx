@@ -728,6 +728,7 @@ const AutopartOffers = () => {
     const [selectedCartKeys, setSelectedCartKeys] = useState([]);
     const [loading, setLoading] = useState(false);
     const [remoteOffers, setRemoteOffers] = useState([]);
+    const [remoteOffersPage, setRemoteOffersPage] = useState(1);
     const [siteExactOffers, setSiteExactOffers] = useState([]);
     const [siteOffersWithCrosses, setSiteOffersWithCrosses] = useState([]);
     const [siteExactCrossOffers, setSiteExactCrossOffers] = useState([]);
@@ -2423,6 +2424,10 @@ const AutopartOffers = () => {
 
     const handleSearch = async (values, options = {}) => {
         const oemValue = (values.oem || '').trim();
+        if (oemValue) {
+            setRemoteOffersPage(1);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
         const effectivePartialSearch =
             options.partialSearch ?? partialSearch;
         const resolvedBrand = await executeSearch(
@@ -4798,7 +4803,12 @@ const AutopartOffers = () => {
                         columns={remoteColumns}
                         dataSource={remoteOffers}
                         size="small"
-                        pagination={{ pageSize: 20, showSizeChanger: false }}
+                        pagination={{
+                            current: remoteOffersPage,
+                            pageSize: 20,
+                            showSizeChanger: false,
+                            onChange: (page) => setRemoteOffersPage(page),
+                        }}
                         tableLayout="fixed"
                         scroll={{ x: 840 }}
                     />

@@ -1460,7 +1460,7 @@ const AutopurchasePage = () => {
                 });
                 if (emitSuccessMessage) {
                     message.success(
-                        `Dragonzap: оформлен заказ по поставщику ${group.provider_name} (${successIds.length} поз.). Перезапусти расчёт, чтобы увидеть позиции уже в пути.`
+                        `Dragonzap: оформлен заказ по поставщику ${group.provider_name} (${successIds.length} поз.). Статусы строк обновлены.`
                     );
                 }
             }
@@ -1518,14 +1518,11 @@ const AutopurchasePage = () => {
     ]);
 
     const handleSendDraftGroup = useCallback(async (group) => {
-        const result = await sendDraftGroupInternal(group, {
+        await sendDraftGroupInternal(group, {
             refreshAfter: true,
             emitSuccessMessage: true,
         });
-        if (Number(result?.successCount || 0) > 0) {
-            await handleRerunCurrentSettings();
-        }
-    }, [handleRerunCurrentSettings, sendDraftGroupInternal]);
+    }, [sendDraftGroupInternal]);
 
     const handleSendSelectedGroups = useCallback(async () => {
         if (!selectedDraftGroupKeys.length) {
@@ -1551,7 +1548,6 @@ const AutopurchasePage = () => {
         let totalSuccess = 0;
         let totalFailed = 0;
         let processedGroups = 0;
-        let shouldRerun = false;
         try {
             for (const group of targetGroups) {
                 const result = await sendDraftGroupInternal(group, {
@@ -1563,9 +1559,6 @@ const AutopurchasePage = () => {
                 }
                 totalSuccess += Number(result?.successCount || 0);
                 totalFailed += Number(result?.failedCount || 0);
-                if (Number(result?.successCount || 0) > 0) {
-                    shouldRerun = true;
-                }
             }
             await fetchRuns();
             await fetchRunItems(selectedRunId, filters);
@@ -1576,9 +1569,6 @@ const AutopurchasePage = () => {
                     `Группы Dragonzap обработаны: групп ${processedGroups}, успешно ${totalSuccess}, с ошибками ${totalFailed}.`
                 );
             }
-            if (shouldRerun) {
-                await handleRerunCurrentSettings();
-            }
         } finally {
             setBulkSendLoading(false);
         }
@@ -1587,7 +1577,6 @@ const AutopurchasePage = () => {
         fetchRunItems,
         fetchRuns,
         filters,
-        handleRerunCurrentSettings,
         draftGroups,
         selectedCustomerId,
         selectedDraftGroupKeys,
@@ -1615,7 +1604,6 @@ const AutopurchasePage = () => {
         let totalSuccess = 0;
         let totalFailed = 0;
         let processedGroups = 0;
-        let shouldRerun = false;
         try {
             for (const group of targetGroups) {
                 const result = await sendDraftGroupInternal(group, {
@@ -1627,9 +1615,6 @@ const AutopurchasePage = () => {
                 }
                 totalSuccess += Number(result?.successCount || 0);
                 totalFailed += Number(result?.failedCount || 0);
-                if (Number(result?.successCount || 0) > 0) {
-                    shouldRerun = true;
-                }
             }
             await fetchRuns();
             await fetchRunItems(selectedRunId, filters);
@@ -1639,9 +1624,6 @@ const AutopurchasePage = () => {
                 message.success(
                     `Все доступные группы обработаны: групп ${processedGroups}, успешно ${totalSuccess}, с ошибками ${totalFailed}.`
                 );
-            }
-            if (shouldRerun) {
-                await handleRerunCurrentSettings();
             }
         } finally {
             setBulkSendLoading(false);
@@ -1653,7 +1635,6 @@ const AutopurchasePage = () => {
         fetchRuns,
         filters,
         getSendableGroupItems,
-        handleRerunCurrentSettings,
         selectedCustomerId,
         selectedRunId,
         sendDraftGroupInternal,
