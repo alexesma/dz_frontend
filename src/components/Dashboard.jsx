@@ -23,6 +23,10 @@ import {
 import { getCustomersSummary } from '../api/customers';
 import { sendDragonzapOrder } from '../api/autoparts';
 import {
+    createManualSupplierOrder,
+    sendSupplierOrders,
+} from '../api/customerOrders';
+import {
     getInventoryControl,
     getOrderDynamics,
     getSupplierPriceTrends,
@@ -104,7 +108,9 @@ const normalizeSiteOffers = (payload, watchItem) => {
             : [];
     return rawRows
         .map((row, index) => ({
-            key: row.hash_key || row.system_hash || `${watchItem.id}-${index}`,
+            key: row.key || row.hash_key || row.system_hash || `${watchItem.id}-${index}`,
+            source_type: row.source_type || 'site',
+            autopart_id: row.autopart_id ?? null,
             supplier_id: row.supplier_id ?? null,
             supplier_name:
                 row.sup_logo || row.supplier_name || row.provider_name || 'Dragonzap',
@@ -274,7 +280,12 @@ const Dashboard = () => {
             const savedQuantities = {};
             nextWatchItems.forEach((item) => {
                 const offers = normalizeSiteOffers(
-                    item.last_seen_site_offers,
+                    [
+                        ...(item.last_seen_site_offers || []),
+                        ...(item.last_seen_provider_offer
+                            ? [item.last_seen_provider_offer]
+                            : []),
+                    ],
                     item
                 );
                 savedOffers[item.id] = offers;
@@ -469,14 +480,6 @@ const Dashboard = () => {
     }, []);
 
     const sendWatchOffer = useCallback(async (watchItem, offer) => {
-        if (!selectedCustomerId) {
-            message.warning('Выберите клиента для оформления заказа');
-            return;
-        }
-        if (!offer.hash_key) {
-            message.warning('У предложения нет hash_key, отправка с Dashboard недоступна');
-            return;
-        }
         const offerKey = `${watchItem.id}:${offer.key}`;
         const quantity = Math.max(
             Number(watchOrderQty[offerKey] || offer.min_qnt || 1),
@@ -484,6 +487,42 @@ const Dashboard = () => {
         );
         setWatchSendingKey(offerKey);
         try {
+            if (offer.source_type === 'supplier') {
+                const { data: createdOrder } = await createManualSupplierOrder({
+                    provider_id: Number(offer.supplier_id),
+                    items: [{
+                        autopart_id: offer.autopart_id,
+                        oem: offer.oem_number,
+                        brand: offer.brand_name,
+                        name: offer.autopart_name,
+                        quantity,
+                        price: offer.price,
+                        min_delivery_day: offer.min_delivery_day,
+                        max_delivery_day: offer.max_delivery_day,
+                    }],
+                });
+                const { data: sent } = await sendSupplierOrders([
+                    createdOrder.id,
+                ]);
+                if (Number(sent?.sent || 0) < 1) {
+                    throw new Error('Письмо поставщику не отправлено');
+                }
+                message.success(
+                    `Заказ отправлен поставщику ${offer.supplier_name}: ${quantity} шт.`
+                );
+                await refreshOrderDynamics();
+                return;
+            }
+            if (!selectedCustomerId) {
+                message.warning('Выберите клиента для заказа на сайте');
+                return;
+            }
+            if (!offer.hash_key) {
+                message.warning(
+                    'Снимок предложения сайта не содержит ключ заказа'
+                );
+                return;
+            }
             const response = await sendDragonzapOrder(
                 [{
                     autopart_id: null,
@@ -516,9 +555,7 @@ const Dashboard = () => {
                 message.warning(firstError || 'Позиция не была отправлена в заказ');
             }
         } catch (error) {
-            message.error(
-                error?.response?.data?.detail || 'Не удалось оформить заказ'
-            );
+            message.error(error?.response?.data?.detail || error?.message || 'Не удалось оформить заказ');
         } finally {
             setWatchSendingKey(null);
         }
@@ -582,9 +619,16 @@ const Dashboard = () => {
     const watchOfferColumns = (watchItem) => [
         {
             title: 'Поставщик',
-            dataIndex: 'supplier_name',
+            key: 'supplier',
             width: 170,
-            render: (value) => <Text strong>{value}</Text>,
+            render: (_, row) => (
+                <Space direction="vertical" size={0}>
+                    <Text strong>{row.supplier_name}</Text>
+                    <Tag color={row.source_type === 'supplier' ? 'blue' : 'green'}>
+                        {row.source_type === 'supplier' ? 'Прайс / email' : 'Сайт'}
+                    </Tag>
+                </Space>
+            ),
         },
         {
             title: 'Бренд / OEM',
@@ -640,11 +684,15 @@ const Dashboard = () => {
                             type="primary"
                             size="small"
                             icon={<ShoppingCartOutlined />}
-                            disabled={!offer.hash_key}
+                            disabled={offer.source_type === 'supplier'
+                                ? !offer.supplier_id
+                                : !offer.hash_key}
                             loading={watchSendingKey === offerKey}
                             onClick={() => void sendWatchOffer(watchItem, offer)}
                         >
-                            В заказ
+                            {offer.source_type === 'supplier'
+                                ? 'Отправить'
+                                : 'На сайт'}
                         </Button>
                     </Space>
                 );
@@ -1006,7 +1054,7 @@ const Dashboard = () => {
                         type="info"
                         showIcon
                         style={{ marginBottom: 12 }}
-                        message="Показываем первые 10 отслеживаемых позиций и до 5 предложений из последней регламентной проверки сайта. Открытие Dashboard не запускает новый запрос."
+                        message="Показываем предложения из последней регламентной проверки сайта и последнего прайса поставщика. Позиция с сайта сразу оформляется на сайте, позиция из прайса отправляется поставщику по email."
                     />
                     <Table
                         rowKey="id"
