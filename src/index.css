@@ -1075,9 +1075,8 @@ body {
 
 .dashboard-history-strip {
   display: grid;
-  grid-template-columns: repeat(8, minmax(56px, 1fr));
+  grid-template-columns: repeat(4, minmax(68px, 1fr));
   gap: 4px;
-  min-width: 480px;
 }
 
 .dashboard-history-cell {
@@ -1105,6 +1104,45 @@ body {
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.dashboard-trend-list {
+  display: grid;
+  gap: 4px;
+}
+
+.dashboard-trend-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 4px 7px;
+  border-radius: 5px;
+  background: #f8fafc;
+}
+
+.dashboard-trend-row > span {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.dashboard-trend-row > strong {
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dashboard-trend-detail {
+  display: inline-block;
+  margin-left: 10px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.dashboard-watch-offers .ant-table-cell {
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 @media (max-width: 768px) {

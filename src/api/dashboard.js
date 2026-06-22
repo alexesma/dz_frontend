@@ -9,5 +9,8 @@ export const getInventoryControl = (params = {}) =>
 export const getOrderDynamics = (params = {}) =>
     api.get('/dashboard/order-dynamics', { params });
 
+export const getOrderMargin = (params = {}) =>
+    api.get('/dashboard/order-margin', { params });
+
 export const getSupplierReliability = (params = {}) =>
     api.get('/dashboard/supplier-reliability', { params });

@@ -29,6 +29,7 @@ import {
 import {
     getInventoryControl,
     getOrderDynamics,
+    getOrderMargin,
     getSupplierPriceTrends,
     getSupplierReliability,
 } from '../api/dashboard';
@@ -135,7 +136,7 @@ const normalizeSiteOffers = (payload, watchItem) => {
 };
 
 const MetricHistory = ({ points, valueKey, suffix = '', digits = 0, render }) => {
-    const values = (points || []).slice(-8);
+    const values = (points || []).slice(-4);
     if (!values.length) return <Text type="secondary">Нет данных</Text>;
     return (
         <div className="dashboard-history-strip">
@@ -163,6 +164,24 @@ const MetricHistory = ({ points, valueKey, suffix = '', digits = 0, render }) =>
     );
 };
 
+const TrendHistoryList = ({ points, render }) => {
+    const values = (points || []).slice(-4).reverse();
+    if (!values.length) return <Text type="secondary">Нет данных</Text>;
+    return (
+        <div className="dashboard-trend-list">
+            {values.map((point, index) => (
+                <div
+                    className="dashboard-trend-row"
+                    key={`${point.pricelist_id}-${index}`}
+                >
+                    <span>{formatDateTime(point.uploaded_at) || formatShortDate(point.date)}</span>
+                    <strong>{render(point)}</strong>
+                </div>
+            ))}
+        </div>
+    );
+};
+
 // Цвет «для покупателя»: рост цены — плохо (красный), падение — хорошо (зелёный).
 const renderPriceDelta = (value) => {
     const numeric = Number(value);
@@ -183,6 +202,7 @@ const Dashboard = () => {
     const [series, setSeries] = useState([]);
     const [orderDynamics, setOrderDynamics] = useState(null);
     const [profitRows, setProfitRows] = useState([]);
+    const [profitIsEstimated, setProfitIsEstimated] = useState(false);
     const [inventoryControl, setInventoryControl] = useState(null);
     const [supplierReliability, setSupplierReliability] = useState([]);
     const [watchItems, setWatchItems] = useState([]);
@@ -204,7 +224,7 @@ const Dashboard = () => {
                     points_limit: pointsLimit,
                     smooth_window: smoothWindow,
                 }),
-                getOrderDynamics({ days: 14, partner_limit: 10 }),
+                getOrderDynamics({ days: 14, partner_limit: 1000 }),
                 getExecutionTraces({ trace_type: 'scheduler_job', limit: 200 }),
                 getExecutionTraces({
                     trace_type: 'scheduler_job',
@@ -224,6 +244,7 @@ const Dashboard = () => {
                         Date.now() - (29 * 24 * 60 * 60 * 1000)
                     ).toISOString(),
                 }),
+                getOrderMargin({ days: 30 }),
                 getInventoryControl(),
                 getSupplierReliability({ days: 90 }),
             ]);
@@ -236,6 +257,7 @@ const Dashboard = () => {
                 watchResponse,
                 customersResponse,
                 profitResponse,
+                orderMarginResponse,
                 inventoryResponse,
                 reliabilityResponse,
             ] = requests.map((result) => (
@@ -296,8 +318,17 @@ const Dashboard = () => {
             setWatchOffers(savedOffers);
             setWatchOrderQty(savedQuantities);
             setCustomers(nextCustomers);
+            const shipmentProfitRows = Array.isArray(profitResponse?.data)
+                ? profitResponse.data
+                : [];
+            const estimatedProfitRows = Array.isArray(orderMarginResponse?.data?.rows)
+                ? orderMarginResponse.data.rows
+                : [];
             setProfitRows(
-                Array.isArray(profitResponse?.data) ? profitResponse.data : []
+                shipmentProfitRows.length ? shipmentProfitRows : estimatedProfitRows
+            );
+            setProfitIsEstimated(
+                shipmentProfitRows.length === 0 && estimatedProfitRows.length > 0
             );
             setInventoryControl(inventoryResponse?.data || null);
             setSupplierReliability(
@@ -475,7 +506,7 @@ const Dashboard = () => {
     );
 
     const refreshOrderDynamics = useCallback(async () => {
-        const response = await getOrderDynamics({ days: 14, partner_limit: 10 });
+        const response = await getOrderDynamics({ days: 14, partner_limit: 1000 });
         setOrderDynamics(response?.data || null);
     }, []);
 
@@ -620,7 +651,7 @@ const Dashboard = () => {
         {
             title: 'Поставщик',
             key: 'supplier',
-            width: 170,
+            width: '22%',
             render: (_, row) => (
                 <Space direction="vertical" size={0}>
                     <Text strong>{row.supplier_name}</Text>
@@ -631,44 +662,37 @@ const Dashboard = () => {
             ),
         },
         {
-            title: 'Бренд / OEM',
-            key: 'identity',
-            width: 210,
-            render: (_, row) => `${row.brand_name} ${row.oem_number}`,
-        },
-        {
-            title: 'Цена',
-            dataIndex: 'price',
-            width: 130,
-            render: formatMoney,
-        },
-        {
-            title: 'Остаток',
-            dataIndex: 'quantity',
-            width: 100,
-            render: (value) => `${formatNumber(value)} шт.`,
-        },
-        {
-            title: 'Кратность',
-            dataIndex: 'min_qnt',
-            width: 90,
-        },
-        {
-            title: 'Срок',
-            key: 'delivery',
-            width: 120,
+            title: 'Предложение',
+            key: 'offer',
+            width: '30%',
             render: (_, row) => (
-                `${row.min_delivery_day ?? '—'}–${row.max_delivery_day ?? '—'} дн.`
+                <Space direction="vertical" size={0}>
+                    <Text strong>{row.brand_name} {row.oem_number}</Text>
+                    <Text>{formatMoney(row.price)}</Text>
+                </Space>
+            ),
+        },
+        {
+            title: 'Наличие и срок',
+            key: 'terms',
+            width: '22%',
+            render: (_, row) => (
+                <Space direction="vertical" size={0}>
+                    <Text>{formatNumber(row.quantity)} шт. · кратн. {row.min_qnt}</Text>
+                    <Text type="secondary">
+                        {row.min_delivery_day ?? '—'}–{row.max_delivery_day ?? '—'} дн.
+                    </Text>
+                </Space>
             ),
         },
         {
             title: 'Заказать',
             key: 'order',
-            width: 230,
+            width: '26%',
             render: (_, offer) => {
                 const offerKey = `${watchItem.id}:${offer.key}`;
                 return (
-                    <Space>
+                    <Space wrap size={6}>
                         <InputNumber
                             min={offer.min_qnt || 1}
                             max={offer.quantity || undefined}
@@ -739,7 +763,7 @@ const Dashboard = () => {
         },
     ];
 
-    const partnerColumns = [
+    const customerPartnerColumns = [
         {
             title: 'Контрагент',
             dataIndex: 'partner_name',
@@ -747,14 +771,19 @@ const Dashboard = () => {
             render: (value) => <Text strong>{value}</Text>,
         },
         { title: 'Заказов', dataIndex: 'order_count', width: 80 },
-        { title: 'Строк', dataIndex: 'position_count', width: 70 },
-        { title: 'Штук', dataIndex: 'quantity', width: 80 },
         {
             title: 'Сумма',
             dataIndex: 'total_sum',
             width: 130,
             render: formatMoney,
         },
+    ];
+
+    const supplierPartnerColumns = [
+        ...customerPartnerColumns.slice(0, 2),
+        { title: 'Строк', dataIndex: 'position_count', width: 70 },
+        { title: 'Штук', dataIndex: 'quantity', width: 80 },
+        customerPartnerColumns[2],
     ];
 
     const profitDailyColumns = [
@@ -883,32 +912,24 @@ const Dashboard = () => {
         {
             title: 'Артикулов в прайсе',
             key: 'total_sku',
-            width: 520,
+            width: 360,
             render: (_, row) => (
                 <MetricHistory points={row.points} valueKey="total_sku_count" />
             ),
         },
         {
-            title: 'Из них в наличии',
-            key: 'sku',
-            width: 520,
-            render: (_, row) => (
-                <MetricHistory points={row.points} valueKey="sku_count" />
-            ),
-        },
-        {
-            title: 'Изменение цены / доля изменивших',
+            title: 'Изменение цены',
             key: 'index',
-            width: 520,
+            width: 390,
             render: (_, row) => (
-                <MetricHistory
+                <TrendHistoryList
                     points={row.points}
                     render={(point) => (
                         <span>
-                            {renderPriceDelta(point.step_index_pct)}
+                            Δ {renderPriceDelta(point.step_index_pct)}
                             {point.changed_share_pct != null ? (
-                                <span style={{ color: '#64748b', fontSize: 11 }}>
-                                    {` (${formatNumber(point.changed_share_pct, 0)}% поз.)`}
+                                <span className="dashboard-trend-detail">
+                                    {`изменилось ${formatNumber(point.changed_share_pct, 0)}% позиций`}
                                 </span>
                             ) : null}
                         </span>
@@ -917,11 +938,11 @@ const Dashboard = () => {
             ),
         },
         {
-            title: 'Изменение состава (+новых / −ушло)',
+            title: 'Изменение состава',
             key: 'coverage',
-            width: 520,
+            width: 340,
             render: (_, row) => (
-                <MetricHistory
+                <TrendHistoryList
                     points={row.points}
                     render={(point) => {
                         if (point.new_positions == null && point.removed_positions == null) {
@@ -931,9 +952,10 @@ const Dashboard = () => {
                         const removed = Number(point.removed_positions || 0);
                         return (
                             <span>
-                                <span style={{ color: '#16a34a' }}>+{added}</span>
-                                {' / '}
-                                <span style={{ color: '#dc2626' }}>−{removed}</span>
+                                <span style={{ color: '#16a34a' }}>Новых +{added}</span>
+                                <span className="dashboard-trend-detail" style={{ color: '#dc2626' }}>
+                                    Ушло −{removed}
+                                </span>
                             </span>
                         );
                     }}
@@ -1074,7 +1096,8 @@ const Dashboard = () => {
                                         columns={watchOfferColumns(watchItem)}
                                         dataSource={watchOffers[watchItem.id] || []}
                                         pagination={false}
-                                        scroll={{ x: 1100 }}
+                                        tableLayout="fixed"
+                                        className="dashboard-watch-offers"
                                     />
                                 ) : (
                                     <Empty
@@ -1115,12 +1138,12 @@ const Dashboard = () => {
                     <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
                         <Col xs={24} xl={12}>
                             <Card size="small" title="Кто больше заказывает у нас">
-                                <Table rowKey="partner_id" size="small" columns={partnerColumns} dataSource={orderDynamics?.customers || []} pagination={false} scroll={{ x: 650 }} />
+                                <Table rowKey="partner_id" size="small" columns={customerPartnerColumns} dataSource={orderDynamics?.customers || []} pagination={{ pageSize: 10, showSizeChanger: true }} />
                             </Card>
                         </Col>
                         <Col xs={24} xl={12}>
                             <Card size="small" title="У кого больше заказываем мы">
-                                <Table rowKey="partner_id" size="small" columns={partnerColumns} dataSource={orderDynamics?.suppliers || []} pagination={false} scroll={{ x: 650 }} />
+                                <Table rowKey="partner_id" size="small" columns={supplierPartnerColumns} dataSource={orderDynamics?.suppliers || []} pagination={{ pageSize: 10, showSizeChanger: true }} scroll={{ x: 650 }} />
                             </Card>
                         </Col>
                     </Row>
@@ -1137,6 +1160,14 @@ const Dashboard = () => {
                 </div>
 
                 <Card title="Маржа и утечка прибыли · последние 30 дней">
+                    {profitIsEstimated && (
+                        <Alert
+                            type="info"
+                            showIcon
+                            style={{ marginBottom: 12 }}
+                            message="Проведённых отгрузок за период нет: показана расчётная маржа по исполненным строкам заказов клиентов. Для точной маржи нужен полный складской цикл."
+                        />
+                    )}
                     <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
                         <Col xs={12} lg={6}>
                             <Card size="small">
@@ -1189,7 +1220,15 @@ const Dashboard = () => {
                             type="warning"
                             showIcon
                             style={{ marginBottom: 12 }}
-                            message={`${formatNumber(profitAnalytics.totals.uncostedQuantity)} шт. отгружено без известной себестоимости. Для них прибыль и общая маржа не считаются.`}
+                            message={`${formatNumber(profitAnalytics.totals.uncostedQuantity)} шт. ${profitIsEstimated ? 'исполнено' : 'отгружено'} без известной себестоимости. Для них прибыль и общая маржа не считаются.`}
+                        />
+                    )}
+                    {!profitRows.length && (
+                        <Alert
+                            type="warning"
+                            showIcon
+                            style={{ marginBottom: 12 }}
+                            message="За последние 30 дней нет ни проведённых отгрузок, ни исполненных строк клиентских заказов, поэтому маржу рассчитать пока нельзя."
                         />
                     )}
                     <Row gutter={[16, 16]}>
@@ -1221,6 +1260,14 @@ const Dashboard = () => {
                 </Card>
 
                 <Card title="Складской капитал и залежи">
+                    {Number(inventoryControl?.summary?.valuation_fallback_skus || 0) > 0 && (
+                        <Alert
+                            type="info"
+                            showIcon
+                            style={{ marginBottom: 12 }}
+                            message={`Для ${formatNumber(inventoryControl.summary.valuation_fallback_skus)} позиций закупочная цена не заполнена: стоимость оценена по цене последнего нашего прайса.`}
+                        />
+                    )}
                     <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
                         <Col xs={12} lg={6}>
                             <Card size="small"><Statistic title="Стоимость склада" value={Number(inventoryControl?.summary?.stock_value || 0)} precision={0} suffix="руб." /></Card>
@@ -1305,7 +1352,7 @@ const Dashboard = () => {
                         columns={priceColumns}
                         dataSource={visibleSeries}
                         pagination={{ pageSize: 10, showSizeChanger: true }}
-                        scroll={{ x: 2350 }}
+                        scroll={{ x: 1320 }}
                     />
                 </Card>
 
