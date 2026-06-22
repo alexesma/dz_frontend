@@ -128,28 +128,44 @@ const normalizeSiteOffers = (payload, watchItem) => {
         .slice(0, 5);
 };
 
-const MetricHistory = ({ points, valueKey, suffix = '', digits = 0 }) => {
+const MetricHistory = ({ points, valueKey, suffix = '', digits = 0, render }) => {
     const values = (points || []).slice(-8);
     if (!values.length) return <Text type="secondary">Нет данных</Text>;
     return (
         <div className="dashboard-history-strip">
-            {values.map((point) => {
-                const numeric = Number(point?.[valueKey]);
-                const value = Number.isFinite(numeric)
-                    ? `${formatNumber(numeric, digits)}${suffix}`
-                    : '—';
+            {values.map((point, idx) => {
+                let content;
+                if (render) {
+                    content = render(point);
+                } else {
+                    const numeric = Number(point?.[valueKey]);
+                    content = Number.isFinite(numeric)
+                        ? `${formatNumber(numeric, digits)}${suffix}`
+                        : '—';
+                }
                 return (
                     <div
-                        key={`${point.pricelist_id}-${valueKey}`}
+                        key={`${point.pricelist_id}-${valueKey || 'r'}-${idx}`}
                         className="dashboard-history-cell"
                     >
-                        <span>{formatShortDate(point.date)}</span>
-                        <strong>{value}</strong>
+                        <span>{formatDateTime(point.uploaded_at) || formatShortDate(point.date)}</span>
+                        <strong>{content}</strong>
                     </div>
                 );
             })}
         </div>
     );
+};
+
+// Цвет «для покупателя»: рост цены — плохо (красный), падение — хорошо (зелёный).
+const renderPriceDelta = (value) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric === 0) {
+        return <span style={{ color: '#94a3b8' }}>0%</span>;
+    }
+    const color = numeric > 0 ? '#dc2626' : '#16a34a';
+    const sign = numeric > 0 ? '+' : '';
+    return <span style={{ color }}>{`${sign}${formatNumber(numeric, 1)}%`}</span>;
 };
 
 const Dashboard = () => {
@@ -789,19 +805,26 @@ const Dashboard = () => {
             render: (_, row) => {
                 const latest = row.points?.[row.points.length - 1];
                 const previous = row.points?.[row.points.length - 2];
-                const skuDrop = latest && previous && previous.sku_count > 0
-                    ? ((latest.sku_count / previous.sku_count) - 1) * 100
+                const skuDrop = latest && previous && previous.total_sku_count > 0
+                    ? ((latest.total_sku_count / previous.total_sku_count) - 1) * 100
                     : 0;
+                const net = Number(row.net_price_change_pct ?? 0);
                 const risks = [];
-                if (Number(latest?.step_index_pct || 0) >= 5) risks.push('рост цен');
-                if (Number(latest?.coverage_pct || 100) < 70) risks.push('смена состава');
-                if (skuDrop <= -20) risks.push('падение SKU');
+                if (net >= 5) risks.push('рост цен');
+                if (net <= -5) risks.push('падение цен');
+                if (Number(latest?.coverage_pct ?? 100) < 70) risks.push('смена состава');
+                if (skuDrop <= -20) risks.push('падение ассортимента');
                 return (
                     <Space direction="vertical" size={2}>
                         <Text strong>{joinProviderLabel(row)}</Text>
-                        <Text type="secondary">Последний: {formatShortDate(latest?.date)}</Text>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                            Загружен: {formatDateTime(row.latest_uploaded_at) || formatShortDate(latest?.date)}
+                        </Text>
+                        <span style={{ fontSize: 12 }}>
+                            Цена к началу периода: {renderPriceDelta(row.net_price_change_pct)}
+                        </span>
                         {risks.length ? (
-                            <Tag color="red" icon={<WarningOutlined />}>
+                            <Tag color={net >= 5 ? 'red' : 'orange'} icon={<WarningOutlined />}>
                                 {risks.join(', ')}
                             </Tag>
                         ) : <Tag color="green">Стабильно</Tag>}
@@ -810,7 +833,15 @@ const Dashboard = () => {
             },
         },
         {
-            title: 'SKU по загрузкам',
+            title: 'Артикулов в прайсе',
+            key: 'total_sku',
+            width: 520,
+            render: (_, row) => (
+                <MetricHistory points={row.points} valueKey="total_sku_count" />
+            ),
+        },
+        {
+            title: 'Из них в наличии',
             key: 'sku',
             width: 520,
             render: (_, row) => (
@@ -818,36 +849,46 @@ const Dashboard = () => {
             ),
         },
         {
-            title: 'Остаток, шт.',
-            key: 'stock',
-            width: 520,
-            render: (_, row) => (
-                <MetricHistory points={row.points} valueKey="stock_total_qty" />
-            ),
-        },
-        {
-            title: 'Индекс цены',
+            title: 'Изменение цены / доля изменивших',
             key: 'index',
             width: 520,
             render: (_, row) => (
                 <MetricHistory
                     points={row.points}
-                    valueKey="step_index_smooth_pct"
-                    suffix="%"
-                    digits={1}
+                    render={(point) => (
+                        <span>
+                            {renderPriceDelta(point.step_index_pct)}
+                            {point.changed_share_pct != null ? (
+                                <span style={{ color: '#64748b', fontSize: 11 }}>
+                                    {` (${formatNumber(point.changed_share_pct, 0)}% поз.)`}
+                                </span>
+                            ) : null}
+                        </span>
+                    )}
                 />
             ),
         },
         {
-            title: 'Покрытие',
+            title: 'Изменение состава (+новых / −ушло)',
             key: 'coverage',
             width: 520,
             render: (_, row) => (
                 <MetricHistory
                     points={row.points}
-                    valueKey="coverage_pct"
-                    suffix="%"
-                    digits={0}
+                    render={(point) => {
+                        if (point.new_positions == null && point.removed_positions == null) {
+                            return <span style={{ color: '#94a3b8' }}>—</span>;
+                        }
+                        const added = Number(point.new_positions || 0);
+                        const removed = Number(point.removed_positions || 0);
+                        return (
+                            <span>
+                                <span style={{ color: '#16a34a' }}>+{added}</span>
+                                {' / '}
+                                <span style={{ color: '#dc2626' }}>−{removed}</span>
+                            </span>
+                        );
+                    }}
                 />
             ),
         },

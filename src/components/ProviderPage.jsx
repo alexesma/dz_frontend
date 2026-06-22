@@ -1637,7 +1637,9 @@ const ProviderPage = () => {
                         loading={downloading[record.id]}
                         onClick={() => handleDownloadPricelist(record.id)}
                         title="Скачать прайс-лист из email"
-                    />
+                    >
+                        Загрузить из почты
+                    </Button>
                     <Button
                         type="primary"
                         size="small"
