@@ -1107,6 +1107,7 @@ const CustomerPage = () => {
             provider_config_id: values.provider_config_id,
             enabled: values.enabled ?? true,
             markup: normalizeSourceMarkup(values.markup),
+            mask_price_quantity: !!values.mask_price_quantity,
             brand_markups: parseBrandMarkupsFromRows(values.brand_markups),
             brand_filters: values.brand_filter_type
                 ? {
@@ -1179,6 +1180,7 @@ const CustomerPage = () => {
             provider_config_id: source.provider_config_id,
             enabled: source.enabled,
             markup: normalizeSourceMarkup(source.markup),
+            mask_price_quantity: !!source.mask_price_quantity,
             brand_markups: brandMarkupsRows,
             brand_filter_type: source.brand_filters?.type || null,
             brand_ids: (source.brand_filters?.brands || []).map((v) => String(v)),
@@ -2231,6 +2233,16 @@ const CustomerPage = () => {
                                 },
                             },
                             {
+                                title: 'Маскировка',
+                                dataIndex: 'mask_price_quantity',
+                                key: 'mask_price_quantity',
+                                render: (value, record) => (
+                                    <Tag color={value && !record.is_own_price ? 'blue' : 'default'}>
+                                        {value && !record.is_own_price ? 'Цена/остаток' : 'Нет'}
+                                    </Tag>
+                                ),
+                            },
+                            {
                                 title: 'Статус',
                                 dataIndex: 'enabled',
                                 key: 'enabled',
@@ -2297,7 +2309,7 @@ const CustomerPage = () => {
                             }
                         }}
                         scrollToFirstError
-                        initialValues={{ enabled: true, markup: 1.0 }}
+                        initialValues={{ enabled: true, markup: 1.0, mask_price_quantity: false }}
                     >
                         <Form.Item
                             name="provider_config_id"
@@ -2353,6 +2365,16 @@ const CustomerPage = () => {
                                 <Switch />
                             </Form.Item>
                         </div>
+
+                        <Form.Item
+                            name="mask_price_quantity"
+                            label="Маскировать цену и остаток поставщика"
+                            valuePropName="checked"
+                            tooltip="Работает только для внешних поставщиков при формировании клиентского прайса. Наш собственный прайс не изменяется."
+                            extra="Период стабильности: неделя. Цена округляется до рублей, наценка немного плавает, остаток уменьшается/сжимается."
+                        >
+                            <Switch />
+                        </Form.Item>
 
                         <Form.Item
                             name="dz_expand_brands"

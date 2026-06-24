@@ -1386,6 +1386,9 @@ const ProviderPage = () => {
         if (maxQty !== null && maxQty !== undefined) {
             lines.push(`Макс. кол-во: ${maxQty}`);
         }
+        if (row?.mask_price_quantity) {
+            lines.push("Маскировка цены/остатка: включена");
+        }
         const brandMarkups = row?.brand_markups || {};
         const markupEntries = Object.entries(brandMarkups);
         if (markupEntries.length) {
@@ -1427,6 +1430,7 @@ const ProviderPage = () => {
         sourceUsageForm.setFieldsValue({
             enabled: sourceUsage?.enabled ?? true,
             markup: Number(sourceUsage?.markup || 1.0),
+            mask_price_quantity: !!sourceUsage?.mask_price_quantity,
             brand_markups: brandMarkupsRows,
             brand_filter_type: sourceUsage?.brand_filters?.type || null,
             brand_ids_text: (sourceUsage?.brand_filters?.brands || []).join(", "),
@@ -1461,6 +1465,7 @@ const ProviderPage = () => {
                     Number.isFinite(markupValue) && markupValue > 0
                         ? markupValue
                         : 1.0,
+                mask_price_quantity: !!values.mask_price_quantity,
                 brand_filters: values.brand_filter_type
                     ? {
                         type: values.brand_filter_type,
@@ -1813,6 +1818,16 @@ const ProviderPage = () => {
             dataIndex: "markup",
             key: "markup",
             render: (value) => Number(value || 1).toFixed(3),
+        },
+        {
+            title: "Маскировка",
+            dataIndex: "mask_price_quantity",
+            key: "mask_price_quantity",
+            render: (value) => (
+                <Tag color={value ? "blue" : "default"}>
+                    {value ? "Цена/остаток" : "Нет"}
+                </Tag>
+            ),
         },
         {
             title: "Фильтры",
@@ -3461,6 +3476,15 @@ const ProviderPage = () => {
                             name="enabled"
                             label="Включено"
                             valuePropName="checked"
+                        >
+                            <Switch />
+                        </Form.Item>
+                        <Form.Item
+                            name="mask_price_quantity"
+                            label="Маскировать цену и остаток"
+                            valuePropName="checked"
+                            tooltip="Применяется только при трансляции этого поставщика в клиентский прайс. Исходный прайс поставщика не меняется."
+                            extra="Стабильно в рамках недели: цена округляется до рублей, остаток уменьшается/сжимается."
                         >
                             <Switch />
                         </Form.Item>
