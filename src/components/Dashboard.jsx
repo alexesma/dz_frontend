@@ -13,6 +13,7 @@ import {
     InputNumber,
     Row,
     Select,
+    Segmented,
     Space,
     Statistic,
     Table,
@@ -201,6 +202,7 @@ const Dashboard = () => {
     const smoothWindow = 3;
     const [series, setSeries] = useState([]);
     const [orderDynamics, setOrderDynamics] = useState(null);
+    const [supplierPurchaseMode, setSupplierPurchaseMode] = useState('warehouse');
     const [profitRows, setProfitRows] = useState([]);
     const [profitIsEstimated, setProfitIsEstimated] = useState(false);
     const [inventoryControl, setInventoryControl] = useState(null);
@@ -487,7 +489,7 @@ const Dashboard = () => {
             ...(inventoryControl?.slow_movers || []),
         ].sort(
             (a, b) => Number(b.frozen_value || 0) - Number(a.frozen_value || 0)
-        ).slice(0, 10),
+        ).slice(0, 50),
         [inventoryControl]
     );
 
@@ -501,9 +503,13 @@ const Dashboard = () => {
             };
         }).sort(
             (a, b) => b.estimated_revenue_30 - a.estimated_revenue_30
-        ).slice(0, 10),
+        ).slice(0, 50),
         [inventoryControl]
     );
+
+    const supplierPartnerRows = supplierPurchaseMode === 'cross_docking'
+        ? orderDynamics?.suppliers_cross_docking || []
+        : orderDynamics?.suppliers_warehouse || orderDynamics?.suppliers || [];
 
     const refreshOrderDynamics = useCallback(async () => {
         const response = await getOrderDynamics({ days: 14, partner_limit: 1000 });
@@ -780,10 +786,7 @@ const Dashboard = () => {
     ];
 
     const supplierPartnerColumns = [
-        ...customerPartnerColumns.slice(0, 2),
-        { title: 'Строк', dataIndex: 'position_count', width: 70 },
-        { title: 'Штук', dataIndex: 'quantity', width: 80 },
-        customerPartnerColumns[2],
+        ...customerPartnerColumns,
     ];
 
     const profitDailyColumns = [
@@ -828,7 +831,19 @@ const Dashboard = () => {
             ),
         },
         { title: 'Остаток', dataIndex: 'current_quantity', width: 90, render: (value) => `${formatNumber(value)} шт.` },
-        { title: 'Продажи 365д', dataIndex: 'sold_last_365_days', width: 110 },
+        {
+            title: 'Продажи / наличие',
+            key: 'demand',
+            width: 150,
+            render: (_, row) => (
+                <Space direction="vertical" size={0}>
+                    <Text>{formatNumber(row.sold_last_365_days)} шт. за 365д</Text>
+                    <Text type="secondary">
+                        наличие: {formatNumber(row.in_stock_days_365 || 0)} дн.
+                    </Text>
+                </Space>
+            ),
+        },
         { title: 'Дней покрытия', dataIndex: 'estimated_days_left', width: 120, render: (value) => value ?? 'Нет спроса' },
         { title: 'Заморожено', dataIndex: 'frozen_value', width: 140, render: formatMoney },
     ];
@@ -866,8 +881,28 @@ const Dashboard = () => {
                 </Space>
             ),
         },
-        { title: 'Спрос 30д', dataIndex: 'sold_last_30_days', width: 90 },
-        { title: 'Спрос 365д', dataIndex: 'sold_last_365_days', width: 100 },
+        {
+            title: 'Спрос 30д',
+            key: 'demand_30',
+            width: 105,
+            render: (_, row) => (
+                <Space direction="vertical" size={0}>
+                    <Text>{formatNumber(row.sold_last_30_days)}</Text>
+                    <Text type="secondary">{formatNumber(row.in_stock_days_30 || 0)} дн. нал.</Text>
+                </Space>
+            ),
+        },
+        {
+            title: 'Спрос 365д',
+            key: 'demand_365',
+            width: 110,
+            render: (_, row) => (
+                <Space direction="vertical" size={0}>
+                    <Text>{formatNumber(row.sold_last_365_days)}</Text>
+                    <Text type="secondary">{formatNumber(row.in_stock_days_365 || 0)} дн. нал.</Text>
+                </Space>
+            ),
+        },
         { title: 'Оценка дефицита 30д', dataIndex: 'estimated_qty_30', width: 150, render: (value) => `${formatNumber(value, 1)} шт.` },
         { title: 'Цена продажи', dataIndex: 'sale_price', width: 130, render: formatMoney },
         { title: 'Потенциальная выручка', dataIndex: 'estimated_revenue_30', width: 170, render: formatMoney },
@@ -1142,8 +1177,28 @@ const Dashboard = () => {
                             </Card>
                         </Col>
                         <Col xs={24} xl={12}>
-                            <Card size="small" title="У кого больше заказываем мы">
-                                <Table rowKey="partner_id" size="small" columns={supplierPartnerColumns} dataSource={orderDynamics?.suppliers || []} pagination={{ pageSize: 10, showSizeChanger: true }} scroll={{ x: 650 }} />
+                            <Card
+                                size="small"
+                                title="У кого больше заказываем мы"
+                                extra={(
+                                    <Segmented
+                                        size="small"
+                                        value={supplierPurchaseMode}
+                                        onChange={setSupplierPurchaseMode}
+                                        options={[
+                                            { label: 'На склад', value: 'warehouse' },
+                                            { label: 'Cross-docking', value: 'cross_docking' },
+                                        ]}
+                                    />
+                                )}
+                            >
+                                <Table
+                                    rowKey="partner_id"
+                                    size="small"
+                                    columns={supplierPartnerColumns}
+                                    dataSource={supplierPartnerRows}
+                                    pagination={{ pageSize: 10, showSizeChanger: true }}
+                                />
                             </Card>
                         </Col>
                     </Row>
@@ -1287,8 +1342,8 @@ const Dashboard = () => {
                         size="small"
                         columns={frozenStockColumns}
                         dataSource={frozenStockRows}
-                        pagination={false}
-                        scroll={{ x: 850 }}
+                        pagination={{ pageSize: 10, showSizeChanger: false }}
+                        scroll={{ x: 900 }}
                     />
                 </Card>
 
@@ -1330,7 +1385,7 @@ const Dashboard = () => {
                         size="small"
                         columns={lostDemandColumns}
                         dataSource={lostDemandRows}
-                        pagination={false}
+                        pagination={{ pageSize: 10, showSizeChanger: false }}
                         scroll={{ x: 1050 }}
                     />
                 </Card>
