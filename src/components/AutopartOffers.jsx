@@ -60,6 +60,7 @@ import {
     updateTrackingOrderItem,
 } from '../api/orderTracking';
 import TrackingOrderHistoryTable from './TrackingOrderHistoryTable';
+import useAuth from '../context/useAuth';
 
 const OEM_HISTORY_KEY = 'autopart_oem_history_v1';
 const STATE_STORAGE_KEY = 'autopart_offers_state_v2';
@@ -712,6 +713,7 @@ const renderHighlightedOem = (value, query) => {
 
 const AutopartOffers = () => {
     const [form] = Form.useForm();
+    const { user } = useAuth();
     const [offers, setOffers] = useState([]);
     const [historicalOffers, setHistoricalOffers] = useState([]);
     const [trackingHistory, setTrackingHistory] = useState([]);
@@ -791,6 +793,30 @@ const AutopartOffers = () => {
         }
     }, [replaceItemId, replaceSource]);
     const activeLookupQuery = String(oemInput || '').trim();
+    const isAdmin = user?.role === 'admin';
+
+    const reloadTrackingHistory = useCallback(async () => {
+        const oemValue = String(currentOem || oemInput || '').trim();
+        if (!oemValue) {
+            return;
+        }
+        setTrackingHistoryLoading(true);
+        try {
+            const { data } = await getTrackingOrderItems({
+                oem: oemValue,
+                brand: selectedBrand || undefined,
+                sync_site: false,
+                include_crosses: true,
+                limit: 1000,
+            });
+            setTrackingHistory(Array.isArray(data) ? data : []);
+        } catch (error) {
+            const detail = error?.response?.data?.detail;
+            message.error(detail || 'Не удалось обновить историю заказов');
+        } finally {
+            setTrackingHistoryLoading(false);
+        }
+    }, [currentOem, oemInput, selectedBrand]);
 
     const brandOptions = useMemo(() => {
         const options = [];
@@ -4317,6 +4343,9 @@ const AutopartOffers = () => {
                     loading={trackingHistoryLoading}
                     compact
                     showOem
+                    allowEdit={isAdmin}
+                    allowStatusMappingSuggestion={isAdmin}
+                    onUpdated={reloadTrackingHistory}
                     emptyText="По этой позиции за последний год заказов через программу не было"
                 />
                 <Spin spinning={trackingInsightsLoading}>

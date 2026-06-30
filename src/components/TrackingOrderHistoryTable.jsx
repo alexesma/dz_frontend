@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import {
     Button,
     InputNumber,
+    Modal,
     Select,
     Table,
     Tag,
@@ -11,6 +12,7 @@ import {
 } from 'antd';
 import { RedoOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { createOrderStatusMapping } from '../api/orderStatusMappings';
 import { updateTrackingOrderItem } from '../api/orderTracking';
 
 const SOURCE_LABELS = {
@@ -61,7 +63,7 @@ const STATUS_LABELS = {
 };
 
 const STATUS_OPTIONS_BY_SOURCE = {
-    supplier: ['NEW', 'SCHEDULED', 'SENT', 'ERROR'],
+    supplier: ['NEW', 'SCHEDULED', 'SENT', 'ERROR', 'REMOVED'],
     site: [
         'ORDERED',
         'PROCESSING',
@@ -191,6 +193,7 @@ const TrackingOrderHistoryTable = ({
     compact = false,
     showOem = true,
     allowEdit = false,
+    allowStatusMappingSuggestion = false,
     onUpdated,
     onReorder,
     emptyText = 'История заказов пока пуста',
@@ -198,6 +201,59 @@ const TrackingOrderHistoryTable = ({
     const [drafts, setDrafts] = useState({});
     const [savingKey, setSavingKey] = useState(null);
     const [reorderingKey, setReorderingKey] = useState(null);
+
+    const suggestStatusMapping = useCallback((record, nextStatus) => {
+        if (
+            !allowStatusMappingSuggestion ||
+            !record?.needs_status_mapping ||
+            !record?.external_status_raw ||
+            record.source_type !== 'site' ||
+            !nextStatus
+        ) {
+            return;
+        }
+        const sourceKey = record.external_status_source || 'DRAGONZAP_SITE';
+        Modal.confirm({
+            title: 'Запомнить этот внешний статус?',
+            content: (
+                <div>
+                    <div>
+                        Внешний статус «{record.external_status_raw}» сейчас не
+                        сопоставлен. Создать правило, чтобы в следующий раз он
+                        автоматически становился «{STATUS_LABELS[nextStatus] || nextStatus}»?
+                    </div>
+                    <div style={{ marginTop: 8, color: '#64748b' }}>
+                        Правило будет применено к источнику {sourceKey}
+                        {record.provider_name ? ` и поставщику ${record.provider_name}` : ''}.
+                    </div>
+                </div>
+            ),
+            okText: 'Создать правило',
+            cancelText: 'Только изменить эту строку',
+            async onOk() {
+                try {
+                    await createOrderStatusMapping({
+                        source_key: sourceKey,
+                        provider_id: record.provider_id || null,
+                        raw_status: record.external_status_raw,
+                        match_mode: 'EXACT',
+                        internal_order_status: nextStatus,
+                        priority: 100,
+                        is_active: true,
+                        apply_existing: true,
+                        notes: 'Создано из истории заказов в поиске по артикулу',
+                    });
+                    message.success('Правило статуса создано');
+                    if (onUpdated) {
+                        onUpdated();
+                    }
+                } catch (error) {
+                    const detail = error?.response?.data?.detail;
+                    message.error(detail || 'Не удалось создать правило статуса');
+                }
+            },
+        });
+    }, [allowStatusMappingSuggestion, onUpdated]);
 
     const updateDraft = useCallback((rowKey, patch) => {
         setDrafts((prev) => ({
@@ -256,6 +312,9 @@ const TrackingOrderHistoryTable = ({
                 if (onUpdated) {
                     onUpdated();
                 }
+                if (payload.status) {
+                    suggestStatusMapping(record, payload.status);
+                }
             } catch (error) {
                 const detail = error?.response?.data?.detail;
                 message.error(detail || 'Не удалось обновить заказ');
@@ -263,7 +322,7 @@ const TrackingOrderHistoryTable = ({
                 setSavingKey(null);
             }
         },
-        [drafts, onUpdated]
+        [drafts, onUpdated, suggestStatusMapping]
     );
 
     const columns = useMemo(() => {
@@ -548,12 +607,48 @@ const TrackingOrderHistoryTable = ({
                         );
                     }
                     const rowKey = `${record.source_type}:${record.item_id}`;
+                    const options = buildStatusOptions(record.source_type);
+                    const currentValue = (
+                        drafts[rowKey]?.status ??
+                        record.order_status ??
+                        record.current_status
+                    );
+                    const selectOptions = options.some(
+                        (option) => option.value === currentValue
+                    ) || !currentValue
+                        ? options
+                        : [
+                            {
+                                value: currentValue,
+                                label: STATUS_LABELS[currentValue] || currentValue,
+                            },
+                            ...options,
+                        ];
+                    const statusSelect = (
+                        <Select
+                            size="small"
+                            style={{ width: '100%' }}
+                            value={currentValue}
+                            options={selectOptions}
+                            disabled={savingKey === rowKey}
+                            onChange={(next) => {
+                                updateDraft(rowKey, { status: next });
+                                void handleSave(record, { status: next });
+                            }}
+                        />
+                    );
                     if (record.source_type === 'site') {
                         return (
                             <Tooltip
                                 title={
                                     <div>
-                                        <div>Статус синхронизируется с Dragonzap автоматически</div>
+                                        <div>
+                                            Статус обычно синхронизируется с
+                                            Dragonzap автоматически. Ручное
+                                            изменение сохраняет текущую строку,
+                                            но следующая синхронизация может
+                                            снова обновить её.
+                                        </div>
                                         {record.external_status_raw ? (
                                             <div>Внешний: {record.external_status_raw}</div>
                                         ) : null}
@@ -561,28 +656,14 @@ const TrackingOrderHistoryTable = ({
                                 }
                             >
                                 <div>
-                                    {statusTag}
+                                    {statusSelect}
                                     {externalHint}
                                 </div>
                             </Tooltip>
                         );
                     }
                     return (
-                        <Select
-                            size="small"
-                            style={{ width: '100%' }}
-                            value={
-                                drafts[rowKey]?.status ??
-                                record.order_status ??
-                                record.current_status
-                            }
-                            options={buildStatusOptions(record.source_type)}
-                            disabled={savingKey === rowKey}
-                            onChange={(next) => {
-                                updateDraft(rowKey, { status: next });
-                                void handleSave(record, { status: next });
-                            }}
-                        />
+                        statusSelect
                     );
                 },
             }

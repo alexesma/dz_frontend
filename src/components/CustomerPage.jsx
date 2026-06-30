@@ -26,6 +26,21 @@ import {
 } from '@ant-design/icons';
 
 const { Text } = Typography;
+
+const ConfigSection = ({ title, children }) => (
+    <Collapse
+        defaultActiveKey={[]}
+        style={{ marginBottom: 16, background: '#fff' }}
+        items={[
+            {
+                key: title,
+                label: <Text strong>{title}</Text>,
+                children,
+            },
+        ]}
+    />
+);
+
 import {
     getCustomerById,
     createCustomer,
@@ -267,6 +282,9 @@ const CustomerPage = () => {
                 ship_mode: 'REPLACE_QTY',
                 price_tolerance_pct: 2,
                 price_warning_pct: 5,
+                forward_customer_order_enabled: false,
+                forward_customer_order_email: null,
+                forward_customer_order_email_account_id: null,
                 is_active: true,
             });
         }
@@ -823,6 +841,10 @@ const CustomerPage = () => {
                     .split(',')
                     .map((v) => v.trim())
                     .filter((v) => v),
+                forward_customer_order_enabled: Boolean(values.forward_customer_order_enabled),
+                forward_customer_order_email: values.forward_customer_order_email?.trim() || null,
+                forward_customer_order_email_account_id:
+                    values.forward_customer_order_email_account_id || null,
             };
             if (orderConfig) {
                 await updateCustomerOrderConfig(orderConfig.id, payload);
@@ -1602,7 +1624,7 @@ const CustomerPage = () => {
                         <Input placeholder="Например: ZZAP" />
                     </Form.Item>
 
-                    <Divider>Наценки (коэффициенты)</Divider>
+                    <ConfigSection title="Наценки (коэффициенты)">
 
                     <div className="responsive-form-grid-3">
                         <Form.Item
@@ -1643,7 +1665,9 @@ const CustomerPage = () => {
                         </Form.Item>
                     </div>
 
-                    <Divider>Фильтры прайс-листа</Divider>
+                    </ConfigSection>
+
+                    <ConfigSection title="Фильтры прайс-листа">
 
                     <Card
                         size="small"
@@ -1735,7 +1759,9 @@ const CustomerPage = () => {
                         </Form.List>
                     </Card>
 
-                    <Divider>Расписание отправки</Divider>
+                    </ConfigSection>
+
+                    <ConfigSection title="Расписание отправки">
 
                     <Form.Item
                         name="schedule_days"
@@ -1790,7 +1816,9 @@ const CustomerPage = () => {
                         />
                     </Form.Item>
 
-                    <Divider>Файл прайса</Divider>
+                    </ConfigSection>
+
+                    <ConfigSection title="Файл прайса">
 
                     <div className="responsive-form-grid-3">
                         <Form.Item
@@ -1841,6 +1869,8 @@ const CustomerPage = () => {
                         <Switch />
                     </Form.Item>
 
+                    </ConfigSection>
+
                     <Form.Item>
                         <Space wrap>
                             <Button
@@ -1866,8 +1896,8 @@ const CustomerPage = () => {
                         </Space>
                     </Form.Item>
                 </Form>
-                <Divider>Обработка заказов</Divider>
-                {editingConfig ? (
+                <ConfigSection title="Обработка заказов">
+                    {editingConfig ? (
                     <Form
                         form={orderConfigForm}
                         layout="vertical"
@@ -1896,6 +1926,7 @@ const CustomerPage = () => {
                             ship_mode: 'REPLACE_QTY',
                             price_tolerance_pct: 2,
                             price_warning_pct: 5,
+                            forward_customer_order_enabled: false,
                             is_active: true,
                         }}
                     >
@@ -2136,6 +2167,70 @@ const CustomerPage = () => {
                                     </Form.Item>
                                 </div>
                             </div>
+
+                            <div>
+                                <Text strong>Переотправка заказа клиента</Text>
+                                <Alert
+                                    style={{ marginTop: 12, marginBottom: 12 }}
+                                    type="info"
+                                    showIcon
+                                    message="Работает только для импортированных заказов клиента"
+                                    description="После обработки заказа система отправит отдельное письмо с Excel-файлом .xls на указанный адрес. По умолчанию опция выключена."
+                                />
+                                <div className="responsive-form-grid-2">
+                                    <Form.Item
+                                        name="forward_customer_order_enabled"
+                                        label="Включить переотправку"
+                                        valuePropName="checked"
+                                    >
+                                        <Switch />
+                                    </Form.Item>
+                                    <Form.Item
+                                        noStyle
+                                        shouldUpdate={(prev, current) => (
+                                            prev.forward_customer_order_enabled
+                                            !== current.forward_customer_order_enabled
+                                        )}
+                                    >
+                                        {({ getFieldValue }) => (
+                                            <Form.Item
+                                                name="forward_customer_order_email"
+                                                label="Куда отправлять заказ"
+                                                rules={[
+                                                    {
+                                                        required: Boolean(
+                                                            getFieldValue('forward_customer_order_enabled')
+                                                        ),
+                                                        message: 'Укажите email получателя',
+                                                    },
+                                                    {
+                                                        type: 'email',
+                                                        message: 'Введите корректный email',
+                                                    },
+                                                ]}
+                                            >
+                                                <Input placeholder="supplier@example.com" />
+                                            </Form.Item>
+                                        )}
+                                    </Form.Item>
+                                    <Form.Item
+                                        name="forward_customer_order_email_account_id"
+                                        label="Почта отправителя"
+                                        extra="Если не выбрано, используется первый активный ящик с назначением orders_out."
+                                    >
+                                        <Select
+                                            allowClear
+                                            placeholder="По умолчанию"
+                                            options={priceOutAccounts.map((account) => ({
+                                                value: account.id,
+                                                label: `${account.name || account.email} (${account.email})`,
+                                            }))}
+                                            showSearch
+                                            optionFilterProp="label"
+                                        />
+                                    </Form.Item>
+                                </div>
+                            </div>
                         </Space>
                         <Divider />
                         <Space wrap>
@@ -2178,7 +2273,8 @@ const CustomerPage = () => {
                     <Text type="secondary">
                         Сначала сохраните конфигурацию прайса, затем настройте обработку заказов.
                     </Text>
-                )}
+                    )}
+                </ConfigSection>
             </Modal>
 
             {/* Модалка источников */}

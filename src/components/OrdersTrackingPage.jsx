@@ -17,6 +17,7 @@ import { useNavigate } from 'react-router-dom';
 import { getTrackingOrderItems } from '../api/orderTracking';
 import { getAllProviders } from '../api/providers';
 import TrackingOrderHistoryTable from './TrackingOrderHistoryTable';
+import useAuth from '../context/useAuth';
 
 const { RangePicker } = DatePicker;
 const { Title, Text } = Typography;
@@ -47,6 +48,7 @@ const REFUSAL_STATUSES = new Set(['REFUSAL', 'ERROR', 'FAILED', 'CANCELLED']);
 
 const OrdersTrackingPage = () => {
     const [form] = Form.useForm();
+    const { user } = useAuth();
     const [rows, setRows] = useState([]);
     const [providers, setProviders] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -204,7 +206,8 @@ const OrdersTrackingPage = () => {
                     rows={rows}
                     loading={loading}
                     compact
-                    allowEdit
+                    allowEdit={user?.role === 'admin'}
+                    allowStatusMappingSuggestion={user?.role === 'admin'}
                     onUpdated={() => fetchRows()}
                 />
 

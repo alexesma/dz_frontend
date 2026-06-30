@@ -16,6 +16,7 @@ import {
     message,
 } from 'antd';
 import {
+    DownloadOutlined,
     PlusOutlined,
     PlayCircleOutlined,
     ReloadOutlined,
@@ -44,6 +45,32 @@ const formatQty = (value) => {
         return '—';
     }
     return `${value} шт`;
+};
+
+const escapeExcelHtml = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+const formatExcelNumber = (value) => {
+    if (value === null || value === undefined || value === '') {
+        return '';
+    }
+    const number = Number(value);
+    return Number.isFinite(number) ? number : value;
+};
+
+const downloadTextFile = (content, filename, mimeType) => {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 };
 
 const isAutopurchaseRunLockedError = (error) => {
@@ -239,6 +266,90 @@ const AutopurchaseTopPage = () => {
         } finally {
             setTopActionLoadingId(null);
         }
+    };
+
+    const handleExportTopItems = () => {
+        const rows = Array.isArray(topPayload.rows) ? topPayload.rows : [];
+        if (!rows.length) {
+            message.info('Нет строк для выгрузки');
+            return;
+        }
+
+        const generatedAt = new Date();
+        const sourceLabel = topSource === 'current'
+            ? `Текущий топ за ${topDays} дней`
+            : 'Файл / ручной список';
+        const filterLabel = brandFilter.trim() || 'Все бренды';
+        const title = `Топ-${topLimit} позиции для автозаказа`;
+        const filename = `autopurchase_top_${topSource}_${topLimit}_${generatedAt
+            .toISOString()
+            .slice(0, 16)
+            .replace(/[-:T]/g, '')}.xls`;
+
+        const header = [
+            '#',
+            'Бренд',
+            'Артикул / OEM',
+            'Наименование',
+            'Продано',
+            'Цель остатка',
+            'Текущий остаток',
+            'Провал',
+            'Заметка',
+        ];
+        const tableRows = rows.map((row) => [
+            row.rank || '',
+            row.brand_name || '',
+            row.oem_number || '',
+            row.autopart_name || '',
+            formatExcelNumber(row.sold_qty),
+            formatExcelNumber(row.target_stock_qty),
+            formatExcelNumber(row.current_quantity),
+            formatExcelNumber(row.gap_qty),
+            row.note || '',
+        ]);
+        const htmlRows = [header, ...tableRows]
+            .map((cells, rowIndex) => {
+                const tag = rowIndex === 0 ? 'th' : 'td';
+                return `<tr>${cells.map((cell, cellIndex) => {
+                    const className = cellIndex >= 4 && cellIndex <= 7
+                        ? ' class="num"'
+                        : '';
+                    return `<${tag}${className}>${escapeExcelHtml(cell)}</${tag}>`;
+                }).join('')}</tr>`;
+            })
+            .join('');
+
+        const html = `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+body { font-family: Arial, sans-serif; color: #172033; }
+.title { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+.meta { color: #526070; margin-bottom: 14px; }
+table { border-collapse: collapse; width: 100%; }
+th { background: #17324d; color: #fff; font-weight: 700; text-align: left; }
+th, td { border: 1px solid #c8d3df; padding: 8px 10px; vertical-align: top; }
+tr:nth-child(even) td { background: #f6f9fc; }
+.num { text-align: right; }
+</style>
+</head>
+<body>
+<div class="title">${escapeExcelHtml(title)}</div>
+<div class="meta">
+Источник: ${escapeExcelHtml(sourceLabel)} · Бренд: ${escapeExcelHtml(filterLabel)} ·
+Сформировано: ${escapeExcelHtml(generatedAt.toLocaleString('ru-RU'))}
+</div>
+<table>${htmlRows}</table>
+</body>
+</html>`;
+
+        downloadTextFile(
+            html,
+            filename,
+            'application/vnd.ms-excel;charset=utf-8'
+        );
     };
 
     const columns = [
@@ -439,6 +550,13 @@ const AutopurchaseTopPage = () => {
                                 }}
                             >
                                 Обновить
+                            </Button>
+                            <Button
+                                icon={<DownloadOutlined />}
+                                disabled={topLoading || !(topPayload.rows || []).length}
+                                onClick={handleExportTopItems}
+                            >
+                                Скачать Excel
                             </Button>
                         </Space>
                     </Space>
