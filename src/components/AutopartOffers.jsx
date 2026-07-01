@@ -103,6 +103,14 @@ const clampQty = (value, maxValue) => {
     return parsed;
 };
 
+const normalizePositiveQty = (value) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return 1;
+    }
+    return parsed;
+};
+
 function normalizeSupplierName(value) {
     const normalized = String(value || '').trim();
     return normalized || null;
@@ -2183,13 +2191,14 @@ const AutopartOffers = () => {
                 if (item.cart_key !== nextItem.cart_key) {
                     return item;
                 }
+                const nextQty =
+                    item.source_type === 'supplier'
+                        ? normalizePositiveQty(Number(item.order_qty || 1) + 1)
+                        : clampQty(Number(item.order_qty || 1) + 1, maxValue);
                 return {
                     ...item,
                     ...nextItem,
-                    order_qty: clampQty(
-                        Number(item.order_qty || 1) + 1,
-                        maxValue
-                    ),
+                    order_qty: nextQty,
                 };
             });
         });
@@ -2251,9 +2260,13 @@ const AutopartOffers = () => {
                 if (item.cart_key !== cartKey) {
                     return item;
                 }
+                const nextQty =
+                    item.source_type === 'supplier'
+                        ? normalizePositiveQty(value)
+                        : clampQty(value, Number(item.available_qty));
                 return {
                     ...item,
-                    order_qty: clampQty(value, Number(item.available_qty)),
+                    order_qty: nextQty,
                 };
             })
         );
@@ -3136,6 +3149,29 @@ const AutopartOffers = () => {
         );
     }, [cartItems]);
 
+    const supplierOverAvailableCartItems = useMemo(
+        () =>
+            cartItems.filter((item) => {
+                if (item.source_type !== 'supplier') {
+                    return false;
+                }
+                const available = Number(item.available_qty ?? 0);
+                const ordered = Number(item.order_qty ?? 0);
+                return Number.isFinite(available) && ordered > available;
+            }),
+        [cartItems]
+    );
+
+    const selectedSupplierOverAvailableItems = useMemo(
+        () =>
+            selectedSupplierCartItems.filter((item) => {
+                const available = Number(item.available_qty ?? 0);
+                const ordered = Number(item.order_qty ?? 0);
+                return Number.isFinite(available) && ordered > available;
+            }),
+        [selectedSupplierCartItems]
+    );
+
     const resetLocalFilters = () => {
         setLocalFilters({
             brand: '',
@@ -3223,6 +3259,11 @@ const AutopartOffers = () => {
 
         setCartSubmitting(true);
         try {
+            if (selectedSupplierOverAvailableItems.length) {
+                message.warning(
+                    `В ${selectedSupplierOverAvailableItems.length} поз. заказ больше остатка в прайсе. Отправляем введённое количество.`
+                );
+            }
             for (const [providerId, items] of Object.entries(groups)) {
                 try {
                     const { data } = await createManualSupplierOrder({
@@ -3890,17 +3931,42 @@ const AutopartOffers = () => {
             title: 'Заказ',
             dataIndex: 'order_qty',
             key: 'order_qty',
-            width: 82,
-            render: (value, record) => (
-                <InputNumber
-                    min={1}
-                    max={Number(record.available_qty) > 0 ? Number(record.available_qty) : undefined}
-                    value={value}
-                    size="small"
-                    style={{ width: '100%' }}
-                    onChange={(nextValue) => updateCartQty(record.cart_key, nextValue)}
-                />
-            ),
+            width: 112,
+            render: (value, record) => {
+                const isSupplier = record.source_type === 'supplier';
+                const available = Number(record.available_qty ?? 0);
+                const ordered = Number(value ?? 0);
+                const overAvailable =
+                    isSupplier &&
+                    Number.isFinite(available) &&
+                    ordered > available;
+                return (
+                    <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                        <InputNumber
+                            min={1}
+                            max={
+                                !isSupplier && Number(record.available_qty) > 0
+                                    ? Number(record.available_qty)
+                                    : undefined
+                            }
+                            value={value}
+                            size="small"
+                            status={overAvailable ? 'error' : undefined}
+                            style={{ width: '100%' }}
+                            onChange={(nextValue) =>
+                                updateCartQty(record.cart_key, nextValue)
+                            }
+                        />
+                        {overAvailable ? (
+                            <Tooltip title="В прайсе поставщика указано меньшее количество. Заказ всё равно будет отправлен с введённым количеством.">
+                                <span style={{ color: '#dc2626', fontSize: 11 }}>
+                                    больше прайса
+                                </span>
+                            </Tooltip>
+                        ) : null}
+                    </Space>
+                );
+            },
         },
         {
             title: 'Срок',
@@ -3930,10 +3996,87 @@ const AutopartOffers = () => {
         },
     ];
 
+    const renderCartActions = ({ compact = false } = {}) => (
+        <Space direction="vertical" style={{ width: '100%' }} size="small">
+            {supplierOverAvailableCartItems.length ? (
+                <Alert
+                    type="warning"
+                    showIcon
+                    message="Есть позиции, где заказ больше остатка в прайсе"
+                    description={
+                        selectedSupplierOverAvailableItems.length
+                            ? `В выбранном заказе таких позиций: ${selectedSupplierOverAvailableItems.length}. Заказ будет отправлен с введённым количеством.`
+                            : `В корзине таких позиций: ${supplierOverAvailableCartItems.length}. Если они попадут в отправку, заказ уйдёт с введённым количеством.`
+                    }
+                />
+            ) : null}
+
+            <Space wrap align="center">
+                <span style={{ color: '#374151' }}>Клиент для сайта:</span>
+                <Select
+                    allowClear
+                    showSearch
+                    placeholder="Выберите клиента"
+                    value={selectedCustomerId}
+                    loading={customersLoading}
+                    options={customerOptions}
+                    style={{ minWidth: compact ? 220 : 260 }}
+                    optionFilterProp="label"
+                    onChange={(value) => setSelectedCustomerId(value ?? null)}
+                />
+            </Space>
+
+            <Space wrap>
+                <Button
+                    type="primary"
+                    icon={<PlusOutlined />}
+                    disabled={!selectedSupplierCartItems.length}
+                    loading={cartSubmitting}
+                    onClick={() => handleCreateSupplierOrders(false)}
+                >
+                    Создать заказы поставщикам
+                </Button>
+                <Button
+                    icon={<MailOutlined />}
+                    disabled={!selectedSupplierCartItems.length}
+                    loading={cartSubmitting}
+                    onClick={() => handleCreateSupplierOrders(true)}
+                >
+                    Создать и отправить письмом
+                </Button>
+                <Button
+                    type="primary"
+                    ghost
+                    icon={<SendOutlined />}
+                    disabled={
+                        !selectedDragonzapCartItems.length ||
+                        !selectedCustomerId
+                    }
+                    loading={cartSubmitting}
+                    onClick={handleSendDragonzapCart}
+                >
+                    Отправить на Dragonzap
+                </Button>
+                <Button
+                    disabled={!cartItems.length}
+                    onClick={() => {
+                        setCartItems([]);
+                        setSelectedCartKeys([]);
+                    }}
+                >
+                    Очистить корзину
+                </Button>
+            </Space>
+        </Space>
+    );
+
     const cartPreview = (
         <div className="autopart-offers-cart-popover">
             <div className="autopart-offers-cart-popover-summary">
                 Всего: {cartSummary.total} · из прайсов: {cartSummary.supplier} · с сайта: {cartSummary.dragonzap} · сумма: {cartSummary.sum.toFixed(2)}
+            </div>
+            <div style={{ marginBottom: 12 }}>
+                {renderCartActions({ compact: true })}
             </div>
             <Table
                 rowKey="cart_key"
@@ -4903,62 +5046,7 @@ const AutopartOffers = () => {
                     </div>
                 </div>
 
-                <Space wrap align="center">
-                    <span style={{ color: '#374151' }}>Клиент для сайта:</span>
-                    <Select
-                        allowClear
-                        showSearch
-                        placeholder="Выберите клиента"
-                        value={selectedCustomerId}
-                        loading={customersLoading}
-                        options={customerOptions}
-                        style={{ minWidth: 260 }}
-                        optionFilterProp="label"
-                        onChange={(value) => setSelectedCustomerId(value ?? null)}
-                    />
-                </Space>
-
-                <Space wrap>
-                    <Button
-                        type="primary"
-                        icon={<PlusOutlined />}
-                        disabled={!selectedSupplierCartItems.length}
-                        loading={cartSubmitting}
-                        onClick={() => handleCreateSupplierOrders(false)}
-                    >
-                        Создать заказы поставщикам
-                    </Button>
-                    <Button
-                        icon={<MailOutlined />}
-                        disabled={!selectedSupplierCartItems.length}
-                        loading={cartSubmitting}
-                        onClick={() => handleCreateSupplierOrders(true)}
-                    >
-                        Создать и отправить письмом
-                    </Button>
-                    <Button
-                        type="primary"
-                        ghost
-                        icon={<SendOutlined />}
-                        disabled={
-                            !selectedDragonzapCartItems.length ||
-                            !selectedCustomerId
-                        }
-                        loading={cartSubmitting}
-                        onClick={handleSendDragonzapCart}
-                    >
-                        Отправить на Dragonzap
-                    </Button>
-                    <Button
-                        disabled={!cartItems.length}
-                        onClick={() => {
-                            setCartItems([]);
-                            setSelectedCartKeys([]);
-                        }}
-                    >
-                        Очистить корзину
-                    </Button>
-                </Space>
+                {renderCartActions()}
 
                 <Table
                     rowKey="cart_key"
