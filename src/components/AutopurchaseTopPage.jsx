@@ -161,7 +161,13 @@ const AutopurchaseTopPage = () => {
             try {
                 const { data } = await getBrands();
                 const rows = Array.isArray(data) ? data : [];
-                const options = rows
+                const prepared = rows.map((item) => ({
+                    ...item,
+                    main_brand: Boolean(item?.main_brand),
+                }));
+                const hasMainBrands = prepared.some((item) => item.main_brand);
+                const options = prepared
+                    .filter((item) => (hasMainBrands ? item.main_brand : true))
                     .map((item) => String(item?.name || '').trim())
                     .filter(Boolean)
                     .sort((a, b) => a.localeCompare(b, 'ru'))
