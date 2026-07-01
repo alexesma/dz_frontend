@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     Alert,
     Button,
@@ -26,11 +26,14 @@ import { useNavigate } from 'react-router-dom';
 import {
     createAutoPurchaseRun,
     createAutoPurchaseTopItem,
+    excludeAutoPurchaseTopItem,
     importAutoPurchaseTopItems,
     listAutoPurchaseTopItems,
     listCurrentAutoPurchaseTopItems,
+    restoreAutoPurchaseTopItem,
     updateAutoPurchaseTopItem,
 } from '../api/orderTracking';
+import { getBrands } from '../api/brands';
 
 const { Title, Text } = Typography;
 
@@ -90,8 +93,9 @@ const AutopurchaseTopPage = () => {
     const [topSource, setTopSource] = useState('file');
     const [topLimit, setTopLimit] = useState(50);
     const [topDays, setTopDays] = useState(365);
-    const [brandFilterDraft, setBrandFilterDraft] = useState('');
-    const [brandFilter, setBrandFilter] = useState('');
+    const [selectedBrands, setSelectedBrands] = useState([]);
+    const [brandOptions, setBrandOptions] = useState([]);
+    const [brandOptionsLoading, setBrandOptionsLoading] = useState(false);
     const [topPayload, setTopPayload] = useState({ rows: [], total_items: 0 });
     const [topLoading, setTopLoading] = useState(false);
     const [topImportLoading, setTopImportLoading] = useState(false);
@@ -114,7 +118,9 @@ const AutopurchaseTopPage = () => {
     const fetchTopItems = useCallback(async () => {
         setTopLoading(true);
         try {
-            const normalizedBrand = brandFilter.trim() || undefined;
+            const normalizedBrand = selectedBrands.length
+                ? selectedBrands.join(',')
+                : undefined;
             const request = topSource === 'current'
                 ? listCurrentAutoPurchaseTopItems({
                     limit: topLimit,
@@ -146,7 +152,43 @@ const AutopurchaseTopPage = () => {
         } finally {
             setTopLoading(false);
         }
-    }, [brandFilter, topDays, topLimit, topSource]);
+    }, [selectedBrands, topDays, topLimit, topSource]);
+
+    useEffect(() => {
+        let mounted = true;
+        const loadBrands = async () => {
+            setBrandOptionsLoading(true);
+            try {
+                const { data } = await getBrands();
+                const rows = Array.isArray(data) ? data : [];
+                const options = rows
+                    .map((item) => String(item?.name || '').trim())
+                    .filter(Boolean)
+                    .sort((a, b) => a.localeCompare(b, 'ru'))
+                    .map((name) => ({ value: name, label: name }));
+                if (mounted) {
+                    setBrandOptions(options);
+                }
+            } catch {
+                if (mounted) {
+                    message.error('Не удалось загрузить справочник брендов');
+                }
+            } finally {
+                if (mounted) {
+                    setBrandOptionsLoading(false);
+                }
+            }
+        };
+        void loadBrands();
+        return () => {
+            mounted = false;
+        };
+    }, []);
+
+    const selectedBrandFilterLabel = useMemo(
+        () => (selectedBrands.length ? selectedBrands.join(', ') : 'Все бренды'),
+        [selectedBrands]
+    );
 
     useEffect(() => {
         void fetchTopItems();
@@ -163,7 +205,9 @@ const AutopurchaseTopPage = () => {
                 top_source: topSource,
                 top_limit: topLimit,
                 top_days: topSource === 'current' ? topDays : undefined,
-                top_brand: brandFilter.trim() || undefined,
+                top_brand: selectedBrands.length
+                    ? selectedBrands.join(',')
+                    : undefined,
             });
             message.success(`Запуск автозаказа по топ-${topLimit} создан`);
             navigate('/orders/autopurchase', {
@@ -251,18 +295,37 @@ const AutopurchaseTopPage = () => {
         }
     };
 
-    const handleDisableTopItem = async (row) => {
-        if (!row?.id || row.id < 0) {
-            return;
-        }
+    const buildExclusionPayload = (row) => ({
+        autopart_id: row?.autopart_id || undefined,
+        oem_number: row?.oem_number || '',
+        brand_name: row?.brand_name || null,
+        autopart_name: row?.autopart_name || null,
+        reason: 'Исключено вручную на странице топ-позиций',
+    });
+
+    const handleExcludeTopItem = async (row) => {
         setTopActionLoadingId(row.id);
         try {
-            await updateAutoPurchaseTopItem(row.id, { is_active: false });
-            message.success('Позиция убрана из активного топа');
+            await excludeAutoPurchaseTopItem(buildExclusionPayload(row));
+            message.success('Позиция исключена из автозаказа');
             await fetchTopItems();
         } catch (error) {
             const detail = error?.response?.data?.detail;
-            message.error(detail || 'Не удалось убрать позицию из топа');
+            message.error(detail || 'Не удалось исключить позицию из автозаказа');
+        } finally {
+            setTopActionLoadingId(null);
+        }
+    };
+
+    const handleRestoreTopItem = async (row) => {
+        setTopActionLoadingId(row.id);
+        try {
+            await restoreAutoPurchaseTopItem(buildExclusionPayload(row));
+            message.success('Позиция возвращена в автозаказ');
+            await fetchTopItems();
+        } catch (error) {
+            const detail = error?.response?.data?.detail;
+            message.error(detail || 'Не удалось вернуть позицию в автозаказ');
         } finally {
             setTopActionLoadingId(null);
         }
@@ -279,7 +342,7 @@ const AutopurchaseTopPage = () => {
         const sourceLabel = topSource === 'current'
             ? `Текущий топ за ${topDays} дней`
             : 'Файл / ручной список';
-        const filterLabel = brandFilter.trim() || 'Все бренды';
+        const filterLabel = selectedBrandFilterLabel;
         const title = `Топ-${topLimit} позиции для автозаказа`;
         const filename = `autopurchase_top_${topSource}_${topLimit}_${generatedAt
             .toISOString()
@@ -288,6 +351,7 @@ const AutopurchaseTopPage = () => {
 
         const header = [
             '#',
+            'Статус',
             'Бренд',
             'Артикул / OEM',
             'Наименование',
@@ -299,6 +363,7 @@ const AutopurchaseTopPage = () => {
         ];
         const tableRows = rows.map((row) => [
             row.rank || '',
+            row.excluded_from_autopurchase ? 'Исключена из автозаказа' : 'Активна',
             row.brand_name || '',
             row.oem_number || '',
             row.autopart_name || '',
@@ -312,7 +377,7 @@ const AutopurchaseTopPage = () => {
             .map((cells, rowIndex) => {
                 const tag = rowIndex === 0 ? 'th' : 'td';
                 return `<tr>${cells.map((cell, cellIndex) => {
-                    const className = cellIndex >= 4 && cellIndex <= 7
+                    const className = cellIndex >= 5 && cellIndex <= 8
                         ? ' class="num"'
                         : '';
                     return `<${tag}${className}>${escapeExcelHtml(cell)}</${tag}>`;
@@ -366,6 +431,11 @@ tr:nth-child(even) td { background: #f6f9fc; }
                     <Space direction="vertical" size={0}>
                         <Text strong>{row.brand_name || '—'} {row.oem_number}</Text>
                         <Text type="secondary">{row.autopart_name || '—'}</Text>
+                        {row.excluded_from_autopurchase ? (
+                            <Tag color="volcano">
+                                Исключена из автозаказа
+                            </Tag>
+                        ) : null}
                     </Space>
                 ),
             },
@@ -434,10 +504,10 @@ tr:nth-child(even) td { background: #f6f9fc; }
             {
                 title: 'Действия',
                 key: 'actions',
-                width: 170,
+                width: 220,
                 render: (_, row) => (
-                    topSource === 'file' && row.id > 0 ? (
-                        <Space>
+                    <Space wrap>
+                        {topSource === 'file' && row.id > 0 ? (
                             <Button
                                 size="small"
                                 loading={topActionLoadingId === row.id}
@@ -447,16 +517,28 @@ tr:nth-child(even) td { background: #f6f9fc; }
                             >
                                 Сохранить
                             </Button>
+                        ) : null}
+                        {row.excluded_from_autopurchase ? (
                             <Popconfirm
-                                title="Убрать позицию из активного топа?"
+                                title="Вернуть позицию в автозаказ?"
                                 onConfirm={() => {
-                                    void handleDisableTopItem(row);
+                                    void handleRestoreTopItem(row);
                                 }}
                             >
-                                <Button size="small" danger>Убрать</Button>
+                                <Button size="small">Вернуть</Button>
                             </Popconfirm>
-                        </Space>
-                    ) : <Text type="secondary">расчётно</Text>
+                        ) : (
+                            <Popconfirm
+                                title="Исключить позицию из автозаказа?"
+                                description="Она останется в списке, но расчёт автозаказа будет её пропускать."
+                                onConfirm={() => {
+                                    void handleExcludeTopItem(row);
+                                }}
+                            >
+                                <Button size="small" danger>Исключить</Button>
+                            </Popconfirm>
+                        )}
+                    </Space>
                 ),
             },
         ];
@@ -506,21 +588,24 @@ tr:nth-child(even) td { background: #f6f9fc; }
                                     onChange={(value) => setTopDays(Number(value))}
                                 />
                             ) : null}
-                            <Input.Search
+                            <Select
+                                mode="multiple"
                                 allowClear
-                                placeholder="Бренд, например DRAGONZAP"
-                                value={brandFilterDraft}
-                                style={{ width: 260 }}
-                                enterButton="Фильтр"
-                                onChange={(event) => {
-                                    const nextValue = event.target.value;
-                                    setBrandFilterDraft(nextValue);
-                                    if (!nextValue) {
-                                        setBrandFilter('');
-                                    }
-                                }}
-                                onSearch={(value) => {
-                                    setBrandFilter(String(value || '').trim());
+                                showSearch
+                                loading={brandOptionsLoading}
+                                placeholder="Выберите бренды"
+                                value={selectedBrands}
+                                style={{ minWidth: 300 }}
+                                maxTagCount="responsive"
+                                options={brandOptions}
+                                optionFilterProp="label"
+                                filterOption={(inputValue, option) =>
+                                    String(option?.label || '')
+                                        .toLowerCase()
+                                        .includes(inputValue.toLowerCase())
+                                }
+                                onChange={(values) => {
+                                    setSelectedBrands(values);
                                 }}
                             />
                         </Space>

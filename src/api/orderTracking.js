@@ -27,6 +27,12 @@ export const createAutoPurchaseTopItem = (payload) =>
 export const updateAutoPurchaseTopItem = (itemId, payload) =>
     api.patch(`/order/autopurchase-top/items/${itemId}`, payload);
 
+export const excludeAutoPurchaseTopItem = (payload) =>
+    api.post('/order/autopurchase-top/exclusions', payload);
+
+export const restoreAutoPurchaseTopItem = (payload) =>
+    api.post('/order/autopurchase-top/exclusions/restore', payload);
+
 export const importAutoPurchaseTopItems = (formData, params) =>
     api.post('/order/autopurchase-top/import', formData, {
         params,

@@ -303,6 +303,8 @@ const ProviderPage = () => {
                 default_delivery_method: "Delivered",
                 is_own_price: false,
                 is_vat_payer: true,
+                autopurchase_blocked: false,
+                autopurchase_block_reason: "",
                 order_schedule_enabled: false,
                 order_schedule_days: [],
                 order_schedule_times: [],
@@ -337,6 +339,9 @@ const ProviderPage = () => {
                     is_vat_payer: deriveVatPayerFromPriceType(
                         data.provider.type_prices
                     ),
+                    autopurchase_blocked: data.provider.autopurchase_blocked || false,
+                    autopurchase_block_reason:
+                        data.provider.autopurchase_block_reason || "",
                     default_warehouse_id: data.provider.default_warehouse_id,
                     default_delivery_method:
                         data.provider.default_delivery_method || "Delivered",
@@ -477,6 +482,10 @@ const ProviderPage = () => {
                 is_active: config.is_active ?? true,
                 use_for_order_insights:
                     config.use_for_order_insights ?? false,
+                autopurchase_blocked:
+                    config.autopurchase_blocked ?? false,
+                autopurchase_block_reason:
+                    config.autopurchase_block_reason || "",
                 start_row: adjustForDisplay(config.start_row, true),
                 oem_col: adjustForDisplay(config.oem_col, true),
                 brand_col: adjustForDisplay(config.brand_col, true),
@@ -496,6 +505,8 @@ const ProviderPage = () => {
                 max_days_without_update: 3,
                 is_active: true,
                 use_for_order_insights: false,
+                autopurchase_blocked: false,
+                autopurchase_block_reason: "",
             });
         }
         setConfigModalVisible(true);
@@ -602,6 +613,27 @@ const ProviderPage = () => {
             message.error(
                 err?.response?.data?.detail
                 || "Не удалось обновить конфиг для сводки заказа"
+            );
+        }
+    };
+
+    const handleToggleConfigAutopurchaseBlocked = async (configId, checked) => {
+        if (!providerId) return;
+        try {
+            await updateProviderConfig(providerId, configId, {
+                autopurchase_blocked: checked,
+            });
+            message.success(
+                checked
+                    ? "Конфиг исключён из автозаказа"
+                    : "Конфиг снова доступен для автозаказа"
+            );
+            await refreshProviderData();
+        } catch (err) {
+            console.error(err);
+            message.error(
+                err?.response?.data?.detail
+                || "Не удалось обновить блокировку автозаказа"
             );
         }
     };
@@ -1584,6 +1616,24 @@ const ProviderPage = () => {
                 />
             ),
         },
+        {
+            title: "Автозаказ",
+            dataIndex: "autopurchase_blocked",
+            key: "autopurchase_blocked",
+            render: (blocked, record) => (
+                <Switch
+                    checked={!blocked}
+                    onChange={(checked) =>
+                        handleToggleConfigAutopurchaseBlocked(
+                            record.id,
+                            !checked
+                        )
+                    }
+                    checkedChildren="Можно"
+                    unCheckedChildren="Блок"
+                />
+            ),
+        },
         ...(providerData?.provider?.is_own_price ? [{
             title: "Для сводки заказа",
             dataIndex: "use_for_order_insights",
@@ -2082,6 +2132,28 @@ const ProviderPage = () => {
                         <Switch disabled />
                     </Form.Item>
 
+                    <Form.Item
+                        name="autopurchase_blocked"
+                        label="Исключить поставщика из автозаказа"
+                        valuePropName="checked"
+                        extra={
+                            "Если включено, автозаказ не будет выбирать этого " +
+                            "поставщика среди site-предложений и конфигов."
+                        }
+                    >
+                        <Switch checkedChildren="Блок" unCheckedChildren="Можно" />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="autopurchase_block_reason"
+                        label="Причина исключения из автозаказа"
+                    >
+                        <Input.TextArea
+                            rows={2}
+                            placeholder="Например: временно не заказываем, плохое исполнение, ручная проверка"
+                        />
+                    </Form.Item>
+
                     <Divider>Расписание отправки заказов</Divider>
                     <Form.Item
                         name="order_schedule_enabled"
@@ -2453,6 +2525,28 @@ const ProviderPage = () => {
                             <Switch checkedChildren="Да" unCheckedChildren="Нет" />
                         </Form.Item>
                     ) : null}
+
+                    <Form.Item
+                        name="autopurchase_blocked"
+                        label="Исключить эту конфигурацию из автозаказа"
+                        valuePropName="checked"
+                        extra={
+                            "Полезно, если у поставщика несколько прайсов, " +
+                            "но автозаказу нельзя использовать именно этот."
+                        }
+                    >
+                        <Switch checkedChildren="Блок" unCheckedChildren="Можно" />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="autopurchase_block_reason"
+                        label="Причина исключения конфигурации"
+                    >
+                        <Input.TextArea
+                            rows={2}
+                            placeholder="Например: старый прайс, нестабильные остатки, только для ручной проверки"
+                        />
+                    </Form.Item>
 
                     <Divider>Настройки парсинга</Divider>
 
