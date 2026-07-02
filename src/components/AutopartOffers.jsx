@@ -68,6 +68,13 @@ const MAX_PERSISTED_CART_ITEMS = 200;
 const MAX_SITE_EXACT_CROSS_REQUESTS = 3;
 const SITE_RECOMMENDATION_LOW_STOCK_QTY = 10;
 const TOYOTA_BRAND_TOKEN = 'TOYOTA';
+// Закупка дороже этой доли от нашей цены продажи — маржа под угрозой
+// (то же правило, что в автозаказе: закупка ≤ 90% продажи).
+const MAX_PURCHASE_TO_SALE_RATIO = 0.9;
+
+// Каноничный вид OEM как в базе: без дефисов/пробелов, верхний регистр.
+const normalizeOemKey = (value) =>
+    String(value || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
 
 const buildCartKey = (sourceType, record) => {
     if (sourceType === 'supplier') {
@@ -252,16 +259,16 @@ const formatInsightDelivery = (minDeliveryDay, maxDeliveryDay) => {
 };
 
 const extractUniqueCrossOems = (offers, baseOem) => {
-    const normalizedBase = String(baseOem || '').trim().toUpperCase();
+    const normalizedBase = normalizeOemKey(baseOem);
     const uniqueOems = new Set();
     for (const offer of offers || []) {
-        const normalizedOem = String(
+        const normalizedOem = normalizeOemKey(
             offer?.oem ||
             offer?.oem_number ||
             offer?.article ||
             offer?.part_number ||
             ''
-        ).trim().toUpperCase();
+        );
         if (!normalizedOem || normalizedOem === normalizedBase) {
             continue;
         }
@@ -273,23 +280,23 @@ const extractUniqueCrossOems = (offers, baseOem) => {
 const normalizeCrossKey = (brandName, oemNumber) =>
     [
         String(brandName || '').trim().toUpperCase(),
-        String(oemNumber || '').trim().toUpperCase(),
+        normalizeOemKey(oemNumber),
     ].join('::');
 
 const normalizeBrandToken = (value) =>
     String(value || '').trim().toUpperCase();
 
 const extractUniqueCrossItemsFromSiteOffers = (offers, baseOem) => {
-    const normalizedBase = String(baseOem || '').trim().toUpperCase();
+    const normalizedBase = normalizeOemKey(baseOem);
     const uniqueItems = new Map();
     for (const offer of offers || []) {
-        const oemNumber = String(
+        const oemNumber = normalizeOemKey(
             offer?.oem ||
             offer?.oem_number ||
             offer?.article ||
             offer?.part_number ||
             ''
-        ).trim().toUpperCase();
+        );
         const brandName = String(
             offer?.make_name ||
             offer?.brand_name ||
@@ -324,10 +331,10 @@ const extractCheapestCrossCandidatesFromLocalOffers = (
     baseOem,
     limit = MAX_SITE_EXACT_CROSS_REQUESTS
 ) => {
-    const normalizedBase = String(baseOem || '').trim().toUpperCase();
+    const normalizedBase = normalizeOemKey(baseOem);
     const byKey = new Map();
     for (const row of rows || []) {
-        const oemNumber = String(row?.oem_number || '').trim().toUpperCase();
+        const oemNumber = normalizeOemKey(row?.oem_number);
         const brandName = String(row?.brand_name || '').trim();
         const price = Number(row?.price);
         if (
@@ -662,6 +669,8 @@ const buildPersistedCartItems = (items) => {
         is_own_price: Boolean(item.is_own_price),
         hash_key: item.hash_key ?? null,
         system_hash: item.system_hash ?? null,
+        sale_price_reference: item.sale_price_reference ?? null,
+        margin_warning: Boolean(item.margin_warning),
     }));
 };
 
@@ -779,6 +788,7 @@ const AutopartOffers = () => {
         minQty: null,
         maxDelivery: null,
     });
+    const [pendingRestoredSearch, setPendingRestoredSearch] = useState(null);
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const lookupRequestIdRef = useRef(0);
@@ -786,6 +796,7 @@ const AutopartOffers = () => {
     const brandCatalogRef = useRef(null);
     const previousRestrictCrossBrandRef = useRef(false);
     const previousShowCrossesRef = useRef(false);
+    const didRestoreStateRef = useRef(false);
 
     const replaceItemId = searchParams.get('replace_item_id');
     const replaceSource = searchParams.get('replace_source');
@@ -910,8 +921,56 @@ const AutopartOffers = () => {
     }, [loadBrandCatalog]);
 
     const normalizedCurrentOem = useMemo(
-        () => String(currentOem || '').trim().toUpperCase(),
+        () => normalizeOemKey(currentOem),
         [currentOem]
+    );
+
+    // Наша текущая цена продажи (из блока «наш прайс» сводки) —
+    // ориентир для контроля маржи при закупке.
+    const ownSalePrice = useMemo(() => {
+        const value = Number(
+            trackingInsights?.own_price_analysis?.latest_price
+        );
+        return Number.isFinite(value) && value > 0 ? value : null;
+    }, [trackingInsights?.own_price_analysis?.latest_price]);
+
+    const isLowMarginPurchase = useCallback(
+        (price) => {
+            if (ownSalePrice == null) {
+                return false;
+            }
+            const parsed = Number(price);
+            return (
+                Number.isFinite(parsed) &&
+                parsed > ownSalePrice * MAX_PURCHASE_TO_SALE_RATIO
+            );
+        },
+        [ownSalePrice]
+    );
+
+    const renderPurchasePrice = useCallback(
+        (value, { skipMarginCheck = false } = {}) => {
+            if (value === null || value === undefined) {
+                return '—';
+            }
+            const formatted = Number(value).toFixed(2);
+            if (skipMarginCheck || !isLowMarginPurchase(value)) {
+                return formatted;
+            }
+            return (
+                <Tooltip
+                    title={
+                        `Закупка выше ${Math.round(MAX_PURCHASE_TO_SALE_RATIO * 100)}% ` +
+                        `нашей цены продажи (${ownSalePrice.toFixed(2)} руб.) — маржа под угрозой`
+                    }
+                >
+                    <span style={{ color: '#dc2626', fontWeight: 600 }}>
+                        {formatted} ⚠
+                    </span>
+                </Tooltip>
+            );
+        },
+        [isLowMarginPurchase, ownSalePrice]
     );
 
     const confirmedCrossKeySet = useMemo(
@@ -1051,7 +1110,7 @@ const AutopartOffers = () => {
         const itemsByKey = new Map();
 
         for (const item of trackingInsights?.cross_items || []) {
-            const normalizedOem = String(item?.oem_number || '').trim().toUpperCase();
+            const normalizedOem = normalizeOemKey(item?.oem_number);
             if (!normalizedOem || normalizedOem === normalizedCurrentOem) {
                 continue;
             }
@@ -1549,7 +1608,8 @@ const AutopartOffers = () => {
                     : 'По OEM и кроссам пока нет ни локального, ни site-результата',
                 extra: crossCurrentBest
                     ? (
-                        crossCurrentBest.oem_number !== normalizedCurrentOem
+                        normalizeOemKey(crossCurrentBest.oem_number) !==
+                            normalizedCurrentOem
                             ? `Сработал кросс: ${crossCurrentBest.oem_number}`
                             : 'Лучшее предложение по текущему OEM'
                     )
@@ -2020,6 +2080,10 @@ const AutopartOffers = () => {
     }, [activeLookupQuery, lookupResults, oemHistory]);
 
     useEffect(() => {
+        if (didRestoreStateRef.current) {
+            return;
+        }
+        didRestoreStateRef.current = true;
         const storedHistory = safeJsonParse(
             safeStorageGet(OEM_HISTORY_KEY),
             []
@@ -2056,9 +2120,57 @@ const AutopartOffers = () => {
             if (storedState.currentOem) {
                 form.setFieldsValue({ oem: storedState.currentOem });
                 setOemInput(storedState.currentOem);
+                // Данные не хранятся в localStorage — перезапускаем поиск,
+                // чтобы страница не оставалась пустой. URL-автопоиск имеет
+                // приоритет.
+                const hasUrlAutoSearch =
+                    searchParams.get('auto') === '1' &&
+                    String(searchParams.get('oem') || '').trim();
+                if (!hasUrlAutoSearch) {
+                    setPendingRestoredSearch({
+                        oem: storedState.currentOem,
+                        brand: storedState.selectedBrand || '',
+                        partial: Boolean(storedState.partialSearch),
+                    });
+                }
             }
         }
-    }, [form]);
+    }, [form, searchParams]);
+
+    useEffect(() => {
+        if (!pendingRestoredSearch) {
+            return;
+        }
+        const { oem, brand, partial } = pendingRestoredSearch;
+        setPendingRestoredSearch(null);
+        void (async () => {
+            const { brand: resolvedBrand, oem: canonicalOem } =
+                await executeSearch(oem, partial, brand);
+            const effectiveBrand = brand || resolvedBrand;
+            if (!effectiveBrand) {
+                return;
+            }
+            const brandFamily = await resolveBrandFamilyNames(effectiveBrand);
+            const shouldRestrictCrossBrand = brandFamily.some(
+                (item) => normalizeBrandToken(item) === TOYOTA_BRAND_TOKEN
+            );
+            setShowCrosses(true);
+            setRestrictCrossBrand(shouldRestrictCrossBrand);
+            await requestDragonzapOffers(
+                canonicalOem || oem,
+                effectiveBrand,
+                {
+                    showCrosses: true,
+                    restrictCrossBrand: shouldRestrictCrossBrand,
+                }
+            );
+        })();
+    }, [
+        executeSearch,
+        pendingRestoredSearch,
+        requestDragonzapOffers,
+        resolveBrandFamilyNames,
+    ]);
 
     useEffect(() => {
         let isMounted = true;
@@ -2222,6 +2334,9 @@ const AutopartOffers = () => {
             min_delivery_day: record.min_delivery_day,
             max_delivery_day: record.max_delivery_day,
             is_own_price: Boolean(record.is_own_price),
+            sale_price_reference: ownSalePrice,
+            margin_warning:
+                !record.is_own_price && isLowMarginPurchase(record.price),
         });
         message.success('Позиция добавлена в корзину');
     };
@@ -2250,6 +2365,8 @@ const AutopartOffers = () => {
             max_delivery_day: record.max_delivery_day,
             hash_key: hashKey,
             system_hash: record.system_hash || null,
+            sale_price_reference: ownSalePrice,
+            margin_warning: isLowMarginPurchase(record.price),
         });
         message.success('Позиция добавлена в корзину');
     };
@@ -2323,7 +2440,7 @@ const AutopartOffers = () => {
     ) => {
         if (!oemValue) {
             message.warning('Введите OEM номер');
-            return '';
+            return { brand: '', oem: '' };
         }
         setLoading(true);
         setTrackingHistoryLoading(true);
@@ -2385,16 +2502,20 @@ const AutopartOffers = () => {
                 brand: data?.nomenclature_brand_name ?? null,
                 name: data?.nomenclature_name ?? null,
             });
-            setCurrentOem(oemValue);
-            setOemInput(oemValue);
-            pushOemHistory(oemValue);
+            // Каноничный OEM из ответа бэкенда (без дефисов/пробелов) —
+            // иначе сравнения с базой и сайтом дают ложные «кроссы».
+            const canonicalOem =
+                String(data?.oem_number || '').trim() || oemValue;
+            setCurrentOem(canonicalOem);
+            setOemInput(canonicalOem);
+            pushOemHistory(canonicalOem);
             const fallbackBrand = [...list, ...historicalList].find(
                 (item) => item.brand_name
             )?.brand_name;
             const resolvedBrand = brandHint || fallbackBrand || '';
-            const siteBrandsResponse = await getDragonzapBrands(oemValue).catch(
-                () => null
-            );
+            const siteBrandsResponse = await getDragonzapBrands(
+                canonicalOem
+            ).catch(() => null);
             const candidates = normalizeDragonzapBrandCandidates(
                 siteBrandsResponse?.data
             );
@@ -2422,10 +2543,13 @@ const AutopartOffers = () => {
             ) && siteSuggestedBrand
                 ? siteSuggestedBrand
                 : resolvedBrand;
+            // Быстрая история из базы без синка с сайтом: полный синк
+            // статусов и тяжёлая сводка выполняются один раз в
+            // requestDragonzapOffers (уже со списком кроссов сайта).
             const trackingResponse = await getTrackingOrderItems({
-                oem: oemValue,
+                oem: canonicalOem,
                 brand: effectiveBrand || undefined,
-                sync_site: true,
+                sync_site: false,
                 include_crosses: true,
                 limit: 1000,
                 site_cross_oems: undefined,
@@ -2434,11 +2558,6 @@ const AutopartOffers = () => {
                 ? trackingResponse.data
                 : [];
             setTrackingHistory(trackingRows);
-            await fetchTrackingInsights({
-                oemValue,
-                brandValue: effectiveBrand || siteSuggestedBrand || '',
-                extraOemNumbers: [],
-            });
             setSelectedBrand(effectiveBrand || siteSuggestedBrand || '');
             if (!filtered.length) {
                 if (sortedHistorical.length) {
@@ -2450,16 +2569,21 @@ const AutopartOffers = () => {
                     message.info('В актуальных прайсах ничего не найдено');
                 }
             }
-            return effectiveBrand || siteSuggestedBrand || '';
+            return {
+                brand: effectiveBrand || siteSuggestedBrand || '',
+                oem: canonicalOem,
+            };
         } catch (error) {
             console.error('Fetch offers error:', error);
-            message.error('Ошибка получения данных');
-            return '';
+            message.error(
+                extractRequestError(error, 'Ошибка получения данных')
+            );
+            return { brand: '', oem: oemValue };
         } finally {
             setLoading(false);
             setTrackingHistoryLoading(false);
         }
-    }, [fetchTrackingInsights, pushOemHistory]);
+    }, [pushOemHistory]);
 
     const handleSearch = async (values, options = {}) => {
         const oemValue = (values.oem || '').trim();
@@ -2469,10 +2593,8 @@ const AutopartOffers = () => {
         }
         const effectivePartialSearch =
             options.partialSearch ?? partialSearch;
-        const resolvedBrand = await executeSearch(
-            oemValue,
-            effectivePartialSearch
-        );
+        const { brand: resolvedBrand, oem: canonicalOem } =
+            await executeSearch(oemValue, effectivePartialSearch);
         if (!oemValue) {
             return;
         }
@@ -2484,7 +2606,7 @@ const AutopartOffers = () => {
         );
         setShowCrosses(true);
         setRestrictCrossBrand(shouldRestrictCrossBrand);
-        await requestDragonzapOffers(oemValue, resolvedBrand, {
+        await requestDragonzapOffers(canonicalOem || oemValue, resolvedBrand, {
             showCrosses: true,
             restrictCrossBrand: shouldRestrictCrossBrand,
         });
@@ -2521,6 +2643,12 @@ const AutopartOffers = () => {
                 'Не удалось определить бренд для запроса. ' +
                 'Уточните бренд вручную или добавьте позицию в номенклатуру.'
             );
+            // Сайт не спрашиваем, но сводку по заказам всё равно показываем.
+            void fetchTrackingInsights({
+                oemValue,
+                brandValue: '',
+                extraOemNumbers: [],
+            });
             return;
         }
         setRemoteLoading(true);
@@ -2676,25 +2804,22 @@ const AutopartOffers = () => {
                 };
             };
 
-            const exactResponse = await getDragonzapOffers(
-                oemValue,
-                effectiveBrand,
-                true
-            );
+            // Точный запрос и запрос с кроссами независимы — параллелим,
+            // это заметно сокращает ожидание ответа сайта.
+            const [exactResponse, crossResponse] = await Promise.all([
+                getDragonzapOffers(oemValue, effectiveBrand, true),
+                effectiveShowCrosses
+                    ? getDragonzapOffers(oemValue, effectiveBrand, false)
+                    : Promise.resolve(null),
+            ]);
             const exactParsed = normalizeSiteResponse(
                 exactResponse?.data,
                 effectiveBrand,
                 false
             );
-            const crossParsed = effectiveShowCrosses
+            const crossParsed = crossResponse
                 ? normalizeSiteResponse(
-                    (
-                        await getDragonzapOffers(
-                            oemValue,
-                            effectiveBrand,
-                            false
-                        )
-                    )?.data,
+                    crossResponse.data,
                     effectiveBrand,
                     true
                 )
@@ -2709,9 +2834,9 @@ const AutopartOffers = () => {
                     brandFilteredCount: 0,
                 };
             const filteredCrossOffers = crossParsed.offers.filter((offer) => {
-                const normalizedOfferOem = String(
-                    offer?.oem || offer?.oem_number || ''
-                ).trim().toUpperCase();
+                const normalizedOfferOem = normalizeOemKey(
+                    offer?.oem || offer?.oem_number
+                );
                 const normalizedOfferBrand = normalizeBrandToken(
                     offer?.make_name || offer?.brand_name
                 );
@@ -2725,8 +2850,7 @@ const AutopartOffers = () => {
                 }
                 if (
                     !normalizedOfferOem ||
-                    normalizedOfferOem ===
-                        String(oemValue || '').trim().toUpperCase()
+                    normalizedOfferOem === normalizeOemKey(oemValue)
                 ) {
                     return true;
                 }
@@ -3041,11 +3165,8 @@ const AutopartOffers = () => {
         setOemInput(oemValue);
 
         void (async () => {
-            const resolvedBrand = await executeSearch(
-                oemValue,
-                false,
-                brandValue
-            );
+            const { brand: resolvedBrand, oem: canonicalOem } =
+                await executeSearch(oemValue, false, brandValue);
             const effectiveBrand = brandValue || resolvedBrand;
             if (effectiveBrand) {
                 const brandFamily = await resolveBrandFamilyNames(effectiveBrand);
@@ -3054,10 +3175,14 @@ const AutopartOffers = () => {
                 );
                 setShowCrosses(true);
                 setRestrictCrossBrand(shouldRestrictCrossBrand);
-                await requestDragonzapOffers(oemValue, effectiveBrand, {
-                    showCrosses: true,
-                    restrictCrossBrand: shouldRestrictCrossBrand,
-                });
+                await requestDragonzapOffers(
+                    canonicalOem || oemValue,
+                    effectiveBrand,
+                    {
+                        showCrosses: true,
+                        restrictCrossBrand: shouldRestrictCrossBrand,
+                    }
+                );
             }
         })();
     }, [
@@ -3172,6 +3297,16 @@ const AutopartOffers = () => {
         [selectedSupplierCartItems]
     );
 
+    const marginWarningCartItems = useMemo(
+        () => cartItems.filter((item) => item.margin_warning),
+        [cartItems]
+    );
+
+    const selectedMarginWarningItems = useMemo(
+        () => effectiveCartItems.filter((item) => item.margin_warning),
+        [effectiveCartItems]
+    );
+
     const resetLocalFilters = () => {
         setLocalFilters({
             brand: '',
@@ -3262,6 +3397,14 @@ const AutopartOffers = () => {
             if (selectedSupplierOverAvailableItems.length) {
                 message.warning(
                     `В ${selectedSupplierOverAvailableItems.length} поз. заказ больше остатка в прайсе. Отправляем введённое количество.`
+                );
+            }
+            const supplierMarginWarnings = selectedSupplierCartItems.filter(
+                (item) => item.margin_warning
+            );
+            if (supplierMarginWarnings.length) {
+                message.warning(
+                    `В ${supplierMarginWarnings.length} поз. закупка выше ${Math.round(MAX_PURCHASE_TO_SALE_RATIO * 100)}% нашей цены продажи.`
                 );
             }
             for (const [providerId, items] of Object.entries(groups)) {
@@ -3373,6 +3516,14 @@ const AutopartOffers = () => {
 
         setCartSubmitting(true);
         try {
+            const dragonzapMarginWarnings = selectedDragonzapCartItems.filter(
+                (item) => item.margin_warning
+            );
+            if (dragonzapMarginWarnings.length) {
+                message.warning(
+                    `В ${dragonzapMarginWarnings.length} поз. закупка выше ${Math.round(MAX_PURCHASE_TO_SALE_RATIO * 100)}% нашей цены продажи.`
+                );
+            }
             for (const [supplierId, items] of Object.entries(groups)) {
                 try {
                     const payload = items.map((item) => ({
@@ -3513,8 +3664,10 @@ const AutopartOffers = () => {
                 return aPrice - bPrice;
             },
             defaultSortOrder: 'ascend',
-            render: (value) =>
-                value === null || value === undefined ? '—' : Number(value).toFixed(2),
+            render: (value, record) =>
+                renderPurchasePrice(value, {
+                    skipMarginCheck: Boolean(record.is_own_price),
+                }),
         },
         {
             title: 'Кол-во',
@@ -3720,8 +3873,7 @@ const AutopartOffers = () => {
                 const bPrice = Number(b.price ?? Number.POSITIVE_INFINITY);
                 return aPrice - bPrice;
             },
-            render: (value) =>
-                value === null || value === undefined ? '—' : Number(value).toFixed(2),
+            render: (value) => renderPurchasePrice(value),
         },
         {
             title: 'Кол-во',
@@ -3917,8 +4069,28 @@ const AutopartOffers = () => {
             dataIndex: 'price',
             key: 'price',
             width: 76,
-            render: (value) =>
-                value === null || value === undefined ? '—' : Number(value).toFixed(2),
+            render: (value, record) => {
+                if (value === null || value === undefined) {
+                    return '—';
+                }
+                const formatted = Number(value).toFixed(2);
+                if (!record.margin_warning) {
+                    return formatted;
+                }
+                return (
+                    <Tooltip
+                        title={
+                            record.sale_price_reference != null
+                                ? `Закупка выше ${Math.round(MAX_PURCHASE_TO_SALE_RATIO * 100)}% нашей цены продажи (${Number(record.sale_price_reference).toFixed(2)} руб.)`
+                                : 'Закупка близка к нашей цене продажи — маржа под угрозой'
+                        }
+                    >
+                        <span style={{ color: '#dc2626', fontWeight: 600 }}>
+                            {formatted} ⚠
+                        </span>
+                    </Tooltip>
+                );
+            },
         },
         {
             title: 'Дост.',
@@ -4007,6 +4179,19 @@ const AutopartOffers = () => {
                         selectedSupplierOverAvailableItems.length
                             ? `В выбранном заказе таких позиций: ${selectedSupplierOverAvailableItems.length}. Заказ будет отправлен с введённым количеством.`
                             : `В корзине таких позиций: ${supplierOverAvailableCartItems.length}. Если они попадут в отправку, заказ уйдёт с введённым количеством.`
+                    }
+                />
+            ) : null}
+
+            {marginWarningCartItems.length ? (
+                <Alert
+                    type="warning"
+                    showIcon
+                    message={`Маржа под угрозой: закупка выше ${Math.round(MAX_PURCHASE_TO_SALE_RATIO * 100)}% нашей цены продажи`}
+                    description={
+                        selectedMarginWarningItems.length
+                            ? `В выбранном заказе таких позиций: ${selectedMarginWarningItems.length} (отмечены ⚠ в колонке «Цена»). Проверьте цену перед отправкой.`
+                            : `В корзине таких позиций: ${marginWarningCartItems.length} (отмечены ⚠ в колонке «Цена»).`
                     }
                 />
             ) : null}
@@ -4662,7 +4847,7 @@ const AutopartOffers = () => {
                                                         {index === 0
                                                             ? (
                                                                 rowOem &&
-                                                                rowOem !== normalizedCurrentOem
+                                                                normalizeOemKey(rowOem) !== normalizedCurrentOem
                                                                     ? `Сработал кросс: ${rowOem}`
                                                                     : 'Лучшее предложение по текущему OEM на сайте'
                                                             )
