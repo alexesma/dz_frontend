@@ -87,3 +87,6 @@ export const getAutoPurchaseRunDraftGroupAiExplanation = (runId, supplierKey) =>
 
 export const updateTrackingOrderItem = (sourceType, itemId, payload) =>
     api.patch(`/order/tracking-items/${sourceType}/${itemId}`, payload);
+
+export const getAutoPurchaseFeedback = () =>
+    api.get('/order/autopurchase-feedback');

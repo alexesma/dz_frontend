@@ -17,6 +17,7 @@ import { ReloadOutlined } from '@ant-design/icons';
 import { Button } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { getInventoryControl } from '../api/dashboard';
+import { getAutoPurchaseFeedback } from '../api/orderTracking';
 
 const { Title, Text } = Typography;
 
@@ -64,10 +65,19 @@ const positionColumn = {
     ),
 };
 
+const OUTCOME_META = {
+    accurate: { label: 'Точно', color: 'green' },
+    overforecast: { label: 'Перезаказ', color: 'orange' },
+    underforecast: { label: 'Недозаказ', color: 'volcano' },
+    stockout_again: { label: 'Снова ноль', color: 'red' },
+    no_demand: { label: 'Спроса не было', color: 'default' },
+};
+
 const InventoryControlPage = () => {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
     const [payload, setPayload] = useState(null);
+    const [feedback, setFeedback] = useState(null);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -80,6 +90,13 @@ const InventoryControlPage = () => {
             setPayload(null);
         } finally {
             setLoading(false);
+        }
+        try {
+            const { data } = await getAutoPurchaseFeedback();
+            setFeedback(data || null);
+        } catch {
+            // Карточка точности не критична — страницу не блокируем.
+            setFeedback(null);
         }
     }, []);
 
@@ -172,6 +189,54 @@ const InventoryControlPage = () => {
             render: (value) => formatQty(value),
         },
     ];
+
+    const feedbackColumns = [
+        positionColumn,
+        {
+            title: 'Прогноз',
+            dataIndex: 'forecast_avg_daily',
+            width: 100,
+            render: (value) => (value != null ? `${value} шт/д` : '—'),
+        },
+        {
+            title: 'Факт',
+            dataIndex: 'actual_avg_daily',
+            width: 100,
+            render: (value) => (value != null ? `${value} шт/д` : '—'),
+        },
+        {
+            title: 'Ошибка',
+            dataIndex: 'forecast_error_pct',
+            width: 100,
+            render: (value) =>
+                value != null ? (
+                    <Tag color={Math.abs(value) <= (feedback?.accuracy_tolerance_pct || 40) ? 'green' : 'orange'}>
+                        {value > 0 ? '+' : ''}{value}%
+                    </Tag>
+                ) : '—',
+        },
+        {
+            title: 'Отправлено',
+            dataIndex: 'sent_qty',
+            width: 110,
+            render: (value, row) =>
+                value != null ? formatQty(value) : `реком. ${row.recommended_qty ?? '—'}`,
+        },
+        {
+            title: 'Продано',
+            dataIndex: 'actual_sold_qty',
+            width: 100,
+            render: (value) => formatQty(value),
+        },
+    ];
+
+    const feedbackEvaluated = feedback?.evaluated_snapshots || 0;
+    const feedbackAccuratePct =
+        feedbackEvaluated > 0
+            ? Math.round(
+                  ((feedback?.outcomes?.accurate || 0) / feedbackEvaluated) * 100
+              )
+            : null;
 
     const oosColumns = [
         positionColumn,
@@ -426,6 +491,126 @@ const InventoryControlPage = () => {
                                     locale={{ emptyText: 'Нет затоваренных позиций' }}
                                 />
                             </Card>
+
+                            {feedback ? (
+                                <Card
+                                    size="small"
+                                    title="🎯 Точность автозаказа (план vs факт)"
+                                >
+                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                        Каждый расчёт автозаказа сохраняет прогноз
+                                        спроса, а через {feedback.feedback_days} дн
+                                        сверяется с фактическими заказами клиентов.
+                                        Допуск точности ±{feedback.accuracy_tolerance_pct}%.
+                                    </Text>
+                                    <Row gutter={[12, 12]} style={{ marginTop: 12 }}>
+                                        <Col xs={12} md={6}>
+                                            <KpiCard
+                                                title="Оценено прогнозов"
+                                                value={feedbackEvaluated}
+                                                hint={`ждут оценки ${feedback.pending_snapshots || 0}`}
+                                            />
+                                        </Col>
+                                        <Col xs={12} md={6}>
+                                            <KpiCard
+                                                title="Точных попаданий"
+                                                value={
+                                                    feedbackAccuratePct != null
+                                                        ? `${feedbackAccuratePct}%`
+                                                        : '—'
+                                                }
+                                                hint={`в допуске ±${feedback.accuracy_tolerance_pct}%`}
+                                                color="#16a34a"
+                                            />
+                                        </Col>
+                                        <Col xs={12} md={6}>
+                                            <KpiCard
+                                                title="Средняя ошибка (MAPE)"
+                                                value={
+                                                    feedback.mape_pct != null
+                                                        ? `${feedback.mape_pct}%`
+                                                        : '—'
+                                                }
+                                                hint="чем меньше, тем лучше"
+                                            />
+                                        </Col>
+                                        <Col xs={12} md={6}>
+                                            <KpiCard
+                                                title="Смещение прогноза"
+                                                value={
+                                                    feedback.bias_pct != null
+                                                        ? `${feedback.bias_pct > 0 ? '+' : ''}${feedback.bias_pct}%`
+                                                        : '—'
+                                                }
+                                                hint="+ перезаказываем · − недозаказываем"
+                                                color={
+                                                    feedback.bias_pct != null && Math.abs(feedback.bias_pct) > 20
+                                                        ? '#ea580c'
+                                                        : '#0f172a'
+                                                }
+                                            />
+                                        </Col>
+                                    </Row>
+                                    <div style={{ marginTop: 12 }}>
+                                        <Space wrap>
+                                            {Object.entries(feedback.outcomes || {}).map(
+                                                ([key, count]) => {
+                                                    const meta = OUTCOME_META[key] || {
+                                                        label: key,
+                                                        color: 'default',
+                                                    };
+                                                    return (
+                                                        <Tag key={key} color={meta.color}>
+                                                            {meta.label}: {count}
+                                                        </Tag>
+                                                    );
+                                                }
+                                            )}
+                                        </Space>
+                                    </div>
+                                    {feedbackEvaluated === 0 ? (
+                                        <Alert
+                                            style={{ marginTop: 12 }}
+                                            type="info"
+                                            showIcon
+                                            message={`Первые оценки появятся через ${feedback.feedback_days} дн после расчётов автозаказа — снимки уже копятся.`}
+                                        />
+                                    ) : (
+                                        <>
+                                            <Card
+                                                size="small"
+                                                type="inner"
+                                                style={{ marginTop: 12 }}
+                                                title={`Перезаказали — спрос ниже прогноза (${(feedback.top_overforecast || []).length})`}
+                                            >
+                                                <Table
+                                                    rowKey="oem_number"
+                                                    size="small"
+                                                    pagination={{ pageSize: 5, hideOnSinglePage: true }}
+                                                    columns={feedbackColumns}
+                                                    dataSource={feedback.top_overforecast || []}
+                                                    locale={{ emptyText: 'Перезаказов нет' }}
+                                                />
+                                            </Card>
+                                            <Card
+                                                size="small"
+                                                type="inner"
+                                                style={{ marginTop: 12 }}
+                                                title={`Снова обнулились — заказали мало (${(feedback.top_stockout_again || []).length})`}
+                                            >
+                                                <Table
+                                                    rowKey="oem_number"
+                                                    size="small"
+                                                    pagination={{ pageSize: 5, hideOnSinglePage: true }}
+                                                    columns={feedbackColumns}
+                                                    dataSource={feedback.top_stockout_again || []}
+                                                    locale={{ emptyText: 'Повторных обнулений нет' }}
+                                                />
+                                            </Card>
+                                        </>
+                                    )}
+                                </Card>
+                            ) : null}
                         </Space>
                     )}
                 </Spin>
