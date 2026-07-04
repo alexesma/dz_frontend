@@ -14,13 +14,20 @@ import {
     Table,
     Tabs,
     Tag,
+    Tooltip,
     Typography,
     message,
 } from 'antd';
 import {
+    CloseCircleOutlined,
+    CloudSyncOutlined,
     LinkOutlined,
+    PrinterOutlined,
+    SafetyCertificateOutlined,
     SaveOutlined,
     ReloadOutlined,
+    SendOutlined,
+    StopOutlined,
     SyncOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -33,9 +40,17 @@ import {
     updateDiadocSettings,
     getDiadocStatus,
     listDiadocInboundDocuments,
+    confirmDiadocCloudSignTask,
+    downloadDiadocPrintForm,
     listDiadocOutboundDocuments,
     processDiadocInboundDocument,
+    refreshDiadocOutboundDocumentStatus,
+    startDiadocInboundReject,
+    startDiadocInboundSign,
+    startDiadocOutboundRevoke,
+    startDiadocOutboundSendSigned,
     syncDiadocInboundDocuments,
+    syncDiadocOutboundStatuses,
 } from '../api/diadoc';
 import { getCustomersSummary } from '../api/customers';
 import { getAllProviders } from '../api/providers';
@@ -50,7 +65,12 @@ const STATUS_COLORS = {
     processed: 'success',
     error: 'error',
     draft: 'default',
-    sent: 'success',
+    sent: 'processing',
+    delivered: 'blue',
+    completed: 'success',
+    rejected: 'error',
+    revoked: 'warning',
+    revocation_requested: 'warning',
 };
 
 const SYNC_RESULT_LABELS = {
@@ -60,6 +80,11 @@ const SYNC_RESULT_LABELS = {
     error: 'Ошибка',
     draft: 'Черновик',
     sent: 'Отправлен',
+    delivered: 'Доставлен',
+    completed: 'Завершён',
+    rejected: 'Отказ',
+    revoked: 'Аннулирован',
+    revocation_requested: 'Запрошено аннулирование',
 };
 
 const BindCounteragentModal = ({
@@ -172,6 +197,20 @@ const DiadocPage = () => {
 
     const [outboundRows, setOutboundRows] = useState([]);
     const [outboundLoading, setOutboundLoading] = useState(false);
+    const [outboundStatusSyncLoading, setOutboundStatusSyncLoading] =
+        useState(false);
+    const [refreshingOutboundId, setRefreshingOutboundId] = useState(null);
+    const [quickBindKey, setQuickBindKey] = useState(null);
+    // Облачная подпись: задача, ожидающая SMS-код
+    const [cloudSignTask, setCloudSignTask] = useState(null);
+    const [cloudSignCode, setCloudSignCode] = useState('');
+    const [cloudSignSubmitting, setCloudSignSubmitting] = useState(false);
+    const [cloudSignStartingKey, setCloudSignStartingKey] = useState(null);
+    const [revokeTarget, setRevokeTarget] = useState(null);
+    const [revokeComment, setRevokeComment] = useState('');
+    const [rejectTarget, setRejectTarget] = useState(null);
+    const [rejectComment, setRejectComment] = useState('');
+    const [printingKey, setPrintingKey] = useState(null);
     const [outboundFilters, setOutboundFilters] = useState({
         customerId: undefined,
         providerId: undefined,
@@ -290,6 +329,247 @@ const DiadocPage = () => {
             setOutboundLoading(false);
         }
     }, [focusedOutboundId, outboundFilters]);
+
+    const handleQuickBindByInn = useCallback(async (row, targetType) => {
+        const bindKey = `${targetType}:${row.box_id_guid}`;
+        setQuickBindKey(bindKey);
+        try {
+            const payload = {
+                counteragent_box_id: row.box_id_guid,
+                source_system: 'DIADOC_COUNTERAGENT_BOX',
+                is_active: true,
+            };
+            if (targetType === 'provider') {
+                await bindDiadocProviderCounteragent(
+                    row.suggested_provider_id,
+                    payload
+                );
+                message.success(
+                    `Контрагент привязан к поставщику ${row.suggested_provider_name}`
+                );
+            } else {
+                await bindDiadocCustomerCounteragent(
+                    row.suggested_customer_id,
+                    payload
+                );
+                message.success(
+                    `Контрагент привязан к клиенту ${row.suggested_customer_name}`
+                );
+            }
+            await loadCounteragents();
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail ||
+                    'Не удалось привязать контрагента'
+            );
+        } finally {
+            setQuickBindKey(null);
+        }
+    }, [loadCounteragents]);
+
+    const handleStartInboundSign = useCallback(async (row) => {
+        const startKey = `sign:${row.id}`;
+        setCloudSignStartingKey(startKey);
+        try {
+            const { data } = await startDiadocInboundSign(row.id, {
+                include_receipt: true,
+                total_code: '1',
+            });
+            setCloudSignCode('');
+            setCloudSignTask({
+                id: data.id,
+                title: `Подписание входящего ${row.document_number || row.file_name || `#${row.id}`}`,
+                kind: 'inbound',
+            });
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail ||
+                    'Не удалось запустить подписание'
+            );
+        } finally {
+            setCloudSignStartingKey(null);
+        }
+    }, []);
+
+    const handleStartSendSigned = useCallback(async (row) => {
+        const startKey = `send:${row.id}`;
+        setCloudSignStartingKey(startKey);
+        try {
+            const { data } = await startDiadocOutboundSendSigned(row.id);
+            setCloudSignCode('');
+            setCloudSignTask({
+                id: data.id,
+                title: `Подпись и отправка ${row.file_name || `#${row.id}`}`,
+                kind: 'outbound',
+            });
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail ||
+                    'Не удалось запустить подписание черновика'
+            );
+        } finally {
+            setCloudSignStartingKey(null);
+        }
+    }, []);
+
+    const handleStartRevoke = useCallback(async () => {
+        if (!revokeTarget) {
+            return;
+        }
+        const startKey = `revoke:${revokeTarget.id}`;
+        setCloudSignStartingKey(startKey);
+        try {
+            const { data } = await startDiadocOutboundRevoke(
+                revokeTarget.id,
+                { comment: revokeComment || null }
+            );
+            setCloudSignCode('');
+            setCloudSignTask({
+                id: data.id,
+                title: `Аннулирование ${revokeTarget.file_name || `#${revokeTarget.id}`}`,
+                kind: 'outbound',
+            });
+            setRevokeTarget(null);
+            setRevokeComment('');
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail ||
+                    'Не удалось запустить аннулирование'
+            );
+        } finally {
+            setCloudSignStartingKey(null);
+        }
+    }, [revokeComment, revokeTarget]);
+
+    const handleConfirmCloudSign = useCallback(async () => {
+        if (!cloudSignTask) {
+            return;
+        }
+        const code = String(cloudSignCode || '').trim();
+        if (!code) {
+            message.warning('Введите код из SMS');
+            return;
+        }
+        setCloudSignSubmitting(true);
+        try {
+            await confirmDiadocCloudSignTask(cloudSignTask.id, code);
+            message.success('Подписано и отправлено в Диадок');
+            const finishedKind = cloudSignTask.kind;
+            setCloudSignTask(null);
+            setCloudSignCode('');
+            if (finishedKind === 'inbound') {
+                await loadInbound();
+            } else {
+                await loadOutbound(outboundFilters);
+            }
+        } catch (err) {
+            // Код мог быть неверным — модал не закрываем, можно повторить.
+            message.error(
+                err?.response?.data?.detail ||
+                    'Не удалось подтвердить подпись. Проверьте код.'
+            );
+        } finally {
+            setCloudSignSubmitting(false);
+        }
+    }, [
+        cloudSignCode,
+        cloudSignTask,
+        loadInbound,
+        loadOutbound,
+        outboundFilters,
+    ]);
+
+    const handleStartInboundReject = useCallback(async () => {
+        if (!rejectTarget) {
+            return;
+        }
+        const reason = rejectComment.trim();
+        if (!reason) {
+            message.warning('Укажите причину отказа');
+            return;
+        }
+        const startKey = `reject:${rejectTarget.id}`;
+        setCloudSignStartingKey(startKey);
+        try {
+            const { data } = await startDiadocInboundReject(
+                rejectTarget.id,
+                reason
+            );
+            setRejectTarget(null);
+            setRejectComment('');
+            setCloudSignCode('');
+            setCloudSignTask({
+                id: data.id,
+                title: `Отказ в подписи ${rejectTarget.document_number || rejectTarget.file_name || `#${rejectTarget.id}`}`,
+                kind: 'inbound',
+            });
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail ||
+                    'Не удалось начать отказ в подписи'
+            );
+        } finally {
+            setCloudSignStartingKey(null);
+        }
+    }, [rejectComment, rejectTarget]);
+
+    const handlePrintForm = useCallback(async (row, keyPrefix) => {
+        const printKey = `${keyPrefix}:${row.id}`;
+        setPrintingKey(printKey);
+        try {
+            await downloadDiadocPrintForm(row.message_id, row.entity_id);
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail ||
+                    'Не удалось получить печатную форму'
+            );
+        } finally {
+            setPrintingKey(null);
+        }
+    }, []);
+
+    const handleSyncOutboundStatuses = useCallback(async () => {
+        setOutboundStatusSyncLoading(true);
+        try {
+            const { data } = await syncDiadocOutboundStatuses();
+            const errorsCount = (data?.errors || []).length;
+            message.success(
+                `Статусы обновлены: проверено ${data?.checked ?? 0}, ` +
+                `изменилось ${data?.updated ?? 0}` +
+                (errorsCount ? `, ошибок ${errorsCount}` : '')
+            );
+            await loadOutbound(outboundFilters);
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail ||
+                    'Не удалось обновить статусы из Диадока'
+            );
+        } finally {
+            setOutboundStatusSyncLoading(false);
+        }
+    }, [loadOutbound, outboundFilters]);
+
+    const handleRefreshOutboundDocStatus = useCallback(async (documentId) => {
+        setRefreshingOutboundId(documentId);
+        try {
+            const { data } = await refreshDiadocOutboundDocumentStatus(
+                documentId
+            );
+            setOutboundRows((prev) =>
+                prev.map((row) => (row.id === documentId ? data : row))
+            );
+            message.success(
+                `Статус: ${data?.docflow_status_text || SYNC_RESULT_LABELS[data?.status] || data?.status}`
+            );
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail ||
+                    'Не удалось обновить статус документа'
+            );
+        } finally {
+            setRefreshingOutboundId(null);
+        }
+    }, []);
 
     useEffect(() => {
         loadStatus();
@@ -475,9 +755,9 @@ const DiadocPage = () => {
         {
             title: 'Действия',
             key: 'actions',
-            width: 170,
+            width: 230,
             render: (_, row) => (
-                <Space>
+                <Space wrap>
                     <Button
                         size="small"
                         icon={<SyncOutlined />}
@@ -487,6 +767,53 @@ const DiadocPage = () => {
                     >
                         Обработать
                     </Button>
+                    {row.signed_at ? (
+                        <Tooltip title={`Титул покупателя отправлен ${fmtDateTime(row.signed_at)}`}>
+                            <Tag color="success">Подписан</Tag>
+                        </Tooltip>
+                    ) : row.rejected_at ? (
+                        <Tooltip title={`Отказ отправлен ${fmtDateTime(row.rejected_at)}`}>
+                            <Tag color="error">Отказано</Tag>
+                        </Tooltip>
+                    ) : (
+                        <>
+                            <Tooltip title="Подписать облачной подписью: титул покупателя + извещение о получении. Понадобится код из SMS.">
+                                <Button
+                                    size="small"
+                                    icon={<SafetyCertificateOutlined />}
+                                    loading={cloudSignStartingKey === `sign:${row.id}`}
+                                    disabled={!row.message_id || !row.entity_id}
+                                    onClick={() => handleStartInboundSign(row)}
+                                >
+                                    Подписать
+                                </Button>
+                            </Tooltip>
+                            <Tooltip title="Отказать в подписи (с причиной, код из SMS)">
+                                <Button
+                                    size="small"
+                                    danger
+                                    type="text"
+                                    icon={<CloseCircleOutlined />}
+                                    loading={cloudSignStartingKey === `reject:${row.id}`}
+                                    disabled={!row.message_id || !row.entity_id}
+                                    onClick={() => {
+                                        setRejectComment('');
+                                        setRejectTarget(row);
+                                    }}
+                                />
+                            </Tooltip>
+                        </>
+                    )}
+                    <Tooltip title="Скачать печатную форму (PDF)">
+                        <Button
+                            size="small"
+                            type="text"
+                            icon={<PrinterOutlined />}
+                            loading={printingKey === `in:${row.id}`}
+                            disabled={!row.message_id || !row.entity_id}
+                            onClick={() => handlePrintForm(row, 'in')}
+                        />
+                    </Tooltip>
                 </Space>
             ),
         },
@@ -496,11 +823,23 @@ const DiadocPage = () => {
         {
             title: 'Статус',
             dataIndex: 'status',
-            width: 120,
-            render: (value) => (
-                <Tag color={STATUS_COLORS[value] || 'default'}>
-                    {SYNC_RESULT_LABELS[value] || value}
-                </Tag>
+            width: 190,
+            render: (value, row) => (
+                <Space direction="vertical" size={0}>
+                    <Tag color={STATUS_COLORS[value] || 'default'}>
+                        {SYNC_RESULT_LABELS[value] || value}
+                    </Tag>
+                    {row.docflow_status_text ? (
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                            {row.docflow_status_text}
+                        </Text>
+                    ) : null}
+                    {row.status_checked_at ? (
+                        <Text type="secondary" style={{ fontSize: 11 }}>
+                            проверен {fmtDateTime(row.status_checked_at)}
+                        </Text>
+                    ) : null}
+                </Space>
             ),
         },
         {
@@ -559,6 +898,67 @@ const DiadocPage = () => {
             width: 160,
             render: fmtDateTime,
         },
+        {
+            title: '',
+            key: 'doc_actions',
+            width: 130,
+            render: (_, row) => (
+                <Space size={4}>
+                    {row.message_id && row.entity_id ? (
+                        <Tooltip title="Обновить статус из Диадока">
+                            <Button
+                                size="small"
+                                type="text"
+                                icon={<ReloadOutlined />}
+                                loading={refreshingOutboundId === row.id}
+                                onClick={() =>
+                                    handleRefreshOutboundDocStatus(row.id)
+                                }
+                            />
+                        </Tooltip>
+                    ) : null}
+                    {row.message_id && row.entity_id && !row.is_draft ? (
+                        <Tooltip title="Скачать печатную форму (PDF)">
+                            <Button
+                                size="small"
+                                type="text"
+                                icon={<PrinterOutlined />}
+                                loading={printingKey === `out:${row.id}`}
+                                onClick={() => handlePrintForm(row, 'out')}
+                            />
+                        </Tooltip>
+                    ) : null}
+                    {row.is_draft ? (
+                        <Tooltip title="Подписать облачной подписью и отправить контрагенту (код из SMS)">
+                            <Button
+                                size="small"
+                                type="text"
+                                icon={<SendOutlined />}
+                                loading={cloudSignStartingKey === `send:${row.id}`}
+                                onClick={() => handleStartSendSigned(row)}
+                            />
+                        </Tooltip>
+                    ) : null}
+                    {!row.is_draft &&
+                    row.message_id &&
+                    !['revoked', 'revocation_requested'].includes(row.status) ? (
+                        <Tooltip title="Запросить аннулирование документа (код из SMS)">
+                            <Button
+                                size="small"
+                                type="text"
+                                danger
+                                icon={<StopOutlined />}
+                                loading={cloudSignStartingKey === `revoke:${row.id}`}
+                                onClick={() => {
+                                    setRevokeComment('');
+                                    setRevokeTarget(row);
+                                }}
+                            />
+                        </Tooltip>
+                    ) : null}
+                </Space>
+            ),
+        },
     ];
 
     const counteragentColumns = [
@@ -593,11 +993,33 @@ const DiadocPage = () => {
         {
             title: 'Связано',
             key: 'mapped',
-            width: 260,
+            width: 280,
             render: (_, row) => (
-                <Space direction="vertical" size={0}>
+                <Space direction="vertical" size={2}>
                     <Text>{row.mapped_provider_name ? `Поставщик: ${row.mapped_provider_name}` : 'Поставщик: —'}</Text>
                     <Text>{row.mapped_customer_name ? `Клиент: ${row.mapped_customer_name}` : 'Клиент: —'}</Text>
+                    {row.suggested_provider_id && !row.mapped_provider_name ? (
+                        <Button
+                            size="small"
+                            type="link"
+                            style={{ padding: 0, height: 'auto' }}
+                            loading={quickBindKey === `provider:${row.box_id_guid}`}
+                            onClick={() => handleQuickBindByInn(row, 'provider')}
+                        >
+                            Совпадение по ИНН: {row.suggested_provider_name} → привязать
+                        </Button>
+                    ) : null}
+                    {row.suggested_customer_id && !row.mapped_customer_name ? (
+                        <Button
+                            size="small"
+                            type="link"
+                            style={{ padding: 0, height: 'auto' }}
+                            loading={quickBindKey === `customer:${row.box_id_guid}`}
+                            onClick={() => handleQuickBindByInn(row, 'customer')}
+                        >
+                            Совпадение по ИНН: {row.suggested_customer_name} → привязать
+                        </Button>
+                    ) : null}
                 </Space>
             ),
         },
@@ -998,15 +1420,29 @@ const DiadocPage = () => {
                                                 optionFilterProp="label"
                                             />
                                         </Col>
-                                        <Col xs={24} md={8}>
+                                        <Col xs={24} md={4}>
                                             <Button
                                                 block
                                                 icon={<ReloadOutlined />}
                                                 onClick={() => loadOutbound(outboundFilters)}
                                                 loading={outboundLoading}
                                             >
-                                                Обновить исходящие
+                                                Обновить список
                                             </Button>
+                                        </Col>
+                                        <Col xs={24} md={4}>
+                                            <Tooltip title="Опросить Диадок по всем незавершённым документам: доставка, подпись, отказ, аннулирование">
+                                                <Button
+                                                    block
+                                                    type="primary"
+                                                    ghost
+                                                    icon={<CloudSyncOutlined />}
+                                                    onClick={handleSyncOutboundStatuses}
+                                                    loading={outboundStatusSyncLoading}
+                                                >
+                                                    Статусы из Диадока
+                                                </Button>
+                                            </Tooltip>
                                         </Col>
                                     </Row>
                                     <Table
@@ -1043,6 +1479,100 @@ const DiadocPage = () => {
                 providerOptions={providerOptions}
                 customerOptions={customerOptions}
             />
+
+            <Modal
+                open={Boolean(cloudSignTask)}
+                title={cloudSignTask?.title || 'Подтверждение подписи'}
+                okText="Подтвердить"
+                cancelText="Отмена"
+                confirmLoading={cloudSignSubmitting}
+                onOk={handleConfirmCloudSign}
+                onCancel={() => {
+                    setCloudSignTask(null);
+                    setCloudSignCode('');
+                }}
+            >
+                <Space direction="vertical" style={{ width: '100%' }}>
+                    <Alert
+                        type="info"
+                        showIcon
+                        message="Файлы переданы на облачное подписание"
+                        description="На телефон владельца Контур.Сертификата отправлено SMS с кодом подтверждения. Введите код — документ будет подписан и отправлен."
+                    />
+                    <Input
+                        autoFocus
+                        placeholder="Код из SMS"
+                        value={cloudSignCode}
+                        maxLength={20}
+                        onChange={(e) => setCloudSignCode(e.target.value)}
+                        onPressEnter={handleConfirmCloudSign}
+                    />
+                </Space>
+            </Modal>
+
+            <Modal
+                open={Boolean(revokeTarget)}
+                title={`Аннулирование ${revokeTarget?.file_name || ''}`}
+                okText="Запросить аннулирование"
+                okButtonProps={{ danger: true }}
+                cancelText="Отмена"
+                confirmLoading={
+                    cloudSignStartingKey === `revoke:${revokeTarget?.id}`
+                }
+                onOk={handleStartRevoke}
+                onCancel={() => {
+                    setRevokeTarget(null);
+                    setRevokeComment('');
+                }}
+            >
+                <Space direction="vertical" style={{ width: '100%' }}>
+                    <Alert
+                        type="warning"
+                        showIcon
+                        message="Контрагент должен подтвердить аннулирование"
+                        description="Будет сформирован запрос на аннулирование, подписан облачной подписью (код из SMS) и отправлен контрагенту."
+                    />
+                    <Input.TextArea
+                        rows={3}
+                        placeholder="Причина аннулирования (необязательно)"
+                        value={revokeComment}
+                        maxLength={1000}
+                        onChange={(e) => setRevokeComment(e.target.value)}
+                    />
+                </Space>
+            </Modal>
+
+            <Modal
+                open={Boolean(rejectTarget)}
+                title={`Отказ в подписи ${rejectTarget?.document_number || rejectTarget?.file_name || ''}`}
+                okText="Отправить отказ (SMS)"
+                okButtonProps={{ danger: true }}
+                cancelText="Отмена"
+                confirmLoading={
+                    cloudSignStartingKey === `reject:${rejectTarget?.id}`
+                }
+                onOk={handleStartInboundReject}
+                onCancel={() => {
+                    setRejectTarget(null);
+                    setRejectComment('');
+                }}
+            >
+                <Space direction="vertical" style={{ width: '100%' }}>
+                    <Alert
+                        type="warning"
+                        showIcon
+                        message="Поставщик получит мотивированный отказ"
+                        description="Отказ подписывается облачной подписью (код из SMS). Причина обязательна."
+                    />
+                    <Input.TextArea
+                        rows={3}
+                        placeholder="Причина отказа (обязательно)"
+                        value={rejectComment}
+                        maxLength={1000}
+                        onChange={(e) => setRejectComment(e.target.value)}
+                    />
+                </Space>
+            </Modal>
         </div>
     );
 };

@@ -27,6 +27,34 @@ export const processDiadocInboundDocument = (documentId, data = {}) =>
 export const listDiadocOutboundDocuments = (params = {}) =>
     api.get('/diadoc/outbound-documents', { params });
 
+export const syncDiadocOutboundStatuses = (params = {}) =>
+    api.post('/diadoc/sync/outbound-status', null, { params });
+
+export const refreshDiadocOutboundDocumentStatus = (documentId) =>
+    api.post(`/diadoc/outbound-documents/${documentId}/refresh-status`);
+
+export const startDiadocInboundSign = (documentId, data = {}) =>
+    api.post(`/diadoc/inbound-documents/${documentId}/sign/start`, data, {
+        timeout: 120000,
+    });
+
+export const startDiadocOutboundRevoke = (documentId, data = {}) =>
+    api.post(`/diadoc/outbound-documents/${documentId}/revoke/start`, data, {
+        timeout: 120000,
+    });
+
+export const startDiadocOutboundSendSigned = (documentId) =>
+    api.post(
+        `/diadoc/outbound-documents/${documentId}/send-signed/start`,
+        null,
+        { timeout: 120000 }
+    );
+
+export const confirmDiadocCloudSignTask = (taskId, code) =>
+    api.post(`/diadoc/cloud-sign-tasks/${taskId}/confirm`, { code }, {
+        timeout: 120000,
+    });
+
 export const createDiadocOutboundDocumentFromShipment = (
     shipmentId,
     data = {}
@@ -61,3 +89,24 @@ export const getDiadocCustomerReturnOutboundReadiness = (returnId) =>
 
 export const getDiadocSupplierReturnOutboundReadiness = (returnId) =>
     api.get(`/diadoc/outbound-readiness/supplier-return/${returnId}`);
+
+export const startDiadocInboundReject = (documentId, comment) =>
+    api.post(`/diadoc/inbound-documents/${documentId}/reject/start`, {
+        comment,
+    }, { timeout: 120000 });
+
+export const downloadDiadocPrintForm = async (messageId, entityId) => {
+    const response = await api.get('/diadoc/print-form', {
+        params: { message_id: messageId, entity_id: entityId },
+        responseType: 'blob',
+        timeout: 180000,
+    });
+    const url = URL.createObjectURL(response.data);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `diadoc_${String(messageId).slice(0, 8)}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+};

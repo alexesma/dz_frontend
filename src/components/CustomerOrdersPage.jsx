@@ -52,6 +52,12 @@ const CustomerOrdersPage = () => {
     const [createOpen, setCreateOpen] = useState(false);
     const [creating, setCreating] = useState(false);
     const [orderConfigs, setOrderConfigs] = useState([]);
+
+    const formatApiDetail = (detail, fallback) => {
+        if (typeof detail === 'string') return detail;
+        if (detail?.message) return detail.message;
+        return fallback;
+    };
     const [configsLoading, setConfigsLoading] = useState(false);
     const [retryingOrderId, setRetryingOrderId] = useState(null);
     const [formState, setFormState] = useState({
@@ -395,20 +401,25 @@ const CustomerOrdersPage = () => {
         }
         setCreating(true);
         try {
-            await createManualCustomerOrder({
+            const response = await createManualCustomerOrder({
                 customer_id: formState.customerId,
                 order_number: formState.orderNumber || null,
                 auto_process: formState.autoProcess,
                 order_config_id: formState.orderConfigId || null,
                 items: cleanedItems,
             });
+            if (response?.data?.credit_warning?.message) {
+                message.warning(response.data.credit_warning.message, 8);
+            }
             message.success('Заказ создан');
             setCreateOpen(false);
             resetCreateForm();
             fetchOrders(filters);
         } catch (err) {
-            const detail =
-                err?.response?.data?.detail || 'Не удалось создать заказ';
+            const detail = formatApiDetail(
+                err?.response?.data?.detail,
+                'Не удалось создать заказ',
+            );
             message.error(detail);
         } finally {
             setCreating(false);

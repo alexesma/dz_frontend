@@ -395,6 +395,12 @@ const ShipmentDetailPage = () => {
     const [signatureForm] = Form.useForm();
     const canUseDiadoc = user?.role === 'admin';
 
+    const formatApiDetail = (detail, fallback) => {
+        if (typeof detail === 'string') return detail;
+        if (detail?.message) return detail.message;
+        return fallback;
+    };
+
     const fetchShipment = useCallback(async () => {
         setLoading(true);
         try {
@@ -508,11 +514,14 @@ const ShipmentDetailPage = () => {
     const handlePost = async () => {
         setPosting(true);
         try {
-            await postShipment(id);
+            const response = await postShipment(id);
+            if (response?.data?.credit_warning?.message) {
+                message.warning(response.data.credit_warning.message, 8);
+            }
             message.success('Накладная проведена — остатки списаны');
             fetchShipment();
         } catch (err) {
-            message.error(err?.response?.data?.detail || 'Ошибка проведения');
+            message.error(formatApiDetail(err?.response?.data?.detail, 'Ошибка проведения'));
         } finally {
             setPosting(false);
         }

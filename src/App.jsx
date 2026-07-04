@@ -18,6 +18,7 @@ import CustomerPage from './components/CustomerPage';
 import AutopartOffers from './components/AutopartOffers';
 import InvalidCrossesPage from './components/InvalidCrossesPage';
 import NomenclaturePage from './components/NomenclaturePage';
+import ProductLabelsPage from './components/ProductLabelsPage';
 import PriceHistoryPlot from './components/PriceHistoryPlot';
 import OrdersTrackingPage from './components/OrdersTrackingPage';
 import OrderDetailPage from './components/OrderDetailPage';
@@ -30,6 +31,7 @@ import SupplierReceiptsPage from './components/SupplierReceiptsPage';
 import IncomingSupplierDocumentsPage from './components/IncomingSupplierDocumentsPage';
 import OutgoingCustomerDocumentsPage from './components/OutgoingCustomerDocumentsPage';
 import DiadocPage from './components/DiadocPage';
+import OneCExchangePage from './components/OneCExchangePage';
 import CustomerOrdersPage from './components/CustomerOrdersPage';
 import CustomerOrderDetailPage from './components/CustomerOrderDetailPage';
 import CustomerSupplierOrdersPage from './components/CustomerSupplierOrdersPage';
@@ -51,6 +53,7 @@ import InventoryPage from './components/InventoryPage';
 import StockDocumentsPage from './components/StockDocumentsPage';
 import StockDocumentDetailPage from './components/StockDocumentDetailPage';
 import StockMovementsPage from './components/StockMovementsPage';
+import MarkingCodesPage from './components/MarkingCodesPage';
 import ReservesPage from './components/ReservesPage';
 import ShipmentsPage from './components/ShipmentsPage';
 import ShipmentProfitReportPage from './components/ShipmentProfitReportPage';
@@ -140,6 +143,7 @@ const AppRoutes = () => (
         <Route path="/documents/incoming" element={<RequireAuth><IncomingSupplierDocumentsPage /></RequireAuth>} />
         <Route path="/documents/outgoing" element={<RequireAuth><OutgoingCustomerDocumentsPage /></RequireAuth>} />
         <Route path="/documents/diadoc" element={<RequireAdmin><DiadocPage /></RequireAdmin>} />
+        <Route path="/documents/1c" element={<RequireAdmin><OneCExchangePage /></RequireAdmin>} />
 
         {/* Providers */}
         <Route path="/providers" element={<RequireAuth><ProvidersList /></RequireAuth>} />
@@ -164,6 +168,7 @@ const AppRoutes = () => (
 
         {/* Nomenclature catalog */}
         <Route path="/autoparts/nomenclature" element={<RequireAuth><NomenclaturePage /></RequireAuth>} />
+        <Route path="/autoparts/labels" element={<RequireAuth><ProductLabelsPage /></RequireAuth>} />
 
         {/* Warehouse */}
         <Route path="/warehouse/storage" element={<RequireAuth><StorageLocationsPage /></RequireAuth>} />
@@ -172,6 +177,7 @@ const AppRoutes = () => (
         <Route path="/warehouse/stock-documents/:id" element={<RequireAuth><StockDocumentDetailPage /></RequireAuth>} />
         <Route path="/warehouse/overview" element={<RequireAuth><StockOverviewPage /></RequireAuth>} />
         <Route path="/warehouse/movements" element={<RequireAuth><StockMovementsPage /></RequireAuth>} />
+        <Route path="/warehouse/marking" element={<RequireAuth><MarkingCodesPage /></RequireAuth>} />
         <Route path="/warehouse/reserves" element={<RequireAuth><ReservesPage /></RequireAuth>} />
         <Route path="/warehouse/shipments" element={<RequireAuth><ShipmentsPage /></RequireAuth>} />
         <Route path="/warehouse/profit-report" element={<RequireAuth><ShipmentProfitReportPage /></RequireAuth>} />

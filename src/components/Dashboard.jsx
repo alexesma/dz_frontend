@@ -136,6 +136,13 @@ const normalizeSiteOffers = (payload, watchItem) => {
         .slice(0, 5);
 };
 
+const getReadableAutopartName = (name, watchItem) => {
+    const text = String(name || '').trim();
+    if (!text) return '';
+    const fallback = `${watchItem?.brand || ''} ${watchItem?.oem || ''}`.trim();
+    return text === fallback ? '' : text;
+};
+
 const MetricHistory = ({ points, valueKey, suffix = '', digits = 0, render }) => {
     const values = (points || []).slice(-4);
     if (!values.length) return <Text type="secondary">Нет данных</Text>;
@@ -603,12 +610,22 @@ const Dashboard = () => {
             title: 'Позиция',
             key: 'position',
             width: 260,
-            render: (_, row) => (
-                <Space direction="vertical" size={0}>
-                    <Text strong>{row.brand} {row.oem}</Text>
-                    <Text type="secondary">Контрольная цена: {formatMoney(row.max_price)}</Text>
-                </Space>
-            ),
+            render: (_, row) => {
+                const bestName = (watchOffers[row.id] || [])
+                    .map((offer) => getReadableAutopartName(offer.autopart_name, row))
+                    .find(Boolean);
+                return (
+                    <Space direction="vertical" size={0}>
+                        <Text strong>{row.brand} {row.oem}</Text>
+                        {bestName ? (
+                            <Text type="secondary" ellipsis={{ tooltip: bestName }}>
+                                {bestName}
+                            </Text>
+                        ) : null}
+                        <Text type="secondary">Контрольная цена: {formatMoney(row.max_price)}</Text>
+                    </Space>
+                );
+            },
         },
         {
             title: 'Прайсы поставщиков',
@@ -671,12 +688,20 @@ const Dashboard = () => {
             title: 'Предложение',
             key: 'offer',
             width: '30%',
-            render: (_, row) => (
-                <Space direction="vertical" size={0}>
-                    <Text strong>{row.brand_name} {row.oem_number}</Text>
-                    <Text>{formatMoney(row.price)}</Text>
-                </Space>
-            ),
+            render: (_, row) => {
+                const itemName = getReadableAutopartName(row.autopart_name, watchItem);
+                return (
+                    <Space direction="vertical" size={0}>
+                        <Text strong>{row.brand_name} {row.oem_number}</Text>
+                        {itemName ? (
+                            <Text type="secondary" ellipsis={{ tooltip: itemName }}>
+                                {itemName}
+                            </Text>
+                        ) : null}
+                        <Text>{formatMoney(row.price)}</Text>
+                    </Space>
+                );
+            },
         },
         {
             title: 'Наличие и срок',

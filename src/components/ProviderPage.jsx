@@ -331,6 +331,8 @@ const ProviderPage = () => {
                     name: data.provider.name,
                     email_contact: data.provider.email_contact,
                     email_incoming_price: data.provider.email_incoming_price,
+                    inn: data.provider.inn,
+                    kpp: data.provider.kpp,
                     type_prices: data.provider.type_prices,
                     description: data.provider.description,
                     comment: data.provider.comment,
@@ -2105,6 +2107,18 @@ const ProviderPage = () => {
                         rules={[{ type: "email", message: "Введите корректный email" }]}
                     >
                         <Input placeholder="prices@provider.com" />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="inn"
+                        label="ИНН"
+                        extra="Используется для автопривязки контрагента Диадока по ИНН"
+                    >
+                        <Input placeholder="7701234567" maxLength={32} />
+                    </Form.Item>
+
+                    <Form.Item name="kpp" label="КПП">
+                        <Input placeholder="770101001" maxLength={32} />
                     </Form.Item>
 
                     <Form.Item name="description" label="Описание">

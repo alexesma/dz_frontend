@@ -125,6 +125,12 @@ const CustomerOrderDetailPage = () => {
         }
     }, [orderId]);
 
+    const formatApiDetail = (detail, fallback) => {
+        if (typeof detail === 'string') return detail;
+        if (detail?.message) return detail.message;
+        return fallback;
+    };
+
     useEffect(() => {
         fetchData();
     }, [fetchData]);
@@ -140,15 +146,20 @@ const CustomerOrderDetailPage = () => {
         if (!supplierId) return;
         setItemUpdating(item.id, true);
         try {
-            await updateCustomerOrderItem(item.id, {
+            const response = await updateCustomerOrderItem(item.id, {
                 status: 'SUPPLIER',
                 supplier_id: supplierId,
             });
+            if (response?.data?.credit_warning?.message) {
+                message.warning(response.data.credit_warning.message, 8);
+            }
             message.success('Поставщик назначен');
             fetchData();
         } catch (err) {
-            const detail =
-                err?.response?.data?.detail || 'Не удалось обновить позицию';
+            const detail = formatApiDetail(
+                err?.response?.data?.detail,
+                'Не удалось обновить позицию',
+            );
             message.error(detail);
         } finally {
             setItemUpdating(item.id, false);
@@ -162,8 +173,10 @@ const CustomerOrderDetailPage = () => {
             message.success('Позиция отказана');
             fetchData();
         } catch (err) {
-            const detail =
-                err?.response?.data?.detail || 'Не удалось обновить позицию';
+            const detail = formatApiDetail(
+                err?.response?.data?.detail,
+                'Не удалось обновить позицию',
+            );
             message.error(detail);
         } finally {
             setItemUpdating(item.id, false);
@@ -173,12 +186,17 @@ const CustomerOrderDetailPage = () => {
     const handleOwnStock = async (item) => {
         setItemUpdating(item.id, true);
         try {
-            await updateCustomerOrderItem(item.id, { status: 'OWN_STOCK' });
+            const response = await updateCustomerOrderItem(item.id, { status: 'OWN_STOCK' });
+            if (response?.data?.credit_warning?.message) {
+                message.warning(response.data.credit_warning.message, 8);
+            }
             message.success('Позиция отправлена на наш склад');
             fetchData();
         } catch (err) {
-            const detail =
-                err?.response?.data?.detail || 'Не удалось обновить позицию';
+            const detail = formatApiDetail(
+                err?.response?.data?.detail,
+                'Не удалось обновить позицию',
+            );
             message.error(detail);
         } finally {
             setItemUpdating(item.id, false);
@@ -189,12 +207,17 @@ const CustomerOrderDetailPage = () => {
         if (!order) return;
         setProcessing(true);
         try {
-            await processManualCustomerOrder(order.id);
+            const response = await processManualCustomerOrder(order.id);
+            if (response?.data?.credit_warning?.message) {
+                message.warning(response.data.credit_warning.message, 8);
+            }
             message.success('Заказ обработан');
             fetchData();
         } catch (err) {
-            const detail =
-                err?.response?.data?.detail || 'Не удалось обработать заказ';
+            const detail = formatApiDetail(
+                err?.response?.data?.detail,
+                'Не удалось обработать заказ',
+            );
             message.error(detail);
         } finally {
             setProcessing(false);

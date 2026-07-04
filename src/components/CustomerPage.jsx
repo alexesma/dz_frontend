@@ -696,6 +696,11 @@ const CustomerPage = () => {
     useEffect(() => {
         if (isNew) {
             customerForm.resetFields();
+            customerForm.setFieldsValue({
+                credit_control_mode: 'off',
+                payment_terms_days: 0,
+                credit_limit: null,
+            });
             setCustomerData(null);
             setLoadError('');
             setLoading(false);
@@ -739,6 +744,9 @@ const CustomerPage = () => {
                     type_prices: customer.type_prices,
                     description: customer.description,
                     comment: customer.comment,
+                    credit_control_mode: customer.credit_control_mode || 'off',
+                    credit_limit: customer.credit_limit ?? null,
+                    payment_terms_days: customer.payment_terms_days ?? 0,
                 });
             } catch (err) {
                 const detail = extractApiError(
@@ -785,12 +793,21 @@ const CustomerPage = () => {
     const handleCustomerSubmit = async (values) => {
         setSaving(true);
         try {
+            const payload = {
+                ...values,
+                credit_limit:
+                    values.credit_limit === '' || values.credit_limit === undefined
+                        ? null
+                        : values.credit_limit,
+                payment_terms_days: values.payment_terms_days || 0,
+                credit_control_mode: values.credit_control_mode || 'off',
+            };
             if (isNew) {
-                const { data } = await createCustomer(values);
+                const { data } = await createCustomer(payload);
                 message.success('Клиент успешно создан');
                 navigate(`/customers/${data.id}/edit`);
             } else {
-                await updateCustomer(customerId, values);
+                await updateCustomer(customerId, payload);
                 message.success('Данные клиента обновлены');
 
                 // Обновляем данные на странице
@@ -1434,6 +1451,11 @@ const CustomerPage = () => {
                         }
                     }}
                     scrollToFirstError
+                    initialValues={{
+                        credit_control_mode: 'off',
+                        payment_terms_days: 0,
+                        credit_limit: null,
+                    }}
                 >
                     <Form.Item
                         name="name"
@@ -1500,6 +1522,48 @@ const CustomerPage = () => {
                     <Form.Item name="postal_address" label="Почтовый адрес">
                         <Input.TextArea rows={2} placeholder="Почтовый адрес клиента" />
                     </Form.Item>
+
+                    <Divider orientation="left">Кредитная политика</Divider>
+
+                    <Alert
+                        type="info"
+                        showIcon
+                        style={{ marginBottom: 12 }}
+                        message="По умолчанию контроль выключен"
+                        description="Если включить предупреждение или блокировку, система будет учитывать лимит суммы отсрочки и/или просрочку по дням отсрочки платежа."
+                    />
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+                        <Form.Item
+                            name="credit_control_mode"
+                            label="Режим контроля"
+                            tooltip="Выключено — без проверок. Предупреждать — операция проходит, но сотрудник видит долг. Блокировать — операция останавливается."
+                        >
+                            <Select
+                                options={[
+                                    { value: 'off', label: 'Выключено' },
+                                    { value: 'warn', label: 'Предупреждать' },
+                                    { value: 'block', label: 'Блокировать' },
+                                ]}
+                            />
+                        </Form.Item>
+
+                        <Form.Item
+                            name="credit_limit"
+                            label="Лимит суммы отсрочки, ₽"
+                            tooltip="Если пусто или 0 — лимит суммы не применяется."
+                        >
+                            <InputNumber min={0} step={1000} style={{ width: '100%' }} />
+                        </Form.Item>
+
+                        <Form.Item
+                            name="payment_terms_days"
+                            label="Отсрочка платежа, дней"
+                            tooltip="Если 0 — контроль просрочки по дням не применяется."
+                        >
+                            <InputNumber min={0} step={1} style={{ width: '100%' }} />
+                        </Form.Item>
+                    </div>
 
                     <Form.Item name="description" label="Описание">
                         <Input.TextArea rows={3} placeholder="Описание клиента" />

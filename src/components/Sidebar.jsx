@@ -20,6 +20,7 @@ import {
     DatabaseOutlined,
     AuditOutlined,
     FileAddOutlined,
+    QrcodeOutlined,
     RetweetOutlined,
     RollbackOutlined,
     LockOutlined,
@@ -28,6 +29,7 @@ import {
     TableOutlined,
     CloudSyncOutlined,
     CloseOutlined,
+    BarcodeOutlined,
 } from '@ant-design/icons';
 import useAuth from '../context/useAuth';
 
@@ -66,10 +68,12 @@ const Sidebar = () => {
         if (path.startsWith('/documents/incoming')) return 'documents-incoming';
         if (path.startsWith('/documents/outgoing')) return 'documents-outgoing';
         if (path.startsWith('/documents/diadoc')) return 'documents-diadoc';
+        if (path.startsWith('/documents/1c')) return 'documents-1c';
         if (path.startsWith('/customer-orders')) return 'customer-orders';
         if (path.startsWith('/providers') || path.startsWith('/provider-configs')) return '4';
         if (path.startsWith('/customers')) return 'customers';
         if (path.startsWith('/substitutions')) return 'substitutions';
+        if (path.startsWith('/autoparts/labels')) return 'autopart-labels';
         if (path.startsWith('/autoparts/offers')) return 'autopart-offers';
         if (path.startsWith('/autoparts/invalid-crosses')) return 'autopart-invalid-crosses';
         if (path.startsWith('/autoparts/crosses')) return 'autopart-crosses';
@@ -87,6 +91,7 @@ const Sidebar = () => {
         if (path.startsWith('/inbox')) return 'inbox';
         if (path.startsWith('/warehouse/stock-documents')) return 'warehouse-stock-documents';
         if (path.startsWith('/warehouse/movements')) return 'warehouse-movements';
+        if (path.startsWith('/warehouse/marking')) return 'warehouse-marking';
         if (path.startsWith('/warehouse/reserves')) return 'warehouse-reserves';
         if (path.startsWith('/warehouse/profit-report')) return 'warehouse-profit-report';
         if (path.startsWith('/warehouse/shipments')) return 'warehouse-shipments';
@@ -129,6 +134,9 @@ const Sidebar = () => {
                 </Menu.Item>
                 <Menu.Item key="autopart-offers">
                     <Link to="/autoparts/offers">Прайсы по артикулу</Link>
+                </Menu.Item>
+                <Menu.Item key="autopart-labels" icon={<BarcodeOutlined />}>
+                    <Link to="/autoparts/labels">Печать этикеток</Link>
                 </Menu.Item>
                 <Menu.Item key="orders-tracking" icon={<SendOutlined />}>
                     <Link to="/orders/tracking">Отслеживание заказов</Link>
@@ -186,6 +194,11 @@ const Sidebar = () => {
                         <Link to="/documents/diadoc">Диадок</Link>
                     </Menu.Item>
                 )}
+                {user.role === 'admin' && (
+                    <Menu.Item key="documents-1c" icon={<DatabaseOutlined />}>
+                        <Link to="/documents/1c">Обмен с 1С</Link>
+                    </Menu.Item>
+                )}
             </Menu.SubMenu>
             <Menu.Item key="4">
                 <Link to="/providers">Поставщики</Link>
@@ -215,6 +228,9 @@ const Sidebar = () => {
                 </Menu.Item>
                 <Menu.Item key="warehouse-movements" icon={<RetweetOutlined />}>
                     <Link to="/warehouse/movements">Движения товаров</Link>
+                </Menu.Item>
+                <Menu.Item key="warehouse-marking" icon={<QrcodeOutlined />}>
+                    <Link to="/warehouse/marking">Маркировка</Link>
                 </Menu.Item>
                 <Menu.Item key="warehouse-reserves" icon={<LockOutlined />}>
                     <Link to="/warehouse/reserves">Резервы</Link>

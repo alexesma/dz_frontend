@@ -123,6 +123,12 @@ const StockOrdersPage = () => {
     const streamRef = useRef(null);
     const detectorRef = useRef(null);
     const scanTimerRef = useRef(null);
+
+    const formatApiDetail = (detail, fallback) => {
+        if (typeof detail === 'string') return detail;
+        if (detail?.message) return detail.message;
+        return fallback;
+    };
     const scannerControlsRef = useRef(null);
     const cameraCaptureLockRef = useRef(false);
     const cameraDetectBusyRef = useRef(false);
@@ -724,7 +730,10 @@ const StockOrdersPage = () => {
 
     const handleDispatch = useCallback(async (orderId) => {
         try {
-            await dispatchStockOrder(orderId);
+            const response = await dispatchStockOrder(orderId);
+            if (response?.data?.credit_warning?.message) {
+                message.warning(response.data.credit_warning.message, 8);
+            }
             message.success(`Заказ #${orderId} отгружен — остатки списаны по FIFO`);
             setOrders((prev) =>
                 prev.map((o) =>
@@ -733,7 +742,10 @@ const StockOrdersPage = () => {
             );
         } catch (err) {
             message.error(
-                err?.response?.data?.detail || `Не удалось отгрузить заказ #${orderId}`
+                formatApiDetail(
+                    err?.response?.data?.detail,
+                    `Не удалось отгрузить заказ #${orderId}`,
+                )
             );
         }
     }, []);
