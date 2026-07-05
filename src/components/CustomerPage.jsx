@@ -59,6 +59,9 @@ import {
     createCustomerOrderConfig,
     updateCustomerOrderConfig,
     deleteCustomerOrderConfig,
+    listCustomerReclamationEmails,
+    addCustomerReclamationEmail,
+    deleteCustomerReclamationEmail,
 } from '../api/customers';
 import { getProviderConfigOptions } from '../api/providers';
 import { getEmailAccounts } from '../api/emailAccounts';
@@ -85,6 +88,10 @@ const CustomerPage = () => {
     const [customerData, setCustomerData] = useState(null);
     const [loadError, setLoadError] = useState('');
     const [loadVersion, setLoadVersion] = useState(0);
+    // Рекламации: почты клиента
+    const [reclamationEmails, setReclamationEmails] = useState([]);
+    const [newReclamationEmail, setNewReclamationEmail] = useState('');
+    const [reclamationEmailSaving, setReclamationEmailSaving] = useState(false);
 
     const [configModalVisible, setConfigModalVisible] = useState(false);
     const [editingConfig, setEditingConfig] = useState(null);
@@ -747,6 +754,7 @@ const CustomerPage = () => {
                     credit_control_mode: customer.credit_control_mode || 'off',
                     credit_limit: customer.credit_limit ?? null,
                     payment_terms_days: customer.payment_terms_days ?? 0,
+                    return_window_days: customer.return_window_days ?? null,
                 });
             } catch (err) {
                 const detail = extractApiError(
@@ -821,6 +829,55 @@ const CustomerPage = () => {
             message.error(detail || 'Ошибка сохранения клиента');
         } finally {
             setSaving(false);
+        }
+    };
+
+    // ── Рекламации: почты клиента ────────────────────────────────────────
+    const loadReclamationEmails = useCallback(async () => {
+        if (isNew || !customerId) {
+            return;
+        }
+        try {
+            const { data } = await listCustomerReclamationEmails(customerId);
+            setReclamationEmails(Array.isArray(data) ? data : []);
+        } catch {
+            setReclamationEmails([]);
+        }
+    }, [customerId, isNew]);
+
+    useEffect(() => {
+        void loadReclamationEmails();
+    }, [loadReclamationEmails]);
+
+    const handleAddReclamationEmail = async () => {
+        const email = newReclamationEmail.trim();
+        if (!email) {
+            message.warning('Введите адрес');
+            return;
+        }
+        setReclamationEmailSaving(true);
+        try {
+            await addCustomerReclamationEmail(customerId, { email });
+            setNewReclamationEmail('');
+            await loadReclamationEmails();
+            message.success('Адрес добавлен');
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail || 'Не удалось добавить адрес'
+            );
+        } finally {
+            setReclamationEmailSaving(false);
+        }
+    };
+
+    const handleDeleteReclamationEmail = async (emailId) => {
+        try {
+            await deleteCustomerReclamationEmail(customerId, emailId);
+            await loadReclamationEmails();
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail || 'Не удалось удалить адрес'
+            );
         }
     };
 
@@ -1563,6 +1620,14 @@ const CustomerPage = () => {
                         >
                             <InputNumber min={0} step={1} style={{ width: '100%' }} />
                         </Form.Item>
+
+                        <Form.Item
+                            name="return_window_days"
+                            label="Срок приёма возврата, дней"
+                            tooltip="Рекламации: сколько дней от даты отгрузки принимаем возврат. Пусто — берётся значение по умолчанию."
+                        >
+                            <InputNumber min={0} step={1} style={{ width: '100%' }} placeholder="напр. 14" />
+                        </Form.Item>
                     </div>
 
                     <Form.Item name="description" label="Описание">
@@ -1585,6 +1650,60 @@ const CustomerPage = () => {
                     </Form.Item>
                 </Form>
             </Card>
+
+            {!isNew && (
+                <Card
+                    title="Почты для рекламаций"
+                    style={{ marginBottom: 20 }}
+                >
+                    <Space direction="vertical" style={{ width: '100%' }}>
+                        <span style={{ color: '#6b7280' }}>
+                            Адреса, с которых этот клиент присылает
+                            рекламации. По ним система определяет клиента во
+                            входящих письмах. Можно указать несколько.
+                        </span>
+                        <Space wrap>
+                            {reclamationEmails.length ? (
+                                reclamationEmails.map((item) => (
+                                    <Tag
+                                        key={item.id}
+                                        closable
+                                        onClose={(e) => {
+                                            e.preventDefault();
+                                            handleDeleteReclamationEmail(
+                                                item.id
+                                            );
+                                        }}
+                                    >
+                                        {item.email}
+                                    </Tag>
+                                ))
+                            ) : (
+                                <span style={{ color: '#9ca3af' }}>
+                                    Адреса не заданы
+                                </span>
+                            )}
+                        </Space>
+                        <Space.Compact style={{ width: '100%', maxWidth: 460 }}>
+                            <Input
+                                placeholder="reclamation@client.ru"
+                                value={newReclamationEmail}
+                                onChange={(e) =>
+                                    setNewReclamationEmail(e.target.value)
+                                }
+                                onPressEnter={handleAddReclamationEmail}
+                            />
+                            <Button
+                                type="primary"
+                                loading={reclamationEmailSaving}
+                                onClick={handleAddReclamationEmail}
+                            >
+                                Добавить
+                            </Button>
+                        </Space.Compact>
+                    </Space>
+                </Card>
+            )}
 
             {!isNew && customerData?.customer && user?.role === 'admin' && (
                 <Card title="Диадок" style={{ marginBottom: 20 }}>

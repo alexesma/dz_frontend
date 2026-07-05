@@ -73,3 +73,13 @@ export const updateCustomerOrderConfig = (configId, data) =>
 
 export const deleteCustomerOrderConfig = (configId) =>
     api.delete(`/customer-orders/configs/${configId}`);
+
+// ── Почты клиента для рекламаций ─────────────────────────────────────────
+export const listCustomerReclamationEmails = (customerId) =>
+    api.get(`/customers/${customerId}/reclamation-emails`);
+
+export const addCustomerReclamationEmail = (customerId, data) =>
+    api.post(`/customers/${customerId}/reclamation-emails`, data);
+
+export const deleteCustomerReclamationEmail = (customerId, emailId) =>
+    api.delete(`/customers/${customerId}/reclamation-emails/${emailId}`);

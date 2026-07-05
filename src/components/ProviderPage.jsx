@@ -350,6 +350,12 @@ const ProviderPage = () => {
                     order_schedule_days: data.provider.order_schedule_days || [],
                     order_schedule_times: data.provider.order_schedule_times || [],
                     order_schedule_enabled: data.provider.order_schedule_enabled || false,
+                    return_allowed: data.provider.return_allowed ?? true,
+                    return_window_days: data.provider.return_window_days ?? null,
+                    return_blocked_brands:
+                        data.provider.return_blocked_brands || [],
+                    return_request_email:
+                        data.provider.return_request_email || "",
                 });
             } catch (err) {
                 message.error(err?.message || "Ошибка загрузки поставщика");
@@ -2120,6 +2126,48 @@ const ProviderPage = () => {
                     <Form.Item name="kpp" label="КПП">
                         <Input placeholder="770101001" maxLength={32} />
                     </Form.Item>
+
+                    <Divider orientation="left">Возвраты (рекламации)</Divider>
+
+                    <Form.Item
+                        name="return_allowed"
+                        label="Принимает возвраты"
+                        valuePropName="checked"
+                        extra="Если выключено — система не будет предлагать оформлять возврат этому поставщику."
+                    >
+                        <Switch />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="return_window_days"
+                        label="Срок возврата поставщику, дней"
+                        extra="Сколько дней от нашего поступления поставщик принимает возврат. Пусто — ограничение по сроку не проверяется."
+                    >
+                        <InputNumber min={0} step={1} style={{ width: "100%" }} placeholder="напр. 30" />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="return_blocked_brands"
+                        label="Бренды без возврата"
+                        extra="Бренды, которые этот поставщик не принимает обратно. Введите и нажмите Enter."
+                    >
+                        <Select
+                            mode="tags"
+                            tokenSeparators={[",", " "]}
+                            placeholder="напр. LUK, SACHS"
+                            style={{ width: "100%" }}
+                        />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="return_request_email"
+                        label="Email для запросов возврата"
+                        extra="На этот адрес уйдёт письмо с просьбой согласовать возврат."
+                    >
+                        <Input placeholder="returns@supplier.ru" />
+                    </Form.Item>
+
+                    <Divider />
 
                     <Form.Item name="description" label="Описание">
                         <Input.TextArea rows={3} placeholder="Описание поставщика" />

@@ -2138,41 +2138,6 @@ const AutopartOffers = () => {
     }, [form, searchParams]);
 
     useEffect(() => {
-        if (!pendingRestoredSearch) {
-            return;
-        }
-        const { oem, brand, partial } = pendingRestoredSearch;
-        setPendingRestoredSearch(null);
-        void (async () => {
-            const { brand: resolvedBrand, oem: canonicalOem } =
-                await executeSearch(oem, partial, brand);
-            const effectiveBrand = brand || resolvedBrand;
-            if (!effectiveBrand) {
-                return;
-            }
-            const brandFamily = await resolveBrandFamilyNames(effectiveBrand);
-            const shouldRestrictCrossBrand = brandFamily.some(
-                (item) => normalizeBrandToken(item) === TOYOTA_BRAND_TOKEN
-            );
-            setShowCrosses(true);
-            setRestrictCrossBrand(shouldRestrictCrossBrand);
-            await requestDragonzapOffers(
-                canonicalOem || oem,
-                effectiveBrand,
-                {
-                    showCrosses: true,
-                    restrictCrossBrand: shouldRestrictCrossBrand,
-                }
-            );
-        })();
-    }, [
-        executeSearch,
-        pendingRestoredSearch,
-        requestDragonzapOffers,
-        resolveBrandFamilyNames,
-    ]);
-
-    useEffect(() => {
         let isMounted = true;
 
         const fetchCustomers = async () => {
@@ -3191,6 +3156,41 @@ const AutopartOffers = () => {
         requestDragonzapOffers,
         resolveBrandFamilyNames,
         searchParams,
+    ]);
+
+    useEffect(() => {
+        if (!pendingRestoredSearch) {
+            return;
+        }
+        const { oem, brand, partial } = pendingRestoredSearch;
+        setPendingRestoredSearch(null);
+        void (async () => {
+            const { brand: resolvedBrand, oem: canonicalOem } =
+                await executeSearch(oem, partial, brand);
+            const effectiveBrand = brand || resolvedBrand;
+            if (!effectiveBrand) {
+                return;
+            }
+            const brandFamily = await resolveBrandFamilyNames(effectiveBrand);
+            const shouldRestrictCrossBrand = brandFamily.some(
+                (item) => normalizeBrandToken(item) === TOYOTA_BRAND_TOKEN
+            );
+            setShowCrosses(true);
+            setRestrictCrossBrand(shouldRestrictCrossBrand);
+            await requestDragonzapOffers(
+                canonicalOem || oem,
+                effectiveBrand,
+                {
+                    showCrosses: true,
+                    restrictCrossBrand: shouldRestrictCrossBrand,
+                }
+            );
+        })();
+    }, [
+        executeSearch,
+        pendingRestoredSearch,
+        requestDragonzapOffers,
+        resolveBrandFamilyNames,
     ]);
 
     const filteredOffers = useMemo(() => {
