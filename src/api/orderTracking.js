@@ -27,6 +27,11 @@ export const exportCustomerOrderPeriodReport = (params) =>
         responseType: 'blob',
     });
 
+export const getCustomerOrderPeriodReport = (params) =>
+    api.get('/order/autopurchase-top/customer-order-period-report/preview', {
+        params,
+    });
+
 export const createAutoPurchaseTopItem = (payload) =>
     api.post('/order/autopurchase-top/items', payload);
 

@@ -3,10 +3,14 @@ import {
     Alert,
     Button,
     Card,
+    Col,
     DatePicker,
     InputNumber,
+    Row,
     Select,
     Space,
+    Statistic,
+    Table,
     Typography,
     message,
 } from 'antd';
@@ -14,7 +18,10 @@ import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 
 import { getBrands } from '../api/brands';
-import { exportCustomerOrderPeriodReport } from '../api/orderTracking';
+import {
+    exportCustomerOrderPeriodReport,
+    getCustomerOrderPeriodReport,
+} from '../api/orderTracking';
 
 const { RangePicker } = DatePicker;
 const { Title, Text, Paragraph } = Typography;
@@ -40,6 +47,19 @@ const downloadBlob = (blob, filename) => {
     URL.revokeObjectURL(url);
 };
 
+const formatNumber = (value) =>
+    Number(value || 0).toLocaleString('ru-RU');
+
+const formatMoney = (value) => {
+    if (value === null || value === undefined) {
+        return '—';
+    }
+    return Number(value || 0).toLocaleString('ru-RU', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    });
+};
+
 const defaultPeriod1 = () => [
     dayjs().subtract(1, 'year').month(5).date(1),
     dayjs().subtract(1, 'year').month(11).date(31),
@@ -57,6 +77,8 @@ const CustomerOrderPeriodReportPage = () => {
     const [brandOptions, setBrandOptions] = useState([]);
     const [brandLoading, setBrandLoading] = useState(false);
     const [exportLoading, setExportLoading] = useState(false);
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [reportData, setReportData] = useState(null);
     const [limit, setLimit] = useState(1000);
     const [minTotalQty, setMinTotalQty] = useState(1);
     const [sortBy, setSortBy] = useState('total_desc');
@@ -96,20 +118,50 @@ const CustomerOrderPeriodReportPage = () => {
         void fetchBrands();
     }, [fetchBrands]);
 
-    const buildParams = () => ({
-        period1_from: period1?.[0]?.format('YYYY-MM-DD'),
-        period1_to: period1?.[1]?.format('YYYY-MM-DD'),
-        period2_from: period2?.[0]?.format('YYYY-MM-DD'),
-        period2_to: period2?.[1]?.format('YYYY-MM-DD'),
-        brand: selectedBrands.length ? selectedBrands.join(',') : undefined,
-        limit,
-        min_total_qty: minTotalQty,
-        sort_by: sortBy,
-    });
-
-    const handleExport = async () => {
+    const hasValidPeriods = () => {
         if (!period1?.[0] || !period1?.[1] || !period2?.[0] || !period2?.[1]) {
             message.warning('Выбери оба периода отчёта');
+            return false;
+        }
+        return true;
+    };
+
+    const buildParams = () => {
+        const params = {
+            period1_from: period1?.[0]?.format('YYYY-MM-DD'),
+            period1_to: period1?.[1]?.format('YYYY-MM-DD'),
+            period2_from: period2?.[0]?.format('YYYY-MM-DD'),
+            period2_to: period2?.[1]?.format('YYYY-MM-DD'),
+            brand: selectedBrands.length ? selectedBrands.join(',') : undefined,
+            limit,
+            min_total_qty: minTotalQty,
+            sort_by: sortBy,
+        };
+        return Object.fromEntries(
+            Object.entries(params).filter(([, value]) => value !== undefined)
+        );
+    };
+
+    const handlePreview = async () => {
+        if (!hasValidPeriods()) {
+            return;
+        }
+        setPreviewLoading(true);
+        try {
+            const { data } = await getCustomerOrderPeriodReport(buildParams());
+            setReportData(data);
+        } catch (error) {
+            message.error(
+                error?.response?.data?.detail
+                || 'Не удалось сформировать отчёт по заказам клиентов'
+            );
+        } finally {
+            setPreviewLoading(false);
+        }
+    };
+
+    const handleExport = async () => {
+        if (!hasValidPeriods()) {
             return;
         }
         setExportLoading(true);
@@ -129,6 +181,72 @@ const CustomerOrderPeriodReportPage = () => {
             setExportLoading(false);
         }
     };
+
+    const reportRows = Array.isArray(reportData?.rows) ? reportData.rows : [];
+    const reportColumns = [
+        {
+            title: 'Артикул',
+            dataIndex: 'oem_number',
+            key: 'oem_number',
+            width: 150,
+            fixed: 'left',
+            render: (value) => <Text strong>{value}</Text>,
+        },
+        {
+            title: 'Бренд',
+            dataIndex: 'brand_name',
+            key: 'brand_name',
+            width: 150,
+            render: (value) => value || '—',
+        },
+        {
+            title: 'Наименование',
+            dataIndex: 'autopart_name',
+            key: 'autopart_name',
+            ellipsis: true,
+            render: (value) => value || '—',
+        },
+        {
+            title: 'Остаток',
+            dataIndex: 'current_quantity',
+            key: 'current_quantity',
+            align: 'right',
+            width: 120,
+            render: formatNumber,
+        },
+        {
+            title: 'Период 1',
+            dataIndex: 'period1_qty',
+            key: 'period1_qty',
+            align: 'right',
+            width: 130,
+            render: formatNumber,
+        },
+        {
+            title: 'Период 2',
+            dataIndex: 'period2_qty',
+            key: 'period2_qty',
+            align: 'right',
+            width: 130,
+            render: formatNumber,
+        },
+        {
+            title: 'Всего',
+            dataIndex: 'total_qty',
+            key: 'total_qty',
+            align: 'right',
+            width: 120,
+            render: (value) => <Text strong>{formatNumber(value)}</Text>,
+        },
+        {
+            title: 'Средняя цена П1',
+            dataIndex: 'period1_avg_price',
+            key: 'period1_avg_price',
+            align: 'right',
+            width: 150,
+            render: (value) => `${formatMoney(value)} руб.`,
+        },
+    ];
 
     return (
         <div>
@@ -236,6 +354,16 @@ const CustomerOrderPeriodReportPage = () => {
 
                     <Space wrap>
                         <Button
+                            type="primary"
+                            icon={<ReloadOutlined />}
+                            loading={previewLoading}
+                            onClick={() => {
+                                void handlePreview();
+                            }}
+                        >
+                            Сформировать
+                        </Button>
+                        <Button
                             icon={<ReloadOutlined />}
                             onClick={() => {
                                 setPeriod1(defaultPeriod1());
@@ -244,12 +372,12 @@ const CustomerOrderPeriodReportPage = () => {
                                 setLimit(1000);
                                 setMinTotalQty(1);
                                 setSortBy('total_desc');
+                                setReportData(null);
                             }}
                         >
                             Сбросить
                         </Button>
                         <Button
-                            type="primary"
                             icon={<DownloadOutlined />}
                             loading={exportLoading}
                             onClick={() => {
@@ -260,6 +388,67 @@ const CustomerOrderPeriodReportPage = () => {
                         </Button>
                     </Space>
                 </Space>
+            </Card>
+
+            <Card
+                style={{ marginTop: 16 }}
+                title="Сформированный отчёт"
+                extra={reportData ? (
+                    <Text type="secondary">
+                        Строк: {formatNumber(reportData.total_items)}
+                    </Text>
+                ) : null}
+            >
+                <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+                    <Col xs={12} md={6}>
+                        <Statistic
+                            title="Период 1"
+                            value={reportData?.summary?.period1_qty || 0}
+                            formatter={formatNumber}
+                        />
+                    </Col>
+                    <Col xs={12} md={6}>
+                        <Statistic
+                            title="Период 2"
+                            value={reportData?.summary?.period2_qty || 0}
+                            formatter={formatNumber}
+                        />
+                    </Col>
+                    <Col xs={12} md={6}>
+                        <Statistic
+                            title="Всего заказано"
+                            value={reportData?.summary?.total_qty || 0}
+                            formatter={formatNumber}
+                        />
+                    </Col>
+                    <Col xs={12} md={6}>
+                        <Statistic
+                            title="Остаток по строкам"
+                            value={reportData?.summary?.stock_qty || 0}
+                            formatter={formatNumber}
+                        />
+                    </Col>
+                </Row>
+
+                <Table
+                    size="small"
+                    rowKey={(row) => `${row.brand_name || ''}-${row.oem_number}`}
+                    loading={previewLoading}
+                    columns={reportColumns}
+                    dataSource={reportRows}
+                    scroll={{ x: 1180 }}
+                    pagination={{
+                        pageSize: 50,
+                        showSizeChanger: true,
+                        pageSizeOptions: ['25', '50', '100', '200'],
+                        showTotal: (total) => `Всего строк: ${formatNumber(total)}`,
+                    }}
+                    locale={{
+                        emptyText: reportData
+                            ? 'По выбранным условиям строк не найдено'
+                            : 'Нажми “Сформировать”, чтобы увидеть отчёт в окне',
+                    }}
+                />
             </Card>
         </div>
     );
