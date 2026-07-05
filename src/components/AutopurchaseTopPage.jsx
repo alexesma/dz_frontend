@@ -424,8 +424,8 @@ tr:nth-child(even) td { background: #f6f9fc; }
     };
 
     const columns = [
-            {
-                title: '#',
+        {
+            title: '#',
                 dataIndex: 'rank',
                 width: 64,
                 render: (value) => <Text strong>{value || '—'}</Text>,

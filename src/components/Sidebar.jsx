@@ -57,6 +57,7 @@ const Sidebar = () => {
         const path = location.pathname;
         if (path.startsWith('/restock')) return '2';
         if (path.startsWith('/orders/autopurchase-top')) return 'orders-autopurchase-top';
+        if (path.startsWith('/orders/customer-order-period-report')) return 'orders-customer-order-period-report';
         if (path.startsWith('/orders/autopurchase')) return 'orders-autopurchase';
         if (path.startsWith('/orders/inventory-control')) return 'orders-inventory-control';
         if (path.startsWith('/orders/exceptions')) return 'orders-exceptions';
@@ -149,6 +150,9 @@ const Sidebar = () => {
                 </Menu.Item>
                 <Menu.Item key="orders-autopurchase-top" icon={<TableOutlined />}>
                     <Link to="/orders/autopurchase-top">Топ для автозаказа</Link>
+                </Menu.Item>
+                <Menu.Item key="orders-customer-order-period-report" icon={<BarChartOutlined />}>
+                    <Link to="/orders/customer-order-period-report">Отчёт по заказам</Link>
                 </Menu.Item>
                 <Menu.Item key="orders-inventory-control" icon={<LineChartOutlined />}>
                     <Link to="/orders/inventory-control">Контроль запасов</Link>

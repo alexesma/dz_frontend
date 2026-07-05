@@ -21,6 +21,12 @@ export const listAutoPurchaseTopItems = (params) =>
 export const listCurrentAutoPurchaseTopItems = (params) =>
     api.get('/order/autopurchase-top/current', { params });
 
+export const exportCustomerOrderPeriodReport = (params) =>
+    api.get('/order/autopurchase-top/customer-order-period-report', {
+        params,
+        responseType: 'blob',
+    });
+
 export const createAutoPurchaseTopItem = (payload) =>
     api.post('/order/autopurchase-top/items', payload);
 
