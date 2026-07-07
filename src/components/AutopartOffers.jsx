@@ -4346,7 +4346,7 @@ const AutopartOffers = () => {
     ];
 
     const renderOurStockSummary = () => {
-        if (!ourStockRows.length || partialSearch) {
+        if (!ourStockRows.length) {
             return null;
         }
         const firstRow = ourStockRows[0];
