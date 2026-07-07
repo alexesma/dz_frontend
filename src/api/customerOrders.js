@@ -87,6 +87,9 @@ export const processCustomerOrderConfigNow = (configId) =>
 export const retryCustomerOrderErrorsForConfig = (configId) =>
     api.post(`/customer-orders/configs/${configId}/retry-errors`);
 
+export const forwardLatestCustomerOrderForConfig = (configId) =>
+    api.post(`/customer-orders/configs/${configId}/forward-latest`);
+
 export const createManualSupplierOrder = (payload) =>
     api.post('/customer-orders/supplier/manual', payload);
 

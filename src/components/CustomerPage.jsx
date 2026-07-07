@@ -69,6 +69,7 @@ import { testEmailAccount } from '../api/emailAccounts';
 import { getBrands, lookupBrands } from '../api/brands';
 import { searchAutopartsByOem } from '../api/autoparts';
 import {
+    forwardLatestCustomerOrderForConfig,
     processCustomerOrderConfigNow,
     retryCustomerOrderErrorsForConfig,
 } from '../api/customerOrders';
@@ -119,6 +120,7 @@ const CustomerPage = () => {
     const [orderInboxTestLoading, setOrderInboxTestLoading] = useState(false);
     const [orderProcessNowLoading, setOrderProcessNowLoading] = useState(false);
     const [orderRetryErrorsLoading, setOrderRetryErrorsLoading] = useState(false);
+    const [orderForwardLatestLoading, setOrderForwardLatestLoading] = useState(false);
     const autopartSearchRequestRef = useRef(0);
     const autopartSearchTimerRef = useRef(null);
 
@@ -1007,6 +1009,29 @@ const CustomerPage = () => {
             message.error(detail || 'Не удалось перепроверить ошибки');
         } finally {
             setOrderRetryErrorsLoading(false);
+        }
+    };
+
+    const handleForwardLatestOrder = async () => {
+        if (!orderConfig?.id) {
+            message.warning('Сначала сохраните конфигурацию обработки заказов');
+            return;
+        }
+        setOrderForwardLatestLoading(true);
+        try {
+            const { data } = await forwardLatestCustomerOrderForConfig(
+                orderConfig.id
+            );
+            message.success(
+                data?.order_id
+                    ? `Последний заказ #${data.order_id} переотправлен`
+                    : 'Последний заказ переотправлен'
+            );
+        } catch (err) {
+            const detail = err?.response?.data?.detail;
+            message.error(detail || 'Не удалось переотправить последний заказ');
+        } finally {
+            setOrderForwardLatestLoading(false);
         }
     };
 
@@ -2413,6 +2438,19 @@ const CustomerPage = () => {
                                         />
                                     </Form.Item>
                                 </div>
+                                <Space wrap>
+                                    <Button
+                                        icon={<SendOutlined />}
+                                        onClick={handleForwardLatestOrder}
+                                        loading={orderForwardLatestLoading}
+                                        disabled={!orderConfig}
+                                    >
+                                        Переотправить последний заказ
+                                    </Button>
+                                    <Text type="secondary">
+                                        Используются сохранённые настройки выше.
+                                    </Text>
+                                </Space>
                             </div>
                         </Space>
                         <Divider />

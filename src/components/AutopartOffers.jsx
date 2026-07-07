@@ -772,6 +772,7 @@ const AutopartOffers = () => {
     const [currentOem, setCurrentOem] = useState('');
     const [siteBrandCandidates, setSiteBrandCandidates] = useState([]);
     const [nomenclatureInfo, setNomenclatureInfo] = useState(null); // { in_nomenclature, id, brand, name }
+    const [ourStockRows, setOurStockRows] = useState([]);
     const [oemInput, setOemInput] = useState('');
     const [lookupLoading, setLookupLoading] = useState(false);
     const [lookupResults, setLookupResults] = useState([]);
@@ -2425,6 +2426,7 @@ const AutopartOffers = () => {
         setSiteRequestError(null);
         setTrackingHistory([]);
         setTrackingInsights(null);
+        setOurStockRows([]);
         setRemoteMeta({ total: 0 });
         setSiteBrandCandidates([]);
         setSiteBrandWarning(null);
@@ -2467,6 +2469,11 @@ const AutopartOffers = () => {
                 brand: data?.nomenclature_brand_name ?? null,
                 name: data?.nomenclature_name ?? null,
             });
+            setOurStockRows(
+                Array.isArray(data?.our_stock_rows)
+                    ? data.our_stock_rows
+                    : []
+            );
             // Каноничный OEM из ответа бэкенда (без дефисов/пробелов) —
             // иначе сравнения с базой и сайтом дают ложные «кроссы».
             const canonicalOem =
@@ -4282,6 +4289,128 @@ const AutopartOffers = () => {
         </div>
     );
 
+    const ourStockColumns = [
+        {
+            title: 'Бренд',
+            dataIndex: 'brand_name',
+            key: 'brand_name',
+            width: 120,
+            render: (value, record) => (
+                <Space size={4} wrap>
+                    <strong>{value || '—'}</strong>
+                    {record.is_requested_oem ? (
+                        <Tag color="green">точно</Tag>
+                    ) : (
+                        <Tag color="blue">кросс</Tag>
+                    )}
+                </Space>
+            ),
+        },
+        {
+            title: 'Номер',
+            dataIndex: 'oem_number',
+            key: 'oem_number',
+            width: 140,
+            render: (value) => <Text code>{value || '—'}</Text>,
+        },
+        {
+            title: 'Наименование',
+            dataIndex: 'name',
+            key: 'name',
+            ellipsis: true,
+            render: (value) => value || '—',
+        },
+        {
+            title: 'Кол-во',
+            dataIndex: 'quantity',
+            key: 'quantity',
+            width: 90,
+            align: 'right',
+            render: (value) => `${Number(value || 0)} шт`,
+        },
+        {
+            title: 'Цена',
+            dataIndex: 'price',
+            key: 'price',
+            width: 110,
+            align: 'right',
+            render: (value) => `${formatInsightMoney(value)} руб.`,
+        },
+        {
+            title: 'Прайс',
+            dataIndex: 'pricelist_date',
+            key: 'pricelist_date',
+            width: 90,
+            render: (value) => formatShortDate(value),
+        },
+    ];
+
+    const renderOurStockSummary = () => {
+        if (!ourStockRows.length || partialSearch) {
+            return null;
+        }
+        const firstRow = ourStockRows[0];
+        const totalQty = ourStockRows.reduce(
+            (sum, row) => sum + Number(row.quantity || 0),
+            0
+        );
+        const summaryText = (
+            <>
+                <Text strong>Наше наличие:</Text>
+                {' '}
+                <Tag color={totalQty > 0 ? 'green' : 'default'}>
+                    {totalQty} шт
+                </Tag>
+                {' '}
+                <Text>
+                    {firstRow.brand_name || '—'} {firstRow.oem_number || '—'}
+                    {' · '}
+                    {firstRow.name || '—'}
+                    {' · '}
+                    {formatInsightMoney(firstRow.price)} руб.
+                </Text>
+            </>
+        );
+
+        if (ourStockRows.length === 1) {
+            return (
+                <div style={{ marginBottom: 12, color: '#374151' }}>
+                    {summaryText}
+                </div>
+            );
+        }
+
+        return (
+            <div style={{ marginBottom: 12 }}>
+                <Collapse
+                    size="small"
+                    ghost
+                    items={[
+                        {
+                            key: 'our-stock',
+                            label: (
+                                <Space size={8} wrap>
+                                    {summaryText}
+                                    <Tag>{ourStockRows.length} поз.</Tag>
+                                </Space>
+                            ),
+                            children: (
+                                <Table
+                                    rowKey={(row) => `${row.autopart_id}-${row.pricelist_id}`}
+                                    columns={ourStockColumns}
+                                    dataSource={ourStockRows}
+                                    size="small"
+                                    pagination={false}
+                                    tableLayout="fixed"
+                                />
+                            ),
+                        },
+                    ]}
+                />
+            </div>
+        );
+    };
+
     return (
         <Card title="Поиск позиций по артикулу" style={{ margin: '20px' }}>
             <div className="autopart-offers-search-sticky">
@@ -4371,6 +4500,8 @@ const AutopartOffers = () => {
                     Подсказка бренда: <strong>{selectedBrand}</strong>
                 </div>
             ) : null}
+
+            {renderOurStockSummary()}
 
             {/* Nomenclature status banner */}
             {nomenclatureInfo && !partialSearch && (

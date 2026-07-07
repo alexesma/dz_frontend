@@ -22,6 +22,7 @@ import {
     FileAddOutlined,
     QrcodeOutlined,
     RetweetOutlined,
+    ExceptionOutlined,
     RollbackOutlined,
     LockOutlined,
     FileDoneOutlined,
@@ -97,6 +98,7 @@ const Sidebar = () => {
         if (path.startsWith('/warehouse/profit-report')) return 'warehouse-profit-report';
         if (path.startsWith('/warehouse/shipments')) return 'warehouse-shipments';
         if (path.startsWith('/warehouse/returns')) return 'warehouse-returns';
+        if (path.startsWith('/reclamations')) return 'reclamations';
         if (path.startsWith('/warehouse/lots')) return 'warehouse-lots';
         if (path.startsWith('/warehouse/transfer')) return 'warehouse-transfer';
         if (path.startsWith('/warehouse/overview')) return 'warehouse-overview';
@@ -247,6 +249,9 @@ const Sidebar = () => {
                 </Menu.Item>
                 <Menu.Item key="warehouse-returns" icon={<RollbackOutlined />}>
                     <Link to="/warehouse/returns">Возвраты</Link>
+                </Menu.Item>
+                <Menu.Item key="reclamations" icon={<ExceptionOutlined />}>
+                    <Link to="/reclamations">Рекламации</Link>
                 </Menu.Item>
                 <Menu.Item key="warehouse-lots" icon={<UnorderedListOutlined />}>
                     <Link to="/warehouse/lots">Партии / ГТД</Link>
