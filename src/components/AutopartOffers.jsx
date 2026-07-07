@@ -34,6 +34,8 @@ import {
     DeleteOutlined,
     SendOutlined,
     MailOutlined,
+    DownOutlined,
+    ShopOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -4347,67 +4349,88 @@ const AutopartOffers = () => {
 
     const renderOurStockSummary = () => {
         if (!ourStockRows.length) {
-            return null;
+            return (
+                <span
+                    style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        background: '#fafafa',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: 6,
+                        padding: '4px 12px',
+                        fontSize: 13,
+                        color: '#6b7280',
+                    }}
+                >
+                    <ShopOutlined />
+                    Наше наличие: нет
+                </span>
+            );
         }
-        const firstRow = ourStockRows[0];
         const totalQty = ourStockRows.reduce(
             (sum, row) => sum + Number(row.quantity || 0),
             0
         );
-        const summaryText = (
-            <>
-                <Text strong>Наше наличие:</Text>
-                {' '}
-                <Tag color={totalQty > 0 ? 'green' : 'default'}>
-                    {totalQty} шт
-                </Tag>
-                {' '}
-                <Text>
-                    {firstRow.brand_name || '—'} {firstRow.oem_number || '—'}
-                    {' · '}
-                    {firstRow.name || '—'}
-                    {' · '}
-                    {formatInsightMoney(firstRow.price)} руб.
-                </Text>
-            </>
+        const crossCount = ourStockRows.filter(
+            (row) => !row.is_requested_oem
+        ).length;
+        const hasStock = totalQty > 0;
+
+        const chip = (
+            <span
+                style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    cursor: 'pointer',
+                    background: hasStock ? '#f6ffed' : '#fafafa',
+                    border: `1px solid ${hasStock ? '#b7eb8f' : '#e5e7eb'}`,
+                    borderRadius: 6,
+                    padding: '4px 12px',
+                    fontSize: 13,
+                }}
+            >
+                <ShopOutlined
+                    style={{ color: hasStock ? '#52c41a' : '#9ca3af' }}
+                />
+                <span style={{ fontWeight: 600 }}>Наше наличие:</span>
+                <span style={{ fontWeight: 600 }}>{totalQty} шт</span>
+                <span style={{ color: '#6b7280' }}>
+                    · {ourStockRows.length} поз.
+                </span>
+                {crossCount ? (
+                    <Tag color="blue" style={{ marginInlineEnd: 0 }}>
+                        + кроссы: {crossCount}
+                    </Tag>
+                ) : null}
+                <DownOutlined style={{ fontSize: 10, color: '#9ca3af' }} />
+            </span>
         );
 
-        if (ourStockRows.length === 1) {
-            return (
-                <div style={{ marginBottom: 12, color: '#374151' }}>
-                    {summaryText}
-                </div>
-            );
-        }
-
         return (
-            <div style={{ marginBottom: 12 }}>
-                <Collapse
-                    size="small"
-                    ghost
-                    items={[
-                        {
-                            key: 'our-stock',
-                            label: (
-                                <Space size={8} wrap>
-                                    {summaryText}
-                                    <Tag>{ourStockRows.length} поз.</Tag>
-                                </Space>
-                            ),
-                            children: (
-                                <Table
-                                    rowKey={(row) => `${row.autopart_id}-${row.pricelist_id}`}
-                                    columns={ourStockColumns}
-                                    dataSource={ourStockRows}
-                                    size="small"
-                                    pagination={false}
-                                    tableLayout="fixed"
-                                />
-                            ),
-                        },
-                    ]}
-                />
-            </div>
+            <Popover
+                trigger="click"
+                placement="bottomLeft"
+                title="Наше наличие (с кроссами)"
+                content={
+                    <div style={{ maxWidth: 680 }}>
+                        <Table
+                            rowKey={(row) =>
+                                `${row.autopart_id}-${row.pricelist_id}`
+                            }
+                            columns={ourStockColumns}
+                            dataSource={ourStockRows}
+                            size="small"
+                            pagination={false}
+                            tableLayout="fixed"
+                            scroll={{ x: 660, y: 320 }}
+                        />
+                    </div>
+                }
+            >
+                {chip}
+            </Popover>
         );
     };
 
@@ -4495,19 +4518,26 @@ const AutopartOffers = () => {
                 </Popover>
             </div>
 
-            {selectedBrand ? (
-                <div style={{ marginBottom: 12, color: '#6b7280' }}>
-                    Подсказка бренда: <strong>{selectedBrand}</strong>
-                </div>
-            ) : null}
+            {/* Статусная строка: бренд · номенклатура · наше наличие (с кроссами) */}
+            <div
+                style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    gap: 10,
+                    marginBottom: 12,
+                }}
+            >
+                {selectedBrand ? (
+                    <span style={{ color: '#6b7280', fontSize: 13 }}>
+                        Подсказка бренда: <strong>{selectedBrand}</strong>
+                    </span>
+                ) : null}
 
-            {renderOurStockSummary()}
-
-            {/* Nomenclature status banner */}
-            {nomenclatureInfo && !partialSearch && (
-                <div style={{ marginBottom: 12 }}>
-                    {nomenclatureInfo.in_nomenclature ? (
-                        <div style={{
+                {/* Nomenclature status banner */}
+                {nomenclatureInfo && !partialSearch ? (
+                    nomenclatureInfo.in_nomenclature ? (
+                        <span style={{
                             display: 'inline-flex', alignItems: 'center', gap: 8,
                             background: '#f6ffed', border: '1px solid #b7eb8f',
                             borderRadius: 6, padding: '4px 12px', fontSize: 13,
@@ -4524,10 +4554,10 @@ const AutopartOffers = () => {
                             >
                                 Открыть
                             </Button>
-                        </div>
+                        </span>
                     ) : (
                         currentOem && (
-                            <div style={{
+                            <span style={{
                                 display: 'inline-flex', alignItems: 'center', gap: 8,
                                 background: '#fff7e6', border: '1px solid #ffd591',
                                 borderRadius: 6, padding: '4px 12px', fontSize: 13,
@@ -4541,11 +4571,13 @@ const AutopartOffers = () => {
                                 >
                                     + Создать позицию
                                 </Button>
-                            </div>
+                            </span>
                         )
-                    )}
-                </div>
-            )}
+                    )
+                ) : null}
+
+                {!partialSearch ? renderOurStockSummary() : null}
+            </div>
 
             <Space wrap style={{ marginBottom: 12 }}>
                 <AutoComplete
