@@ -47,6 +47,7 @@ import {
     getAutopartOffers,
     getDragonzapBrands,
     getDragonzapOffers,
+    getOwnStockByOems,
     searchAutopartsByOem,
     sendDragonzapOrder,
 } from '../api/autoparts';
@@ -775,6 +776,8 @@ const AutopartOffers = () => {
     const [siteBrandCandidates, setSiteBrandCandidates] = useState([]);
     const [nomenclatureInfo, setNomenclatureInfo] = useState(null); // { in_nomenclature, id, brand, name }
     const [ourStockRows, setOurStockRows] = useState([]);
+    // Наличие нашего прайса по сайтовым (непроверенным) кроссам
+    const [unverifiedStockRows, setUnverifiedStockRows] = useState([]);
     const [oemInput, setOemInput] = useState('');
     const [lookupLoading, setLookupLoading] = useState(false);
     const [lookupResults, setLookupResults] = useState([]);
@@ -1006,6 +1009,73 @@ const AutopartOffers = () => {
         () => extractUniqueCrossItemsFromSiteOffers(siteOffersWithCrosses, currentOem),
         [currentOem, siteOffersWithCrosses]
     );
+
+    // OEM-номера сайтовых кроссов, по которым надо проверить наш прайс
+    // (исключаем базовый номер и то, что уже есть в проверенном наличии).
+    const verifiedStockOemSet = useMemo(
+        () =>
+            new Set(
+                (ourStockRows || []).map((row) =>
+                    normalizeOemKey(row.oem_number)
+                )
+            ),
+        [ourStockRows]
+    );
+
+    const crossOemsForOwnStock = useMemo(() => {
+        const base = normalizeOemKey(currentOem);
+        const set = new Set();
+        const push = (value) => {
+            const oem = normalizeOemKey(value);
+            if (oem && oem !== base && !verifiedStockOemSet.has(oem)) {
+                set.add(oem);
+            }
+        };
+        for (const item of siteCrossItems || []) {
+            push(item?.oem_number);
+        }
+        for (const offer of siteExactCrossOffers || []) {
+            push(offer?.oem || offer?.oem_number);
+        }
+        return Array.from(set);
+    }, [siteCrossItems, siteExactCrossOffers, currentOem, verifiedStockOemSet]);
+
+    useEffect(() => {
+        let cancelled = false;
+        if (!crossOemsForOwnStock.length) {
+            setUnverifiedStockRows([]);
+            return () => {
+                cancelled = true;
+            };
+        }
+        (async () => {
+            try {
+                const { data } = await getOwnStockByOems(crossOemsForOwnStock);
+                if (cancelled) {
+                    return;
+                }
+                const rows = Array.isArray(data?.rows) ? data.rows : [];
+                const seen = new Set(
+                    (ourStockRows || []).map(
+                        (row) => `${row.autopart_id}-${row.pricelist_id}`
+                    )
+                );
+                setUnverifiedStockRows(
+                    rows.filter(
+                        (row) =>
+                            !seen.has(`${row.autopart_id}-${row.pricelist_id}`)
+                    )
+                );
+            } catch {
+                if (!cancelled) {
+                    setUnverifiedStockRows([]);
+                }
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [crossOemsForOwnStock, ourStockRows]);
 
     const bestSiteOffersForOrder = useMemo(
         () => {
@@ -2429,6 +2499,7 @@ const AutopartOffers = () => {
         setTrackingHistory([]);
         setTrackingInsights(null);
         setOurStockRows([]);
+        setUnverifiedStockRows([]);
         setRemoteMeta({ total: 0 });
         setSiteBrandCandidates([]);
         setSiteBrandWarning(null);
@@ -4302,6 +4373,8 @@ const AutopartOffers = () => {
                     <strong>{value || '—'}</strong>
                     {record.is_requested_oem ? (
                         <Tag color="green">точно</Tag>
+                    ) : record.unverified_cross ? (
+                        <Tag color="orange">кросс ⚠ не проверен</Tag>
                     ) : (
                         <Tag color="blue">кросс</Tag>
                     )}
@@ -4358,7 +4431,11 @@ const AutopartOffers = () => {
     ];
 
     const renderOurStockSummary = () => {
-        if (!ourStockRows.length) {
+        const combinedRows = [
+            ...(ourStockRows || []),
+            ...(unverifiedStockRows || []),
+        ];
+        if (!combinedRows.length) {
             return (
                 <span
                     style={{
@@ -4378,13 +4455,14 @@ const AutopartOffers = () => {
                 </span>
             );
         }
-        const totalQty = ourStockRows.reduce(
+        const totalQty = combinedRows.reduce(
             (sum, row) => sum + Number(row.quantity || 0),
             0
         );
-        const crossCount = ourStockRows.filter(
+        const crossCount = (ourStockRows || []).filter(
             (row) => !row.is_requested_oem
         ).length;
+        const unverifiedCount = unverifiedStockRows.length;
         const hasStock = totalQty > 0;
 
         const chip = (
@@ -4407,11 +4485,16 @@ const AutopartOffers = () => {
                 <span style={{ fontWeight: 600 }}>Наше наличие:</span>
                 <span style={{ fontWeight: 600 }}>{totalQty} шт</span>
                 <span style={{ color: '#6b7280' }}>
-                    · {ourStockRows.length} поз.
+                    · {combinedRows.length} поз.
                 </span>
                 {crossCount ? (
                     <Tag color="blue" style={{ marginInlineEnd: 0 }}>
                         + кроссы: {crossCount}
+                    </Tag>
+                ) : null}
+                {unverifiedCount ? (
+                    <Tag color="orange" style={{ marginInlineEnd: 0 }}>
+                        ⚠ непроверенные: {unverifiedCount}
                     </Tag>
                 ) : null}
                 <DownOutlined style={{ fontSize: 10, color: '#9ca3af' }} />
@@ -4430,12 +4513,25 @@ const AutopartOffers = () => {
                                 `${row.autopart_id}-${row.pricelist_id}`
                             }
                             columns={ourStockColumns}
-                            dataSource={ourStockRows}
+                            dataSource={combinedRows}
                             size="small"
                             pagination={false}
                             tableLayout="fixed"
                             scroll={{ x: 660, y: 320 }}
                         />
+                        {unverifiedCount ? (
+                            <div
+                                style={{
+                                    marginTop: 6,
+                                    fontSize: 12,
+                                    color: '#d46b08',
+                                }}
+                            >
+                                ⚠ Непроверенные кроссы найдены по данным сайта и
+                                не подтверждены в нашей системе кроссов —
+                                проверьте применимость перед заказом.
+                            </div>
+                        ) : null}
                     </div>
                 }
             >
@@ -4586,7 +4682,7 @@ const AutopartOffers = () => {
                     )
                 ) : null}
 
-                {!partialSearch ? renderOurStockSummary() : null}
+                {!partialSearch && currentOem ? renderOurStockSummary() : null}
             </div>
 
             <Space wrap style={{ marginBottom: 12 }}>

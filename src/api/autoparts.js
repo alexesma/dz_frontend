@@ -3,6 +3,10 @@ import api from '../api.js';
 export const getAutopartOffers = (oem, partial = false) =>
     api.get('/autoparts/offers/', { params: { oem, partial } });
 
+// Наличие в нашем прайсе по списку OEM (для сайтовых, непроверенных кроссов)
+export const getOwnStockByOems = (oems) =>
+    api.post('/autoparts/own-stock/by-oems/', { oems });
+
 export const getAutopartLookupByOem = (oem, limit = 50) =>
     api.get('/autoparts/lookup/', { params: { oem, limit } });
 
