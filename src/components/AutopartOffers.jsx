@@ -4313,7 +4313,17 @@ const AutopartOffers = () => {
             dataIndex: 'oem_number',
             key: 'oem_number',
             width: 140,
-            render: (value) => <Text code>{value || '—'}</Text>,
+            render: (value) => (
+                <code
+                    style={{
+                        background: '#f5f5f5',
+                        padding: '1px 4px',
+                        borderRadius: 3,
+                    }}
+                >
+                    {value || '—'}
+                </code>
+            ),
         },
         {
             title: 'Наименование',
