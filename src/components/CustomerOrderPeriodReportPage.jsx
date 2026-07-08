@@ -10,17 +10,25 @@ import {
     Select,
     Space,
     Statistic,
+    Switch,
     Table,
+    Tooltip,
     Typography,
     message,
 } from 'antd';
-import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+    DownloadOutlined,
+    ReloadOutlined,
+    SearchOutlined,
+} from '@ant-design/icons';
 import dayjs from 'dayjs';
 
 import { getBrands } from '../api/brands';
 import {
+    excludeAutoPurchaseTopItem,
     exportCustomerOrderPeriodReport,
     getCustomerOrderPeriodReport,
+    restoreAutoPurchaseTopItem,
 } from '../api/orderTracking';
 
 const { RangePicker } = DatePicker;
@@ -82,6 +90,75 @@ const CustomerOrderPeriodReportPage = () => {
     const [limit, setLimit] = useState(1000);
     const [minTotalQty, setMinTotalQty] = useState(1);
     const [sortBy, setSortBy] = useState('total_desc');
+    const [togglingKeys, setTogglingKeys] = useState({});
+
+    const rowKeyOf = (row) => `${row.brand_name || ''}-${row.oem_number}`;
+
+    const openOfferSearch = (row) => {
+        const params = new URLSearchParams();
+        params.set('oem', row.oem_number || '');
+        if (row.brand_name) {
+            params.set('brand', row.brand_name);
+        }
+        params.set('auto', '1');
+        window.open(
+            `/autoparts/offers?${params.toString()}`,
+            '_blank',
+            'noopener'
+        );
+    };
+
+    const handleToggleAutopurchase = async (row, includeInAutopurchase) => {
+        const key = rowKeyOf(row);
+        setTogglingKeys((prev) => ({ ...prev, [key]: true }));
+        try {
+            if (includeInAutopurchase) {
+                await restoreAutoPurchaseTopItem({
+                    oem_number: row.oem_number,
+                    brand_name: row.brand_name || null,
+                });
+            } else {
+                await excludeAutoPurchaseTopItem({
+                    oem_number: row.oem_number,
+                    brand_name: row.brand_name || null,
+                    autopart_name: row.autopart_name || null,
+                });
+            }
+            setReportData((prev) => {
+                if (!prev) {
+                    return prev;
+                }
+                return {
+                    ...prev,
+                    rows: (prev.rows || []).map((item) =>
+                        rowKeyOf(item) === key
+                            ? {
+                                  ...item,
+                                  excluded_from_autopurchase:
+                                      !includeInAutopurchase,
+                              }
+                            : item
+                    ),
+                };
+            });
+            message.success(
+                includeInAutopurchase
+                    ? 'Позиция включена в автозаказ'
+                    : 'Позиция исключена из автозаказа'
+            );
+        } catch (error) {
+            message.error(
+                error?.response?.data?.detail
+                || 'Не удалось изменить участие в автозаказе'
+            );
+        } finally {
+            setTogglingKeys((prev) => {
+                const next = { ...prev };
+                delete next[key];
+                return next;
+            });
+        }
+    };
 
     const selectedBrandLabel = useMemo(() => {
         if (!selectedBrands.length) {
@@ -188,15 +265,15 @@ const CustomerOrderPeriodReportPage = () => {
             title: 'Артикул',
             dataIndex: 'oem_number',
             key: 'oem_number',
-            width: 150,
-            fixed: 'left',
+            width: 120,
             render: (value) => <Text strong>{value}</Text>,
         },
         {
             title: 'Бренд',
             dataIndex: 'brand_name',
             key: 'brand_name',
-            width: 150,
+            width: 110,
+            ellipsis: true,
             render: (value) => value || '—',
         },
         {
@@ -207,27 +284,27 @@ const CustomerOrderPeriodReportPage = () => {
             render: (value) => value || '—',
         },
         {
-            title: 'Остаток',
+            title: 'Ост.',
             dataIndex: 'current_quantity',
             key: 'current_quantity',
             align: 'right',
-            width: 120,
+            width: 70,
             render: formatNumber,
         },
         {
-            title: 'Период 1',
+            title: 'П1',
             dataIndex: 'period1_qty',
             key: 'period1_qty',
             align: 'right',
-            width: 130,
+            width: 70,
             render: formatNumber,
         },
         {
-            title: 'Период 2',
+            title: 'П2',
             dataIndex: 'period2_qty',
             key: 'period2_qty',
             align: 'right',
-            width: 130,
+            width: 70,
             render: formatNumber,
         },
         {
@@ -235,16 +312,48 @@ const CustomerOrderPeriodReportPage = () => {
             dataIndex: 'total_qty',
             key: 'total_qty',
             align: 'right',
-            width: 120,
+            width: 80,
             render: (value) => <Text strong>{formatNumber(value)}</Text>,
         },
         {
-            title: 'Средняя цена П1',
-            dataIndex: 'period1_avg_price',
-            key: 'period1_avg_price',
+            title: 'Ср. цена П2',
+            dataIndex: 'period2_avg_price',
+            key: 'period2_avg_price',
             align: 'right',
-            width: 150,
-            render: (value) => `${formatMoney(value)} руб.`,
+            width: 110,
+            render: (value) => `${formatMoney(value)} ₽`,
+        },
+        {
+            title: 'Автозаказ',
+            key: 'autopurchase',
+            align: 'center',
+            width: 90,
+            render: (_, row) => (
+                <Switch
+                    size="small"
+                    checked={!row.excluded_from_autopurchase}
+                    loading={!!togglingKeys[rowKeyOf(row)]}
+                    onChange={(checked) =>
+                        handleToggleAutopurchase(row, checked)
+                    }
+                />
+            ),
+        },
+        {
+            title: '',
+            key: 'actions',
+            align: 'center',
+            width: 60,
+            render: (_, row) => (
+                <Tooltip title="Открыть поиск по артикулу в новой вкладке">
+                    <Button
+                        size="small"
+                        type="text"
+                        icon={<SearchOutlined />}
+                        onClick={() => openOfferSearch(row)}
+                    />
+                </Tooltip>
+            ),
         },
     ];
 
@@ -432,11 +541,11 @@ const CustomerOrderPeriodReportPage = () => {
 
                 <Table
                     size="small"
-                    rowKey={(row) => `${row.brand_name || ''}-${row.oem_number}`}
+                    tableLayout="fixed"
+                    rowKey={rowKeyOf}
                     loading={previewLoading}
                     columns={reportColumns}
                     dataSource={reportRows}
-                    scroll={{ x: 1180 }}
                     pagination={{
                         pageSize: 50,
                         showSizeChanger: true,
