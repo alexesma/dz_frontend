@@ -51,6 +51,9 @@ export const getSupplierReceipt = (receiptId) =>
 export const postSupplierReceipt = (receiptId) =>
     api.post(`/customer-orders/supplier-receipts/${receiptId}/post`);
 
+export const sendSupplierReceiptUpdEmail = (receiptId) =>
+    api.post(`/customer-orders/supplier-receipts/${receiptId}/send-upd-email`);
+
 export const unpostSupplierReceipt = (receiptId) =>
     api.post(`/customer-orders/supplier-receipts/${receiptId}/unpost`);
 

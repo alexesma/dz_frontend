@@ -28,6 +28,7 @@ import {
     createHoliday,
     deleteHoliday,
 } from '../api/settings';
+import { getEmailAccounts } from '../api/emailAccounts';
 import { formatMoscow } from '../utils/time';
 
 const { Paragraph, Text } = Typography;
@@ -44,6 +45,7 @@ const SettingsPage = () => {
     const [orderInboxSettings, setOrderInboxSettings] = useState(null);
     const [orderInboxLoading, setOrderInboxLoading] = useState(false);
     const [orderInboxSaving, setOrderInboxSaving] = useState(false);
+    const [outgoingEmailAccounts, setOutgoingEmailAccounts] = useState([]);
 
     // Holiday calendar
     const [holidayYear, setHolidayYear] = useState(new Date().getFullYear());
@@ -159,8 +161,17 @@ const SettingsPage = () => {
         (async () => {
             setOrderInboxLoading(true);
             try {
-                const { data } = await getCustomerOrderInboxSettings();
-                setOrderInboxSettings(data || null);
+                const [{ data: settingsData }, { data: accountsData }] = await Promise.all([
+                    getCustomerOrderInboxSettings(),
+                    getEmailAccounts(),
+                ]);
+                setOrderInboxSettings(settingsData || null);
+                setOutgoingEmailAccounts(
+                    (accountsData || []).filter((account) => {
+                        const purposes = account.purposes || [];
+                        return account.is_active && purposes.includes('orders_out');
+                    }),
+                );
             } catch (err) {
                 console.error('Load order inbox settings failed:', err);
                 message.error('Не удалось загрузить настройки почты заказов');
@@ -311,6 +322,12 @@ const SettingsPage = () => {
                     orderInboxSettings.supplier_order_stub_enabled,
                 supplier_order_stub_email:
                     orderInboxSettings.supplier_order_stub_email,
+                supplier_receipt_upd_email_enabled:
+                    orderInboxSettings.supplier_receipt_upd_email_enabled,
+                supplier_receipt_upd_email:
+                    orderInboxSettings.supplier_receipt_upd_email,
+                supplier_receipt_upd_email_account_id:
+                    orderInboxSettings.supplier_receipt_upd_email_account_id,
             };
             const { data } = await updateCustomerOrderInboxSettings(payload);
             setOrderInboxSettings(data);
@@ -517,6 +534,73 @@ const SettingsPage = () => {
                                 />
                             </div>
                         </div>
+                        <div>
+                            <Text strong>Автоотправка УПД поставщика</Text>
+                            <div style={{ marginTop: 8 }}>
+                                <Switch
+                                    checked={
+                                        orderInboxSettings
+                                            ?.supplier_receipt_upd_email_enabled
+                                        ?? false
+                                    }
+                                    onChange={(checked) =>
+                                        setOrderInboxSettings((prev) => ({
+                                            ...(prev || {}),
+                                            supplier_receipt_upd_email_enabled:
+                                                checked,
+                                        }))
+                                    }
+                                    disabled={orderInboxLoading}
+                                />
+                            </div>
+                        </div>
+                        <div style={{ minWidth: 320 }}>
+                            <Text strong>Email получателя УПД</Text>
+                            <div style={{ marginTop: 8 }}>
+                                <Input
+                                    value={
+                                        orderInboxSettings
+                                            ?.supplier_receipt_upd_email ?? ''
+                                    }
+                                    onChange={(event) =>
+                                        setOrderInboxSettings((prev) => ({
+                                            ...(prev || {}),
+                                            supplier_receipt_upd_email:
+                                                event.target.value,
+                                        }))
+                                    }
+                                    disabled={orderInboxLoading}
+                                    placeholder="email@example.ru"
+                                />
+                            </div>
+                        </div>
+                        <div style={{ minWidth: 320 }}>
+                            <Text strong>Ящик отправителя УПД</Text>
+                            <div style={{ marginTop: 8 }}>
+                                <Select
+                                    allowClear
+                                    style={{ width: '100%' }}
+                                    value={
+                                        orderInboxSettings
+                                            ?.supplier_receipt_upd_email_account_id
+                                        ?? undefined
+                                    }
+                                    onChange={(value) =>
+                                        setOrderInboxSettings((prev) => ({
+                                            ...(prev || {}),
+                                            supplier_receipt_upd_email_account_id:
+                                                value ?? null,
+                                        }))
+                                    }
+                                    disabled={orderInboxLoading}
+                                    placeholder="По умолчанию orders_out"
+                                    options={outgoingEmailAccounts.map((account) => ({
+                                        value: account.id,
+                                        label: `${account.name} · ${account.email}`,
+                                    }))}
+                                />
+                            </div>
+                        </div>
                         <Button
                             type="primary"
                             loading={orderInboxSaving}
@@ -576,7 +660,12 @@ const SettingsPage = () => {
                     файлы заказов хранятся временно, чтобы их можно было
                     перепроверить после правки настроек.
                 </Paragraph>
-                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                <div style={{
+                    display: 'flex',
+                    gap: 12,
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                }}>
                     <div>
                         <Text strong>Глубина проверки (дней)</Text>
                         <div style={{ marginTop: 8 }}>

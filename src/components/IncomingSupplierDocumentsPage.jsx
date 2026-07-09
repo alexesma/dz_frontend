@@ -48,6 +48,7 @@ import {
     getSupplierReceipt,
     getSupplierReceipts,
     postSupplierReceipt,
+    sendSupplierReceiptUpdEmail,
     unpostSupplierReceipt,
     updateSupplierReceipt,
     updateSupplierReceiptItem,
@@ -333,6 +334,7 @@ const IncomingSupplierDocumentsPage = () => {
     const [postingId, setPostingId] = useState(null);
     const [unpostingId, setUnpostingId] = useState(null);
     const [deletingId, setDeletingId] = useState(null);
+    const [sendingUpdId, setSendingUpdId] = useState(null);
     const [filters, setFilters] = useState({
         providerId: null,
         dateRange: getDefaultDateRange(),
@@ -677,6 +679,19 @@ const IncomingSupplierDocumentsPage = () => {
         }
     };
 
+    const handleSendUpdEmail = async (receiptId) => {
+        setSendingUpdId(receiptId);
+        try {
+            const { data } = await sendSupplierReceiptUpdEmail(receiptId);
+            const target = data?.to_email ? ` на ${data.to_email}` : '';
+            message.success(`УПД отправлен${target}`);
+        } catch (err) {
+            message.error(err?.response?.data?.detail || 'Не удалось отправить УПД');
+        } finally {
+            setSendingUpdId(null);
+        }
+    };
+
     // ── delete receipt ──────────────────────────────────────────────────────
     const performDelete = async (receiptId) => {
         setDeletingId(receiptId);
@@ -823,6 +838,13 @@ const IncomingSupplierDocumentsPage = () => {
                             Провести
                         </Button>
                     )}
+                    <Button
+                        size="small"
+                        onClick={() => handleSendUpdEmail(row.id)}
+                        loading={sendingUpdId === row.id}
+                    >
+                        УПД на почту
+                    </Button>
                     {!row.posted_at && (
                         <Popconfirm
                             title="Удалить документ?"
@@ -1468,6 +1490,15 @@ const IncomingSupplierDocumentsPage = () => {
                                             <Button icon={<PrinterOutlined />}
                                                 onClick={() => setLabelVisible(true)}>
                                                 Этикетки
+                                            </Button>
+                                        )}
+                                        {!editMode && (
+                                            <Button
+                                                icon={<FileTextOutlined />}
+                                                onClick={() => handleSendUpdEmail(detailReceipt.id)}
+                                                loading={sendingUpdId === detailReceipt.id}
+                                            >
+                                                УПД на почту
                                             </Button>
                                         )}
                                         {!editMode && !isDraft && (
