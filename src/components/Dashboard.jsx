@@ -415,17 +415,14 @@ const Dashboard = () => {
                 return !Number.isNaN(parsed.getTime())
                     && parsed >= currentWindowStart;
             };
-            const currentShipmentRows = shipmentProfitRows.filter(isCurrentWindowRow);
-            const useShipmentData = currentShipmentRows.length > 0;
-            const sourceRows = useShipmentData
-                ? shipmentProfitRows
-                : estimatedProfitRows;
+            const hasEstimatedCurrentRows = estimatedProfitRows.some(isCurrentWindowRow);
+            const useEstimatedData = hasEstimatedCurrentRows || !shipmentProfitRows.some(isCurrentWindowRow);
+            const sourceRows = useEstimatedData
+                ? estimatedProfitRows
+                : shipmentProfitRows;
             setProfitRows(sourceRows.filter(isCurrentWindowRow));
             setPrevProfitRows(sourceRows.filter((row) => !isCurrentWindowRow(row)));
-            setProfitIsEstimated(
-                !useShipmentData
-                && estimatedProfitRows.some(isCurrentWindowRow)
-            );
+            setProfitIsEstimated(useEstimatedData && hasEstimatedCurrentRows);
             setInventoryControl(inventoryResponse?.data || null);
             setSupplierReliability(
                 Array.isArray(reliabilityResponse?.data?.suppliers)
@@ -842,7 +839,7 @@ const Dashboard = () => {
         {
             title: 'Позиция',
             key: 'position',
-            width: 260,
+            width: '32%',
             render: (_, row) => {
                 const bestName = (watchOffers[row.id] || [])
                     .map((offer) => getReadableAutopartName(offer.autopart_name, row))
@@ -861,58 +858,46 @@ const Dashboard = () => {
             },
         },
         {
-            title: 'Прайсы поставщиков',
-            key: 'provider',
-            width: 220,
+            title: 'Цены / склад',
+            key: 'prices',
+            width: '46%',
             render: (_, row) => (
-                <Space direction="vertical" size={0}>
-                    <Text>{formatMoney(row.last_seen_provider_price)}</Text>
-                    <Text type="secondary">{formatDateTime(row.last_seen_provider_at)}</Text>
-                </Space>
-            ),
-        },
-        {
-            title: 'Сайт',
-            key: 'site',
-            width: 220,
-            render: (_, row) => (
-                <Space direction="vertical" size={0}>
-                    <Text>{formatMoney(row.last_seen_site_price)}</Text>
-                    <Text type="secondary">{formatDateTime(row.last_seen_site_at)}</Text>
-                </Space>
-            ),
-        },
-        {
-            title: 'Наш склад',
-            key: 'own_stock',
-            width: 230,
-            render: (_, row) => (
-                <Space direction="vertical" size={0}>
-                    <Text>
-                        Закупка: {row.last_purchase_price != null
+                <div className="dashboard-watch-metrics">
+                    <div>
+                        <Text type="secondary">Прайс</Text>
+                        <Text>{formatMoney(row.last_seen_provider_price)}</Text>
+                        <Text type="secondary">{formatDateTime(row.last_seen_provider_at)}</Text>
+                    </div>
+                    <div>
+                        <Text type="secondary">Сайт</Text>
+                        <Text>{formatMoney(row.last_seen_site_price)}</Text>
+                        <Text type="secondary">{formatDateTime(row.last_seen_site_at)}</Text>
+                    </div>
+                    <div>
+                        <Text type="secondary">Закупка</Text>
+                        <Text>{row.last_purchase_price != null
                             ? formatMoney(row.last_purchase_price)
-                            : '—'}
-                        {row.last_purchase_at
-                            ? ` · ${formatDateTime(row.last_purchase_at)}`
-                            : ''}
-                    </Text>
-                    <Text>
-                        Цена сейчас: {row.current_price != null
+                            : '—'}</Text>
+                        <Text type="secondary">{formatDateTime(row.last_purchase_at)}</Text>
+                    </div>
+                    <div>
+                        <Text type="secondary">Сейчас</Text>
+                        <Text>{row.current_price != null
                             ? formatMoney(row.current_price)
-                            : '—'}
-                    </Text>
-                    <Text type="secondary">
-                        Остаток: {row.stock_quantity != null
-                            ? `${formatNumber(row.stock_quantity)} шт.`
-                            : '—'}
-                    </Text>
-                </Space>
+                            : '—'}</Text>
+                        <Text type="secondary">
+                            Остаток: {row.stock_quantity != null
+                                ? `${formatNumber(row.stock_quantity)} шт.`
+                                : '—'}
+                        </Text>
+                    </div>
+                </div>
             ),
         },
         {
-            title: 'Сигнал',
-            key: 'signal',
-            width: 170,
+            title: 'Решение',
+            key: 'decision',
+            width: '22%',
             render: (_, row) => {
                 const prices = [row.last_seen_provider_price, row.last_seen_site_price]
                     .map(Number)
@@ -921,60 +906,51 @@ const Dashboard = () => {
                 const limitReached = bestPrice != null
                     && row.max_price != null
                     && bestPrice <= Number(row.max_price);
-                return limitReached
-                    ? <Tag color="green">Цена достигнута</Tag>
-                    : <Tag color={bestPrice != null ? 'blue' : 'default'}>
-                        {bestPrice != null ? `Лучшая ${formatMoney(bestPrice)}` : 'Нет цены'}
-                    </Tag>;
+                return (
+                    <Space direction="vertical" size={8} className="dashboard-watch-decision">
+                        {limitReached
+                            ? <Tag color="green">Цена достигнута</Tag>
+                            : <Tag color={bestPrice != null ? 'blue' : 'default'}>
+                                {bestPrice != null ? `Лучшая ${formatMoney(bestPrice)}` : 'Нет цены'}
+                            </Tag>}
+                        <Popconfirm
+                            title="Снять позицию с отслеживания?"
+                            description={`${row.brand} ${row.oem} исчезнет из сводки и регламентных проверок.`}
+                            okText="Снять"
+                            cancelText="Отмена"
+                            okButtonProps={{ danger: true }}
+                            onConfirm={() => void removeWatchItem(row)}
+                        >
+                            <Button
+                                danger
+                                size="small"
+                                icon={<DeleteOutlined />}
+                                loading={watchRemovingId === row.id}
+                            >
+                                Снять
+                            </Button>
+                        </Popconfirm>
+                    </Space>
+                );
             },
-        },
-        {
-            title: '',
-            key: 'actions',
-            width: 56,
-            render: (_, row) => (
-                <Popconfirm
-                    title="Снять позицию с отслеживания?"
-                    description={`${row.brand} ${row.oem} исчезнет из сводки и регламентных проверок.`}
-                    okText="Снять"
-                    cancelText="Отмена"
-                    okButtonProps={{ danger: true }}
-                    onConfirm={() => void removeWatchItem(row)}
-                >
-                    <Button
-                        danger
-                        type="text"
-                        icon={<DeleteOutlined />}
-                        loading={watchRemovingId === row.id}
-                        title="Снять с отслеживания"
-                    />
-                </Popconfirm>
-            ),
         },
     ];
 
     const watchOfferColumns = (watchItem) => [
         {
-            title: 'Поставщик',
-            key: 'supplier',
-            width: '22%',
-            render: (_, row) => (
-                <Space direction="vertical" size={0}>
-                    <Text strong>{row.supplier_name}</Text>
-                    <Tag color={row.source_type === 'supplier' ? 'blue' : 'green'}>
-                        {row.source_type === 'supplier' ? 'Прайс / email' : 'Сайт'}
-                    </Tag>
-                </Space>
-            ),
-        },
-        {
-            title: 'Предложение',
+            title: 'Поставщик / предложение',
             key: 'offer',
-            width: '30%',
+            width: '48%',
             render: (_, row) => {
                 const itemName = getReadableAutopartName(row.autopart_name, watchItem);
                 return (
-                    <Space direction="vertical" size={0}>
+                    <Space direction="vertical" size={2}>
+                        <Space size={6} wrap>
+                            <Text strong>{row.supplier_name}</Text>
+                            <Tag color={row.source_type === 'supplier' ? 'blue' : 'green'}>
+                                {row.source_type === 'supplier' ? 'Прайс / email' : 'Сайт'}
+                            </Tag>
+                        </Space>
                         <Text strong>{row.brand_name} {row.oem_number}</Text>
                         {itemName ? (
                             <Text type="secondary" ellipsis={{ tooltip: itemName }}>
@@ -989,7 +965,7 @@ const Dashboard = () => {
         {
             title: 'Наличие и срок',
             key: 'terms',
-            width: '22%',
+            width: '24%',
             render: (_, row) => (
                 <Space direction="vertical" size={0}>
                     <Text>{formatNumber(row.quantity)} шт. · кратн. {row.min_qnt}</Text>
@@ -1002,7 +978,7 @@ const Dashboard = () => {
         {
             title: 'Заказать',
             key: 'order',
-            width: '26%',
+            width: '28%',
             render: (_, offer) => {
                 const offerKey = `${watchItem.id}:${offer.key}`;
                 return (
@@ -1481,7 +1457,8 @@ const Dashboard = () => {
                         columns={watchColumns}
                         dataSource={watchItems}
                         pagination={false}
-                        scroll={{ x: 1160 }}
+                        tableLayout="fixed"
+                        className="dashboard-watch-table"
                         expandable={{
                             expandedRowKeys: watchItems.map((item) => item.id),
                             showExpandColumn: false,
@@ -1687,7 +1664,7 @@ const Dashboard = () => {
                             type="warning"
                             showIcon
                             style={{ marginBottom: 12 }}
-                            message="За последние 30 дней нет ни проведённых отгрузок, ни исполненных строк клиентских заказов, поэтому маржу рассчитать пока нельзя."
+                            message="За последние 30 дней нет исполненных строк клиентских заказов с ценой и количеством, поэтому маржу рассчитать пока нельзя."
                         />
                     )}
                     <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>

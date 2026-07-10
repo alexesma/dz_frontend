@@ -1140,9 +1140,50 @@ body {
   font-weight: 400;
 }
 
+.dashboard-watch-table .ant-table-cell,
 .dashboard-watch-offers .ant-table-cell {
   overflow-wrap: anywhere;
   white-space: normal;
+}
+
+.dashboard-watch-table .ant-table-thead > tr > th,
+.dashboard-watch-table .ant-table-tbody > tr > td,
+.dashboard-watch-offers .ant-table-thead > tr > th,
+.dashboard-watch-offers .ant-table-tbody > tr > td {
+  padding: 7px 8px;
+  vertical-align: top;
+}
+
+.dashboard-watch-table .ant-typography,
+.dashboard-watch-offers .ant-typography {
+  max-width: 100%;
+}
+
+.dashboard-watch-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.dashboard-watch-metrics > div {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+  padding: 6px 7px;
+  border: 1px solid #e6edf5;
+  border-radius: 8px;
+  background: #f8fbff;
+  line-height: 1.2;
+}
+
+.dashboard-watch-metrics .ant-typography {
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+}
+
+.dashboard-watch-decision {
+  width: 100%;
 }
 
 @media (max-width: 768px) {
@@ -1157,5 +1198,9 @@ body {
 
   .dashboard-command-header .ant-btn {
     width: 100%;
+  }
+
+  .dashboard-watch-metrics {
+    grid-template-columns: 1fr;
   }
 }
