@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+    ArrowDownOutlined,
+    ArrowUpOutlined,
+    DeleteOutlined,
     ReloadOutlined,
     ShoppingCartOutlined,
     WarningOutlined,
@@ -11,6 +14,7 @@ import {
     Col,
     Empty,
     InputNumber,
+    Popconfirm,
     Row,
     Select,
     Segmented,
@@ -36,7 +40,8 @@ import {
 } from '../api/dashboard';
 import { getShipmentProfitReport } from '../api/inventory';
 import { getExecutionTraces } from '../api/settings';
-import { getWatchItems } from '../api/watchlist';
+import { deleteWatchItem, getWatchItems } from '../api/watchlist';
+import MarginMonthChart from './MarginMonthChart';
 
 const { Title, Text } = Typography;
 
@@ -201,6 +206,62 @@ const renderPriceDelta = (value) => {
     return <span style={{ color }}>{`${sign}${formatNumber(numeric, 1)}%`}</span>;
 };
 
+// Знаковая сумма: прирост прибыли — зелёный, потеря — красный.
+const renderSignedMoney = (value) => {
+    const numeric = Number(value);
+    if (value == null || !Number.isFinite(numeric)) {
+        return <span style={{ color: '#94a3b8' }}>—</span>;
+    }
+    if (Math.abs(numeric) < 0.005) {
+        return <span style={{ color: '#94a3b8' }}>0</span>;
+    }
+    const color = numeric > 0 ? '#16a34a' : '#dc2626';
+    return (
+        <span style={{ color }}>
+            {numeric > 0 ? '+' : '−'}{formatMoney(Math.abs(numeric))}
+        </span>
+    );
+};
+
+// Сравнение показателя с предыдущим окном той же длины.
+// mode='percent' — относительное изменение суммы, mode='pp' — разница
+// маржи в процентных пунктах. Рост — зелёный, падение — красный.
+const MonthDelta = ({
+    current,
+    previous,
+    mode = 'percent',
+    label = 'к пред. 30 дням',
+}) => {
+    const currentValue = Number(current);
+    const previousValue = Number(previous);
+    if (!Number.isFinite(currentValue) || !Number.isFinite(previousValue)
+        || (mode === 'percent' && previousValue === 0)) {
+        return (
+            <Text type="secondary" style={{ fontSize: 12 }}>
+                Нет данных за предыдущий период
+            </Text>
+        );
+    }
+    const delta = mode === 'percent'
+        ? ((currentValue - previousValue) / Math.abs(previousValue)) * 100
+        : currentValue - previousValue;
+    if (Math.abs(delta) < 0.05) {
+        return (
+            <Text type="secondary" style={{ fontSize: 12 }}>
+                Без изменений {label}
+            </Text>
+        );
+    }
+    const color = delta > 0 ? '#16a34a' : '#dc2626';
+    const suffix = mode === 'percent' ? '%' : ' п.п.';
+    return (
+        <span style={{ color, fontSize: 12 }}>
+            {delta > 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
+            {` ${delta > 0 ? '+' : ''}${formatNumber(delta, 1)}${suffix} ${label}`}
+        </span>
+    );
+};
+
 const Dashboard = () => {
     const [loading, setLoading] = useState(false);
     const [watchSendingKey, setWatchSendingKey] = useState(null);
@@ -209,9 +270,13 @@ const Dashboard = () => {
     const smoothWindow = 3;
     const [series, setSeries] = useState([]);
     const [orderDynamics, setOrderDynamics] = useState(null);
+    const [orderCompareDaily, setOrderCompareDaily] = useState([]);
+    const [marginChartMetric, setMarginChartMetric] = useState('revenue');
     const [supplierPurchaseMode, setSupplierPurchaseMode] = useState('warehouse');
     const [profitRows, setProfitRows] = useState([]);
+    const [prevProfitRows, setPrevProfitRows] = useState([]);
     const [profitIsEstimated, setProfitIsEstimated] = useState(false);
+    const [watchRemovingId, setWatchRemovingId] = useState(null);
     const [inventoryControl, setInventoryControl] = useState(null);
     const [supplierReliability, setSupplierReliability] = useState([]);
     const [watchItems, setWatchItems] = useState([]);
@@ -234,6 +299,8 @@ const Dashboard = () => {
                     smooth_window: smoothWindow,
                 }),
                 getOrderDynamics({ days: 14, partner_limit: 1000 }),
+                // 28 дней без контрагентов — только для сравнения окон 14/14
+                getOrderDynamics({ days: 28, partner_limit: 1 }),
                 getExecutionTraces({ trace_type: 'scheduler_job', limit: 200 }),
                 getExecutionTraces({
                     trace_type: 'scheduler_job',
@@ -243,6 +310,7 @@ const Dashboard = () => {
                 getExecutionTraces({ trace_type: 'provider_pricelist', limit: 250 }),
                 getWatchItems({ page: 1, page_size: 10 }),
                 getCustomersSummary({ page: 1, page_size: 200 }),
+                // 60 дней: текущее окно (последние 30) + предыдущее для сравнения
                 getShipmentProfitReport({
                     period: 'day',
                     group_by_customer: true,
@@ -250,16 +318,17 @@ const Dashboard = () => {
                     group_by_brand: false,
                     group_by_autopart: false,
                     date_from: new Date(
-                        Date.now() - (29 * 24 * 60 * 60 * 1000)
+                        Date.now() - (59 * 24 * 60 * 60 * 1000)
                     ).toISOString(),
                 }),
-                getOrderMargin({ days: 30 }),
+                getOrderMargin({ days: 60 }),
                 getInventoryControl(),
                 getSupplierReliability({ days: 90 }),
             ]);
             const [
                 trendsResponse,
                 orderDynamicsResponse,
+                orderCompareResponse,
                 schedulerTracesResponse,
                 schedulerErrorsResponse,
                 providerTracesResponse,
@@ -291,6 +360,11 @@ const Dashboard = () => {
                 : [];
             setSeries(nextSeries);
             setOrderDynamics(orderDynamicsResponse?.data || null);
+            setOrderCompareDaily(
+                Array.isArray(orderCompareResponse?.data?.daily)
+                    ? orderCompareResponse.data.daily
+                    : []
+            );
             setSchedulerJobTraces(
                 Array.isArray(schedulerTracesResponse?.data)
                     ? schedulerTracesResponse.data
@@ -333,11 +407,24 @@ const Dashboard = () => {
             const estimatedProfitRows = Array.isArray(orderMarginResponse?.data?.rows)
                 ? orderMarginResponse.data.rows
                 : [];
-            setProfitRows(
-                shipmentProfitRows.length ? shipmentProfitRows : estimatedProfitRows
-            );
+            const currentWindowStart = new Date();
+            currentWindowStart.setHours(0, 0, 0, 0);
+            currentWindowStart.setDate(currentWindowStart.getDate() - 29);
+            const isCurrentWindowRow = (row) => {
+                const parsed = new Date(row.period_start);
+                return !Number.isNaN(parsed.getTime())
+                    && parsed >= currentWindowStart;
+            };
+            const currentShipmentRows = shipmentProfitRows.filter(isCurrentWindowRow);
+            const useShipmentData = currentShipmentRows.length > 0;
+            const sourceRows = useShipmentData
+                ? shipmentProfitRows
+                : estimatedProfitRows;
+            setProfitRows(sourceRows.filter(isCurrentWindowRow));
+            setPrevProfitRows(sourceRows.filter((row) => !isCurrentWindowRow(row)));
             setProfitIsEstimated(
-                shipmentProfitRows.length === 0 && estimatedProfitRows.length > 0
+                !useShipmentData
+                && estimatedProfitRows.some(isCurrentWindowRow)
             );
             setInventoryControl(inventoryResponse?.data || null);
             setSupplierReliability(
@@ -490,6 +577,132 @@ const Dashboard = () => {
         };
     }, [profitRows]);
 
+    const prevProfitTotals = useMemo(() => {
+        if (!prevProfitRows.length) {
+            return { revenue: null, marginPct: null };
+        }
+        let revenue = 0;
+        let cost = 0;
+        let uncostedQuantity = 0;
+        prevProfitRows.forEach((row) => {
+            revenue += Number(row.revenue_total || 0);
+            cost += Number(row.cost_total || 0);
+            uncostedQuantity += Number(row.uncosted_quantity || 0);
+        });
+        const marginPct = revenue > 0 && uncostedQuantity === 0
+            ? ((revenue - cost) / revenue) * 100
+            : null;
+        return { revenue, marginPct };
+    }, [prevProfitRows]);
+
+    // Итоги предыдущего 14-дневного окна из 28-дневной выборки daily
+    const prevOrderSummary = useMemo(() => {
+        if (!orderCompareDaily.length) return null;
+        const windowStart = new Date();
+        windowStart.setHours(0, 0, 0, 0);
+        windowStart.setDate(windowStart.getDate() - 13);
+        const prevRows = orderCompareDaily.filter((row) => {
+            const parsed = new Date(`${row.date}T00:00:00`);
+            return !Number.isNaN(parsed.getTime()) && parsed < windowStart;
+        });
+        if (!prevRows.length) return null;
+        const totals = {
+            customer_order_count: 0,
+            customer_qty: 0,
+            customer_sum: 0,
+            supplier_order_count: 0,
+            supplier_qty: 0,
+        };
+        prevRows.forEach((row) => {
+            totals.customer_order_count += Number(row.customer_order_count || 0);
+            totals.customer_qty += Number(row.customer_qty || 0);
+            totals.customer_sum += Number(row.customer_sum || 0);
+            totals.supplier_order_count += Number(row.supplier_order_count || 0);
+            totals.supplier_qty += Number(row.supplier_qty || 0);
+        });
+        totals.purchase_coverage_pct = totals.customer_qty > 0
+            ? (totals.supplier_qty / totals.customer_qty) * 100
+            : null;
+        return totals;
+    }, [orderCompareDaily]);
+
+    // Разложение изменения прибыли по клиентам: вклад объёма и вклад маржи.
+    // ΔПрибыль = ΔСумма × маржа_пред + Сумма_тек × Δмаржа (точное разложение).
+    const marginDecomposition = useMemo(() => {
+        const accumulate = (rows) => {
+            const map = new Map();
+            rows.forEach((row) => {
+                const key = row.customer_id ?? row.customer_name ?? 'unknown';
+                const item = map.get(key) || {
+                    key,
+                    customer_name: row.customer_name || 'Без клиента',
+                    revenue: 0,
+                    cost: 0,
+                    uncosted: 0,
+                };
+                item.revenue += Number(row.revenue_total || 0);
+                item.cost += Number(row.cost_total || 0);
+                item.uncosted += Number(row.uncosted_quantity || 0);
+                map.set(key, item);
+            });
+            return map;
+        };
+        const currentMap = accumulate(profitRows);
+        const prevMap = accumulate(prevProfitRows);
+        const keys = new Set([...currentMap.keys(), ...prevMap.keys()]);
+        const rows = [];
+        keys.forEach((key) => {
+            const cur = currentMap.get(key);
+            const prev = prevMap.get(key);
+            const curCosted = cur && cur.uncosted === 0;
+            const prevCosted = prev && prev.uncosted === 0;
+            const curProfit = curCosted ? cur.revenue - cur.cost : null;
+            const prevProfit = prevCosted ? prev.revenue - prev.cost : null;
+            const curMargin = curCosted && cur.revenue > 0
+                ? curProfit / cur.revenue
+                : null;
+            const prevMargin = prevCosted && prev.revenue > 0
+                ? prevProfit / prev.revenue
+                : null;
+            let tag = null;
+            if ((cur && cur.uncosted > 0) || (prev && prev.uncosted > 0)) {
+                tag = 'uncosted';
+            } else if (!prev) {
+                tag = 'new';
+            } else if (!cur) {
+                tag = 'lost';
+            }
+            const profitDelta = (curProfit ?? 0) - (prevProfit ?? 0);
+            let volumeEffect = null;
+            let marginEffect = null;
+            if (curMargin != null && prevMargin != null) {
+                volumeEffect = (cur.revenue - prev.revenue) * prevMargin;
+                marginEffect = cur.revenue * (curMargin - prevMargin);
+            } else if (curMargin != null && !prev) {
+                volumeEffect = curProfit;
+                marginEffect = 0;
+            } else if (prevMargin != null && !cur) {
+                volumeEffect = -prevProfit;
+                marginEffect = 0;
+            }
+            rows.push({
+                key,
+                customer_name: (cur || prev).customer_name,
+                prev_profit: prevProfit,
+                cur_profit: curProfit,
+                profit_delta: tag === 'uncosted' ? null : profitDelta,
+                volume_effect: volumeEffect,
+                margin_effect: marginEffect,
+                tag,
+            });
+        });
+        return rows
+            .sort((a, b) => (
+                Math.abs(b.profit_delta ?? 0) - Math.abs(a.profit_delta ?? 0)
+            ))
+            .slice(0, 10);
+    }, [profitRows, prevProfitRows]);
+
     const frozenStockRows = useMemo(
         () => [
             ...(inventoryControl?.dead_stock || []),
@@ -605,6 +818,26 @@ const Dashboard = () => {
         }
     }, [refreshOrderDynamics, selectedCustomerId, watchOrderQty]);
 
+    const removeWatchItem = useCallback(async (item) => {
+        setWatchRemovingId(item.id);
+        try {
+            await deleteWatchItem(item.id);
+            setWatchItems((previous) => (
+                previous.filter((row) => row.id !== item.id)
+            ));
+            message.success(
+                `Позиция ${item.brand} ${item.oem} снята с отслеживания`
+            );
+        } catch (error) {
+            message.error(
+                error?.response?.data?.detail
+                || 'Не удалось снять позицию с отслеживания'
+            );
+        } finally {
+            setWatchRemovingId(null);
+        }
+    }, []);
+
     const watchColumns = [
         {
             title: 'Позиция',
@@ -650,6 +883,33 @@ const Dashboard = () => {
             ),
         },
         {
+            title: 'Наш склад',
+            key: 'own_stock',
+            width: 230,
+            render: (_, row) => (
+                <Space direction="vertical" size={0}>
+                    <Text>
+                        Закупка: {row.last_purchase_price != null
+                            ? formatMoney(row.last_purchase_price)
+                            : '—'}
+                        {row.last_purchase_at
+                            ? ` · ${formatDateTime(row.last_purchase_at)}`
+                            : ''}
+                    </Text>
+                    <Text>
+                        Цена сейчас: {row.current_price != null
+                            ? formatMoney(row.current_price)
+                            : '—'}
+                    </Text>
+                    <Text type="secondary">
+                        Остаток: {row.stock_quantity != null
+                            ? `${formatNumber(row.stock_quantity)} шт.`
+                            : '—'}
+                    </Text>
+                </Space>
+            ),
+        },
+        {
             title: 'Сигнал',
             key: 'signal',
             width: 170,
@@ -667,6 +927,29 @@ const Dashboard = () => {
                         {bestPrice != null ? `Лучшая ${formatMoney(bestPrice)}` : 'Нет цены'}
                     </Tag>;
             },
+        },
+        {
+            title: '',
+            key: 'actions',
+            width: 56,
+            render: (_, row) => (
+                <Popconfirm
+                    title="Снять позицию с отслеживания?"
+                    description={`${row.brand} ${row.oem} исчезнет из сводки и регламентных проверок.`}
+                    okText="Снять"
+                    cancelText="Отмена"
+                    okButtonProps={{ danger: true }}
+                    onConfirm={() => void removeWatchItem(row)}
+                >
+                    <Button
+                        danger
+                        type="text"
+                        icon={<DeleteOutlined />}
+                        loading={watchRemovingId === row.id}
+                        title="Снять с отслеживания"
+                    />
+                </Popconfirm>
+            ),
         },
     ];
 
@@ -817,7 +1100,7 @@ const Dashboard = () => {
     const profitDailyColumns = [
         { title: 'Дата', dataIndex: 'date', width: 90, render: formatShortDate },
         { title: 'Продано', dataIndex: 'quantity', width: 90, render: (value) => `${formatNumber(value)} шт.` },
-        { title: 'Выручка', dataIndex: 'revenue', width: 140, render: formatMoney },
+        { title: 'Сумма заказов', dataIndex: 'revenue', width: 140, render: formatMoney },
         { title: 'Себестоимость', dataIndex: 'cost', width: 140, render: formatMoney },
         { title: 'Валовая прибыль', dataIndex: 'gross_profit', width: 150, render: formatMoney },
         {
@@ -832,7 +1115,7 @@ const Dashboard = () => {
 
     const marginRiskColumns = [
         { title: 'Клиент', dataIndex: 'customer_name', ellipsis: true },
-        { title: 'Выручка', dataIndex: 'revenue', width: 130, render: formatMoney },
+        { title: 'Сумма заказов', dataIndex: 'revenue', width: 130, render: formatMoney },
         { title: 'Прибыль', dataIndex: 'gross_profit', width: 130, render: formatMoney },
         {
             title: 'Маржа',
@@ -841,6 +1124,60 @@ const Dashboard = () => {
             render: (value) => value == null
                 ? <Tag color="orange">Нет себест.</Tag>
                 : <Tag color={value < 10 ? 'red' : value < 20 ? 'orange' : 'green'}>{formatNumber(value, 1)}%</Tag>,
+        },
+    ];
+
+    const decompositionTagMeta = {
+        new: { color: 'blue', text: 'новый' },
+        lost: { color: 'default', text: 'ушёл' },
+        uncosted: { color: 'orange', text: 'нет себест.' },
+    };
+
+    const marginDecompositionColumns = [
+        {
+            title: 'Клиент',
+            key: 'customer',
+            ellipsis: true,
+            render: (_, row) => (
+                <Space size={6}>
+                    <Text strong ellipsis>{row.customer_name}</Text>
+                    {row.tag ? (
+                        <Tag color={decompositionTagMeta[row.tag].color}>
+                            {decompositionTagMeta[row.tag].text}
+                        </Tag>
+                    ) : null}
+                </Space>
+            ),
+        },
+        {
+            title: 'Прибыль: пред. → тек.',
+            key: 'profits',
+            width: 210,
+            render: (_, row) => (
+                <Text>
+                    {row.prev_profit != null ? formatMoney(row.prev_profit) : '—'}
+                    {' → '}
+                    {row.cur_profit != null ? formatMoney(row.cur_profit) : '—'}
+                </Text>
+            ),
+        },
+        {
+            title: 'Δ прибыли',
+            dataIndex: 'profit_delta',
+            width: 140,
+            render: renderSignedMoney,
+        },
+        {
+            title: 'Вклад объёма',
+            dataIndex: 'volume_effect',
+            width: 140,
+            render: renderSignedMoney,
+        },
+        {
+            title: 'Вклад маржи',
+            dataIndex: 'margin_effect',
+            width: 140,
+            render: renderSignedMoney,
         },
     ];
 
@@ -1144,7 +1481,7 @@ const Dashboard = () => {
                         columns={watchColumns}
                         dataSource={watchItems}
                         pagination={false}
-                        scroll={{ x: 900 }}
+                        scroll={{ x: 1160 }}
                         expandable={{
                             expandedRowKeys: watchItems.map((item) => item.id),
                             showExpandColumn: false,
@@ -1175,16 +1512,48 @@ const Dashboard = () => {
                 <Card title="Заказы: динамика за 14 дней">
                     <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
                         <Col xs={12} lg={6}>
-                            <Card size="small"><Statistic title="Заказы клиентов" value={orderSummary.customer_order_count || 0} suffix={`· ${formatNumber(orderSummary.customer_qty || 0)} шт.`} /></Card>
+                            <Card size="small">
+                                <Statistic title="Заказы клиентов" value={orderSummary.customer_order_count || 0} suffix={`· ${formatNumber(orderSummary.customer_qty || 0)} шт.`} />
+                                <MonthDelta
+                                    current={orderSummary.customer_order_count}
+                                    previous={prevOrderSummary?.customer_order_count}
+                                    mode="percent"
+                                    label="к пред. 14 дням"
+                                />
+                            </Card>
                         </Col>
                         <Col xs={12} lg={6}>
-                            <Card size="small"><Statistic title="Сумма клиентского спроса" value={Number(orderSummary.customer_sum || 0)} precision={0} suffix="руб." /></Card>
+                            <Card size="small">
+                                <Statistic title="Сумма клиентского спроса" value={Number(orderSummary.customer_sum || 0)} precision={0} suffix="руб." />
+                                <MonthDelta
+                                    current={orderSummary.customer_sum}
+                                    previous={prevOrderSummary?.customer_sum}
+                                    mode="percent"
+                                    label="к пред. 14 дням"
+                                />
+                            </Card>
                         </Col>
                         <Col xs={12} lg={6}>
-                            <Card size="small"><Statistic title="Заказы поставщикам" value={orderSummary.supplier_order_count || 0} suffix={`· ${formatNumber(orderSummary.supplier_qty || 0)} шт.`} /></Card>
+                            <Card size="small">
+                                <Statistic title="Заказы поставщикам" value={orderSummary.supplier_order_count || 0} suffix={`· ${formatNumber(orderSummary.supplier_qty || 0)} шт.`} />
+                                <MonthDelta
+                                    current={orderSummary.supplier_order_count}
+                                    previous={prevOrderSummary?.supplier_order_count}
+                                    mode="percent"
+                                    label="к пред. 14 дням"
+                                />
+                            </Card>
                         </Col>
                         <Col xs={12} lg={6}>
-                            <Card size="small"><Statistic title="Покрытие закупкой" value={orderSummary.purchase_coverage_pct ?? 0} precision={1} suffix="%" /></Card>
+                            <Card size="small">
+                                <Statistic title="Покрытие закупкой" value={orderSummary.purchase_coverage_pct ?? 0} precision={1} suffix="%" />
+                                <MonthDelta
+                                    current={orderSummary.purchase_coverage_pct}
+                                    previous={prevOrderSummary?.purchase_coverage_pct}
+                                    mode="pp"
+                                    label="к пред. 14 дням"
+                                />
+                            </Card>
                         </Col>
                     </Row>
                     <Table
@@ -1252,10 +1621,15 @@ const Dashboard = () => {
                         <Col xs={12} lg={6}>
                             <Card size="small">
                                 <Statistic
-                                    title="Выручка"
+                                    title="Сумма заказов"
                                     value={profitAnalytics.totals.revenue}
                                     precision={0}
                                     suffix="руб."
+                                />
+                                <MonthDelta
+                                    current={profitAnalytics.totals.revenue}
+                                    previous={prevProfitTotals.revenue}
+                                    mode="percent"
                                 />
                             </Card>
                         </Col>
@@ -1281,6 +1655,11 @@ const Dashboard = () => {
                                     value={profitAnalytics.totals.marginPct}
                                     precision={1}
                                     suffix="%"
+                                />
+                                <MonthDelta
+                                    current={profitAnalytics.totals.marginPct}
+                                    previous={prevProfitTotals.marginPct}
+                                    mode="pp"
                                 />
                             </Card>
                         </Col>
@@ -1311,6 +1690,47 @@ const Dashboard = () => {
                             message="За последние 30 дней нет ни проведённых отгрузок, ни исполненных строк клиентских заказов, поэтому маржу рассчитать пока нельзя."
                         />
                     )}
+                    <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+                        <Col xs={24} xl={10}>
+                            <Card
+                                size="small"
+                                title="Месяц к месяцу · нарастающий итог"
+                                extra={(
+                                    <Segmented
+                                        size="small"
+                                        value={marginChartMetric}
+                                        onChange={setMarginChartMetric}
+                                        options={[
+                                            { label: 'Сумма заказов', value: 'revenue' },
+                                            { label: 'Прибыль', value: 'profit' },
+                                            { label: 'Маржа %', value: 'margin' },
+                                        ]}
+                                    />
+                                )}
+                            >
+                                <MarginMonthChart
+                                    currentRows={profitRows}
+                                    prevRows={prevProfitRows}
+                                    metric={marginChartMetric}
+                                />
+                            </Card>
+                        </Col>
+                        <Col xs={24} xl={14}>
+                            <Card
+                                size="small"
+                                title="Разложение изменения прибыли · месяц к месяцу"
+                            >
+                                <Table
+                                    rowKey="key"
+                                    size="small"
+                                    columns={marginDecompositionColumns}
+                                    dataSource={marginDecomposition}
+                                    pagination={false}
+                                    scroll={{ x: 760 }}
+                                />
+                            </Card>
+                        </Col>
+                    </Row>
                     <Row gutter={[16, 16]}>
                         <Col xs={24} xl={14}>
                             <Card size="small" title="Динамика по дням">
