@@ -46,7 +46,8 @@ const formatDayDate = (windowStart, dayIndex) => {
 };
 
 // Кумулятивная серия по дням окна. metric: revenue | profit | margin.
-// Прибыль и маржа считаются только по строкам с известной себестоимостью.
+// Сумма берётся по всем заказам, прибыль и маржа — только по строкам с
+// известной себестоимостью.
 const buildCumulativeSeries = (rows, windowStart, metric) => {
     const perDay = Array.from({ length: WINDOW_DAYS }, () => ({
         revenue: 0,
@@ -59,9 +60,10 @@ const buildCumulativeSeries = (rows, windowStart, metric) => {
         if (Number.isNaN(parsed.getTime())) return;
         const offset = Math.floor((parsed.getTime() - windowStart.getTime()) / DAY_MS);
         if (offset < 0 || offset >= WINDOW_DAYS) return;
+        const orderTotal = Number(row.order_total ?? row.revenue_total ?? 0);
         const revenue = Number(row.revenue_total || 0);
         const cost = Number(row.cost_total || 0);
-        perDay[offset].revenue += revenue;
+        perDay[offset].revenue += orderTotal;
         if (Number(row.uncosted_quantity || 0) === 0) {
             perDay[offset].costedRevenue += revenue;
             perDay[offset].profit += revenue - cost;

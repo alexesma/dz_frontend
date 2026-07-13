@@ -4455,15 +4455,17 @@ const AutopartOffers = () => {
                 </span>
             );
         }
-        const totalQty = combinedRows.reduce(
-            (sum, row) => sum + Number(row.quantity || 0),
-            0
+        // В свёрнутом виде остатки альтернатив нельзя складывать: это разные
+        // предложения одной позиции. Показываем лучший доступный остаток.
+        const maxQty = Math.max(
+            0,
+            ...combinedRows.map((row) => Number(row.quantity || 0))
         );
         const crossCount = (ourStockRows || []).filter(
             (row) => !row.is_requested_oem
         ).length;
         const unverifiedCount = unverifiedStockRows.length;
-        const hasStock = totalQty > 0;
+        const hasStock = maxQty > 0;
 
         const chip = (
             <span
@@ -4483,7 +4485,7 @@ const AutopartOffers = () => {
                     style={{ color: hasStock ? '#52c41a' : '#9ca3af' }}
                 />
                 <span style={{ fontWeight: 600 }}>Наше наличие:</span>
-                <span style={{ fontWeight: 600 }}>{totalQty} шт</span>
+                <span style={{ fontWeight: 600 }}>{maxQty} шт</span>
                 <span style={{ color: '#6b7280' }}>
                     · {combinedRows.length} поз.
                 </span>

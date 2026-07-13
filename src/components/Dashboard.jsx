@@ -38,7 +38,6 @@ import {
     getSupplierPriceTrends,
     getSupplierReliability,
 } from '../api/dashboard';
-import { getShipmentProfitReport } from '../api/inventory';
 import { getExecutionTraces } from '../api/settings';
 import { deleteWatchItem, getWatchItems } from '../api/watchlist';
 import MarginMonthChart from './MarginMonthChart';
@@ -311,16 +310,6 @@ const Dashboard = () => {
                 getWatchItems({ page: 1, page_size: 10 }),
                 getCustomersSummary({ page: 1, page_size: 200 }),
                 // 60 дней: текущее окно (последние 30) + предыдущее для сравнения
-                getShipmentProfitReport({
-                    period: 'day',
-                    group_by_customer: true,
-                    group_by_provider: false,
-                    group_by_brand: false,
-                    group_by_autopart: false,
-                    date_from: new Date(
-                        Date.now() - (59 * 24 * 60 * 60 * 1000)
-                    ).toISOString(),
-                }),
                 getOrderMargin({ days: 60 }),
                 getInventoryControl(),
                 getSupplierReliability({ days: 90 }),
@@ -334,7 +323,6 @@ const Dashboard = () => {
                 providerTracesResponse,
                 watchResponse,
                 customersResponse,
-                profitResponse,
                 orderMarginResponse,
                 inventoryResponse,
                 reliabilityResponse,
@@ -401,9 +389,6 @@ const Dashboard = () => {
             setWatchOffers(savedOffers);
             setWatchOrderQty(savedQuantities);
             setCustomers(nextCustomers);
-            const shipmentProfitRows = Array.isArray(profitResponse?.data)
-                ? profitResponse.data
-                : [];
             const estimatedProfitRows = Array.isArray(orderMarginResponse?.data?.rows)
                 ? orderMarginResponse.data.rows
                 : [];
@@ -415,14 +400,14 @@ const Dashboard = () => {
                 return !Number.isNaN(parsed.getTime())
                     && parsed >= currentWindowStart;
             };
-            const hasEstimatedCurrentRows = estimatedProfitRows.some(isCurrentWindowRow);
-            const useEstimatedData = hasEstimatedCurrentRows || !shipmentProfitRows.some(isCurrentWindowRow);
-            const sourceRows = useEstimatedData
-                ? estimatedProfitRows
-                : shipmentProfitRows;
-            setProfitRows(sourceRows.filter(isCurrentWindowRow));
-            setPrevProfitRows(sourceRows.filter((row) => !isCurrentWindowRow(row)));
-            setProfitIsEstimated(useEstimatedData && hasEstimatedCurrentRows);
+            const hasEstimatedCurrentRows = estimatedProfitRows.some(
+                isCurrentWindowRow
+            );
+            setProfitRows(estimatedProfitRows.filter(isCurrentWindowRow));
+            setPrevProfitRows(
+                estimatedProfitRows.filter((row) => !isCurrentWindowRow(row))
+            );
+            setProfitIsEstimated(hasEstimatedCurrentRows);
             setInventoryControl(inventoryResponse?.data || null);
             setSupplierReliability(
                 Array.isArray(reliabilityResponse?.data?.suppliers)
@@ -496,6 +481,9 @@ const Dashboard = () => {
 
     const profitAnalytics = useMemo(() => {
         const totals = {
+            orderTotal: 0,
+            orderedQuantity: 0,
+            unpricedOrderQuantity: 0,
             revenue: 0,
             cost: 0,
             grossProfit: 0,
@@ -506,11 +494,23 @@ const Dashboard = () => {
         const dailyMap = new Map();
         const customerMap = new Map();
         profitRows.forEach((row) => {
+            const orderTotal = Number(
+                row.order_total ?? row.revenue_total ?? 0
+            );
+            const orderedQuantity = Number(
+                row.ordered_quantity ?? row.quantity ?? 0
+            );
+            const unpricedOrderQuantity = Number(
+                row.unpriced_order_quantity || 0
+            );
             const revenue = Number(row.revenue_total || 0);
             const cost = Number(row.cost_total || 0);
             const quantity = Number(row.quantity || 0);
             const costedQuantity = Number(row.costed_quantity || 0);
             const uncostedQuantity = Number(row.uncosted_quantity || 0);
+            totals.orderTotal += orderTotal;
+            totals.orderedQuantity += orderedQuantity;
+            totals.unpricedOrderQuantity += unpricedOrderQuantity;
             totals.revenue += revenue;
             totals.cost += cost;
             totals.quantity += quantity;
@@ -521,12 +521,16 @@ const Dashboard = () => {
             const date = String(row.period_start || '').slice(0, 10) || 'Без даты';
             const daily = dailyMap.get(date) || {
                 date,
+                order_total: 0,
+                ordered_quantity: 0,
                 revenue: 0,
                 cost: 0,
                 gross_profit: 0,
                 quantity: 0,
                 uncosted_quantity: 0,
             };
+            daily.order_total += orderTotal;
+            daily.ordered_quantity += orderedQuantity;
             daily.revenue += revenue;
             daily.cost += cost;
             daily.quantity += quantity;
@@ -538,11 +542,13 @@ const Dashboard = () => {
             const customer = customerMap.get(customerKey) || {
                 key: customerKey,
                 customer_name: row.customer_name || 'Без клиента',
+                order_total: 0,
                 revenue: 0,
                 cost: 0,
                 quantity: 0,
                 uncosted_quantity: 0,
             };
+            customer.order_total += orderTotal;
             customer.revenue += revenue;
             customer.cost += cost;
             customer.quantity += quantity;
@@ -557,7 +563,9 @@ const Dashboard = () => {
             : null;
         const customers = [...customerMap.values()].map((row) => ({
             ...row,
-            gross_profit: row.revenue - row.cost,
+            gross_profit: row.uncosted_quantity === 0 && row.revenue > 0
+                ? row.revenue - row.cost
+                : null,
             margin_pct: row.revenue > 0 && row.uncosted_quantity === 0
                 ? ((row.revenue - row.cost) / row.revenue) * 100
                 : null,
@@ -576,12 +584,14 @@ const Dashboard = () => {
 
     const prevProfitTotals = useMemo(() => {
         if (!prevProfitRows.length) {
-            return { revenue: null, marginPct: null };
+            return { orderTotal: null, revenue: null, marginPct: null };
         }
+        let orderTotal = 0;
         let revenue = 0;
         let cost = 0;
         let uncostedQuantity = 0;
         prevProfitRows.forEach((row) => {
+            orderTotal += Number(row.order_total ?? row.revenue_total ?? 0);
             revenue += Number(row.revenue_total || 0);
             cost += Number(row.cost_total || 0);
             uncostedQuantity += Number(row.uncosted_quantity || 0);
@@ -589,7 +599,7 @@ const Dashboard = () => {
         const marginPct = revenue > 0 && uncostedQuantity === 0
             ? ((revenue - cost) / revenue) * 100
             : null;
-        return { revenue, marginPct };
+        return { orderTotal, revenue, marginPct };
     }, [prevProfitRows]);
 
     // Итоги предыдущего 14-дневного окна из 28-дневной выборки daily
@@ -623,8 +633,8 @@ const Dashboard = () => {
         return totals;
     }, [orderCompareDaily]);
 
-    // Разложение изменения прибыли по клиентам: вклад объёма и вклад маржи.
-    // ΔПрибыль = ΔСумма × маржа_пред + Сумма_тек × Δмаржа (точное разложение).
+    // Сравнение входящих сумм заказов не зависит от наличия отгрузок и
+    // себестоимости, поэтому остаётся полным даже при незавершённых заказах.
     const marginDecomposition = useMemo(() => {
         const accumulate = (rows) => {
             const map = new Map();
@@ -633,13 +643,15 @@ const Dashboard = () => {
                 const item = map.get(key) || {
                     key,
                     customer_name: row.customer_name || 'Без клиента',
-                    revenue: 0,
-                    cost: 0,
-                    uncosted: 0,
+                    orderTotal: 0,
+                    unpricedQuantity: 0,
                 };
-                item.revenue += Number(row.revenue_total || 0);
-                item.cost += Number(row.cost_total || 0);
-                item.uncosted += Number(row.uncosted_quantity || 0);
+                item.orderTotal += Number(
+                    row.order_total ?? row.revenue_total ?? 0
+                );
+                item.unpricedQuantity += Number(
+                    row.unpriced_order_quantity || 0
+                );
                 map.set(key, item);
             });
             return map;
@@ -651,51 +663,34 @@ const Dashboard = () => {
         keys.forEach((key) => {
             const cur = currentMap.get(key);
             const prev = prevMap.get(key);
-            const curCosted = cur && cur.uncosted === 0;
-            const prevCosted = prev && prev.uncosted === 0;
-            const curProfit = curCosted ? cur.revenue - cur.cost : null;
-            const prevProfit = prevCosted ? prev.revenue - prev.cost : null;
-            const curMargin = curCosted && cur.revenue > 0
-                ? curProfit / cur.revenue
-                : null;
-            const prevMargin = prevCosted && prev.revenue > 0
-                ? prevProfit / prev.revenue
-                : null;
+            const currentTotal = cur?.orderTotal || 0;
+            const previousTotal = prev?.orderTotal || 0;
+            const orderDelta = currentTotal - previousTotal;
             let tag = null;
-            if ((cur && cur.uncosted > 0) || (prev && prev.uncosted > 0)) {
-                tag = 'uncosted';
-            } else if (!prev) {
+            if (!prev) {
                 tag = 'new';
             } else if (!cur) {
                 tag = 'lost';
             }
-            const profitDelta = (curProfit ?? 0) - (prevProfit ?? 0);
-            let volumeEffect = null;
-            let marginEffect = null;
-            if (curMargin != null && prevMargin != null) {
-                volumeEffect = (cur.revenue - prev.revenue) * prevMargin;
-                marginEffect = cur.revenue * (curMargin - prevMargin);
-            } else if (curMargin != null && !prev) {
-                volumeEffect = curProfit;
-                marginEffect = 0;
-            } else if (prevMargin != null && !cur) {
-                volumeEffect = -prevProfit;
-                marginEffect = 0;
-            }
             rows.push({
                 key,
                 customer_name: (cur || prev).customer_name,
-                prev_profit: prevProfit,
-                cur_profit: curProfit,
-                profit_delta: tag === 'uncosted' ? null : profitDelta,
-                volume_effect: volumeEffect,
-                margin_effect: marginEffect,
+                previous_total: previousTotal,
+                current_total: currentTotal,
+                order_delta: orderDelta,
+                change_pct: previousTotal > 0
+                    ? (orderDelta / previousTotal) * 100
+                    : null,
+                has_unpriced: (
+                    (cur?.unpricedQuantity || 0)
+                    + (prev?.unpricedQuantity || 0)
+                ) > 0,
                 tag,
             });
         });
         return rows
             .sort((a, b) => (
-                Math.abs(b.profit_delta ?? 0) - Math.abs(a.profit_delta ?? 0)
+                Math.abs(b.order_delta) - Math.abs(a.order_delta)
             ))
             .slice(0, 10);
     }, [profitRows, prevProfitRows]);
@@ -1075,10 +1070,15 @@ const Dashboard = () => {
 
     const profitDailyColumns = [
         { title: 'Дата', dataIndex: 'date', width: 90, render: formatShortDate },
-        { title: 'Продано', dataIndex: 'quantity', width: 90, render: (value) => `${formatNumber(value)} шт.` },
-        { title: 'Сумма заказов', dataIndex: 'revenue', width: 140, render: formatMoney },
+        { title: 'Заказано', dataIndex: 'ordered_quantity', width: 100, render: (value) => `${formatNumber(value)} шт.` },
+        { title: 'Сумма заказов', dataIndex: 'order_total', width: 140, render: formatMoney },
         { title: 'Себестоимость', dataIndex: 'cost', width: 140, render: formatMoney },
-        { title: 'Валовая прибыль', dataIndex: 'gross_profit', width: 150, render: formatMoney },
+        {
+            title: 'Расч. прибыль',
+            dataIndex: 'gross_profit',
+            width: 150,
+            render: (value) => value == null ? '—' : formatMoney(value),
+        },
         {
             title: 'Без себестоимости',
             dataIndex: 'uncosted_quantity',
@@ -1091,8 +1091,13 @@ const Dashboard = () => {
 
     const marginRiskColumns = [
         { title: 'Клиент', dataIndex: 'customer_name', ellipsis: true },
-        { title: 'Сумма заказов', dataIndex: 'revenue', width: 130, render: formatMoney },
-        { title: 'Прибыль', dataIndex: 'gross_profit', width: 130, render: formatMoney },
+        { title: 'Сумма заказов', dataIndex: 'order_total', width: 130, render: formatMoney },
+        {
+            title: 'Расч. прибыль',
+            dataIndex: 'gross_profit',
+            width: 130,
+            render: (value) => value == null ? '—' : formatMoney(value),
+        },
         {
             title: 'Маржа',
             dataIndex: 'margin_pct',
@@ -1106,7 +1111,6 @@ const Dashboard = () => {
     const decompositionTagMeta = {
         new: { color: 'blue', text: 'новый' },
         lost: { color: 'default', text: 'ушёл' },
-        uncosted: { color: 'orange', text: 'нет себест.' },
     };
 
     const marginDecompositionColumns = [
@@ -1122,38 +1126,44 @@ const Dashboard = () => {
                             {decompositionTagMeta[row.tag].text}
                         </Tag>
                     ) : null}
+                    {row.has_unpriced ? (
+                        <Tag color="orange">есть строки без цены</Tag>
+                    ) : null}
                 </Space>
             ),
         },
         {
-            title: 'Прибыль: пред. → тек.',
-            key: 'profits',
-            width: 210,
-            render: (_, row) => (
-                <Text>
-                    {row.prev_profit != null ? formatMoney(row.prev_profit) : '—'}
-                    {' → '}
-                    {row.cur_profit != null ? formatMoney(row.cur_profit) : '—'}
-                </Text>
-            ),
+            title: 'Предыдущие 30 дней',
+            dataIndex: 'previous_total',
+            width: 170,
+            render: formatMoney,
         },
         {
-            title: 'Δ прибыли',
-            dataIndex: 'profit_delta',
+            title: 'Текущие 30 дней',
+            dataIndex: 'current_total',
+            width: 160,
+            render: formatMoney,
+        },
+        {
+            title: 'Изменение',
+            dataIndex: 'order_delta',
             width: 140,
             render: renderSignedMoney,
         },
         {
-            title: 'Вклад объёма',
-            dataIndex: 'volume_effect',
-            width: 140,
-            render: renderSignedMoney,
-        },
-        {
-            title: 'Вклад маржи',
-            dataIndex: 'margin_effect',
-            width: 140,
-            render: renderSignedMoney,
+            title: 'Динамика',
+            dataIndex: 'change_pct',
+            width: 110,
+            render: (value, row) => {
+                if (value == null) {
+                    return row.current_total > 0 ? <Tag color="blue">новый</Tag> : '—';
+                }
+                return (
+                    <Tag color={value < 0 ? 'red' : value > 0 ? 'green' : 'default'}>
+                        {value > 0 ? '+' : ''}{formatNumber(value, 1)}%
+                    </Tag>
+                );
+            },
         },
     ];
 
@@ -1585,13 +1595,13 @@ const Dashboard = () => {
                     </Text>
                 </div>
 
-                <Card title="Маржа и утечка прибыли · последние 30 дней">
+                <Card title="Суммы заказов и расчётная маржа · последние 30 дней">
                     {profitIsEstimated && (
                         <Alert
                             type="info"
                             showIcon
                             style={{ marginBottom: 12 }}
-                            message="Проведённых отгрузок за период нет: показана расчётная маржа по исполненным строкам заказов клиентов. Для точной маржи нужен полный складской цикл."
+                            message="Сумма считается по всем входящим заказам. Прибыль и маржа являются оценочными: они рассчитаны только по обработанным строкам с известной себестоимостью."
                         />
                     )}
                     <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
@@ -1599,13 +1609,13 @@ const Dashboard = () => {
                             <Card size="small">
                                 <Statistic
                                     title="Сумма заказов"
-                                    value={profitAnalytics.totals.revenue}
+                                    value={profitAnalytics.totals.orderTotal}
                                     precision={0}
                                     suffix="руб."
                                 />
                                 <MonthDelta
-                                    current={profitAnalytics.totals.revenue}
-                                    previous={prevProfitTotals.revenue}
+                                    current={profitAnalytics.totals.orderTotal}
+                                    previous={prevProfitTotals.orderTotal}
                                     mode="percent"
                                 />
                             </Card>
@@ -1613,7 +1623,7 @@ const Dashboard = () => {
                         <Col xs={12} lg={6}>
                             <Card size="small">
                                 <Statistic
-                                    title="Валовая прибыль"
+                                    title="Расчётная прибыль"
                                     value={profitAnalytics.totals.grossProfit}
                                     precision={0}
                                     suffix="руб."
@@ -1628,7 +1638,7 @@ const Dashboard = () => {
                         <Col xs={12} lg={6}>
                             <Card size="small">
                                 <Statistic
-                                    title="Валовая маржа"
+                                    title="Расчётная маржа"
                                     value={profitAnalytics.totals.marginPct}
                                     precision={1}
                                     suffix="%"
@@ -1659,12 +1669,20 @@ const Dashboard = () => {
                             message={`${formatNumber(profitAnalytics.totals.uncostedQuantity)} шт. ${profitIsEstimated ? 'исполнено' : 'отгружено'} без известной себестоимости. Для них прибыль и общая маржа не считаются.`}
                         />
                     )}
+                    {profitAnalytics.totals.unpricedOrderQuantity > 0 && (
+                        <Alert
+                            type="warning"
+                            showIcon
+                            style={{ marginBottom: 12 }}
+                            message={`${formatNumber(profitAnalytics.totals.unpricedOrderQuantity)} шт. заказано без цены. Эти позиции учтены в количестве, но не увеличивают сумму заказов.`}
+                        />
+                    )}
                     {!profitRows.length && (
                         <Alert
                             type="warning"
                             showIcon
                             style={{ marginBottom: 12 }}
-                            message="За последние 30 дней нет исполненных строк клиентских заказов с ценой и количеством, поэтому маржу рассчитать пока нельзя."
+                            message="За последние 30 дней строки клиентских заказов не найдены."
                         />
                     )}
                     <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
@@ -1679,8 +1697,8 @@ const Dashboard = () => {
                                         onChange={setMarginChartMetric}
                                         options={[
                                             { label: 'Сумма заказов', value: 'revenue' },
-                                            { label: 'Прибыль', value: 'profit' },
-                                            { label: 'Маржа %', value: 'margin' },
+                                            { label: 'Расч. прибыль', value: 'profit' },
+                                            { label: 'Расч. маржа %', value: 'margin' },
                                         ]}
                                     />
                                 )}
@@ -1695,7 +1713,7 @@ const Dashboard = () => {
                         <Col xs={24} xl={14}>
                             <Card
                                 size="small"
-                                title="Разложение изменения прибыли · месяц к месяцу"
+                                title="Изменение суммы заказов · месяц к месяцу"
                             >
                                 <Table
                                     rowKey="key"
@@ -1703,7 +1721,7 @@ const Dashboard = () => {
                                     columns={marginDecompositionColumns}
                                     dataSource={marginDecomposition}
                                     pagination={false}
-                                    scroll={{ x: 760 }}
+                                    scroll={{ x: 740 }}
                                 />
                             </Card>
                         </Col>
