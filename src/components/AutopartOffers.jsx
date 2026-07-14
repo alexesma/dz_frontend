@@ -36,6 +36,8 @@ import {
     MailOutlined,
     DownOutlined,
     ShopOutlined,
+    FilterOutlined,
+    SaveOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -67,6 +69,7 @@ import useAuth from '../context/useAuth';
 
 const OEM_HISTORY_KEY = 'autopart_oem_history_v1';
 const STATE_STORAGE_KEY = 'autopart_offers_state_v2';
+const SITE_OFFER_FILTER_STORAGE_PREFIX = 'autopart_site_offer_filters_v1';
 const MAX_PERSISTED_CART_ITEMS = 200;
 const MAX_SITE_EXACT_CROSS_REQUESTS = 3;
 const SITE_RECOMMENDATION_LOW_STOCK_QTY = 10;
@@ -74,6 +77,41 @@ const TOYOTA_BRAND_TOKEN = 'TOYOTA';
 // Закупка дороже этой доли от нашей цены продажи — маржа под угрозой
 // (то же правило, что в автозаказе: закупка ≤ 90% продажи).
 const MAX_PURCHASE_TO_SALE_RATIO = 0.9;
+
+const DEFAULT_SITE_OFFER_FILTERS = Object.freeze({
+    brands: [],
+    suppliers: [],
+    sourceTypes: [],
+    minPrice: null,
+    maxPrice: null,
+    minQty: null,
+    maxDelivery: null,
+});
+
+const normalizeSiteOfferFilters = (value) => {
+    const source = value && typeof value === 'object' ? value : {};
+    const stringList = (items) => (
+        Array.isArray(items)
+            ? [...new Set(items.map((item) => String(item || '').trim()).filter(Boolean))]
+            : []
+    );
+    const nullableNumber = (item) => {
+        if (item === null || item === undefined || item === '') {
+            return null;
+        }
+        const parsed = Number(item);
+        return Number.isFinite(parsed) ? parsed : null;
+    };
+    return {
+        brands: stringList(source.brands),
+        suppliers: stringList(source.suppliers),
+        sourceTypes: stringList(source.sourceTypes),
+        minPrice: nullableNumber(source.minPrice),
+        maxPrice: nullableNumber(source.maxPrice),
+        minQty: nullableNumber(source.minQty),
+        maxDelivery: nullableNumber(source.maxDelivery),
+    };
+};
 
 // Каноничный вид OEM как в базе: без дефисов/пробелов, верхний регистр.
 const normalizeOemKey = (value) =>
@@ -469,6 +507,22 @@ const sortSiteOffersByPriority = (offers) =>
         return Number(b?.qnt ?? 0) - Number(a?.qnt ?? 0);
     });
 
+const getSiteOfferBrandName = (offer) => String(
+    offer?.make_name || offer?.brand_name || offer?.brand || ''
+).trim();
+
+const getSiteOfferOemNumber = (offer) => String(
+    offer?.oem || offer?.oem_number || offer?.article || offer?.part_number || ''
+).trim();
+
+const getSiteOfferSupplierName = (offer) => String(
+    offer?.supplier_name || offer?.sup_logo || offer?.provider_name || ''
+).trim();
+
+const getSiteOfferDelivery = (offer) => Number(
+    offer?.min_delivery_day ?? offer?.max_delivery_day ?? Number.NaN
+);
+
 const mergeSiteOffersForDisplay = (groups) => {
     const byKey = new Map();
 
@@ -794,6 +848,10 @@ const AutopartOffers = () => {
         minQty: null,
         maxDelivery: null,
     });
+    const [siteOfferFilters, setSiteOfferFilters] = useState(() =>
+        normalizeSiteOfferFilters(DEFAULT_SITE_OFFER_FILTERS)
+    );
+    const [siteOfferFiltersSaved, setSiteOfferFiltersSaved] = useState(false);
     const [pendingRestoredSearch, setPendingRestoredSearch] = useState(null);
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
@@ -819,6 +877,53 @@ const AutopartOffers = () => {
     }, [replaceItemId, replaceSource]);
     const activeLookupQuery = String(oemInput || '').trim();
     const isAdmin = user?.role === 'admin';
+    const siteOfferFilterStorageKey = useMemo(() => {
+        const userKey = user?.id || user?.email || user?.username || 'default';
+        return `${SITE_OFFER_FILTER_STORAGE_PREFIX}:${userKey}`;
+    }, [user?.email, user?.id, user?.username]);
+
+    useEffect(() => {
+        const restored = normalizeSiteOfferFilters(
+            safeJsonParse(
+                safeStorageGet(siteOfferFilterStorageKey),
+                DEFAULT_SITE_OFFER_FILTERS
+            )
+        );
+        setSiteOfferFilters(restored);
+        setSiteOfferFiltersSaved(Boolean(safeStorageGet(siteOfferFilterStorageKey)));
+    }, [siteOfferFilterStorageKey]);
+
+    const updateSiteOfferFilter = useCallback((key, value) => {
+        setSiteOfferFilters((previous) => normalizeSiteOfferFilters({
+            ...previous,
+            [key]: value,
+        }));
+        setSiteOfferFiltersSaved(false);
+    }, []);
+
+    const saveSiteOfferFilters = useCallback(() => {
+        const saved = safeStorageSet(
+            siteOfferFilterStorageKey,
+            JSON.stringify(siteOfferFilters)
+        );
+        if (saved) {
+            setSiteOfferFiltersSaved(true);
+            message.success('Фильтр site-предложений сохранён для пользователя');
+        } else {
+            message.error('Не удалось сохранить фильтр в браузере');
+        }
+    }, [siteOfferFilterStorageKey, siteOfferFilters]);
+
+    const resetSiteOfferFilters = useCallback(() => {
+        const defaults = normalizeSiteOfferFilters(DEFAULT_SITE_OFFER_FILTERS);
+        setSiteOfferFilters(defaults);
+        const saved = safeStorageSet(
+            siteOfferFilterStorageKey,
+            JSON.stringify(defaults)
+        );
+        setSiteOfferFiltersSaved(saved);
+        setRemoteOffersPage(1);
+    }, [siteOfferFilterStorageKey]);
 
     const reloadTrackingHistory = useCallback(async () => {
         const oemValue = String(currentOem || oemInput || '').trim();
@@ -1171,6 +1276,126 @@ const AutopartOffers = () => {
         siteExactOffers,
         siteOffersWithCrosses,
     ]);
+
+    const siteOfferFilterOptions = useMemo(() => {
+        const brands = new Set();
+        const suppliers = new Set();
+        for (const offer of remoteOffers) {
+            const brand = getSiteOfferBrandName(offer);
+            const supplier = getSiteOfferSupplierName(offer);
+            if (brand) brands.add(brand);
+            if (supplier) suppliers.add(supplier);
+        }
+        const toOptions = (values) => Array.from(values)
+            .sort((a, b) => a.localeCompare(b, 'ru'))
+            .map((value) => ({ value, label: value }));
+        return {
+            brands: toOptions(brands),
+            suppliers: toOptions(suppliers),
+        };
+    }, [remoteOffers]);
+
+    const activeSiteOfferFilterCount = useMemo(() => (
+        (siteOfferFilters.brands.length ? 1 : 0)
+        + (siteOfferFilters.suppliers.length ? 1 : 0)
+        + (siteOfferFilters.sourceTypes.length ? 1 : 0)
+        + [
+            siteOfferFilters.minPrice,
+            siteOfferFilters.maxPrice,
+            siteOfferFilters.minQty,
+            siteOfferFilters.maxDelivery,
+        ].filter((value) => value !== null).length
+    ), [siteOfferFilters]);
+
+    const filteredRemoteSiteOffers = useMemo(() => {
+        const brandSet = new Set(
+            siteOfferFilters.brands.map(normalizeBrandToken)
+        );
+        const supplierSet = new Set(
+            siteOfferFilters.suppliers.map((value) => value.toUpperCase())
+        );
+        const sourceTypeSet = new Set(siteOfferFilters.sourceTypes);
+        return remoteOffers.filter((offer) => {
+            const brand = normalizeBrandToken(getSiteOfferBrandName(offer));
+            const supplier = getSiteOfferSupplierName(offer).toUpperCase();
+            const price = Number(offer?.price ?? Number.NaN);
+            const quantity = Number(offer?.qnt ?? Number.NaN);
+            const delivery = getSiteOfferDelivery(offer);
+            const requestTypes = Array.isArray(offer?.site_request_types)
+                ? offer.site_request_types
+                : [];
+            if (brandSet.size && !brandSet.has(brand)) return false;
+            if (supplierSet.size && !supplierSet.has(supplier)) return false;
+            if (
+                sourceTypeSet.size
+                && !requestTypes.some((type) => sourceTypeSet.has(type))
+            ) return false;
+            if (
+                siteOfferFilters.minPrice !== null
+                && (!Number.isFinite(price) || price < siteOfferFilters.minPrice)
+            ) return false;
+            if (
+                siteOfferFilters.maxPrice !== null
+                && (!Number.isFinite(price) || price > siteOfferFilters.maxPrice)
+            ) return false;
+            if (
+                siteOfferFilters.minQty !== null
+                && (!Number.isFinite(quantity) || quantity < siteOfferFilters.minQty)
+            ) return false;
+            if (
+                siteOfferFilters.maxDelivery !== null
+                && (!Number.isFinite(delivery) || delivery > siteOfferFilters.maxDelivery)
+            ) return false;
+            return true;
+        });
+    }, [remoteOffers, siteOfferFilters]);
+
+    const groupedRemoteSiteOffers = useMemo(() => {
+        const groups = new Map();
+        for (const offer of filteredRemoteSiteOffers) {
+            const brand = getSiteOfferBrandName(offer);
+            const oem = getSiteOfferOemNumber(offer);
+            const normalizedOem = normalizeOemKey(oem);
+            const groupKey = normalizedOem
+                ? normalizeCrossKey(brand, normalizedOem)
+                : `UNKNOWN::${buildCartKey('dragonzap', offer)}`;
+            if (!groups.has(groupKey)) groups.set(groupKey, []);
+            groups.get(groupKey).push(offer);
+        }
+        const rows = [];
+        for (const [groupKey, offersInGroup] of groups.entries()) {
+            const offers = sortSiteOffersByPriority(offersInGroup);
+            const bestOffer = offers[0];
+            const requestEntries = new Map();
+            for (const offer of offers) {
+                for (const entry of offer?.site_request_entries || []) {
+                    requestEntries.set(
+                        `${entry?.type || ''}::${entry?.label || ''}`,
+                        entry
+                    );
+                }
+            }
+            const mergedEntries = Array.from(requestEntries.values());
+            rows.push({
+                ...bestOffer,
+                site_group_key: groupKey,
+                grouped_offers: offers,
+                offer_count: offers.length,
+                site_request_entries: mergedEntries,
+                site_request_types: [
+                    ...new Set(mergedEntries.map((entry) => entry?.type).filter(Boolean)),
+                ],
+                site_request_labels: [
+                    ...new Set(mergedEntries.map((entry) => entry?.label).filter(Boolean)),
+                ],
+            });
+        }
+        return sortSiteOffersByPriority(rows);
+    }, [filteredRemoteSiteOffers]);
+
+    useEffect(() => {
+        setRemoteOffersPage(1);
+    }, [siteOfferFilters, remoteOffers.length]);
 
     const hasHiddenCrossSiteOffers = useMemo(
         () =>
@@ -3870,6 +4095,18 @@ const AutopartOffers = () => {
                     >
                         {record.make_name || record.brand_name || '—'}
                     </div>
+                    {Number(record.offer_count || 0) > 1 ? (
+                        <div
+                            style={{
+                                marginTop: 2,
+                                color: '#2563eb',
+                                fontSize: 11,
+                                fontWeight: 600,
+                            }}
+                        >
+                            {record.offer_count} предлож.
+                        </div>
+                    ) : null}
                 </div>
             ),
         },
@@ -3953,7 +4190,16 @@ const AutopartOffers = () => {
                 const bPrice = Number(b.price ?? Number.POSITIVE_INFINITY);
                 return aPrice - bPrice;
             },
-            render: (value) => renderPurchasePrice(value),
+            render: (value, record) => (
+                <div>
+                    {renderPurchasePrice(value)}
+                    {Number(record.offer_count || 0) > 1 ? (
+                        <div style={{ color: '#16a34a', fontSize: 10 }}>
+                            лучшая цена
+                        </div>
+                    ) : null}
+                </div>
+            ),
         },
         {
             title: 'Кол-во',
@@ -5395,7 +5641,9 @@ const AutopartOffers = () => {
                 <Spin spinning={remoteLoading}>
                     {remoteMeta.total > 0 ? (
                         <div style={{ marginBottom: 8, color: '#6b7280' }}>
-                            Найдено {remoteMeta.total}.{' '}
+                            Найдено {remoteMeta.total} предложений. После фильтра:{' '}
+                            {filteredRemoteSiteOffers.length}; уникальных сочетаний{' '}
+                            «Бренд + Номер»: {groupedRemoteSiteOffers.length}.{' '}
                             {showCrosses
                                 ? (
                                     <>
@@ -5418,9 +5666,138 @@ const AutopartOffers = () => {
                             ` Показывать кроссы `, чтобы увидеть полную картину.
                         </div>
                     ) : null}
+                    {remoteOffers.length ? (
+                        <div
+                            className={[
+                                'site-offer-filter-panel',
+                                activeSiteOfferFilterCount
+                                    ? 'site-offer-filter-panel--active'
+                                    : '',
+                            ].filter(Boolean).join(' ')}
+                        >
+                            <div className="site-offer-filter-header">
+                                <Space wrap size={8}>
+                                    <FilterOutlined />
+                                    <strong>Фильтр site-предложений</strong>
+                                    {activeSiteOfferFilterCount ? (
+                                        <Tag color="blue">
+                                            Фильтр активен: {activeSiteOfferFilterCount}
+                                        </Tag>
+                                    ) : (
+                                        <Tag>Показаны все предложения</Tag>
+                                    )}
+                                    {siteOfferFiltersSaved ? (
+                                        <Tag color="green">Сохранён для пользователя</Tag>
+                                    ) : activeSiteOfferFilterCount ? (
+                                        <Tag color="orange">Изменения не сохранены</Tag>
+                                    ) : null}
+                                </Space>
+                                <Space wrap size={8}>
+                                    <Button
+                                        size="small"
+                                        onClick={resetSiteOfferFilters}
+                                        disabled={!activeSiteOfferFilterCount}
+                                    >
+                                        Сбросить
+                                    </Button>
+                                    <Button
+                                        size="small"
+                                        type="primary"
+                                        icon={<SaveOutlined />}
+                                        onClick={saveSiteOfferFilters}
+                                    >
+                                        Сохранить по умолчанию
+                                    </Button>
+                                </Space>
+                            </div>
+                            <Space wrap size={[8, 8]}>
+                                <Select
+                                    mode="multiple"
+                                    allowClear
+                                    maxTagCount="responsive"
+                                    value={siteOfferFilters.brands}
+                                    options={siteOfferFilterOptions.brands}
+                                    placeholder="Бренды"
+                                    style={{ minWidth: 190, maxWidth: 300 }}
+                                    onChange={(value) =>
+                                        updateSiteOfferFilter('brands', value)
+                                    }
+                                />
+                                <Select
+                                    mode="multiple"
+                                    allowClear
+                                    maxTagCount="responsive"
+                                    value={siteOfferFilters.suppliers}
+                                    options={siteOfferFilterOptions.suppliers}
+                                    placeholder="Поставщики"
+                                    style={{ minWidth: 190, maxWidth: 300 }}
+                                    onChange={(value) =>
+                                        updateSiteOfferFilter('suppliers', value)
+                                    }
+                                />
+                                <Select
+                                    mode="multiple"
+                                    allowClear
+                                    maxTagCount="responsive"
+                                    value={siteOfferFilters.sourceTypes}
+                                    options={[
+                                        { value: 'base_exact', label: 'Исходный OEM' },
+                                        { value: 'base_cross', label: 'Запрос с кроссами' },
+                                        { value: 'cross_exact', label: 'Прямой запрос кросса' },
+                                    ]}
+                                    placeholder="Источник запроса"
+                                    style={{ minWidth: 210, maxWidth: 320 }}
+                                    onChange={(value) =>
+                                        updateSiteOfferFilter('sourceTypes', value)
+                                    }
+                                />
+                                <InputNumber
+                                    min={0}
+                                    value={siteOfferFilters.minPrice}
+                                    placeholder="Цена от"
+                                    addonAfter="руб."
+                                    style={{ width: 145 }}
+                                    onChange={(value) =>
+                                        updateSiteOfferFilter('minPrice', value)
+                                    }
+                                />
+                                <InputNumber
+                                    min={0}
+                                    value={siteOfferFilters.maxPrice}
+                                    placeholder="Цена до"
+                                    addonAfter="руб."
+                                    style={{ width: 145 }}
+                                    onChange={(value) =>
+                                        updateSiteOfferFilter('maxPrice', value)
+                                    }
+                                />
+                                <InputNumber
+                                    min={0}
+                                    value={siteOfferFilters.minQty}
+                                    placeholder="Остаток от"
+                                    addonAfter="шт."
+                                    style={{ width: 145 }}
+                                    onChange={(value) =>
+                                        updateSiteOfferFilter('minQty', value)
+                                    }
+                                />
+                                <InputNumber
+                                    min={0}
+                                    value={siteOfferFilters.maxDelivery}
+                                    placeholder="Срок до"
+                                    addonAfter="дн."
+                                    style={{ width: 145 }}
+                                    onChange={(value) =>
+                                        updateSiteOfferFilter('maxDelivery', value)
+                                    }
+                                />
+                            </Space>
+                        </div>
+                    ) : null}
                     <Table
                         className="autopart-offers-table"
                         rowKey={(record, index) =>
+                            record.site_group_key ||
                             record.api_hash ||
                             buildCartKey('dragonzap', {
                                 ...record,
@@ -5429,13 +5806,45 @@ const AutopartOffers = () => {
                             `${record.oem}-${index}`
                         }
                         columns={remoteColumns}
-                        dataSource={remoteOffers}
+                        dataSource={groupedRemoteSiteOffers}
                         size="small"
                         pagination={{
                             current: remoteOffersPage,
                             pageSize: 20,
                             showSizeChanger: false,
                             onChange: (page) => setRemoteOffersPage(page),
+                        }}
+                        expandable={{
+                            rowExpandable: (record) =>
+                                Number(record.offer_count || 0) > 1,
+                            expandedRowRender: (record) => (
+                                <div className="site-offer-expanded-group">
+                                    <div className="site-offer-expanded-title">
+                                        Все предложения для{' '}
+                                        <strong>
+                                            {getSiteOfferBrandName(record) || 'Без бренда'}{' '}
+                                            {getSiteOfferOemNumber(record) || '—'}
+                                        </strong>
+                                    </div>
+                                    <Table
+                                        className="autopart-offers-table"
+                                        rowKey={(offer, index) =>
+                                            offer.api_hash ||
+                                            buildCartKey('dragonzap', {
+                                                ...offer,
+                                                oem: offer?.oem || offer?.oem_number,
+                                            }) ||
+                                            `${offer.oem || offer.oem_number}-${index}`
+                                        }
+                                        columns={remoteColumns}
+                                        dataSource={record.grouped_offers || []}
+                                        size="small"
+                                        pagination={false}
+                                        tableLayout="fixed"
+                                        scroll={{ x: 840 }}
+                                    />
+                                </div>
+                            ),
                         }}
                         tableLayout="fixed"
                         scroll={{ x: 840 }}

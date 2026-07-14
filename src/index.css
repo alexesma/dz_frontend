@@ -431,6 +431,48 @@ body {
   height: 28px;
 }
 
+.site-offer-filter-panel {
+  margin: 10px 0 12px;
+  padding: 12px;
+  border: 1px solid #d8dee8;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.site-offer-filter-panel--active {
+  border-color: #1677ff;
+  background: linear-gradient(135deg, #eff6ff 0%, #ffffff 70%);
+  box-shadow: 0 0 0 3px rgb(22 119 255 / 10%);
+}
+
+.site-offer-filter-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.site-offer-expanded-group {
+  padding: 4px 8px 10px;
+  background: #f8fafc;
+  border-left: 3px solid #93c5fd;
+}
+
+.site-offer-expanded-title {
+  margin: 2px 0 8px;
+  color: #475569;
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .site-offer-filter-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 .autopart-offers-search-sticky {
   position: sticky;
   top: 0;
