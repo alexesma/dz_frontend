@@ -281,22 +281,28 @@ const ReclamationsPage = () => {
         void load();
     }, [load]);
 
-    useEffect(() => {
-        (async () => {
-            try {
-                const { data } = await getCustomersSummary({
-                    page: 1,
-                    page_size: 500,
-                });
-                const items = Array.isArray(data?.items) ? data.items : [];
-                setCustomerOptions(
-                    items.map((c) => ({ value: c.id, label: c.name }))
-                );
-            } catch {
-                setCustomerOptions([]);
-            }
-        })();
+    const loadCustomerOptions = useCallback(async (search = '') => {
+        try {
+            const { data } = await getCustomersSummary({
+                page: 1,
+                page_size: 200,
+                search: search.trim() || undefined,
+            });
+            const items = Array.isArray(data?.items) ? data.items : [];
+            setCustomerOptions(
+                items.map((customer) => ({
+                    value: customer.id,
+                    label: `${customer.name} (ID: ${customer.id})`,
+                }))
+            );
+        } catch {
+            setCustomerOptions([]);
+        }
     }, []);
+
+    useEffect(() => {
+        void loadCustomerOptions();
+    }, [loadCustomerOptions]);
 
     const queueCount = (queue) => {
         const byStatus = summary?.by_status || {};
@@ -373,6 +379,24 @@ const ReclamationsPage = () => {
             const { data } = await getReclamation(id);
             setDetail(data);
             setAssignCustomerId(data.customer_id || null);
+            if (data.customer_id) {
+                setCustomerOptions((current) => {
+                    if (
+                        current.some(
+                            (option) => option.value === data.customer_id
+                        )
+                    ) {
+                        return current;
+                    }
+                    return [
+                        {
+                            value: data.customer_id,
+                            label: `${data.customer_name || 'Клиент'} (ID: ${data.customer_id})`,
+                        },
+                        ...current,
+                    ];
+                });
+            }
             setRememberEmail(true);
             setResolutionComment(data.resolution_comment || '');
             setDetailOpen(true);
@@ -1184,6 +1208,15 @@ const ReclamationsPage = () => {
 
                         <Card size="small" title="Привязка клиента">
                             <Space direction="vertical" style={{ width: '100%' }}>
+                                {detail.customer_id ? (
+                                    <Text>
+                                        Сейчас привязан:{' '}
+                                        <Text strong>
+                                            {detail.customer_name || 'Клиент'} (ID:{' '}
+                                            {detail.customer_id})
+                                        </Text>
+                                    </Text>
+                                ) : null}
                                 <Select
                                     showSearch
                                     placeholder="Выберите клиента"
@@ -1191,7 +1224,9 @@ const ReclamationsPage = () => {
                                     value={assignCustomerId}
                                     onChange={setAssignCustomerId}
                                     options={customerOptions}
-                                    optionFilterProp="label"
+                                    filterOption={false}
+                                    onSearch={loadCustomerOptions}
+                                    onFocus={() => loadCustomerOptions()}
                                 />
                                 <Space>
                                     <Select
