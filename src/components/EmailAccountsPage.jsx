@@ -13,6 +13,7 @@ import {
 
 const purposeOptions = [
     { label: 'Прием заказов (IMAP)', value: 'orders_in' },
+    { label: 'Рекламации входящие (IMAP)', value: 'reclamation' },
     { label: 'Отправка заказов (исходящая почта)', value: 'orders_out' },
     { label: 'Отчеты (исходящая почта)', value: 'reports_out' },
     { label: 'Прайсы входящие', value: 'prices_in' },

@@ -39,6 +39,7 @@ import {
     assignReclamationCustomer,
     checkReclamation,
     createReclamation,
+    downloadReclamationAttachment,
     getReclamation,
     getReclamationEmails,
     getReclamationStats,
@@ -55,6 +56,21 @@ import { getCustomersSummary } from '../api/customers';
 
 const { Title, Text, Paragraph } = Typography;
 const { RangePicker } = DatePicker;
+
+const downloadAttachment = async (reclamationId, attachment) => {
+    const response = await downloadReclamationAttachment(
+        reclamationId,
+        attachment.id,
+    );
+    const url = window.URL.createObjectURL(response.data);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = attachment.file_name || `attachment-${attachment.id}`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+};
 
 const STATUS_META = {
     new: { label: 'Новая', color: 'default' },
@@ -1271,14 +1287,33 @@ const ReclamationsPage = () => {
                             <Card size="small" title="Вложения">
                                 <Space direction="vertical">
                                     {detail.attachments.map((att) => (
-                                        <Text key={att.id}>
+                                        <Space key={att.id} wrap>
                                             <Tag>
                                                 {ATTACHMENT_KIND_LABELS[
                                                     att.kind
                                                 ] || att.kind}
                                             </Tag>
-                                            {att.file_name}
-                                        </Text>
+                                            <Text>{att.file_name}</Text>
+                                            <Button
+                                                type="link"
+                                                size="small"
+                                                icon={<CloudDownloadOutlined />}
+                                                onClick={() =>
+                                                    downloadAttachment(
+                                                        detail.id,
+                                                        att,
+                                                    ).catch((error) => {
+                                                        message.error(
+                                                            error?.response?.data
+                                                                ?.detail ||
+                                                                'Не удалось скачать вложение',
+                                                        );
+                                                    })
+                                                }
+                                            >
+                                                Скачать
+                                            </Button>
+                                        </Space>
                                     ))}
                                 </Space>
                             </Card>

@@ -12,6 +12,11 @@ export const listReclamations = (params = {}) =>
 export const getReclamation = (id) =>
     api.get(`/reclamations/${id}`);
 
+export const downloadReclamationAttachment = (id, attachmentId) =>
+    api.get(`/reclamations/${id}/attachments/${attachmentId}/download`, {
+        responseType: 'blob',
+    });
+
 export const createReclamation = (data) =>
     api.post('/reclamations', data);
 
