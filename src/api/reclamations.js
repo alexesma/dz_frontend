@@ -35,6 +35,12 @@ export const updateReclamationItem = (id, itemId, data) =>
 export const checkReclamation = (id) =>
     api.post(`/reclamations/${id}/check`);
 
+export const refreshReclamationFroza = (id) =>
+    api.post(`/reclamations/${id}/froza/refresh`);
+
+export const sendReclamationFrozaDecision = (id, data) =>
+    api.post(`/reclamations/${id}/froza/send-decision`, data);
+
 export const getReclamationEmails = (id) =>
     api.get(`/reclamations/${id}/emails`);
 

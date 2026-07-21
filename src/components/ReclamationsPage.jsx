@@ -32,6 +32,8 @@ import {
     PlusOutlined,
     ReloadOutlined,
     SafetyCertificateOutlined,
+    SendOutlined,
+    SyncOutlined,
     WarningOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -47,7 +49,9 @@ import {
     getReplyTemplate,
     listReclamations,
     notifyReclamationSupplier,
+    refreshReclamationFroza,
     sendReclamationReply,
+    sendReclamationFrozaDecision,
     syncReclamations,
     updateReclamation,
     updateReclamationItem,
@@ -101,6 +105,27 @@ const ATTACHMENT_KIND_LABELS = {
     defect_report: 'Дефектовка',
     photo: 'Фото',
     other: 'Прочее',
+};
+
+const FROZA_STATE_META = {
+    pending: { label: 'Ожидает ответа', color: 'gold' },
+    approved: { label: 'Согласовано во Froza', color: 'green' },
+    rejected: { label: 'Отклонено во Froza', color: 'red' },
+    archived: { label: 'Архив Froza', color: 'default' },
+    unknown: { label: 'Неизвестное состояние', color: 'default' },
+};
+
+const isFrozaQuestionLink = (value) => {
+    try {
+        const url = new URL(value);
+        return (
+            url.protocol === 'https:'
+            && ['froza.ru', 'www.froza.ru'].includes(url.hostname)
+            && url.pathname.replace(/\/$/, '') === '/supplier/one-question'
+        );
+    } catch {
+        return false;
+    }
 };
 
 const ITEM_SOURCE_OPTIONS = [
@@ -234,6 +259,7 @@ const ReclamationsPage = () => {
     const [resolutionComment, setResolutionComment] = useState('');
     const [itemSavingId, setItemSavingId] = useState(null);
     const [checking, setChecking] = useState(false);
+    const [frozaLoading, setFrozaLoading] = useState(false);
     const [emails, setEmails] = useState([]);
     const [emailsLoading, setEmailsLoading] = useState(false);
     const [supplierSaving, setSupplierSaving] = useState(false);
@@ -576,6 +602,46 @@ const ReclamationsPage = () => {
         }
     };
 
+    const handleRefreshFroza = async () => {
+        if (!detail) {
+            return;
+        }
+        setFrozaLoading(true);
+        try {
+            const { data } = await refreshReclamationFroza(detail.id);
+            applyDetailUpdate(data);
+            message.success('Состояние заявки Froza обновлено');
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail
+                || 'Не удалось проверить заявку во Froza'
+            );
+        } finally {
+            setFrozaLoading(false);
+        }
+    };
+
+    const handleSendFrozaDecision = async () => {
+        if (!detail) {
+            return;
+        }
+        setFrozaLoading(true);
+        try {
+            const { data } = await sendReclamationFrozaDecision(detail.id, {
+                comment: resolutionComment.trim() || null,
+            });
+            applyDetailUpdate(data);
+            message.success('Решение передано во Froza и подтверждено');
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail
+                || 'Не удалось передать решение во Froza'
+            );
+        } finally {
+            setFrozaLoading(false);
+        }
+    };
+
     const handleApplyRecommendation = async () => {
         const code = detail?.check_result?.recommendation_code;
         const action = RECOMMENDATION_ACTION[code];
@@ -727,6 +793,24 @@ const ReclamationsPage = () => {
 
     const canResolve =
         detail && !['approved', 'rejected', 'closed'].includes(detail.status);
+    const isFrozaReclamation = isFrozaQuestionLink(detail?.source_link);
+    const frozaSnapshot = detail?.extracted_data?.froza || null;
+    const frozaStateMeta = FROZA_STATE_META[
+        frozaSnapshot?.state || 'unknown'
+    ];
+    const frozaBlockingReasons = Array.isArray(
+        frozaSnapshot?.blocking_reasons
+    )
+        ? frozaSnapshot.blocking_reasons
+        : [];
+    const frozaDecisionReady =
+        Boolean(detail?.resolution)
+        && frozaSnapshot?.state === 'pending'
+        && frozaBlockingReasons.length === 0
+        && !(
+            detail?.resolution === 'rejected'
+            && !resolutionComment.trim()
+        );
 
     return (
         <Card style={{ margin: 16 }}>
@@ -1062,6 +1146,135 @@ const ReclamationsPage = () => {
                                 {fmtDateTime(detail.email_received_at)}
                             </Descriptions.Item>
                         </Descriptions>
+
+                        {isFrozaReclamation ? (
+                            <Card
+                                size="small"
+                                title="Заявка Froza"
+                                extra={(
+                                    <Button
+                                        size="small"
+                                        icon={<SyncOutlined />}
+                                        loading={frozaLoading}
+                                        onClick={handleRefreshFroza}
+                                    >
+                                        Проверить
+                                    </Button>
+                                )}
+                            >
+                                {frozaSnapshot ? (
+                                    <Space
+                                        direction="vertical"
+                                        size="middle"
+                                        style={{ width: '100%' }}
+                                    >
+                                        <Descriptions
+                                            size="small"
+                                            bordered
+                                            column={{ xs: 1, sm: 2 }}
+                                        >
+                                            <Descriptions.Item label="Заявка">
+                                                №{frozaSnapshot.question_id || '—'}
+                                            </Descriptions.Item>
+                                            <Descriptions.Item label="Состояние">
+                                                <Tag color={frozaStateMeta.color}>
+                                                    {frozaStateMeta.label}
+                                                </Tag>
+                                            </Descriptions.Item>
+                                            <Descriptions.Item label="Позиция">
+                                                <Text strong>
+                                                    {frozaSnapshot.brand_name || ''}{' '}
+                                                    {frozaSnapshot.oem_number || '—'}
+                                                </Text>
+                                                {frozaSnapshot.autopart_name
+                                                    ? ` · ${frozaSnapshot.autopart_name}`
+                                                    : ''}
+                                            </Descriptions.Item>
+                                            <Descriptions.Item label="Количество">
+                                                {frozaSnapshot.quantity ?? '—'} шт.
+                                            </Descriptions.Item>
+                                            <Descriptions.Item label="Документ">
+                                                {frozaSnapshot.invoice_number || '—'}
+                                                {frozaSnapshot.invoice_date
+                                                    ? ` от ${dayjs(frozaSnapshot.invoice_date).format('DD.MM.YYYY')}`
+                                                    : ''}
+                                            </Descriptions.Item>
+                                            <Descriptions.Item label="Проверено">
+                                                {fmtDateTime(
+                                                    frozaSnapshot.checked_at
+                                                )}
+                                            </Descriptions.Item>
+                                        </Descriptions>
+
+                                        {frozaBlockingReasons.length ? (
+                                            <Alert
+                                                type="error"
+                                                showIcon
+                                                message="Решение нельзя отправить"
+                                                description={frozaBlockingReasons.join(
+                                                    '. '
+                                                )}
+                                            />
+                                        ) : null}
+
+                                        {!detail.resolution
+                                            && frozaSnapshot.state === 'pending' ? (
+                                                <Alert
+                                                    type="info"
+                                                    showIcon
+                                                    message="Сначала сохраните решение менеджера в блоке «Обработка»"
+                                                />
+                                            ) : null}
+
+                                        {detail.resolution === 'rejected'
+                                            && !resolutionComment.trim()
+                                            && frozaSnapshot.state === 'pending' ? (
+                                                <Alert
+                                                    type="warning"
+                                                    showIcon
+                                                    message="Для отказа заполните комментарий к решению"
+                                                />
+                                            ) : null}
+
+                                        {frozaSnapshot.state === 'pending' ? (
+                                            <Popconfirm
+                                                title={
+                                                    detail.resolution === 'approved'
+                                                        ? 'Передать во Froza согласование возврата?'
+                                                        : 'Передать во Froza отказ в возврате?'
+                                                }
+                                                description="После отправки отменить решение через эту форму нельзя."
+                                                okText="Передать"
+                                                cancelText="Отмена"
+                                                onConfirm={
+                                                    handleSendFrozaDecision
+                                                }
+                                                disabled={
+                                                    !frozaDecisionReady
+                                                    || frozaLoading
+                                                }
+                                            >
+                                                <Button
+                                                    type="primary"
+                                                    icon={<SendOutlined />}
+                                                    loading={frozaLoading}
+                                                    disabled={!frozaDecisionReady}
+                                                >
+                                                    Передать решение во Froza
+                                                </Button>
+                                            </Popconfirm>
+                                        ) : null}
+                                    </Space>
+                                ) : (
+                                    <Alert
+                                        type="info"
+                                        showIcon
+                                        message="Нажмите «Проверить»"
+                                        description="Система прочитает заявку Froza, сверит артикул и количество. Решение при проверке не отправляется."
+                                    />
+                                )}
+                            </Card>
+                        ) : null}
 
                         <Card size="small" title="Обработка">
                             <Space
