@@ -41,6 +41,15 @@ export const refreshReclamationFroza = (id) =>
 export const sendReclamationFrozaDecision = (id, data) =>
     api.post(`/reclamations/${id}/froza/send-decision`, data);
 
+export const syncReclamationArmtek = () =>
+    api.post('/reclamations/armtek/sync', null, { timeout: 180000 });
+
+export const refreshReclamationArmtek = (id) =>
+    api.post(`/reclamations/${id}/armtek/refresh`);
+
+export const sendReclamationArmtekDecision = (id, data) =>
+    api.post(`/reclamations/${id}/armtek/send-decision`, data);
+
 export const getReclamationEmails = (id) =>
     api.get(`/reclamations/${id}/emails`);
 

@@ -49,9 +49,12 @@ import {
     getReplyTemplate,
     listReclamations,
     notifyReclamationSupplier,
+    refreshReclamationArmtek,
     refreshReclamationFroza,
+    sendReclamationArmtekDecision,
     sendReclamationReply,
     sendReclamationFrozaDecision,
+    syncReclamationArmtek,
     syncReclamations,
     updateReclamation,
     updateReclamationItem,
@@ -115,6 +118,14 @@ const FROZA_STATE_META = {
     unknown: { label: 'Неизвестное состояние', color: 'default' },
 };
 
+const ARMTEK_STATE_META = {
+    pending: { label: 'Ожидает решения', color: 'gold' },
+    approved: { label: 'Согласовано в Armtek', color: 'green' },
+    rejected: { label: 'Отклонено в Armtek', color: 'red' },
+    closed: { label: 'Закрыто в Armtek', color: 'default' },
+    unknown: { label: 'Неизвестное состояние', color: 'default' },
+};
+
 const isFrozaQuestionLink = (value) => {
     try {
         const url = new URL(value);
@@ -122,6 +133,20 @@ const isFrozaQuestionLink = (value) => {
             url.protocol === 'https:'
             && ['froza.ru', 'www.froza.ru'].includes(url.hostname)
             && url.pathname.replace(/\/$/, '') === '/supplier/one-question'
+        );
+    } catch {
+        return false;
+    }
+};
+
+const isArmtekReturnLink = (value) => {
+    try {
+        const url = new URL(value);
+        return (
+            url.protocol === 'https:'
+            && url.hostname === 'srm.armtek.ru'
+            && url.pathname.startsWith('/returns-management/opened/')
+            && Boolean(url.searchParams.get('RequestPosition'))
         );
     } catch {
         return false;
@@ -189,31 +214,31 @@ const checkStatusIcon = (status) => {
     return <CloseCircleOutlined style={{ color: '#ff4d4f' }} />;
 };
 
-// Очередь по этапам обработки. active-очереди сортируем FIFO (сначала старые).
+// Во всех очередях сначала показываем самые свежие рекламации.
 const QUEUES = [
     {
         key: 'attention',
         label: 'Требуют внимания',
         statuses: ['new', 'recognized'],
-        order: 'oldest',
+        order: 'newest',
     },
     {
         key: 'checked',
         label: 'Проверены',
         statuses: ['checked'],
-        order: 'oldest',
+        order: 'newest',
     },
     {
         key: 'waiting_docs',
         label: 'Ждут документы',
         statuses: ['waiting_docs'],
-        order: 'oldest',
+        order: 'newest',
     },
     {
         key: 'waiting_supplier',
         label: 'Ждут поставщика',
         statuses: ['waiting_supplier'],
-        order: 'oldest',
+        order: 'newest',
     },
     {
         key: 'done',
@@ -244,6 +269,7 @@ const ReclamationsPage = () => {
     const [loading, setLoading] = useState(false);
     const [queueKey, setQueueKey] = useState('attention');
     const [syncing, setSyncing] = useState(false);
+    const [armtekSyncing, setArmtekSyncing] = useState(false);
     const [customerOptions, setCustomerOptions] = useState([]);
     const [statsOpen, setStatsOpen] = useState(false);
     const [stats, setStats] = useState(null);
@@ -260,6 +286,7 @@ const ReclamationsPage = () => {
     const [itemSavingId, setItemSavingId] = useState(null);
     const [checking, setChecking] = useState(false);
     const [frozaLoading, setFrozaLoading] = useState(false);
+    const [armtekLoading, setArmtekLoading] = useState(false);
     const [emails, setEmails] = useState([]);
     const [emailsLoading, setEmailsLoading] = useState(false);
     const [supplierSaving, setSupplierSaving] = useState(false);
@@ -347,6 +374,10 @@ const ReclamationsPage = () => {
             const { data } = await syncReclamations();
             if (data?.note) {
                 message.warning(data.note);
+            } else if (data?.armtek_errors?.length) {
+                message.warning(
+                    `Почта проверена, но Armtek не синхронизирован: ${data.armtek_errors.join('; ')}`
+                );
             } else {
                 message.success(
                     `Проверено писем: ${data.fetched}, новых рекламаций: ${data.created}`
@@ -359,6 +390,24 @@ const ReclamationsPage = () => {
             );
         } finally {
             setSyncing(false);
+        }
+    };
+
+    const handleArmtekSync = async () => {
+        setArmtekSyncing(true);
+        try {
+            const { data } = await syncReclamationArmtek();
+            message.success(
+                `Armtek: найдено ${data.found}, новых ${data.created}, обновлено ${data.updated}`
+            );
+            await load();
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail
+                || 'Не удалось загрузить возвраты из Armtek'
+            );
+        } finally {
+            setArmtekSyncing(false);
         }
     };
 
@@ -642,6 +691,46 @@ const ReclamationsPage = () => {
         }
     };
 
+    const handleRefreshArmtek = async () => {
+        if (!detail) {
+            return;
+        }
+        setArmtekLoading(true);
+        try {
+            const { data } = await refreshReclamationArmtek(detail.id);
+            applyDetailUpdate(data);
+            message.success('Состояние заявки Armtek обновлено');
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail
+                || 'Не удалось проверить заявку в Armtek'
+            );
+        } finally {
+            setArmtekLoading(false);
+        }
+    };
+
+    const handleSendArmtekDecision = async () => {
+        if (!detail) {
+            return;
+        }
+        setArmtekLoading(true);
+        try {
+            const { data } = await sendReclamationArmtekDecision(detail.id, {
+                comment: resolutionComment.trim() || null,
+            });
+            applyDetailUpdate(data);
+            message.success('Решение передано в Armtek и подтверждено');
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail
+                || 'Не удалось передать решение в Armtek'
+            );
+        } finally {
+            setArmtekLoading(false);
+        }
+    };
+
     const handleApplyRecommendation = async () => {
         const code = detail?.check_result?.recommendation_code;
         const action = RECOMMENDATION_ACTION[code];
@@ -811,6 +900,24 @@ const ReclamationsPage = () => {
             detail?.resolution === 'rejected'
             && !resolutionComment.trim()
         );
+    const isArmtekReclamation = isArmtekReturnLink(detail?.source_link);
+    const armtekSnapshot = detail?.extracted_data?.armtek || null;
+    const armtekStateMeta = ARMTEK_STATE_META[
+        armtekSnapshot?.state || 'unknown'
+    ];
+    const armtekBlockingReasons = Array.isArray(
+        armtekSnapshot?.blocking_reasons
+    )
+        ? armtekSnapshot.blocking_reasons
+        : [];
+    const armtekDecisionReady =
+        Boolean(detail?.resolution)
+        && armtekSnapshot?.state === 'pending'
+        && armtekBlockingReasons.length === 0
+        && !(
+            detail?.resolution === 'rejected'
+            && !resolutionComment.trim()
+        );
 
     return (
         <Card style={{ margin: 16 }}>
@@ -841,6 +948,13 @@ const ReclamationsPage = () => {
                             onClick={handleSync}
                         >
                             Проверить почту
+                        </Button>
+                        <Button
+                            icon={<SyncOutlined />}
+                            loading={armtekSyncing}
+                            onClick={handleArmtekSync}
+                        >
+                            Получить из Armtek
                         </Button>
                         <Button
                             type="primary"
@@ -1271,6 +1385,144 @@ const ReclamationsPage = () => {
                                         showIcon
                                         message="Нажмите «Проверить»"
                                         description="Система прочитает заявку Froza, сверит артикул и количество. Решение при проверке не отправляется."
+                                    />
+                                )}
+                            </Card>
+                        ) : null}
+
+                        {isArmtekReclamation ? (
+                            <Card
+                                size="small"
+                                title="Заявка Armtek"
+                                extra={(
+                                    <Button
+                                        size="small"
+                                        icon={<SyncOutlined />}
+                                        loading={armtekLoading}
+                                        onClick={handleRefreshArmtek}
+                                    >
+                                        Проверить
+                                    </Button>
+                                )}
+                            >
+                                {armtekSnapshot ? (
+                                    <Space
+                                        direction="vertical"
+                                        size="middle"
+                                        style={{ width: '100%' }}
+                                    >
+                                        <Descriptions
+                                            size="small"
+                                            bordered
+                                            column={{ xs: 1, sm: 2 }}
+                                        >
+                                            <Descriptions.Item label="Заявка">
+                                                №{armtekSnapshot.request_number || '—'}
+                                                {armtekSnapshot.request_position
+                                                    ? ` / ${armtekSnapshot.request_position}`
+                                                    : ''}
+                                            </Descriptions.Item>
+                                            <Descriptions.Item label="Состояние">
+                                                <Tag color={armtekStateMeta.color}>
+                                                    {armtekStateMeta.label}
+                                                </Tag>
+                                            </Descriptions.Item>
+                                            <Descriptions.Item label="Позиция">
+                                                <Text strong>
+                                                    {armtekSnapshot.brand_name || ''}{' '}
+                                                    {armtekSnapshot.oem_number || '—'}
+                                                </Text>
+                                                {armtekSnapshot.autopart_name
+                                                    ? ` · ${armtekSnapshot.autopart_name}`
+                                                    : ''}
+                                            </Descriptions.Item>
+                                            <Descriptions.Item label="Количество">
+                                                {armtekSnapshot.quantity ?? '—'} шт.
+                                            </Descriptions.Item>
+                                            <Descriptions.Item label="Документ">
+                                                {armtekSnapshot.invoice_number || '—'}
+                                                {armtekSnapshot.invoice_date
+                                                    ? ` от ${dayjs(armtekSnapshot.invoice_date).format('DD.MM.YYYY')}`
+                                                    : ''}
+                                            </Descriptions.Item>
+                                            <Descriptions.Item label="Причина">
+                                                {armtekSnapshot.reason || '—'}
+                                            </Descriptions.Item>
+                                            <Descriptions.Item label="Склад Armtek">
+                                                {armtekSnapshot.warehouse_name || '—'}
+                                            </Descriptions.Item>
+                                            <Descriptions.Item label="Проверено">
+                                                {fmtDateTime(
+                                                    armtekSnapshot.checked_at
+                                                )}
+                                            </Descriptions.Item>
+                                        </Descriptions>
+
+                                        {armtekBlockingReasons.length ? (
+                                            <Alert
+                                                type="error"
+                                                showIcon
+                                                message="Решение нельзя отправить"
+                                                description={armtekBlockingReasons.join(
+                                                    '. '
+                                                )}
+                                            />
+                                        ) : null}
+
+                                        {!detail.resolution
+                                            && armtekSnapshot.state === 'pending' ? (
+                                                <Alert
+                                                    type="info"
+                                                    showIcon
+                                                    message="Сначала сохраните решение менеджера в блоке «Обработка»"
+                                                />
+                                            ) : null}
+
+                                        {detail.resolution === 'rejected'
+                                            && !resolutionComment.trim()
+                                            && armtekSnapshot.state === 'pending' ? (
+                                                <Alert
+                                                    type="warning"
+                                                    showIcon
+                                                    message="Для отказа заполните комментарий к решению"
+                                                />
+                                            ) : null}
+
+                                        {armtekSnapshot.state === 'pending' ? (
+                                            <Popconfirm
+                                                title={
+                                                    detail.resolution === 'approved'
+                                                        ? 'Передать в Armtek согласование возврата?'
+                                                        : 'Передать в Armtek отказ в возврате?'
+                                                }
+                                                description="После отправки отменить решение через эту форму нельзя."
+                                                okText="Передать"
+                                                cancelText="Отмена"
+                                                onConfirm={
+                                                    handleSendArmtekDecision
+                                                }
+                                                disabled={
+                                                    !armtekDecisionReady
+                                                    || armtekLoading
+                                                }
+                                            >
+                                                <Button
+                                                    type="primary"
+                                                    icon={<SendOutlined />}
+                                                    loading={armtekLoading}
+                                                    disabled={!armtekDecisionReady}
+                                                >
+                                                    Передать решение в Armtek
+                                                </Button>
+                                            </Popconfirm>
+                                        ) : null}
+                                    </Space>
+                                ) : (
+                                    <Alert
+                                        type="info"
+                                        showIcon
+                                        message="Нажмите «Проверить»"
+                                        description="Система прочитает заявку Armtek и сверит артикул и количество. Решение при проверке не отправляется."
                                     />
                                 )}
                             </Card>

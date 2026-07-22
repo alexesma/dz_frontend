@@ -901,12 +901,19 @@ const Dashboard = () => {
                 const limitReached = bestPrice != null
                     && row.max_price != null
                     && bestPrice <= Number(row.max_price);
+                const aboveLimit = bestPrice != null
+                    && row.max_price != null
+                    && bestPrice > Number(row.max_price);
                 return (
                     <Space direction="vertical" size={8} className="dashboard-watch-decision">
                         {limitReached
                             ? <Tag color="green">Цена достигнута</Tag>
-                            : <Tag color={bestPrice != null ? 'blue' : 'default'}>
-                                {bestPrice != null ? `Лучшая ${formatMoney(bestPrice)}` : 'Нет цены'}
+                            : <Tag color={aboveLimit ? 'orange' : bestPrice != null ? 'blue' : 'default'}>
+                                {aboveLimit
+                                    ? `Выше лимита · ${formatMoney(bestPrice)}`
+                                    : bestPrice != null
+                                        ? `Лучшая ${formatMoney(bestPrice)}`
+                                        : 'Нет цены'}
                             </Tag>}
                         <Popconfirm
                             title="Снять позицию с отслеживания?"
@@ -1459,7 +1466,7 @@ const Dashboard = () => {
                         type="info"
                         showIcon
                         style={{ marginBottom: 12 }}
-                        message="Показываем предложения из последней регламентной проверки сайта и последнего прайса поставщика. Позиция с сайта сразу оформляется на сайте, позиция из прайса отправляется поставщику по email."
+                        message="Показываем лучшие доступные предложения, даже если они дороже контрольной цены. Сайт проверяется по точному бренду и артикулу, без кроссов. Контрольная цена влияет только на статус и уведомления."
                     />
                     <Table
                         rowKey="id"
@@ -1487,8 +1494,8 @@ const Dashboard = () => {
                                     <Empty
                                         image={Empty.PRESENTED_IMAGE_SIMPLE}
                                         description={watchItem.last_seen_site_at
-                                            ? `Последняя подходящая цена ${formatMoney(watchItem.last_seen_site_price)} найдена ${formatDateTime(watchItem.last_seen_site_at)}. Подробный снимок появится после следующей регламентной проверки.`
-                                            : 'Регламентная проверка ещё не находила подходящих предложений'}
+                                            ? `Последняя цена ${formatMoney(watchItem.last_seen_site_price)} найдена ${formatDateTime(watchItem.last_seen_site_at)}. Подробный снимок появится после следующей регламентной проверки.`
+                                            : 'Регламент ещё не находил предложений с положительным остатком при точном поиске без кроссов'}
                                     />
                                 )
                             ),
