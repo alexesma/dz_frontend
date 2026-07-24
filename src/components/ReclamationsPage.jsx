@@ -20,6 +20,7 @@ import {
     Statistic,
     Table,
     Tag,
+    Tooltip,
     Typography,
     message,
 } from 'antd';
@@ -900,6 +901,14 @@ const ReclamationsPage = () => {
             detail?.resolution === 'rejected'
             && !resolutionComment.trim()
         );
+    const frozaReplyDisabledReason = !detail?.resolution
+        ? 'Сначала сохраните согласование или отказ в блоке «Обработка»'
+        : frozaBlockingReasons.length
+            ? frozaBlockingReasons.join('. ')
+            : detail.resolution === 'rejected'
+                && !resolutionComment.trim()
+                ? 'Для отказа заполните комментарий к решению'
+                : '';
     const isArmtekReclamation = isArmtekReturnLink(detail?.source_link);
     const armtekSnapshot = detail?.extracted_data?.armtek || null;
     const armtekStateMeta = ARMTEK_STATE_META[
@@ -1824,14 +1833,72 @@ const ReclamationsPage = () => {
                             title="Переписка"
                             extra={
                                 <Space>
-                                    <Button
-                                        size="small"
-                                        type="primary"
-                                        onClick={openReplyModal}
-                                        disabled={!detail.sender_email}
-                                    >
-                                        Ответить клиенту
-                                    </Button>
+                                    {isFrozaReclamation ? (
+                                        !frozaSnapshot
+                                        || frozaSnapshot.state === 'unknown' ? (
+                                                <Button
+                                                    size="small"
+                                                    type="primary"
+                                                    loading={frozaLoading}
+                                                    onClick={handleRefreshFroza}
+                                                >
+                                                    Проверить заявку Froza
+                                                </Button>
+                                            ) : frozaSnapshot.state === 'pending' ? (
+                                                <Popconfirm
+                                                    title={
+                                                        detail.resolution === 'approved'
+                                                            ? 'Согласовать возврат во Froza?'
+                                                            : 'Отказать в возврате во Froza?'
+                                                    }
+                                                    description="Решение и комментарий будут записаны на сайте Froza. Отменить отправку через эту форму нельзя."
+                                                    okText="Передать"
+                                                    cancelText="Отмена"
+                                                    onConfirm={
+                                                        handleSendFrozaDecision
+                                                    }
+                                                    disabled={
+                                                        !frozaDecisionReady
+                                                        || frozaLoading
+                                                    }
+                                                >
+                                                    <Tooltip
+                                                        title={
+                                                            !frozaDecisionReady
+                                                                ? frozaReplyDisabledReason
+                                                                : 'Письмо не отправляется: решение будет передано на портал Froza'
+                                                        }
+                                                    >
+                                                        <span>
+                                                            <Button
+                                                                size="small"
+                                                                type="primary"
+                                                                icon={<SendOutlined />}
+                                                                loading={frozaLoading}
+                                                                disabled={
+                                                                    !frozaDecisionReady
+                                                                }
+                                                            >
+                                                                Ответить клиенту во Froza
+                                                            </Button>
+                                                        </span>
+                                                    </Tooltip>
+                                                </Popconfirm>
+                                            ) : (
+                                                <Button size="small" disabled>
+                                                    Ответ уже передан во Froza
+                                                </Button>
+                                            )
+                                    ) : (
+                                        <Button
+                                            size="small"
+                                            type="primary"
+                                            onClick={openReplyModal}
+                                            disabled={!detail.sender_email}
+                                        >
+                                            Ответить клиенту
+                                        </Button>
+                                    )}
                                     <Popconfirm
                                         title="Отправить запрос поставщику?"
                                         okText="Отправить"
