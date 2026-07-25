@@ -1640,14 +1640,14 @@ const InboxPage = () => {
                                         <div>
                                             <div style={{ marginBottom: 4, fontWeight: 500 }}>
                                                 Паттерн имени файла
-                                                <Tooltip title="Часть имени файла, по которой система находит нужный файл во вложении">
+                                                <Tooltip title="Обычно это часть имени. Префикс = включает точное совпадение полного имени, например =Cosmo.xlsx">
                                                     <InfoCircleOutlined style={{ marginLeft: 6, color: '#8c8c8c' }} />
                                                 </Tooltip>
                                             </div>
                                             <Input
                                                 value={providerConfig.filename_pattern}
                                                 onChange={(e) => setProviderConfig(p => ({ ...p, filename_pattern: e.target.value }))}
-                                                placeholder="например: price.xlsx"
+                                                placeholder="например: price или =Cosmo.xlsx"
                                             />
                                         </div>
 

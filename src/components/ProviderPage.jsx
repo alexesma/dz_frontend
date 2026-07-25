@@ -2540,6 +2540,18 @@ const ProviderPage = () => {
                     </Form.Item>
 
                     <Form.Item
+                        name="filename_pattern"
+                        label="Паттерн имени файла"
+                        extra={
+                            "Обычный текст ищется как часть имени. Для точного " +
+                            "совпадения полного имени поставьте знак = в начале, " +
+                            "например: =Cosmo.xlsx"
+                        }
+                    >
+                        <Input placeholder="price или =Cosmo.xlsx" />
+                    </Form.Item>
+
+                    <Form.Item
                         name="incoming_email_account_id"
                         label="Почтовый ящик для входящих прайсов"
                         extra="Для принудительной загрузки из почты. Если не выбран — используется ящик из .env."

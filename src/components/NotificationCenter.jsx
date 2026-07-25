@@ -6,6 +6,7 @@ import {
     Empty,
     Grid,
     List,
+    Modal,
     Space,
     Switch,
     Tag,
@@ -50,6 +51,7 @@ const levelLabelMap = {
 };
 
 const WATCHLIST_PRICE_PREFIX = 'Подходящая цена:';
+const PRICELIST_BLOCKED_PREFIX = 'Прайс заблокирован:';
 
 const supportsBrowserNotifications = () => (
     typeof window !== 'undefined' && 'Notification' in window
@@ -89,6 +91,12 @@ const isWatchlistPriceNotification = (item) => (
     Boolean(item)
     && item.link === '/watchlist'
     && String(item.title || '').startsWith(WATCHLIST_PRICE_PREFIX)
+);
+
+const isBlockedPricelistNotification = (item) => (
+    Boolean(item)
+    && item.level === 'error'
+    && String(item.title || '').startsWith(PRICELIST_BLOCKED_PREFIX)
 );
 
 const getNotificationPriority = (item) => {
@@ -504,6 +512,31 @@ const NotificationCenter = () => {
         ),
         [sortedItems, watchlistOnlyEnabled]
     );
+    const blockedPricelistItem = useMemo(
+        () => sortedItems.find(
+            (item) => !item.read_at && isBlockedPricelistNotification(item)
+        ) || null,
+        [sortedItems]
+    );
+
+    const acknowledgeBlockedPricelist = useCallback(async (openDetails = false) => {
+        if (!blockedPricelistItem) {
+            return;
+        }
+        if (!blockedPricelistItem.read_at) {
+            try {
+                const result = await markNotificationRead(blockedPricelistItem.id);
+                updateReadState(blockedPricelistItem.id, result.read_at);
+            } catch (err) {
+                console.error('Failed to acknowledge pricelist alert', err);
+                message.error('Не удалось подтвердить предупреждение.');
+                return;
+            }
+        }
+        if (openDetails && blockedPricelistItem.link) {
+            navigateByLink(blockedPricelistItem.link);
+        }
+    }, [blockedPricelistItem, navigateByLink, updateReadState]);
 
     if (!isAuthenticated) {
         return null;
@@ -512,6 +545,45 @@ const NotificationCenter = () => {
     return (
         <>
             {contextHolder}
+            <Modal
+                open={Boolean(blockedPricelistItem)}
+                centered
+                closable={false}
+                maskClosable={false}
+                keyboard={false}
+                title="Заблокировано подозрительное обновление прайса"
+                footer={(
+                    <Space wrap>
+                        <Button
+                            onClick={() => {
+                                void acknowledgeBlockedPricelist(false);
+                            }}
+                        >
+                            Понятно
+                        </Button>
+                        <Button
+                            type="primary"
+                            danger
+                            onClick={() => {
+                                void acknowledgeBlockedPricelist(true);
+                            }}
+                        >
+                            Открыть поставщика
+                        </Button>
+                    </Space>
+                )}
+            >
+                <Typography.Title level={5}>
+                    {blockedPricelistItem?.title}
+                </Typography.Title>
+                <Typography.Paragraph style={{ whiteSpace: 'pre-line' }}>
+                    {blockedPricelistItem?.message}
+                </Typography.Paragraph>
+                <Typography.Text type="secondary">
+                    Автоматическая загрузка остановлена до проверки. Действующий
+                    прайс и его история не изменены.
+                </Typography.Text>
+            </Modal>
             <div className="notification-center-trigger">
                 <Badge count={unreadCount} size="small" overflowCount={99}>
                     <Button
