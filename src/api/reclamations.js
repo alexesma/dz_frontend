@@ -53,11 +53,19 @@ export const sendReclamationArmtekDecision = (id, data) =>
 export const getReclamationEmails = (id) =>
     api.get(`/reclamations/${id}/emails`);
 
-export const getReplyTemplate = (id, kind) =>
-    api.get(`/reclamations/${id}/reply-template`, { params: { kind } });
+export const getReplyTemplate = (id, kind, resolutionComment = null) =>
+    api.get(`/reclamations/${id}/reply-template`, {
+        params: {
+            kind,
+            resolution_comment: resolutionComment || undefined,
+        },
+    });
 
 export const sendReclamationReply = (id, data) =>
     api.post(`/reclamations/${id}/reply`, data);
+
+export const applyAndSendReclamationReply = (id, data) =>
+    api.post(`/reclamations/${id}/apply-and-reply`, data);
 
 export const notifyReclamationSupplier = (id) =>
     api.post(`/reclamations/${id}/notify-supplier`);

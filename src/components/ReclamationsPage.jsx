@@ -52,6 +52,7 @@ import {
     notifyReclamationSupplier,
     refreshReclamationArmtek,
     refreshReclamationFroza,
+    applyAndSendReclamationReply,
     sendReclamationArmtekDecision,
     sendReclamationReply,
     sendReclamationFrozaDecision,
@@ -205,6 +206,38 @@ const REPLY_KIND_OPTIONS = [
     { value: 'request_documents', label: 'Запрос документов (брак)' },
 ];
 
+const REJECTION_REASON_OPTIONS = [
+    { value: 'Истёк установленный срок возврата', label: 'Истёк срок возврата' },
+    {
+        value: 'Товар утратил товарный вид',
+        label: 'Утрачен товарный вид',
+    },
+    {
+        value: 'Обнаружены следы установки или эксплуатации товара',
+        label: 'Следы установки или эксплуатации',
+    },
+    {
+        value: 'Нарушена упаковка или отсутствует часть комплектации',
+        label: 'Неполная комплектация или упаковка',
+    },
+    {
+        value: 'Обнаружено механическое повреждение товара',
+        label: 'Механическое повреждение',
+    },
+    {
+        value: 'Не подтверждена покупка указанной позиции у нашей компании',
+        label: 'Покупка у нас не подтверждена',
+    },
+    {
+        value: 'Заявленная позиция не соответствует данным заказа',
+        label: 'Позиция не соответствует заказу',
+    },
+    {
+        value: 'Не предоставлены обязательные документы для рассмотрения брака',
+        label: 'Не предоставлены документы',
+    },
+];
+
 const checkStatusIcon = (status) => {
     if (status === 'ok') {
         return <CheckCircleOutlined style={{ color: '#52c41a' }} />;
@@ -297,6 +330,7 @@ const ReclamationsPage = () => {
     const [replyBody, setReplyBody] = useState('');
     const [replyTplLoading, setReplyTplLoading] = useState(false);
     const [replySaving, setReplySaving] = useState(false);
+    const [replyPendingAction, setReplyPendingAction] = useState(null);
 
     const [createOpen, setCreateOpen] = useState(false);
     const [createForm] = Form.useForm();
@@ -485,25 +519,34 @@ const ReclamationsPage = () => {
     };
 
     const openReplyModal = () => {
-        setReplyKind(
+        const kind =
             detail?.resolution === 'rejected'
                 ? 'rejected'
                 : detail?.resolution === 'approved'
                     ? 'approved'
-                    : 'ack'
-        );
+                    : 'ack';
+        setReplyKind(kind);
         setReplySubject('');
         setReplyBody('');
+        setReplyPendingAction(null);
         setReplyOpen(true);
+        void loadReplyTemplate(
+            kind,
+            kind === 'rejected' ? resolutionComment : null,
+        );
     };
 
-    const loadReplyTemplate = async (kind) => {
+    const loadReplyTemplate = async (kind, commentOverride = null) => {
         if (!detail) {
             return;
         }
         setReplyTplLoading(true);
         try {
-            const { data } = await getReplyTemplate(detail.id, kind);
+            const { data } = await getReplyTemplate(
+                detail.id,
+                kind,
+                commentOverride,
+            );
             setReplySubject(data.subject || '');
             setReplyBody(data.body_text || '');
         } catch (err) {
@@ -513,6 +556,28 @@ const ReclamationsPage = () => {
         } finally {
             setReplyTplLoading(false);
         }
+    };
+
+    const openActionReply = (action, commentOverride = null) => {
+        if (!detail) {
+            return;
+        }
+        const comment = String(
+            commentOverride ?? resolutionComment ?? '',
+        ).trim();
+        if (action === 'rejected' && !comment) {
+            message.warning('Для отказа обязательно укажите причину');
+            return;
+        }
+        setReplyKind(action);
+        setReplySubject('');
+        setReplyBody('');
+        setReplyPendingAction({
+            action,
+            resolution_comment: comment || null,
+        });
+        setReplyOpen(true);
+        void loadReplyTemplate(action, comment || null);
     };
 
     const handleSendReply = async () => {
@@ -525,14 +590,32 @@ const ReclamationsPage = () => {
         }
         setReplySaving(true);
         try {
-            await sendReclamationReply(detail.id, {
-                kind: replyKind,
-                subject: replySubject || null,
-                body_text: replyBody,
-            });
-            message.success('Ответ поставлен в очередь отправки');
+            if (replyPendingAction) {
+                await applyAndSendReclamationReply(detail.id, {
+                    ...replyPendingAction,
+                    subject: replySubject || null,
+                    body_text: replyBody,
+                });
+                const { data } = await getReclamation(detail.id);
+                applyDetailUpdate(data);
+                setResolutionComment(data.resolution_comment || '');
+                message.success(
+                    replyPendingAction.action === 'request_documents'
+                        ? 'Запрос документов поставлен в очередь отправки'
+                        : 'Решение сохранено, ответ поставлен в очередь отправки',
+                );
+            } else {
+                await sendReclamationReply(detail.id, {
+                    kind: replyKind,
+                    subject: replySubject || null,
+                    body_text: replyBody,
+                });
+                message.success('Ответ поставлен в очередь отправки');
+            }
             setReplyOpen(false);
+            setReplyPendingAction(null);
             await loadEmails(detail.id);
+            await load();
         } catch (err) {
             message.error(
                 err?.response?.data?.detail || 'Не удалось поставить ответ'
@@ -749,8 +832,29 @@ const ReclamationsPage = () => {
         await patchReclamation(payload, 'Рекомендация применена');
     };
 
-    const handleResolve = (resolution) =>
-        patchReclamation(
+    const handleApplyRecommendationAndReply = () => {
+        const code = detail?.check_result?.recommendation_code;
+        const action = RECOMMENDATION_ACTION[code];
+        const replyAction =
+            action?.resolution
+            || (code === 'request_documents' ? 'request_documents' : null);
+        if (!replyAction) {
+            message.info('Эта рекомендация не предполагает готового ответа');
+            return;
+        }
+        const comment =
+            resolutionComment
+            || detail?.check_result?.summary
+            || '';
+        openActionReply(replyAction, comment);
+    };
+
+    const handleResolve = (resolution) => {
+        if (resolution === 'rejected' && !resolutionComment.trim()) {
+            message.warning('Для отказа обязательно укажите причину');
+            return;
+        }
+        void patchReclamation(
             {
                 resolution,
                 resolution_comment: resolutionComment || null,
@@ -759,6 +863,7 @@ const ReclamationsPage = () => {
                 ? 'Рекламация согласована'
                 : 'Рекламация отклонена'
         );
+    };
 
     const handleItemSource = async (item, value) => {
         if (!detail) {
@@ -1138,15 +1243,48 @@ const ReclamationsPage = () => {
                                                 detail.check_result
                                                     .recommendation_code
                                             ] ? (
-                                                <Button
-                                                    size="small"
-                                                    loading={statusSaving}
-                                                    onClick={
-                                                        handleApplyRecommendation
-                                                    }
-                                                >
-                                                    Применить
-                                                </Button>
+                                                <Space wrap>
+                                                    <Button
+                                                        size="small"
+                                                        loading={statusSaving}
+                                                        onClick={
+                                                            handleApplyRecommendation
+                                                        }
+                                                    >
+                                                        Применить
+                                                    </Button>
+                                                    {[
+                                                        'approve',
+                                                        'reject',
+                                                        'request_documents',
+                                                    ].includes(
+                                                        detail.check_result
+                                                            .recommendation_code,
+                                                    )
+                                                        && !isFrozaReclamation
+                                                        && !isArmtekReclamation ? (
+                                                            <Button
+                                                                size="small"
+                                                                type="primary"
+                                                                icon={
+                                                                    <SendOutlined />
+                                                                }
+                                                                disabled={
+                                                                    !canResolve
+                                                                    || !detail.sender_email
+                                                                }
+                                                                onClick={
+                                                                    handleApplyRecommendationAndReply
+                                                                }
+                                                            >
+                                                                {detail.check_result
+                                                                    .recommendation_code
+                                                                    === 'request_documents'
+                                                                    ? 'Применить и запросить документы'
+                                                                    : 'Применить и ответить'}
+                                                            </Button>
+                                                        ) : null}
+                                                </Space>
                                             ) : null
                                         }
                                     />
@@ -1613,9 +1751,28 @@ const ReclamationsPage = () => {
                                     </Space>
                                 ) : null}
 
+                                <Select
+                                    allowClear
+                                    showSearch
+                                    optionFilterProp="label"
+                                    placeholder="Быстрая причина отказа"
+                                    value={
+                                        REJECTION_REASON_OPTIONS.some(
+                                            (item) =>
+                                                item.value
+                                                === resolutionComment,
+                                        )
+                                            ? resolutionComment
+                                            : undefined
+                                    }
+                                    options={REJECTION_REASON_OPTIONS}
+                                    onChange={(value) =>
+                                        setResolutionComment(value || '')
+                                    }
+                                />
                                 <Input.TextArea
                                     rows={2}
-                                    placeholder="Комментарий к решению (виден в карточке)"
+                                    placeholder="Комментарий к решению. Для отказа причина обязательна и попадёт в письмо клиенту."
                                     value={resolutionComment}
                                     onChange={(e) =>
                                         setResolutionComment(e.target.value)
@@ -1640,6 +1797,24 @@ const ReclamationsPage = () => {
                                             Согласовать
                                         </Button>
                                     </Popconfirm>
+                                    {!isFrozaReclamation
+                                        && !isArmtekReclamation ? (
+                                            <Button
+                                                type="primary"
+                                                icon={<SendOutlined />}
+                                                disabled={
+                                                    !canResolve
+                                                    || !detail.sender_email
+                                                }
+                                                onClick={() =>
+                                                    openActionReply(
+                                                        'approved',
+                                                    )
+                                                }
+                                            >
+                                                Согласовать и ответить
+                                            </Button>
+                                        ) : null}
                                     <Popconfirm
                                         title="Отклонить рекламацию?"
                                         okText="Отклонить"
@@ -1659,6 +1834,43 @@ const ReclamationsPage = () => {
                                             Отклонить
                                         </Button>
                                     </Popconfirm>
+                                    {!isFrozaReclamation
+                                        && !isArmtekReclamation ? (
+                                            <Button
+                                                danger
+                                                icon={<SendOutlined />}
+                                                disabled={
+                                                    !canResolve
+                                                    || !detail.sender_email
+                                                }
+                                                onClick={() =>
+                                                    openActionReply(
+                                                        'rejected',
+                                                    )
+                                                }
+                                            >
+                                                Отклонить и ответить
+                                            </Button>
+                                        ) : null}
+                                    {!isFrozaReclamation
+                                        && !isArmtekReclamation ? (
+                                            <Button
+                                                icon={
+                                                    <ExclamationCircleOutlined />
+                                                }
+                                                disabled={
+                                                    !canResolve
+                                                    || !detail.sender_email
+                                                }
+                                                onClick={() =>
+                                                    openActionReply(
+                                                        'request_documents',
+                                                    )
+                                                }
+                                            >
+                                                Запросить документы
+                                            </Button>
+                                        ) : null}
                                     {detail.resolution ? (
                                         <Tag
                                             color={
@@ -2282,13 +2494,26 @@ const ReclamationsPage = () => {
 
             <Modal
                 open={replyOpen}
-                title="Ответ клиенту"
-                okText="В очередь на отправку"
+                title={
+                    replyPendingAction
+                        ? replyPendingAction.action === 'request_documents'
+                            ? 'Запросить дополнительные документы'
+                            : 'Сохранить решение и ответить клиенту'
+                        : 'Ответ клиенту'
+                }
+                okText={
+                    replyPendingAction
+                        ? 'Сохранить и поставить в очередь'
+                        : 'В очередь на отправку'
+                }
                 cancelText="Отмена"
                 confirmLoading={replySaving}
                 width={640}
                 onOk={handleSendReply}
-                onCancel={() => setReplyOpen(false)}
+                onCancel={() => {
+                    setReplyOpen(false);
+                    setReplyPendingAction(null);
+                }}
             >
                 <Space direction="vertical" style={{ width: '100%' }} size="middle">
                     <Alert
@@ -2301,12 +2526,43 @@ const ReclamationsPage = () => {
                                 : 'У рекламации нет адреса отправителя'
                         }
                     />
+                    {replyPendingAction ? (
+                        <Alert
+                            type={
+                                replyPendingAction.action === 'approved'
+                                    ? 'success'
+                                    : 'warning'
+                            }
+                            showIcon
+                            message={
+                                replyPendingAction.action === 'approved'
+                                    ? 'Будет сохранено согласование возврата'
+                                    : replyPendingAction.action === 'rejected'
+                                        ? 'Будет сохранён отказ в возврате'
+                                        : 'Рекламация перейдёт в ожидание документов'
+                            }
+                            description={
+                                replyPendingAction.action === 'rejected'
+                                    ? `Причина: ${replyPendingAction.resolution_comment}`
+                                    : 'Проверьте текст перед постановкой ответа в очередь.'
+                            }
+                        />
+                    ) : null}
                     <Space wrap>
                         <Text type="secondary">Шаблон:</Text>
                         <Select
                             style={{ width: 260 }}
                             value={replyKind}
-                            onChange={setReplyKind}
+                            disabled={Boolean(replyPendingAction)}
+                            onChange={(value) => {
+                                setReplyKind(value);
+                                void loadReplyTemplate(
+                                    value,
+                                    value === 'rejected'
+                                        ? resolutionComment
+                                        : null,
+                                );
+                            }}
                             options={REPLY_KIND_OPTIONS}
                         />
                         <Button
