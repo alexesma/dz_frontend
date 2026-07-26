@@ -43,6 +43,7 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
+    applyAndSendReclamationReply,
     assignReclamationCustomer,
     assignShortageReviewer,
     checkReclamation,
@@ -60,7 +61,6 @@ import {
     postponeReclamationShortage,
     refreshReclamationArmtek,
     refreshReclamationFroza,
-    applyAndSendReclamationReply,
     sendReclamationArmtekDecision,
     sendReclamationReply,
     sendReclamationFrozaDecision,
@@ -200,7 +200,25 @@ const RECOMMENDATION_ACTION = {
     approve: { resolution: 'approved' },
     reject: { resolution: 'rejected' },
     request_documents: { status: 'waiting_docs' },
-    request_supplier: { status: 'waiting_supplier' },
+};
+
+const SUPPLIER_ACTION_META = {
+    request_supplier: {
+        label: 'Поставщик: запросить согласование',
+        alert: 'warning',
+    },
+    unavailable: {
+        label: 'Поставщик: возврат недоступен',
+        alert: 'error',
+    },
+    manual: {
+        label: 'Поставщик: требуется уточнение',
+        alert: 'info',
+    },
+    not_required: {
+        label: 'Поставщик: согласование не требуется',
+        alert: 'success',
+    },
 };
 
 const OUTBOX_STATUS_META = {
@@ -1198,6 +1216,12 @@ const ReclamationsPage = () => {
     const latestCustomerReply = emails.find(
         (row) => row.source_type === 'reclamation'
     ) || null;
+    const latestSupplierRequest = emails.find(
+        (row) => row.source_type === 'reclamation_supplier'
+    ) || null;
+    const supplierRequestQueued = ['pending', 'sent'].includes(
+        latestSupplierRequest?.status,
+    );
     const sourceMailboxState = detail?.extracted_data?.mailbox || {};
     const isFrozaReclamation = isFrozaQuestionLink(detail?.source_link);
     const frozaSnapshot = detail?.extracted_data?.froza || null;
@@ -1499,6 +1523,82 @@ const ReclamationsPage = () => {
                                             ) : null
                                         }
                                     />
+
+                                    {detail.check_result
+                                        .supplier_action_code ? (
+                                            <Alert
+                                                type={
+                                                    (SUPPLIER_ACTION_META[
+                                                        detail.check_result
+                                                            .supplier_action_code
+                                                    ] || {}).alert || 'info'
+                                                }
+                                                showIcon
+                                                message={
+                                                    (SUPPLIER_ACTION_META[
+                                                        detail.check_result
+                                                            .supplier_action_code
+                                                    ] || {}).label
+                                                    || detail.check_result
+                                                        .supplier_action_code
+                                                }
+                                                description={
+                                                    [
+                                                        detail.check_result
+                                                            .supplier_summary,
+                                                        latestSupplierRequest
+                                                            ? latestSupplierRequest
+                                                                .status
+                                                                === 'sent'
+                                                                ? `Последний запрос отправлен ${fmtDateTime(
+                                                                    latestSupplierRequest
+                                                                        .sent_at,
+                                                                )}.`
+                                                                : latestSupplierRequest
+                                                                    .status
+                                                                    === 'pending'
+                                                                    ? 'Последний запрос находится в очереди отправки.'
+                                                                    : `Ошибка отправки: ${
+                                                                        latestSupplierRequest
+                                                                            .last_error
+                                                                        || 'причина не указана'
+                                                                    }`
+                                                            : null,
+                                                    ].filter(Boolean).join(' ')
+                                                    || null
+                                                }
+                                                action={
+                                                    detail.check_result
+                                                        .supplier_action_code
+                                                        === 'request_supplier'
+                                                        && !supplierRequestQueued ? (
+                                                            <Popconfirm
+                                                                title="Отправить запрос поставщику?"
+                                                                description="Решение клиенту не изменится. Письмо поставщику будет поставлено в очередь локального релея."
+                                                                okText="Отправить"
+                                                                cancelText="Отмена"
+                                                                onConfirm={
+                                                                    handleNotifySupplier
+                                                                }
+                                                            >
+                                                                <Button
+                                                                    size="small"
+                                                                    type="primary"
+                                                                    icon={
+                                                                        <SendOutlined />
+                                                                    }
+                                                                    loading={
+                                                                        supplierSaving
+                                                                    }
+                                                                >
+                                                                    Запросить у
+                                                                    поставщика
+                                                                </Button>
+                                                            </Popconfirm>
+                                                        ) : null
+                                                }
+                                            />
+                                        ) : null}
 
                                     {(detail.check_result.documents?.missing
                                         ?.length || 0) > 0 ? (
