@@ -502,6 +502,32 @@ const ReclamationsPage = () => {
         }
     };
 
+    const refreshCorrespondence = async () => {
+        if (!detail) {
+            return;
+        }
+        setEmailsLoading(true);
+        try {
+            const [emailsResponse, detailResponse] = await Promise.all([
+                getReclamationEmails(detail.id),
+                getReclamation(detail.id),
+            ]);
+            setEmails(
+                Array.isArray(emailsResponse.data)
+                    ? emailsResponse.data
+                    : []
+            );
+            applyDetailUpdate(detailResponse.data);
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail
+                || 'Не удалось обновить статус переписки'
+            );
+        } finally {
+            setEmailsLoading(false);
+        }
+    };
+
     const loadStats = useCallback(async (period) => {
         setStatsLoading(true);
         try {
@@ -1169,6 +1195,10 @@ const ReclamationsPage = () => {
 
     const canResolve =
         detail && !['approved', 'rejected', 'closed'].includes(detail.status);
+    const latestCustomerReply = emails.find(
+        (row) => row.source_type === 'reclamation'
+    ) || null;
+    const sourceMailboxState = detail?.extracted_data?.mailbox || {};
     const isFrozaReclamation = isFrozaQuestionLink(detail?.source_link);
     const frozaSnapshot = detail?.extracted_data?.froza || null;
     const frozaStateMeta = FROZA_STATE_META[
@@ -2536,6 +2566,14 @@ const ReclamationsPage = () => {
                             title="Переписка"
                             extra={
                                 <Space>
+                                    <Button
+                                        size="small"
+                                        icon={<ReloadOutlined />}
+                                        loading={emailsLoading}
+                                        onClick={refreshCorrespondence}
+                                    >
+                                        Обновить статус
+                                    </Button>
                                     {isFrozaReclamation ? (
                                         !frozaSnapshot
                                         || frozaSnapshot.state === 'unknown' ? (
@@ -2618,6 +2656,51 @@ const ReclamationsPage = () => {
                                 </Space>
                             }
                         >
+                            {latestCustomerReply ? (
+                                <Alert
+                                    style={{ marginBottom: 12 }}
+                                    showIcon
+                                    type={
+                                        latestCustomerReply.status === 'sent'
+                                            ? sourceMailboxState
+                                                .answered_flag_status
+                                                === 'error'
+                                                ? 'warning'
+                                                : 'success'
+                                            : latestCustomerReply.status
+                                                === 'error'
+                                                ? 'error'
+                                                : 'info'
+                                    }
+                                    message={
+                                        latestCustomerReply.status === 'sent'
+                                            ? `Ответ клиенту отправлен${
+                                                latestCustomerReply.sent_at
+                                                    ? ` · ${fmtDateTime(
+                                                        latestCustomerReply
+                                                            .sent_at
+                                                    )}`
+                                                    : ''
+                                            }`
+                                            : latestCustomerReply.status
+                                                === 'error'
+                                                ? 'Ответ клиенту не отправлен'
+                                                : 'Ответ ожидает локальный релей'
+                                    }
+                                    description={
+                                        latestCustomerReply.status === 'sent'
+                                            ? sourceMailboxState
+                                                .answered_flag_status
+                                                === 'marked'
+                                                ? 'Исходное письмо отмечено в почте как прочитанное и получившее ответ.'
+                                                : sourceMailboxState
+                                                    .answered_flag_error
+                                                    || 'Статус пометки исходного письма пока не получен.'
+                                            : latestCustomerReply.last_error
+                                                || 'Оставьте relay.py запущенным и нажмите «Обновить статус».'
+                                    }
+                                />
+                            ) : null}
                             <Table
                                 rowKey="id"
                                 size="small"
