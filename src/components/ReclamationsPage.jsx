@@ -2692,7 +2692,7 @@ const ReclamationsPage = () => {
                                             ? sourceMailboxState
                                                 .answered_flag_status
                                                 === 'marked'
-                                                ? 'Исходное письмо отмечено в почте как прочитанное и получившее ответ.'
+                                                ? 'Исходное письмо отмечено как прочитанное, получившее ответ и выделено звёздочкой.'
                                                 : sourceMailboxState
                                                     .answered_flag_error
                                                     || 'Статус пометки исходного письма пока не получен.'
