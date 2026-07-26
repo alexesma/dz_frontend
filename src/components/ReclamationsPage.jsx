@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
     Alert,
     Badge,
@@ -22,11 +23,13 @@ import {
     Tag,
     Tooltip,
     Typography,
+    Upload,
     message,
 } from 'antd';
 import {
     BarChartOutlined,
     CheckCircleOutlined,
+    ClockCircleOutlined,
     CloseCircleOutlined,
     CloudDownloadOutlined,
     ExclamationCircleOutlined,
@@ -35,12 +38,15 @@ import {
     SafetyCertificateOutlined,
     SendOutlined,
     SyncOutlined,
+    UploadOutlined,
     WarningOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
     assignReclamationCustomer,
+    assignShortageReviewer,
     checkReclamation,
+    confirmReclamationShortage,
     createReclamation,
     downloadReclamationAttachment,
     getReclamation,
@@ -49,7 +55,9 @@ import {
     getReclamationsSummary,
     getReplyTemplate,
     listReclamations,
+    listReclamationAssignees,
     notifyReclamationSupplier,
+    postponeReclamationShortage,
     refreshReclamationArmtek,
     refreshReclamationFroza,
     applyAndSendReclamationReply,
@@ -60,6 +68,7 @@ import {
     syncReclamations,
     updateReclamation,
     updateReclamationItem,
+    uploadReclamationShortageEvidence,
 } from '../api/reclamations';
 import { getCustomersSummary } from '../api/customers';
 
@@ -95,6 +104,7 @@ const STATUS_META = {
 const TYPE_META = {
     customer_refusal: { label: 'Отказ клиента', color: 'blue' },
     defect: { label: 'Брак', color: 'volcano' },
+    shortage: { label: 'Недовоз', color: 'gold' },
     other: { label: 'Прочее', color: 'default' },
 };
 
@@ -109,6 +119,7 @@ const ATTACHMENT_KIND_LABELS = {
     installation_order: 'Заказ-наряд на установку',
     defect_report: 'Дефектовка',
     photo: 'Фото',
+    shortage_evidence: 'Фото/видео проверки недовоза',
     other: 'Прочее',
 };
 
@@ -204,7 +215,14 @@ const REPLY_KIND_OPTIONS = [
     { value: 'approved', label: 'Согласование возврата' },
     { value: 'rejected', label: 'Отказ' },
     { value: 'request_documents', label: 'Запрос документов (брак)' },
+    { value: 'shortage_confirmed', label: 'Подтверждение недовоза' },
 ];
+
+const SHORTAGE_STATUS_META = {
+    pending_confirmation: { label: 'Ожидает проверки', color: 'gold' },
+    confirmed: { label: 'Недовоз подтверждён', color: 'green' },
+    not_confirmed: { label: 'Недовоз не подтверждён', color: 'red' },
+};
 
 const REJECTION_REASON_OPTIONS = [
     { value: 'Истёк установленный срок возврата', label: 'Истёк срок возврата' },
@@ -298,6 +316,7 @@ const STATUS_TRANSITIONS = {
 const fmtDateTime = (v) => (v ? dayjs(v).format('DD.MM.YYYY HH:mm') : '—');
 
 const ReclamationsPage = () => {
+    const [searchParams] = useSearchParams();
     const [summary, setSummary] = useState(null);
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -331,6 +350,12 @@ const ReclamationsPage = () => {
     const [replyTplLoading, setReplyTplLoading] = useState(false);
     const [replySaving, setReplySaving] = useState(false);
     const [replyPendingAction, setReplyPendingAction] = useState(null);
+    const [shortageAssignees, setShortageAssignees] = useState([]);
+    const [shortageAssigneeId, setShortageAssigneeId] = useState(null);
+    const [shortageComment, setShortageComment] = useState('');
+    const [shortageSaving, setShortageSaving] = useState(false);
+    const [shortageEvidence, setShortageEvidence] = useState([]);
+    const [shortagePostponeMinutes, setShortagePostponeMinutes] = useState(15);
 
     const [createOpen, setCreateOpen] = useState(false);
     const [createForm] = Form.useForm();
@@ -391,6 +416,25 @@ const ReclamationsPage = () => {
     useEffect(() => {
         void loadCustomerOptions();
     }, [loadCustomerOptions]);
+
+    useEffect(() => {
+        const loadAssignees = async () => {
+            try {
+                const { data } = await listReclamationAssignees();
+                setShortageAssignees(
+                    (Array.isArray(data) ? data : []).map((user) => ({
+                        value: user.id,
+                        label: user.name
+                            ? `${user.name} · ${user.email}`
+                            : user.email,
+                    }))
+                );
+            } catch {
+                setShortageAssignees([]);
+            }
+        };
+        void loadAssignees();
+    }, []);
 
     const queueCount = (queue) => {
         const byStatus = summary?.by_status || {};
@@ -509,6 +553,12 @@ const ReclamationsPage = () => {
             }
             setRememberEmail(true);
             setResolutionComment(data.resolution_comment || '');
+            setShortageAssigneeId(
+                data.shortage_assigned_to_user_id || null
+            );
+            setShortageComment(data.shortage_comment || '');
+            setShortageEvidence([]);
+            setShortagePostponeMinutes(15);
             setDetailOpen(true);
             void loadEmails(id);
         } catch (err) {
@@ -518,9 +568,22 @@ const ReclamationsPage = () => {
         }
     };
 
+    const requestedOpenId = searchParams.get('openId');
+    useEffect(() => {
+        const reclamationId = Number(requestedOpenId);
+        if (Number.isInteger(reclamationId) && reclamationId > 0) {
+            void openDetail(reclamationId);
+        }
+        // openDetail intentionally runs only when the requested id changes.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [requestedOpenId]);
+
     const openReplyModal = () => {
         const kind =
-            detail?.resolution === 'rejected'
+            detail?.reclamation_type === 'shortage'
+                && detail?.shortage_status === 'confirmed'
+                ? 'shortage_confirmed'
+                : detail?.resolution === 'rejected'
                 ? 'rejected'
                 : detail?.resolution === 'approved'
                     ? 'approved'
@@ -534,6 +597,15 @@ const ReclamationsPage = () => {
             kind,
             kind === 'rejected' ? resolutionComment : null,
         );
+    };
+
+    const openShortageReply = () => {
+        setReplyKind('shortage_confirmed');
+        setReplySubject('');
+        setReplyBody('');
+        setReplyPendingAction(null);
+        setReplyOpen(true);
+        void loadReplyTemplate('shortage_confirmed');
     };
 
     const loadReplyTemplate = async (kind, commentOverride = null) => {
@@ -735,6 +807,91 @@ const ReclamationsPage = () => {
         }
     };
 
+    const handleAssignShortage = async () => {
+        if (!detail || !shortageAssigneeId) {
+            message.warning('Выберите ответственного сотрудника');
+            return;
+        }
+        setShortageSaving(true);
+        try {
+            const { data } = await assignShortageReviewer(detail.id, {
+                user_id: shortageAssigneeId,
+            });
+            applyDetailUpdate(data);
+            setShortageComment('');
+            message.success(
+                'Ответственный назначен, уведомление отправлено'
+            );
+            await load();
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail
+                || 'Не удалось назначить ответственного'
+            );
+        } finally {
+            setShortageSaving(false);
+        }
+    };
+
+    const handleConfirmShortage = async (confirmed) => {
+        if (!detail) {
+            return;
+        }
+        setShortageSaving(true);
+        try {
+            if (!confirmed && shortageEvidence.length) {
+                await uploadReclamationShortageEvidence(
+                    detail.id,
+                    shortageEvidence
+                );
+            }
+            const { data } = await confirmReclamationShortage(detail.id, {
+                confirmed,
+                comment: shortageComment.trim() || null,
+            });
+            applyDetailUpdate(data);
+            setShortageEvidence([]);
+            setResolutionComment(data.resolution_comment || '');
+            message.success(
+                confirmed
+                    ? 'Недовоз подтверждён'
+                    : 'Зафиксировано: недовоз не подтверждён'
+            );
+            await load();
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail
+                || 'Не удалось сохранить проверку недовоза'
+            );
+        } finally {
+            setShortageSaving(false);
+        }
+    };
+
+    const handlePostponeShortage = async () => {
+        if (!detail) {
+            return;
+        }
+        setShortageSaving(true);
+        try {
+            const { data } = await postponeReclamationShortage(detail.id, {
+                minutes: shortagePostponeMinutes,
+            });
+            applyDetailUpdate(data);
+            message.success(
+                `Проверка отложена на ${shortagePostponeMinutes} мин.`
+            );
+            await load();
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail
+                || 'Не удалось отложить проверку недовоза'
+            );
+        } finally {
+            setShortageSaving(false);
+        }
+    };
+
     const handleRefreshFroza = async () => {
         if (!detail) {
             return;
@@ -878,6 +1035,30 @@ const ReclamationsPage = () => {
         } catch (err) {
             message.error(
                 err?.response?.data?.detail || 'Не удалось обновить позицию'
+            );
+        } finally {
+            setItemSavingId(null);
+        }
+    };
+
+    const handleItemProvider = async (item, providerId) => {
+        if (!detail) {
+            return;
+        }
+        setItemSavingId(item.id);
+        try {
+            const { data } = await updateReclamationItem(
+                detail.id,
+                item.id,
+                { source_provider_id: providerId }
+            );
+            const { data: checkedData } = await checkReclamation(data.id);
+            applyDetailUpdate(checkedData);
+            message.success('Поставщик позиции сохранён');
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail
+                || 'Не удалось сохранить поставщика позиции'
             );
         } finally {
             setItemSavingId(null);
@@ -1407,6 +1588,237 @@ const ReclamationsPage = () => {
                                 {fmtDateTime(detail.email_received_at)}
                             </Descriptions.Item>
                         </Descriptions>
+
+                        {detail.reclamation_type === 'shortage' ? (
+                            <Card
+                                size="small"
+                                title="Проверка недовоза"
+                                extra={
+                                    detail.shortage_status ? (
+                                        <Tag
+                                            color={
+                                                (
+                                                    SHORTAGE_STATUS_META[
+                                                        detail.shortage_status
+                                                    ] || {}
+                                                ).color || 'default'
+                                            }
+                                        >
+                                            {
+                                                (
+                                                    SHORTAGE_STATUS_META[
+                                                        detail.shortage_status
+                                                    ] || {}
+                                                ).label
+                                                || detail.shortage_status
+                                            }
+                                        </Tag>
+                                    ) : null
+                                }
+                            >
+                                <Space
+                                    direction="vertical"
+                                    size="middle"
+                                    style={{ width: '100%' }}
+                                >
+                                    <Alert
+                                        type="info"
+                                        showIcon
+                                        message="Факт недовоза подтверждает сотрудник"
+                                        description="Отсутствие проведённой отгрузки в системе не является автоматическим подтверждением: нужно проверить фактическую комплектацию заказа."
+                                    />
+                                    <Space.Compact
+                                        style={{ width: '100%' }}
+                                    >
+                                        <Select
+                                            showSearch
+                                            optionFilterProp="label"
+                                            style={{ flex: 1 }}
+                                            placeholder="Ответственный сотрудник"
+                                            value={shortageAssigneeId}
+                                            options={shortageAssignees}
+                                            onChange={setShortageAssigneeId}
+                                        />
+                                        <Button
+                                            loading={shortageSaving}
+                                            disabled={!shortageAssigneeId}
+                                            onClick={handleAssignShortage}
+                                        >
+                                            Назначить
+                                        </Button>
+                                    </Space.Compact>
+                                    {detail.shortage_assigned_to_user_name ? (
+                                        <Text type="secondary">
+                                            Назначен:{' '}
+                                            <Text strong>
+                                                {
+                                                    detail.shortage_assigned_to_user_name
+                                                }
+                                            </Text>
+                                            {detail.shortage_assigned_at
+                                                ? ` · ${fmtDateTime(detail.shortage_assigned_at)}`
+                                                : ''}
+                                        </Text>
+                                    ) : null}
+                                    <Input.TextArea
+                                        rows={2}
+                                        value={shortageComment}
+                                        onChange={(event) =>
+                                            setShortageComment(
+                                                event.target.value
+                                            )
+                                        }
+                                        placeholder="Комментарий проверяющего (необязательно)"
+                                    />
+                                    <Upload
+                                        accept="image/*,video/*"
+                                        multiple
+                                        maxCount={5}
+                                        beforeUpload={() => false}
+                                        fileList={shortageEvidence}
+                                        onChange={({ fileList }) =>
+                                            setShortageEvidence(fileList)
+                                        }
+                                    >
+                                        <Button icon={<UploadOutlined />}>
+                                            Фото или видео отгрузки
+                                        </Button>
+                                    </Upload>
+                                    <Text type="secondary">
+                                        При опровержении недовоза файлы
+                                        желательны, но не обязательны.
+                                    </Text>
+                                    <Space wrap>
+                                        <Popconfirm
+                                            title="Подтвердить факт недовоза?"
+                                            okText="Подтвердить"
+                                            cancelText="Отмена"
+                                            onConfirm={() =>
+                                                handleConfirmShortage(true)
+                                            }
+                                        >
+                                            <Button
+                                                type="primary"
+                                                icon={
+                                                    <CheckCircleOutlined />
+                                                }
+                                                loading={shortageSaving}
+                                            >
+                                                Недовоз подтверждён
+                                            </Button>
+                                        </Popconfirm>
+                                        <Popconfirm
+                                            title="Зафиксировать, что недовоз не подтверждён?"
+                                            okText="Зафиксировать"
+                                            cancelText="Отмена"
+                                            onConfirm={() =>
+                                                handleConfirmShortage(false)
+                                            }
+                                        >
+                                            <Button
+                                                danger
+                                                icon={
+                                                    <CloseCircleOutlined />
+                                                }
+                                                loading={shortageSaving}
+                                            >
+                                                Недовоз не подтверждён
+                                            </Button>
+                                        </Popconfirm>
+                                        <Space.Compact>
+                                            <Select
+                                                value={
+                                                    shortagePostponeMinutes
+                                                }
+                                                style={{ width: 130 }}
+                                                options={[
+                                                    {
+                                                        value: 15,
+                                                        label: 'На 15 минут',
+                                                    },
+                                                    {
+                                                        value: 30,
+                                                        label: 'На 30 минут',
+                                                    },
+                                                    {
+                                                        value: 60,
+                                                        label: 'На 1 час',
+                                                    },
+                                                ]}
+                                                onChange={
+                                                    setShortagePostponeMinutes
+                                                }
+                                            />
+                                            <Button
+                                                icon={
+                                                    <ClockCircleOutlined />
+                                                }
+                                                loading={shortageSaving}
+                                                onClick={
+                                                    handlePostponeShortage
+                                                }
+                                            >
+                                                Отложить
+                                            </Button>
+                                        </Space.Compact>
+                                        {detail.shortage_status
+                                            === 'confirmed' ? (
+                                                <Button
+                                                    icon={<SendOutlined />}
+                                                    onClick={
+                                                        openShortageReply
+                                                    }
+                                                    disabled={
+                                                        !detail.sender_email
+                                                    }
+                                                >
+                                                    Ответить с извинениями
+                                                </Button>
+                                            ) : null}
+                                    </Space>
+                                    {detail.shortage_snoozed_until ? (
+                                        <Text type="secondary">
+                                            Отложено до:{' '}
+                                            {fmtDateTime(
+                                                detail
+                                                    .shortage_snoozed_until
+                                            )}
+                                        </Text>
+                                    ) : null}
+                                    {detail.shortage_confirmed_by_user_name ? (
+                                        <Alert
+                                            type={
+                                                detail.shortage_status
+                                                    === 'confirmed'
+                                                    ? 'success'
+                                                    : 'warning'
+                                            }
+                                            showIcon
+                                            message={
+                                                detail.shortage_status
+                                                    === 'confirmed'
+                                                    ? 'Недовоз подтверждён'
+                                                    : 'Недовоз не подтверждён'
+                                            }
+                                            description={
+                                                <>
+                                                    Проверил:{' '}
+                                                    {
+                                                        detail.shortage_confirmed_by_user_name
+                                                    }
+                                                    {detail.shortage_confirmed_at
+                                                        ? ` · ${fmtDateTime(detail.shortage_confirmed_at)}`
+                                                        : ''}
+                                                    {detail.shortage_comment
+                                                        ? ` · ${detail.shortage_comment}`
+                                                        : ''}
+                                                </>
+                                            }
+                                        />
+                                    ) : null}
+                                </Space>
+                            </Card>
+                        ) : null}
 
                         {isFrozaReclamation ? (
                             <Card
@@ -1993,6 +2405,85 @@ const ReclamationsPage = () => {
                                                     }
                                                 />
                                             ),
+                                        },
+                                        {
+                                            title: 'Поставщик',
+                                            key: 'source_provider',
+                                            width: 220,
+                                            render: (_, item) => {
+                                                const checkedItem = (
+                                                    detail.check_result
+                                                        ?.items || []
+                                                ).find(
+                                                    (row) =>
+                                                        row.item_id
+                                                        === item.id
+                                                ) || {};
+                                                const candidates = (
+                                                    checkedItem
+                                                        .supplier_candidates
+                                                        || []
+                                                );
+                                                if (
+                                                    candidates.length > 1
+                                                    || item.source_provider_id
+                                                ) {
+                                                    return (
+                                                        <Select
+                                                            size="small"
+                                                            showSearch
+                                                            optionFilterProp="label"
+                                                            style={{
+                                                                width: 210,
+                                                            }}
+                                                            placeholder="Выберите поставщика"
+                                                            value={
+                                                                item
+                                                                    .source_provider_id
+                                                                || undefined
+                                                            }
+                                                            loading={
+                                                                itemSavingId
+                                                                === item.id
+                                                            }
+                                                            options={
+                                                                candidates.map(
+                                                                    (
+                                                                        candidate
+                                                                    ) => ({
+                                                                        value:
+                                                                            candidate
+                                                                                .provider_id,
+                                                                        label:
+                                                                            candidate
+                                                                                .provider_name
+                                                                            || `ID ${candidate.provider_id}`,
+                                                                    })
+                                                                )
+                                                            }
+                                                            onChange={(
+                                                                value
+                                                            ) =>
+                                                                handleItemProvider(
+                                                                    item,
+                                                                    value
+                                                                )
+                                                            }
+                                                        />
+                                                    );
+                                                }
+                                                return (
+                                                    checkedItem
+                                                        .supplier_name
+                                                    || (
+                                                        <Text
+                                                            type="secondary"
+                                                        >
+                                                            не определён
+                                                        </Text>
+                                                    )
+                                                );
+                                            },
                                         },
                                     ]}
                                 />

@@ -9,6 +9,9 @@ export const getReclamationStats = (params = {}) =>
 export const listReclamations = (params = {}) =>
     api.get('/reclamations', { params });
 
+export const listReclamationAssignees = () =>
+    api.get('/reclamations/assignees');
+
 export const getReclamation = (id) =>
     api.get(`/reclamations/${id}`);
 
@@ -34,6 +37,25 @@ export const updateReclamationItem = (id, itemId, data) =>
 
 export const checkReclamation = (id) =>
     api.post(`/reclamations/${id}/check`);
+
+export const assignShortageReviewer = (id, data) =>
+    api.post(`/reclamations/${id}/shortage/assign`, data);
+
+export const confirmReclamationShortage = (id, data) =>
+    api.post(`/reclamations/${id}/shortage/confirm`, data);
+
+export const postponeReclamationShortage = (id, data) =>
+    api.post(`/reclamations/${id}/shortage/postpone`, data);
+
+export const uploadReclamationShortageEvidence = (id, files) => {
+    const formData = new FormData();
+    files.forEach((file) => {
+        formData.append('files', file.originFileObj || file);
+    });
+    return api.post(`/reclamations/${id}/shortage/evidence`, formData, {
+        timeout: 180000,
+    });
+};
 
 export const refreshReclamationFroza = (id) =>
     api.post(`/reclamations/${id}/froza/refresh`);

@@ -1,23 +1,31 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+    Alert,
     Badge,
     Button,
+    Descriptions,
     Drawer,
     Empty,
     Grid,
+    Input,
     List,
     Modal,
+    Select,
     Space,
     Switch,
+    Table,
     Tag,
     Typography,
+    Upload,
     message,
     notification,
 } from 'antd';
 import {
     BellOutlined,
     CheckOutlined,
+    ClockCircleOutlined,
     NotificationOutlined,
+    UploadOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
@@ -27,6 +35,11 @@ import {
     markAllNotificationsRead,
     markNotificationRead,
 } from '../api/notifications';
+import {
+    confirmReclamationShortage,
+    postponeReclamationShortage,
+    uploadReclamationShortageEvidence,
+} from '../api/reclamations';
 
 const POLL_INTERVAL_MS = 30000;
 const MAX_NOTIFICATIONS = 50;
@@ -52,6 +65,7 @@ const levelLabelMap = {
 
 const WATCHLIST_PRICE_PREFIX = 'Подходящая цена:';
 const PRICELIST_BLOCKED_PREFIX = 'Прайс заблокирован:';
+const SHORTAGE_NOTIFICATION_TYPE = 'reclamation_shortage';
 
 const supportsBrowserNotifications = () => (
     typeof window !== 'undefined' && 'Notification' in window
@@ -140,6 +154,10 @@ const NotificationCenter = () => {
     const [dndEnabled, setDndEnabled] = useState(() => loadBooleanPreference(DND_ENABLED_KEY, false));
     const [importantOnlyEnabled, setImportantOnlyEnabled] = useState(() => loadBooleanPreference(IMPORTANT_ONLY_KEY, false));
     const [watchlistOnlyEnabled, setWatchlistOnlyEnabled] = useState(() => loadBooleanPreference(WATCHLIST_ONLY_KEY, false));
+    const [shortageComment, setShortageComment] = useState('');
+    const [shortageEvidence, setShortageEvidence] = useState([]);
+    const [shortagePostponeMinutes, setShortagePostponeMinutes] = useState(15);
+    const [shortageActionLoading, setShortageActionLoading] = useState(false);
     const initializedRef = useRef(false);
     const seenIdsRef = useRef(new Set());
     const titleFlashIntervalRef = useRef(null);
@@ -518,6 +536,104 @@ const NotificationCenter = () => {
         ) || null,
         [sortedItems]
     );
+    const shortageNotificationItem = useMemo(
+        () => sortedItems.find(
+            (item) => (
+                !item.read_at
+                && item.payload?.notification_type
+                    === SHORTAGE_NOTIFICATION_TYPE
+            )
+        ) || null,
+        [sortedItems]
+    );
+    const shortagePayload = shortageNotificationItem?.payload || {};
+    const shortagePositions = Array.isArray(shortagePayload.items)
+        ? shortagePayload.items
+        : [];
+
+    useEffect(() => {
+        setShortageComment('');
+        setShortageEvidence([]);
+        setShortagePostponeMinutes(15);
+    }, [shortageNotificationItem?.id]);
+
+    const finishShortageNotification = useCallback(async () => {
+        if (!shortageNotificationItem) {
+            return;
+        }
+        const result = await markNotificationRead(
+            shortageNotificationItem.id
+        );
+        updateReadState(shortageNotificationItem.id, result.read_at);
+    }, [shortageNotificationItem, updateReadState]);
+
+    const handleShortageDecision = useCallback(async (confirmed) => {
+        const reclamationId = shortagePayload.reclamation_id;
+        if (!reclamationId || !shortageNotificationItem) {
+            return;
+        }
+        setShortageActionLoading(true);
+        try {
+            if (!confirmed && shortageEvidence.length) {
+                await uploadReclamationShortageEvidence(
+                    reclamationId,
+                    shortageEvidence
+                );
+            }
+            await confirmReclamationShortage(reclamationId, {
+                confirmed,
+                comment: shortageComment.trim() || null,
+            });
+            await finishShortageNotification();
+            message.success(
+                confirmed
+                    ? 'Недовоз подтверждён'
+                    : 'Зафиксировано: недовоз не подтверждён'
+            );
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail
+                || 'Не удалось сохранить решение по недовозу'
+            );
+        } finally {
+            setShortageActionLoading(false);
+        }
+    }, [
+        finishShortageNotification,
+        shortageComment,
+        shortageEvidence,
+        shortageNotificationItem,
+        shortagePayload.reclamation_id,
+    ]);
+
+    const handlePostponeShortage = useCallback(async () => {
+        const reclamationId = shortagePayload.reclamation_id;
+        if (!reclamationId || !shortageNotificationItem) {
+            return;
+        }
+        setShortageActionLoading(true);
+        try {
+            await postponeReclamationShortage(reclamationId, {
+                minutes: shortagePostponeMinutes,
+            });
+            await finishShortageNotification();
+            message.success(
+                `Напоминание появится через ${shortagePostponeMinutes} мин.`
+            );
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail
+                || 'Не удалось отложить проверку'
+            );
+        } finally {
+            setShortageActionLoading(false);
+        }
+    }, [
+        finishShortageNotification,
+        shortageNotificationItem,
+        shortagePayload.reclamation_id,
+        shortagePostponeMinutes,
+    ]);
 
     const acknowledgeBlockedPricelist = useCallback(async (openDetails = false) => {
         if (!blockedPricelistItem) {
@@ -583,6 +699,204 @@ const NotificationCenter = () => {
                     Автоматическая загрузка остановлена до проверки. Действующий
                     прайс и его история не изменены.
                 </Typography.Text>
+            </Modal>
+            <Modal
+                open={Boolean(
+                    shortageNotificationItem && !blockedPricelistItem
+                )}
+                centered
+                width={920}
+                closable={false}
+                maskClosable={false}
+                keyboard={false}
+                title={`Проверка недовоза · рекламация #${
+                    shortagePayload.reclamation_id || ''
+                }`}
+                footer={null}
+            >
+                <Space
+                    direction="vertical"
+                    size="middle"
+                    style={{ width: '100%' }}
+                >
+                    <Alert
+                        type="warning"
+                        showIcon
+                        message="Нужно проверить фактическую комплектацию отгрузки"
+                        description="Подтвердите недовоз, опровергните его или отложите вопрос. Фото и видео при опровержении желательны, но не обязательны."
+                    />
+                    <Descriptions
+                        size="small"
+                        bordered
+                        column={screens.md ? 4 : 1}
+                    >
+                        <Descriptions.Item label="Клиент">
+                            {shortagePayload.customer_name || 'не определён'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Документ">
+                            {shortagePayload.document_number || '—'}
+                            {shortagePayload.document_date
+                                ? ` от ${dayjs(
+                                    shortagePayload.document_date
+                                ).format('DD.MM.YYYY')}`
+                                : ''}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Причина">
+                            {shortagePayload.reason || 'Недовоз'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Позиций">
+                            {shortagePayload.positions_count
+                                || shortagePositions.length}
+                        </Descriptions.Item>
+                    </Descriptions>
+                    <Table
+                        rowKey="item_id"
+                        size="small"
+                        pagination={false}
+                        scroll={{ x: 760 }}
+                        dataSource={shortagePositions}
+                        columns={[
+                            {
+                                title: 'Заказ',
+                                key: 'order',
+                                width: 125,
+                                render: (_, row) => (
+                                    <Space direction="vertical" size={0}>
+                                        <Typography.Text>
+                                            {row.order_date
+                                                ? dayjs(row.order_date).format(
+                                                    'DD.MM.YYYY'
+                                                )
+                                                : 'дата не найдена'}
+                                        </Typography.Text>
+                                        {row.order_number ? (
+                                            <Typography.Text
+                                                type="secondary"
+                                            >
+                                                № {row.order_number}
+                                            </Typography.Text>
+                                        ) : null}
+                                    </Space>
+                                ),
+                            },
+                            {
+                                title: 'Позиция',
+                                key: 'position',
+                                render: (_, row) => (
+                                    <Space direction="vertical" size={0}>
+                                        <Typography.Text strong>
+                                            {[row.brand_name, row.oem_number]
+                                                .filter(Boolean)
+                                                .join(' ') || '—'}
+                                        </Typography.Text>
+                                        <Typography.Text type="secondary">
+                                            {row.autopart_name || '—'}
+                                        </Typography.Text>
+                                    </Space>
+                                ),
+                            },
+                            {
+                                title: 'Кол-во',
+                                dataIndex: 'quantity',
+                                width: 75,
+                                render: (value) => `${value || 0} шт.`,
+                            },
+                            {
+                                title: 'Поставщик',
+                                key: 'supplier',
+                                width: 190,
+                                render: (_, row) => (
+                                    row.supplier_name
+                                    || (row.supplier_names || []).join(', ')
+                                    || (
+                                        <Typography.Text type="secondary">
+                                            не определён
+                                        </Typography.Text>
+                                    )
+                                ),
+                            },
+                        ]}
+                    />
+                    <Input.TextArea
+                        rows={2}
+                        value={shortageComment}
+                        onChange={(event) => setShortageComment(
+                            event.target.value
+                        )}
+                        placeholder="Комментарий проверяющего (необязательно)"
+                    />
+                    <Upload
+                        accept="image/*,video/*"
+                        multiple
+                        maxCount={5}
+                        beforeUpload={() => false}
+                        fileList={shortageEvidence}
+                        onChange={({ fileList }) => setShortageEvidence(
+                            fileList
+                        )}
+                    >
+                        <Button icon={<UploadOutlined />}>
+                            Фото или видео отгрузки
+                        </Button>
+                    </Upload>
+                    <Space wrap style={{ justifyContent: 'space-between' }}>
+                        <Space wrap>
+                            <Button
+                                type="primary"
+                                icon={<CheckOutlined />}
+                                loading={shortageActionLoading}
+                                onClick={() => {
+                                    void handleShortageDecision(true);
+                                }}
+                            >
+                                Подтвердить недовоз
+                            </Button>
+                            <Button
+                                danger
+                                loading={shortageActionLoading}
+                                onClick={() => {
+                                    void handleShortageDecision(false);
+                                }}
+                            >
+                                Не подтвердить
+                            </Button>
+                        </Space>
+                        <Space.Compact>
+                            <Select
+                                value={shortagePostponeMinutes}
+                                style={{ width: 125 }}
+                                options={[
+                                    { value: 15, label: 'На 15 минут' },
+                                    { value: 30, label: 'На 30 минут' },
+                                    { value: 60, label: 'На 1 час' },
+                                ]}
+                                onChange={setShortagePostponeMinutes}
+                            />
+                            <Button
+                                icon={<ClockCircleOutlined />}
+                                loading={shortageActionLoading}
+                                onClick={() => {
+                                    void handlePostponeShortage();
+                                }}
+                            >
+                                Отложить
+                            </Button>
+                        </Space.Compact>
+                    </Space>
+                    <Button
+                        type="link"
+                        style={{ alignSelf: 'flex-start', padding: 0 }}
+                        onClick={() => {
+                            if (shortageNotificationItem) {
+                                void openNotificationItem(
+                                    shortageNotificationItem
+                                );
+                            }
+                        }}
+                    >
+                        Открыть полную рекламацию
+                    </Button>
+                </Space>
             </Modal>
             <div className="notification-center-trigger">
                 <Badge count={unreadCount} size="small" overflowCount={99}>
