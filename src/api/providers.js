@@ -251,6 +251,42 @@ export const downloadProviderPricelist = async (providerId, configId) => {
     });
 };
 
+export const getProviderPricelistReviews = async (providerId) => {
+    return api.get(`/providers/${providerId}/pricelist-reviews`);
+};
+
+export const downloadProviderPricelistReview = async (
+    providerId,
+    reviewId
+) => {
+    return api.get(
+        `/providers/${providerId}/pricelist-reviews/${reviewId}/download`,
+        { responseType: 'blob' }
+    );
+};
+
+export const approveProviderPricelistReview = async (
+    providerId,
+    reviewId,
+    reason = null
+) => {
+    return api.post(
+        `/providers/${providerId}/pricelist-reviews/${reviewId}/approve`,
+        { reason }
+    );
+};
+
+export const rejectProviderPricelistReview = async (
+    providerId,
+    reviewId,
+    reason
+) => {
+    return api.post(
+        `/providers/${providerId}/pricelist-reviews/${reviewId}/reject`,
+        { reason }
+    );
+};
+
 export const getProviderConfigOptions = async () => {
     return api.get('/provider-configs/');
 };

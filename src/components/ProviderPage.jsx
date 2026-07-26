@@ -1,6 +1,10 @@
 // src/components/ProviderPage.jsx
-import React, { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import React, { useEffect, useRef, useState } from "react";
+import {
+    useNavigate,
+    useParams,
+    useSearchParams,
+} from "react-router-dom";
 import {
     Card,
     Form,
@@ -32,6 +36,9 @@ import {
     SwapOutlined,
     UploadOutlined,
     CloudDownloadOutlined,
+    DownloadOutlined,
+    CheckCircleOutlined,
+    CloseCircleOutlined,
 } from "@ant-design/icons";
 
 import {
@@ -62,6 +69,10 @@ import {
     getSupplierResponseMessages,
     retrySupplierResponseImportErrors,
     retrySupplierResponseMessage,
+    getProviderPricelistReviews,
+    downloadProviderPricelistReview,
+    approveProviderPricelistReview,
+    rejectProviderPricelistReview,
 } from "../api/providers";
 import { updateCustomerPricelistSource } from "../api/customers";
 import { getBrands } from "../api/brands";
@@ -110,6 +121,8 @@ const ProviderPage = () => {
     const { user } = useAuth();
     const { providerId: providerIdParam } = useParams();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const pricelistReviewsCardRef = useRef(null);
 
     const isNew = !providerIdParam || providerIdParam.toLowerCase() === "create";
     const providerId = !isNew ? Number(providerIdParam) : null;
@@ -124,6 +137,12 @@ const ProviderPage = () => {
     const [priceInEmailAccounts, setPriceInEmailAccounts] = useState([]);
     const [responseEmailAccounts, setResponseEmailAccounts] = useState([]);
     const [analyticsRefreshKey, setAnalyticsRefreshKey] = useState(0);
+    const [pricelistReviews, setPricelistReviews] = useState([]);
+    const [pricelistReviewsLoading, setPricelistReviewsLoading] = useState(false);
+    const [pricelistReviewActionId, setPricelistReviewActionId] = useState(null);
+    const [expandedPricelistReviewIds, setExpandedPricelistReviewIds] = useState([]);
+    const [rejectReview, setRejectReview] = useState(null);
+    const [rejectReason, setRejectReason] = useState("");
 
     const [configModalVisible, setConfigModalVisible] = useState(false);
     const [editingConfig, setEditingConfig] = useState(null);
@@ -181,6 +200,26 @@ const ProviderPage = () => {
         setProviderData(data);
         refreshAnalytics();
         return data;
+    };
+
+    const loadPricelistReviews = async () => {
+        if (!providerId || user?.role !== 'admin') {
+            setPricelistReviews([]);
+            return;
+        }
+        setPricelistReviewsLoading(true);
+        try {
+            const { data } = await getProviderPricelistReviews(providerId);
+            setPricelistReviews(data || []);
+        } catch (err) {
+            setPricelistReviews([]);
+            message.error(
+                err?.response?.data?.detail
+                || "Не удалось загрузить очередь проверки прайсов"
+            );
+        } finally {
+            setPricelistReviewsLoading(false);
+        }
     };
 
     const dayOptions = [
@@ -395,6 +434,39 @@ const ProviderPage = () => {
             }
         })();
     }, [providerId, isNew]);
+
+    useEffect(() => {
+        void loadPricelistReviews();
+        // Загрузка привязана к открытому поставщику и роли пользователя.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [providerId, isNew, user?.role]);
+
+    useEffect(() => {
+        const requestedReviewId = Number(
+            searchParams.get('pricelist_review')
+        );
+        if (
+            !requestedReviewId
+            || pricelistReviewsLoading
+            || !pricelistReviews.some(
+                (review) => review.id === requestedReviewId
+            )
+        ) {
+            return;
+        }
+        setExpandedPricelistReviewIds((current) => (
+            current.includes(requestedReviewId)
+                ? current
+                : [...current, requestedReviewId]
+        ));
+        const scrollTimer = window.setTimeout(() => {
+            pricelistReviewsCardRef.current?.scrollIntoView({
+                behavior: 'smooth',
+                block: 'start',
+            });
+        }, 100);
+        return () => window.clearTimeout(scrollTimer);
+    }, [pricelistReviews, pricelistReviewsLoading, searchParams]);
 
     useEffect(() => {
         (async () => {
@@ -1260,6 +1332,86 @@ const ProviderPage = () => {
         }
     };
 
+    const handleDownloadPricelistReview = async (review) => {
+        setPricelistReviewActionId(review.id);
+        try {
+            const { data } = await downloadProviderPricelistReview(
+                providerId,
+                review.id
+            );
+            const objectUrl = URL.createObjectURL(data);
+            const anchor = document.createElement('a');
+            anchor.href = objectUrl;
+            anchor.download = review.source_filename || 'pricelist';
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            URL.revokeObjectURL(objectUrl);
+            message.success('Исходный файл скачан без публикации');
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail
+                || 'Не удалось скачать проверяемый прайс'
+            );
+        } finally {
+            setPricelistReviewActionId(null);
+        }
+    };
+
+    const handleApprovePricelistReview = async (review) => {
+        setPricelistReviewActionId(review.id);
+        try {
+            await approveProviderPricelistReview(providerId, review.id);
+            message.success(
+                'Прайс принят, опубликован и добавлен в историю решений'
+            );
+            await Promise.all([
+                loadPricelistReviews(),
+                refreshProviderData(),
+            ]);
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail
+                || 'Не удалось принять и опубликовать прайс'
+            );
+            await loadPricelistReviews();
+        } finally {
+            setPricelistReviewActionId(null);
+        }
+    };
+
+    const openRejectPricelistReview = (review) => {
+        setRejectReview(review);
+        setRejectReason('');
+    };
+
+    const handleRejectPricelistReview = async () => {
+        const reason = rejectReason.trim();
+        if (!rejectReview || reason.length < 3) {
+            message.warning('Укажите причину отклонения');
+            return;
+        }
+        setPricelistReviewActionId(rejectReview.id);
+        try {
+            await rejectProviderPricelistReview(
+                providerId,
+                rejectReview.id,
+                reason
+            );
+            message.success('Прайс отклонён, действующий прайс не изменён');
+            setRejectReview(null);
+            setRejectReason('');
+            await loadPricelistReviews();
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail
+                || 'Не удалось отклонить прайс'
+            );
+        } finally {
+            setPricelistReviewActionId(null);
+        }
+    };
+
     // ===== Upload pricelist from local file =====
     const openUploadModal = (configId) => {
         const config = providerData.pricelist_configs.find(c => c.id === configId);
@@ -1547,6 +1699,232 @@ const ProviderPage = () => {
             setSourceUsageSaving(false);
         }
     };
+
+    const pricelistReviewStatusMeta = {
+        pending: { label: 'Ожидает решения', color: 'orange' },
+        processing: { label: 'Публикуется', color: 'processing' },
+        approved: { label: 'Принят', color: 'green' },
+        rejected: { label: 'Отклонён', color: 'red' },
+    };
+
+    const formatReviewMoney = (value) => {
+        const number = Number(value);
+        if (!Number.isFinite(number)) return '—';
+        return `${number.toLocaleString('ru-RU', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        })} руб.`;
+    };
+
+    const pricelistReviewExampleColumns = [
+        {
+            title: 'Бренд',
+            dataIndex: 'brand',
+            width: 130,
+        },
+        {
+            title: 'Артикул',
+            dataIndex: 'oem_number',
+            width: 160,
+        },
+        {
+            title: 'Наименование',
+            dataIndex: 'name',
+            ellipsis: true,
+            render: (value) => value || '—',
+        },
+        {
+            title: 'Остаток',
+            dataIndex: 'quantity',
+            width: 90,
+            align: 'right',
+        },
+        {
+            title: 'Было',
+            dataIndex: 'previous_price',
+            width: 125,
+            align: 'right',
+            render: formatReviewMoney,
+        },
+        {
+            title: 'Стало',
+            dataIndex: 'price',
+            width: 125,
+            align: 'right',
+            render: formatReviewMoney,
+        },
+        {
+            title: 'Изменение',
+            dataIndex: 'change_type',
+            width: 120,
+            render: (value, row) => {
+                if (value === 'new') return <Tag color="blue">Новая</Tag>;
+                if (value === 'price_changed') {
+                    const percent = Number(row.price_change_percent);
+                    return (
+                        <Tag color={percent > 0 ? 'red' : 'green'}>
+                            {Number.isFinite(percent)
+                                ? `${percent > 0 ? '+' : ''}${percent}%`
+                                : 'Цена'}
+                        </Tag>
+                    );
+                }
+                return <Tag>Без изменения</Tag>;
+            },
+        },
+    ];
+
+    const pricelistReviewColumns = [
+        {
+            title: 'Получен',
+            dataIndex: 'created_at',
+            width: 145,
+            render: formatMoscow,
+        },
+        {
+            title: 'Конфигурация / файл',
+            key: 'source',
+            render: (_, row) => (
+                <Space direction="vertical" size={0}>
+                    <Text strong>{row.config_name}</Text>
+                    <Text type="secondary">{row.source_filename}</Text>
+                </Space>
+            ),
+        },
+        {
+            title: 'Статус',
+            dataIndex: 'status',
+            width: 135,
+            render: (value) => {
+                const meta = pricelistReviewStatusMeta[value] || {
+                    label: value,
+                    color: 'default',
+                };
+                return <Tag color={meta.color}>{meta.label}</Tag>;
+            },
+        },
+        {
+            title: 'Объём',
+            key: 'volume',
+            width: 185,
+            render: (_, row) => (
+                <Space direction="vertical" size={0}>
+                    <Text>
+                        Было: {Number(row.metrics?.previous_positions || 0)
+                            .toLocaleString('ru-RU')}
+                    </Text>
+                    <Text>
+                        Стало: {Number(row.metrics?.candidate_positions || 0)
+                            .toLocaleString('ru-RU')}
+                    </Text>
+                    <Text type="secondary">
+                        {Number(row.metrics?.positions_change_percent || 0) > 0
+                            ? '+'
+                            : ''}
+                        {row.metrics?.positions_change_percent ?? 0}%
+                    </Text>
+                </Space>
+            ),
+        },
+        {
+            title: 'Решение',
+            key: 'decision',
+            render: (_, row) => (
+                row.decided_at ? (
+                    <Space direction="vertical" size={0}>
+                        <Text>{row.decided_by_name || 'Пользователь удалён'}</Text>
+                        <Text type="secondary">{formatMoscow(row.decided_at)}</Text>
+                        <Text>{row.decision_reason || '—'}</Text>
+                        {row.published_pricelist_id ? (
+                            <Text type="secondary">
+                                Прайс #{row.published_pricelist_id}
+                            </Text>
+                        ) : null}
+                    </Space>
+                ) : (
+                    <Text type="secondary">Решение не принято</Text>
+                )
+            ),
+        },
+        {
+            title: 'Действия',
+            key: 'actions',
+            width: 340,
+            render: (_, row) => (
+                <Space wrap>
+                    <Button
+                        size="small"
+                        icon={<DownloadOutlined />}
+                        loading={pricelistReviewActionId === row.id}
+                        onClick={() => handleDownloadPricelistReview(row)}
+                    >
+                        Скачать и проверить
+                    </Button>
+                    {row.status === 'pending' ? (
+                        <>
+                            <Popconfirm
+                                title="Принять и опубликовать этот файл?"
+                                description="Именно сохранённый файл станет новым действующим прайсом."
+                                okText="Принять"
+                                cancelText="Отмена"
+                                onConfirm={() => handleApprovePricelistReview(row)}
+                            >
+                                <Button
+                                    size="small"
+                                    type="primary"
+                                    icon={<CheckCircleOutlined />}
+                                    loading={pricelistReviewActionId === row.id}
+                                >
+                                    Принять и опубликовать
+                                </Button>
+                            </Popconfirm>
+                            <Button
+                                size="small"
+                                danger
+                                icon={<CloseCircleOutlined />}
+                                onClick={() => openRejectPricelistReview(row)}
+                            >
+                                Отклонить
+                            </Button>
+                        </>
+                    ) : null}
+                </Space>
+            ),
+        },
+    ];
+
+    const renderPricelistReviewDetails = (row) => (
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <Alert
+                type={row.status === 'pending' ? 'warning' : 'info'}
+                showIcon
+                message="Почему прайс остановлен"
+                description={(row.reasons || []).map((reason) => (
+                    <div key={reason}>• {reason}</div>
+                ))}
+            />
+            {row.processing_error ? (
+                <Alert
+                    type="error"
+                    showIcon
+                    message="Последняя попытка публикации завершилась ошибкой"
+                    description={row.processing_error}
+                />
+            ) : null}
+            <Text strong>
+                Примеры позиций для проверки
+            </Text>
+            <Table
+                rowKey={(item) => `${item.brand}-${item.oem_number}`}
+                size="small"
+                pagination={false}
+                columns={pricelistReviewExampleColumns}
+                dataSource={row.examples || []}
+                locale={{ emptyText: 'Примеры не сформированы' }}
+                scroll={{ x: 950 }}
+            />
+        </Space>
+    );
 
     // ===== Table columns for configs =====
     const configColumns = [
@@ -2368,6 +2746,74 @@ const ProviderPage = () => {
                             scroll={{ x: "max-content" }}
                         />
                     </Card>
+
+                    {user?.role === 'admin' ? (
+                        <div ref={pricelistReviewsCardRef}>
+                            <Card
+                                title={(
+                                    <Space>
+                                        <span>Проверка обновлений прайса</span>
+                                        {pricelistReviews.some(
+                                            (row) => row.status === 'pending'
+                                        ) ? (
+                                                <Tag color="orange">
+                                                    Ожидают решения:{' '}
+                                                    {pricelistReviews.filter(
+                                                        (row) => (
+                                                            row.status
+                                                            === 'pending'
+                                                        )
+                                                    ).length}
+                                                </Tag>
+                                            ) : null}
+                                    </Space>
+                                )}
+                                style={{ marginBottom: 20 }}
+                                extra={(
+                                    <Button
+                                        size="small"
+                                        onClick={loadPricelistReviews}
+                                        loading={pricelistReviewsLoading}
+                                    >
+                                        Обновить
+                                    </Button>
+                                )}
+                            >
+                                <Alert
+                                    type="info"
+                                    showIcon
+                                    style={{ marginBottom: 16 }}
+                                    message="Скачать и проверить не изменяет действующий прайс"
+                                    description="Файл скачивается в исходном виде. После сверки выберите «Принять и опубликовать» либо «Отклонить» и укажите причину."
+                                />
+                                <Table
+                                    rowKey="id"
+                                    loading={pricelistReviewsLoading}
+                                    columns={pricelistReviewColumns}
+                                    dataSource={pricelistReviews}
+                                    pagination={{ pageSize: 10 }}
+                                    expandable={{
+                                        expandedRowKeys:
+                                            expandedPricelistReviewIds,
+                                        onExpandedRowsChange:
+                                            setExpandedPricelistReviewIds,
+                                        expandedRowRender:
+                                            renderPricelistReviewDetails,
+                                        rowExpandable: (row) => (
+                                            (row.reasons || []).length > 0
+                                            || (row.examples || []).length > 0
+                                        ),
+                                    }}
+                                    locale={{
+                                        emptyText: (
+                                            'Заблокированных обновлений пока нет'
+                                        ),
+                                    }}
+                                    scroll={{ x: 1180 }}
+                                />
+                            </Card>
+                        </div>
+                    ) : null}
 
                     {/* Конфигурации прайс-листов */}
                     <Card
@@ -3967,6 +4413,47 @@ const ProviderPage = () => {
                         </Space>
                     </Form.Item>
                 </Form>
+            </Modal>
+
+            <Modal
+                title="Отклонить обновление прайса"
+                open={Boolean(rejectReview)}
+                okText="Отклонить"
+                okButtonProps={{
+                    danger: true,
+                    disabled: rejectReason.trim().length < 3,
+                    loading: (
+                        pricelistReviewActionId === rejectReview?.id
+                    ),
+                }}
+                cancelText="Отмена"
+                onOk={handleRejectPricelistReview}
+                onCancel={() => {
+                    setRejectReview(null);
+                    setRejectReason('');
+                }}
+                destroyOnClose
+            >
+                <Alert
+                    type="warning"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                    message="Действующий прайс останется без изменений"
+                    description={
+                        rejectReview?.source_filename
+                            ? `Файл: ${rejectReview.source_filename}`
+                            : null
+                    }
+                />
+                <Text strong>Причина отклонения</Text>
+                <Input.TextArea
+                    value={rejectReason}
+                    onChange={(event) => setRejectReason(event.target.value)}
+                    rows={4}
+                    maxLength={4000}
+                    showCount
+                    placeholder="Например: поставщик прислал объединённый файл вместо прайса Cosmo CS"
+                />
             </Modal>
 
             {/* Модалка аббревиатуры */}
