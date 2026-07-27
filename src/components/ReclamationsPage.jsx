@@ -139,6 +139,43 @@ const ARMTEK_STATE_META = {
     unknown: { label: 'Неизвестное состояние', color: 'default' },
 };
 
+const EVENT_LABELS = {
+    created_from_email: 'Создана из письма',
+    created_manually: 'Создана вручную',
+    thread_message_received: 'Получен новый ответ клиента',
+    customer_assigned: 'Привязан клиент',
+    shortage_reviewer_assigned: 'Назначена проверка недовоза',
+    shortage_confirmed: 'Проверен недовоз',
+    shortage_postponed: 'Проверка отложена',
+    shortage_evidence_uploaded: 'Добавлены фото/видео',
+    customer_reply_queued: 'Ответ клиенту поставлен в очередь',
+    decision_and_reply_queued: 'Решение применено, ответ в очереди',
+    supplier_request_queued: 'Запрос поставщику поставлен в очередь',
+    email_sent: 'Письмо отправлено',
+    email_send_failed: 'Ошибка отправки письма',
+    check_run: 'Выполнена проверка',
+    froza_refreshed: 'Обновлена заявка Froza',
+    froza_decision_sent: 'Решение отправлено во Froza',
+    armtek_refreshed: 'Обновлена заявка Armtek',
+    armtek_decision_sent: 'Решение отправлено в Armtek',
+    reclamation_updated: 'Изменена рекламация',
+    item_updated: 'Изменена позиция',
+};
+
+const formatEventDetails = (details) => {
+    if (!details || !Object.keys(details).length) {
+        return '—';
+    }
+    return Object.entries(details)
+        .map(([key, value]) => {
+            const rendered = typeof value === 'object'
+                ? JSON.stringify(value)
+                : String(value ?? '—');
+            return `${key}: ${rendered}`;
+        })
+        .join(' · ');
+};
+
 const isFrozaQuestionLink = (value) => {
     try {
         const url = new URL(value);
@@ -1219,6 +1256,16 @@ const ReclamationsPage = () => {
     const latestSupplierRequest = emails.find(
         (row) => row.source_type === 'reclamation_supplier'
     ) || null;
+    const incomingThreadMessages = Array.isArray(
+        detail?.extracted_data?.thread_messages,
+    )
+        ? detail.extracted_data.thread_messages
+        : [];
+    const customerCandidates = Array.isArray(
+        detail?.extracted_data?.customer_candidates,
+    )
+        ? detail.extracted_data.customer_candidates
+        : [];
     const supplierRequestQueued = ['pending', 'sent'].includes(
         latestSupplierRequest?.status,
     );
@@ -1424,6 +1471,52 @@ const ReclamationsPage = () => {
                                 description="Адрес отправителя не привязан ни к одному клиенту. Выберите клиента ниже."
                             />
                         ) : null}
+
+                        <Card
+                            size="small"
+                            title="История действий"
+                        >
+                            <Table
+                                size="small"
+                                rowKey="id"
+                                pagination={false}
+                                locale={{
+                                    emptyText: 'Действия ещё не зафиксированы',
+                                }}
+                                dataSource={detail.events || []}
+                                columns={[
+                                    {
+                                        title: 'Когда',
+                                        dataIndex: 'created_at',
+                                        width: 145,
+                                        render: (value) => (
+                                            value
+                                                ? dayjs(value).format('DD.MM.YYYY HH:mm')
+                                                : '—'
+                                        ),
+                                    },
+                                    {
+                                        title: 'Действие',
+                                        dataIndex: 'event_type',
+                                        width: 220,
+                                        render: (value) => (
+                                            EVENT_LABELS[value] || value
+                                        ),
+                                    },
+                                    {
+                                        title: 'Кто',
+                                        dataIndex: 'actor_user_name',
+                                        width: 170,
+                                        render: (value) => value || 'Система',
+                                    },
+                                    {
+                                        title: 'Детали',
+                                        dataIndex: 'details',
+                                        render: formatEventDetails,
+                                    },
+                                ]}
+                            />
+                        </Card>
 
                         <Card
                             size="small"
@@ -2436,6 +2529,27 @@ const ReclamationsPage = () => {
 
                         <Card size="small" title="Привязка клиента">
                             <Space direction="vertical" style={{ width: '100%' }}>
+                                {customerCandidates.length > 1 ? (
+                                    <Alert
+                                        showIcon
+                                        type={
+                                            detail.customer_id
+                                                ? 'success'
+                                                : 'warning'
+                                        }
+                                        message={
+                                            detail.customer_id
+                                                ? 'Юридическое лицо определено по заказу'
+                                                : 'У адреса несколько юридических лиц'
+                                        }
+                                        description={customerCandidates
+                                            .map(
+                                                (candidate) =>
+                                                    `${candidate.name} (ID: ${candidate.id})`,
+                                            )
+                                            .join(' · ')}
+                                    />
+                                ) : null}
                                 {detail.customer_id ? (
                                     <Text>
                                         Сейчас привязан:{' '}
@@ -2799,6 +2913,59 @@ const ReclamationsPage = () => {
                                             : latestCustomerReply.last_error
                                                 || 'Оставьте relay.py запущенным и нажмите «Обновить статус».'
                                     }
+                                />
+                            ) : null}
+                            {incomingThreadMessages.length ? (
+                                <Table
+                                    rowKey={(row, index) =>
+                                        row.message_id
+                                        || `${row.received_at || 'incoming'}-${index}`
+                                    }
+                                    size="small"
+                                    pagination={false}
+                                    style={{ marginBottom: 12 }}
+                                    dataSource={incomingThreadMessages}
+                                    columns={[
+                                        {
+                                            title: 'Входящие ответы',
+                                            key: 'incoming',
+                                            render: (_, row) => (
+                                                <Space
+                                                    direction="vertical"
+                                                    size={0}
+                                                >
+                                                    <Text strong>
+                                                        {row.from_email
+                                                            || 'Отправитель не определён'}
+                                                    </Text>
+                                                    <Text type="secondary">
+                                                        {row.subject || 'Без темы'}
+                                                    </Text>
+                                                    {row.body ? (
+                                                        <Paragraph
+                                                            ellipsis={{
+                                                                rows: 3,
+                                                                expandable: true,
+                                                                symbol: 'ещё',
+                                                            }}
+                                                            style={{
+                                                                whiteSpace: 'pre-wrap',
+                                                                marginBottom: 0,
+                                                            }}
+                                                        >
+                                                            {row.body}
+                                                        </Paragraph>
+                                                    ) : null}
+                                                </Space>
+                                            ),
+                                        },
+                                        {
+                                            title: 'Получено',
+                                            dataIndex: 'received_at',
+                                            width: 140,
+                                            render: fmtDateTime,
+                                        },
+                                    ]}
                                 />
                             ) : null}
                             <Table

@@ -250,9 +250,11 @@ const Sidebar = () => {
                 <Menu.Item key="warehouse-returns" icon={<RollbackOutlined />}>
                     <Link to="/warehouse/returns">Возвраты</Link>
                 </Menu.Item>
-                <Menu.Item key="reclamations" icon={<ExceptionOutlined />}>
-                    <Link to="/reclamations">Рекламации</Link>
-                </Menu.Item>
+                {['admin', 'reclamation'].includes(user.role) && (
+                    <Menu.Item key="reclamations" icon={<ExceptionOutlined />}>
+                        <Link to="/reclamations">Рекламации</Link>
+                    </Menu.Item>
+                )}
                 <Menu.Item key="warehouse-lots" icon={<UnorderedListOutlined />}>
                     <Link to="/warehouse/lots">Партии / ГТД</Link>
                 </Menu.Item>

@@ -100,6 +100,62 @@ const formatMemoryMb = (value) => (
     Number.isFinite(Number(value)) ? `${Number(value).toFixed(0)} MB` : '—'
 );
 
+const getWatchPriceState = (item) => {
+    const prices = [
+        item.last_seen_provider_price,
+        item.last_seen_site_price,
+    ]
+        .map(Number)
+        .filter((value) => Number.isFinite(value) && value > 0);
+    const bestPrice = prices.length ? Math.min(...prices) : null;
+    const maxPrice = Number(item.max_price);
+    const hasLimit = Number.isFinite(maxPrice) && maxPrice > 0;
+    const limitReached = bestPrice != null
+        && hasLimit
+        && bestPrice <= maxPrice;
+
+    return {
+        bestPrice,
+        hasLimit,
+        limitReached,
+        achievementRatio: (
+            bestPrice != null && hasLimit ? maxPrice / bestPrice : null
+        ),
+    };
+};
+
+const sortWatchItems = (items) => [...items].sort((left, right) => {
+    const leftState = getWatchPriceState(left);
+    const rightState = getWatchPriceState(right);
+
+    if (leftState.limitReached !== rightState.limitReached) {
+        return leftState.limitReached ? -1 : 1;
+    }
+    if (
+        leftState.achievementRatio != null
+        && rightState.achievementRatio != null
+        && leftState.achievementRatio !== rightState.achievementRatio
+    ) {
+        return rightState.achievementRatio - leftState.achievementRatio;
+    }
+    if (
+        (leftState.achievementRatio != null)
+        !== (rightState.achievementRatio != null)
+    ) {
+        return leftState.achievementRatio != null ? -1 : 1;
+    }
+    if (
+        (leftState.bestPrice != null)
+        !== (rightState.bestPrice != null)
+    ) {
+        return leftState.bestPrice != null ? -1 : 1;
+    }
+    return `${left.brand || ''} ${left.oem || ''}`.localeCompare(
+        `${right.brand || ''} ${right.oem || ''}`,
+        'ru',
+    );
+});
+
 const joinProviderLabel = (item) => {
     const provider = item.provider_name || 'Без поставщика';
     const config = item.provider_config_name || `#${item.provider_config_id}`;
@@ -279,6 +335,10 @@ const Dashboard = () => {
     const [inventoryControl, setInventoryControl] = useState(null);
     const [supplierReliability, setSupplierReliability] = useState([]);
     const [watchItems, setWatchItems] = useState([]);
+    const sortedWatchItems = useMemo(
+        () => sortWatchItems(watchItems),
+        [watchItems],
+    );
     const [watchOffers, setWatchOffers] = useState({});
     const [watchOrderQty, setWatchOrderQty] = useState({});
     const [customers, setCustomers] = useState([]);
@@ -894,16 +954,14 @@ const Dashboard = () => {
             key: 'decision',
             width: '22%',
             render: (_, row) => {
-                const prices = [row.last_seen_provider_price, row.last_seen_site_price]
-                    .map(Number)
-                    .filter((value) => Number.isFinite(value) && value > 0);
-                const bestPrice = prices.length ? Math.min(...prices) : null;
-                const limitReached = bestPrice != null
-                    && row.max_price != null
-                    && bestPrice <= Number(row.max_price);
+                const {
+                    bestPrice,
+                    hasLimit,
+                    limitReached,
+                } = getWatchPriceState(row);
                 const aboveLimit = bestPrice != null
-                    && row.max_price != null
-                    && bestPrice > Number(row.max_price);
+                    && hasLimit
+                    && !limitReached;
                 return (
                     <Space direction="vertical" size={8} className="dashboard-watch-decision">
                         {limitReached
@@ -1472,12 +1530,14 @@ const Dashboard = () => {
                         rowKey="id"
                         loading={loading}
                         columns={watchColumns}
-                        dataSource={watchItems}
+                        dataSource={sortedWatchItems}
                         pagination={false}
                         tableLayout="fixed"
                         className="dashboard-watch-table"
                         expandable={{
-                            expandedRowKeys: watchItems.map((item) => item.id),
+                            expandedRowKeys: sortedWatchItems.map(
+                                (item) => item.id,
+                            ),
                             showExpandColumn: false,
                             expandedRowRender: (watchItem) => (
                                 (watchOffers[watchItem.id] || []).length ? (

@@ -4,6 +4,7 @@ import api from '../api';
 
 const ROLE_OPTIONS = [
     { value: 'manager', label: 'manager' },
+    { value: 'reclamation', label: 'ответственный по рекламациям' },
     { value: 'admin', label: 'admin' },
 ];
 

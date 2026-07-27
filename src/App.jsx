@@ -122,6 +122,23 @@ const RequireAdmin = ({ children }) => {
     return children;
 };
 
+const RequireReclamation = ({ children }) => {
+    const { user, loading, authUnavailable } = useAuth();
+    if (loading) {
+        return <Spin size="large" style={{ display: 'block', margin: '120px auto' }} />;
+    }
+    if (authUnavailable) {
+        return <AuthUnavailableState />;
+    }
+    if (!user) {
+        return <Navigate to="/login" replace />;
+    }
+    if (!['admin', 'reclamation'].includes(user.role)) {
+        return <Navigate to="/" replace />;
+    }
+    return children;
+};
+
 const AppRoutes = () => (
     <Routes>
         <Route path="/login" element={<LoginPage />} />
@@ -186,7 +203,7 @@ const AppRoutes = () => (
         <Route path="/warehouse/profit-report" element={<RequireAuth><ShipmentProfitReportPage /></RequireAuth>} />
         <Route path="/warehouse/shipments/:id" element={<RequireAuth><ShipmentDetailPage /></RequireAuth>} />
         <Route path="/warehouse/returns" element={<RequireAuth><ReturnsPage /></RequireAuth>} />
-        <Route path="/reclamations" element={<RequireAuth><ReclamationsPage /></RequireAuth>} />
+        <Route path="/reclamations" element={<RequireReclamation><ReclamationsPage /></RequireReclamation>} />
         <Route
             path="/warehouse/returns/customer/:id"
             element={<RequireAuth><ReturnDetailPage kind="customer" /></RequireAuth>}
