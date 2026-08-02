@@ -278,6 +278,14 @@ const renderSignedMoney = (value) => {
     );
 };
 
+// Statistic печатает null как строку «null», поэтому показатели, которые
+// невозможно рассчитать, выводим прочерком без суффикса.
+const NullableStatistic = ({ value, precision, suffix, ...rest }) => (
+    value == null || !Number.isFinite(Number(value))
+        ? <Statistic {...rest} value="—" />
+        : <Statistic {...rest} value={value} precision={precision} suffix={suffix} />
+);
+
 // Сравнение показателя с предыдущим окном той же длины.
 // mode='percent' — относительное изменение суммы, mode='pp' — разница
 // маржи в процентных пунктах. Рост — зелёный, падение — красный.
@@ -287,8 +295,10 @@ const MonthDelta = ({
     mode = 'percent',
     label = 'к пред. 30 дням',
 }) => {
-    const currentValue = Number(current);
-    const previousValue = Number(previous);
+    // Number(null) === 0, поэтому пустые значения отсеиваем до приведения:
+    // иначе «нет данных» превращается в «без изменений».
+    const currentValue = current == null ? NaN : Number(current);
+    const previousValue = previous == null ? NaN : Number(previous);
     if (!Number.isFinite(currentValue) || !Number.isFinite(previousValue)
         || (mode === 'percent' && previousValue === 0)) {
         return (
@@ -544,7 +554,14 @@ const Dashboard = () => {
             orderTotal: 0,
             orderedQuantity: 0,
             unpricedOrderQuantity: 0,
+            addressableTotal: 0,
+            addressableQuantity: 0,
+            declinedTotal: 0,
+            declinedQuantity: 0,
+            noOfferTotal: 0,
+            noOfferQuantity: 0,
             revenue: 0,
+            costedRevenue: 0,
             cost: 0,
             grossProfit: 0,
             quantity: 0,
@@ -564,6 +581,9 @@ const Dashboard = () => {
                 row.unpriced_order_quantity || 0
             );
             const revenue = Number(row.revenue_total || 0);
+            // Выручка по строкам с известной себестоимостью — только она
+            // сопоставима с cost_total, поэтому маржа считается от неё.
+            const costedRevenue = Number(row.costed_revenue_total || 0);
             const cost = Number(row.cost_total || 0);
             const quantity = Number(row.quantity || 0);
             const costedQuantity = Number(row.costed_quantity || 0);
@@ -571,12 +591,19 @@ const Dashboard = () => {
             totals.orderTotal += orderTotal;
             totals.orderedQuantity += orderedQuantity;
             totals.unpricedOrderQuantity += unpricedOrderQuantity;
+            totals.addressableTotal += Number(row.addressable_total || 0);
+            totals.addressableQuantity += Number(row.addressable_quantity || 0);
+            totals.declinedTotal += Number(row.declined_total || 0);
+            totals.declinedQuantity += Number(row.declined_quantity || 0);
+            totals.noOfferTotal += Number(row.no_offer_total || 0);
+            totals.noOfferQuantity += Number(row.no_offer_quantity || 0);
             totals.revenue += revenue;
+            totals.costedRevenue += costedRevenue;
             totals.cost += cost;
             totals.quantity += quantity;
             totals.costedQuantity += costedQuantity;
             totals.uncostedQuantity += uncostedQuantity;
-            if (uncostedQuantity === 0) totals.grossProfit += revenue - cost;
+            totals.grossProfit += costedRevenue - cost;
 
             const date = String(row.period_start || '').slice(0, 10) || 'Без даты';
             const daily = dailyMap.get(date) || {
@@ -587,6 +614,7 @@ const Dashboard = () => {
                 cost: 0,
                 gross_profit: 0,
                 quantity: 0,
+                costed_quantity: 0,
                 uncosted_quantity: 0,
             };
             daily.order_total += orderTotal;
@@ -594,8 +622,9 @@ const Dashboard = () => {
             daily.revenue += revenue;
             daily.cost += cost;
             daily.quantity += quantity;
+            daily.costed_quantity += costedQuantity;
             daily.uncosted_quantity += uncostedQuantity;
-            if (uncostedQuantity === 0) daily.gross_profit += revenue - cost;
+            daily.gross_profit += costedRevenue - cost;
             dailyMap.set(date, daily);
 
             const customerKey = row.customer_id ?? row.customer_name ?? 'unknown';
@@ -604,38 +633,63 @@ const Dashboard = () => {
                 customer_name: row.customer_name || 'Без клиента',
                 order_total: 0,
                 revenue: 0,
+                costed_revenue: 0,
                 cost: 0,
                 quantity: 0,
+                costed_quantity: 0,
                 uncosted_quantity: 0,
             };
             customer.order_total += orderTotal;
             customer.revenue += revenue;
+            customer.costed_revenue += costedRevenue;
             customer.cost += cost;
             customer.quantity += quantity;
+            customer.costed_quantity += costedQuantity;
             customer.uncosted_quantity += uncostedQuantity;
             customerMap.set(customerKey, customer);
         });
-        const marginPct = totals.revenue > 0 && totals.uncostedQuantity === 0
-            ? ((totals.revenue - totals.cost) / totals.revenue) * 100
+        const marginPct = totals.costedRevenue > 0
+            ? ((totals.costedRevenue - totals.cost) / totals.costedRevenue) * 100
             : null;
         const costCoveragePct = totals.quantity > 0
             ? (totals.costedQuantity / totals.quantity) * 100
             : null;
+        // Конверсия считается от адресуемого спроса: позиции, которых нет
+        // в подключённых источниках, мы отдать не могли в принципе.
+        const conversionPct = totals.addressableQuantity > 0
+            ? (totals.quantity / totals.addressableQuantity) * 100
+            : null;
+        const noOfferSharePct = totals.orderedQuantity > 0
+            ? (totals.noOfferQuantity / totals.orderedQuantity) * 100
+            : null;
         const customers = [...customerMap.values()].map((row) => ({
             ...row,
-            gross_profit: row.uncosted_quantity === 0 && row.revenue > 0
-                ? row.revenue - row.cost
+            gross_profit: row.costed_quantity > 0
+                ? row.costed_revenue - row.cost
                 : null,
-            margin_pct: row.revenue > 0 && row.uncosted_quantity === 0
-                ? ((row.revenue - row.cost) / row.revenue) * 100
+            margin_pct: row.costed_revenue > 0
+                ? ((row.costed_revenue - row.cost) / row.costed_revenue) * 100
                 : null,
         })).sort((a, b) => (
             (a.margin_pct ?? -999) - (b.margin_pct ?? -999)
             || b.revenue - a.revenue
         ));
         return {
-            totals: { ...totals, marginPct, costCoveragePct },
-            daily: [...dailyMap.values()].sort(
+            totals: {
+                ...totals,
+                marginPct,
+                costCoveragePct,
+                conversionPct,
+                noOfferSharePct,
+            },
+            daily: [...dailyMap.values()].map((row) => ({
+                ...row,
+                // Прибыль за день — по покрытой части. Если покрытых строк
+                // нет вовсе, это не ноль, а «нет данных».
+                gross_profit: row.costed_quantity > 0
+                    ? row.gross_profit
+                    : null,
+            })).sort(
                 (a, b) => b.date.localeCompare(a.date)
             ).slice(0, 14),
             customers: customers.slice(0, 10),
@@ -644,22 +698,43 @@ const Dashboard = () => {
 
     const prevProfitTotals = useMemo(() => {
         if (!prevProfitRows.length) {
-            return { orderTotal: null, revenue: null, marginPct: null };
+            return {
+                orderTotal: null,
+                addressableTotal: null,
+                conversionPct: null,
+                revenue: null,
+                marginPct: null,
+            };
         }
         let orderTotal = 0;
+        let addressableTotal = 0;
+        let addressableQuantity = 0;
+        let shippedQuantity = 0;
         let revenue = 0;
+        let costedRevenue = 0;
         let cost = 0;
-        let uncostedQuantity = 0;
         prevProfitRows.forEach((row) => {
             orderTotal += Number(row.order_total ?? row.revenue_total ?? 0);
+            addressableTotal += Number(row.addressable_total || 0);
+            addressableQuantity += Number(row.addressable_quantity || 0);
+            shippedQuantity += Number(row.quantity || 0);
             revenue += Number(row.revenue_total || 0);
+            costedRevenue += Number(row.costed_revenue_total || 0);
             cost += Number(row.cost_total || 0);
-            uncostedQuantity += Number(row.uncosted_quantity || 0);
         });
-        const marginPct = revenue > 0 && uncostedQuantity === 0
-            ? ((revenue - cost) / revenue) * 100
+        const marginPct = costedRevenue > 0
+            ? ((costedRevenue - cost) / costedRevenue) * 100
             : null;
-        return { orderTotal, revenue, marginPct };
+        const conversionPct = addressableQuantity > 0
+            ? (shippedQuantity / addressableQuantity) * 100
+            : null;
+        return {
+            orderTotal,
+            addressableTotal,
+            conversionPct,
+            revenue,
+            marginPct,
+        };
     }, [prevProfitRows]);
 
     // Итоги предыдущего 14-дневного окна из 28-дневной выборки daily
@@ -704,10 +779,14 @@ const Dashboard = () => {
                     key,
                     customer_name: row.customer_name || 'Без клиента',
                     orderTotal: 0,
+                    orderedQuantity: 0,
                     unpricedQuantity: 0,
                 };
                 item.orderTotal += Number(
                     row.order_total ?? row.revenue_total ?? 0
+                );
+                item.orderedQuantity += Number(
+                    row.ordered_quantity ?? row.quantity ?? 0
                 );
                 item.unpricedQuantity += Number(
                     row.unpriced_order_quantity || 0
@@ -726,6 +805,34 @@ const Dashboard = () => {
             const currentTotal = cur?.orderTotal || 0;
             const previousTotal = prev?.orderTotal || 0;
             const orderDelta = currentTotal - previousTotal;
+            // Среднюю цену считаем только по строкам, у которых цена есть,
+            // иначе строки без цены занижают её и ломают разложение.
+            const currentQty = Math.max(
+                (cur?.orderedQuantity || 0) - (cur?.unpricedQuantity || 0),
+                0
+            );
+            const previousQty = Math.max(
+                (prev?.orderedQuantity || 0) - (prev?.unpricedQuantity || 0),
+                0
+            );
+            const currentAvg = currentQty > 0 ? currentTotal / currentQty : null;
+            const previousAvg = previousQty > 0
+                ? previousTotal / previousQty
+                : null;
+            // ΔСумма = Δколичества × старая цена + новое количество × Δцены.
+            // Сумма двух вкладов тождественно равна общему изменению.
+            let volumeEffect = null;
+            let priceEffect = null;
+            if (currentAvg != null && previousAvg != null) {
+                volumeEffect = (currentQty - previousQty) * previousAvg;
+                priceEffect = currentQty * (currentAvg - previousAvg);
+            } else if (currentAvg != null) {
+                volumeEffect = currentTotal;
+                priceEffect = 0;
+            } else if (previousAvg != null) {
+                volumeEffect = -previousTotal;
+                priceEffect = 0;
+            }
             let tag = null;
             if (!prev) {
                 tag = 'new';
@@ -738,6 +845,12 @@ const Dashboard = () => {
                 previous_total: previousTotal,
                 current_total: currentTotal,
                 order_delta: orderDelta,
+                previous_qty: previousQty,
+                current_qty: currentQty,
+                previous_avg: previousAvg,
+                current_avg: currentAvg,
+                volume_effect: volumeEffect,
+                price_effect: priceEffect,
                 change_pct: previousTotal > 0
                     ? (orderDelta / previousTotal) * 100
                     : null,
@@ -1198,16 +1311,24 @@ const Dashboard = () => {
             ),
         },
         {
-            title: 'Предыдущие 30 дней',
-            dataIndex: 'previous_total',
-            width: 170,
-            render: formatMoney,
-        },
-        {
-            title: 'Текущие 30 дней',
-            dataIndex: 'current_total',
-            width: 160,
-            render: formatMoney,
+            title: 'Сумма: пред. → тек.',
+            key: 'totals',
+            width: 210,
+            render: (_, row) => (
+                <Space direction="vertical" size={0}>
+                    <Text>
+                        {formatMoney(row.previous_total)}
+                        {' → '}
+                        {formatMoney(row.current_total)}
+                    </Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                        {`${formatNumber(row.previous_qty)} → ${formatNumber(row.current_qty)} шт.`}
+                        {row.previous_avg != null && row.current_avg != null
+                            ? ` · ср. цена ${formatNumber(row.previous_avg)} → ${formatNumber(row.current_avg)}`
+                            : ''}
+                    </Text>
+                </Space>
+            ),
         },
         {
             title: 'Изменение',
@@ -1218,7 +1339,7 @@ const Dashboard = () => {
         {
             title: 'Динамика',
             dataIndex: 'change_pct',
-            width: 110,
+            width: 105,
             render: (value, row) => {
                 if (value == null) {
                     return row.current_total > 0 ? <Tag color="blue">новый</Tag> : '—';
@@ -1229,6 +1350,18 @@ const Dashboard = () => {
                     </Tag>
                 );
             },
+        },
+        {
+            title: 'Вклад объёма',
+            dataIndex: 'volume_effect',
+            width: 145,
+            render: renderSignedMoney,
+        },
+        {
+            title: 'Вклад цены',
+            dataIndex: 'price_effect',
+            width: 140,
+            render: renderSignedMoney,
         },
     ];
 
@@ -1600,7 +1733,12 @@ const Dashboard = () => {
                         </Col>
                         <Col xs={12} lg={6}>
                             <Card size="small">
-                                <Statistic title="Покрытие закупкой" value={orderSummary.purchase_coverage_pct ?? 0} precision={1} suffix="%" />
+                                <NullableStatistic
+                                    title="Покрытие адресуемого спроса закупкой"
+                                    value={orderSummary.purchase_coverage_pct}
+                                    precision={1}
+                                    suffix="%"
+                                />
                                 <MonthDelta
                                     current={orderSummary.purchase_coverage_pct}
                                     previous={prevOrderSummary?.purchase_coverage_pct}
@@ -1668,14 +1806,14 @@ const Dashboard = () => {
                             type="info"
                             showIcon
                             style={{ marginBottom: 12 }}
-                            message="Сумма считается по всем входящим заказам. Прибыль и маржа являются оценочными: они рассчитаны только по обработанным строкам с известной себестоимостью."
+                            message="Сумма считается по всем входящим заказам. Прибыль и маржа оценочные: себестоимость берётся из цены поставщика по строке, учётной цены карточки или последней фактической закупки артикула. Позиции со своего склада пока без себестоимости — по ним прибыль не считается."
                         />
                     )}
                     <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-                        <Col xs={12} lg={6}>
+                        <Col xs={12} lg={8}>
                             <Card size="small">
                                 <Statistic
-                                    title="Сумма заказов"
+                                    title="Сумма заказов · весь спрос"
                                     value={profitAnalytics.totals.orderTotal}
                                     precision={0}
                                     suffix="руб."
@@ -1687,7 +1825,37 @@ const Dashboard = () => {
                                 />
                             </Card>
                         </Col>
-                        <Col xs={12} lg={6}>
+                        <Col xs={12} lg={8}>
+                            <Card size="small">
+                                <Statistic
+                                    title="Адресуемый спрос"
+                                    value={profitAnalytics.totals.addressableTotal}
+                                    precision={0}
+                                    suffix="руб."
+                                />
+                                <MonthDelta
+                                    current={profitAnalytics.totals.addressableTotal}
+                                    previous={prevProfitTotals.addressableTotal}
+                                    mode="percent"
+                                />
+                            </Card>
+                        </Col>
+                        <Col xs={12} lg={8}>
+                            <Card size="small">
+                                <NullableStatistic
+                                    title="Конверсия адресуемого спроса"
+                                    value={profitAnalytics.totals.conversionPct}
+                                    precision={1}
+                                    suffix="%"
+                                />
+                                <MonthDelta
+                                    current={profitAnalytics.totals.conversionPct}
+                                    previous={prevProfitTotals.conversionPct}
+                                    mode="pp"
+                                />
+                            </Card>
+                        </Col>
+                        <Col xs={12} lg={8}>
                             <Card size="small">
                                 <Statistic
                                     title="Расчётная прибыль"
@@ -1702,9 +1870,9 @@ const Dashboard = () => {
                                 />
                             </Card>
                         </Col>
-                        <Col xs={12} lg={6}>
+                        <Col xs={12} lg={8}>
                             <Card size="small">
-                                <Statistic
+                                <NullableStatistic
                                     title="Расчётная маржа"
                                     value={profitAnalytics.totals.marginPct}
                                     precision={1}
@@ -1717,9 +1885,9 @@ const Dashboard = () => {
                                 />
                             </Card>
                         </Col>
-                        <Col xs={12} lg={6}>
+                        <Col xs={12} lg={8}>
                             <Card size="small">
-                                <Statistic
+                                <NullableStatistic
                                     title="Покрытие себестоимостью"
                                     value={profitAnalytics.totals.costCoveragePct}
                                     precision={1}
@@ -1728,6 +1896,25 @@ const Dashboard = () => {
                             </Card>
                         </Col>
                     </Row>
+                    {profitAnalytics.totals.noOfferQuantity > 0 && (
+                        <Alert
+                            type="info"
+                            showIcon
+                            style={{ marginBottom: 12 }}
+                            message={(
+                                <span>
+                                    {`Вне ассортимента: ${formatNumber(profitAnalytics.totals.noOfferQuantity)} шт. `}
+                                    {`на ${formatMoney(profitAnalytics.totals.noOfferTotal)} — по этим позициям нет предложения ни в одном подключённом источнике `}
+                                    {`(${formatNumber(profitAnalytics.totals.noOfferSharePct, 1)}% всего спроса). `}
+                                    {`Осознанный отказ по своей цене или фильтрам: ${formatNumber(profitAnalytics.totals.declinedQuantity)} шт. `}
+                                    {`на ${formatMoney(profitAnalytics.totals.declinedTotal)} `}
+                                    Конверсия считается от адресуемого спроса,
+                                    прибыль и маржа — от строк с известной
+                                    себестоимостью.
+                                </span>
+                            )}
+                        />
+                    )}
                     {profitAnalytics.totals.uncostedQuantity > 0 && (
                         <Alert
                             type="warning"
@@ -1781,6 +1968,11 @@ const Dashboard = () => {
                             <Card
                                 size="small"
                                 title="Изменение суммы заказов · месяц к месяцу"
+                                extra={(
+                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                        Объём + цена = изменение
+                                    </Text>
+                                )}
                             >
                                 <Table
                                     rowKey="key"
@@ -1788,7 +1980,7 @@ const Dashboard = () => {
                                     columns={marginDecompositionColumns}
                                     dataSource={marginDecomposition}
                                     pagination={false}
-                                    scroll={{ x: 740 }}
+                                    scroll={{ x: 900 }}
                                 />
                             </Card>
                         </Col>

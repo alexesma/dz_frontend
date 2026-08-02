@@ -73,6 +73,14 @@ const STATUS_COLORS = {
     revocation_requested: 'warning',
 };
 
+// Status.Type из внешнего документооборота ГИС ЭПД (перевозочные документы)
+const TRANSPORT_STATUS_COLORS = {
+    Success: 'success',
+    Error: 'error',
+    Warning: 'warning',
+    Normal: 'blue',
+};
+
 const SYNC_RESULT_LABELS = {
     synced: 'Синхронизирован',
     registered: 'Зарегистрирован',
@@ -833,6 +841,24 @@ const DiadocPage = () => {
                         <Text type="secondary" style={{ fontSize: 12 }}>
                             {row.docflow_status_text}
                         </Text>
+                    ) : null}
+                    {row.transport_status_text ? (
+                        <Tooltip
+                            title={[
+                                row.transport_mintrans_id
+                                    ? `ГИС ЭПД: ${row.transport_mintrans_id}`
+                                    : null,
+                                row.transport_carriage_id
+                                    ? `Перевозка: ${row.transport_carriage_id}`
+                                    : null,
+                            ].filter(Boolean).join(' · ') || undefined}
+                        >
+                            <Tag color={TRANSPORT_STATUS_COLORS[
+                                row.transport_status_type
+                            ] || 'blue'}>
+                                {row.transport_status_text}
+                            </Tag>
+                        </Tooltip>
                     ) : null}
                     {row.status_checked_at ? (
                         <Text type="secondary" style={{ fontSize: 11 }}>

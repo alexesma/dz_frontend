@@ -15,6 +15,18 @@ export const listReclamationAssignees = () =>
 export const getReclamation = (id) =>
     api.get(`/reclamations/${id}`);
 
+export const getReclamationUkdDraft = (id) =>
+    api.get(`/reclamations/${id}/ukd-draft`);
+
+export const rematchReclamationUkdDraft = (id) =>
+    api.post(`/reclamations/${id}/ukd-draft/rematch`);
+
+export const linkReclamationUkdDraftSource = (id, data) =>
+    api.post(`/reclamations/${id}/ukd-draft/link-source`, data);
+
+export const decideReclamationUkdDraft = (id, data) =>
+    api.post(`/reclamations/${id}/ukd-draft/decision`, data);
+
 export const downloadReclamationAttachment = (id, attachmentId) =>
     api.get(`/reclamations/${id}/attachments/${attachmentId}/download`, {
         responseType: 'blob',

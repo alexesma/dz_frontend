@@ -52,18 +52,22 @@ import {
     downloadReclamationAttachment,
     getReclamation,
     getReclamationEmails,
+    getReclamationUkdDraft,
     getReclamationStats,
     getReclamationsSummary,
     getReplyTemplate,
     listReclamations,
     listReclamationAssignees,
+    linkReclamationUkdDraftSource,
     notifyReclamationSupplier,
     postponeReclamationShortage,
+    rematchReclamationUkdDraft,
     refreshReclamationArmtek,
     refreshReclamationFroza,
     sendReclamationArmtekDecision,
     sendReclamationReply,
     sendReclamationFrozaDecision,
+    decideReclamationUkdDraft,
     syncReclamationArmtek,
     syncReclamations,
     updateReclamation,
@@ -99,6 +103,14 @@ const STATUS_META = {
     approved: { label: 'Согласована', color: 'green' },
     rejected: { label: 'Отклонена', color: 'red' },
     closed: { label: 'Закрыта', color: 'default' },
+};
+
+const RETURN_STATUS_META = {
+    created: { label: 'Черновик', color: 'default' },
+    approved: { label: 'Возврат согласован', color: 'blue' },
+    shipped: { label: 'Товар едет на склад', color: 'gold' },
+    confirmed: { label: 'Принят складом', color: 'green' },
+    rejected: { label: 'Возврат отклонён', color: 'red' },
 };
 
 const TYPE_META = {
@@ -160,6 +172,10 @@ const EVENT_LABELS = {
     armtek_decision_sent: 'Решение отправлено в Armtek',
     reclamation_updated: 'Изменена рекламация',
     item_updated: 'Изменена позиция',
+    ukd_draft_created: 'Создан безопасный черновик возврата/УКД',
+    ukd_draft_rematched: 'Повторно сопоставлена исходная УПД',
+    ukd_source_linked: 'Вручную привязана исходная УПД',
+    ukd_return_decided: 'Принято решение по документу возврата',
 };
 
 const formatEventDetails = (details) => {
@@ -411,6 +427,11 @@ const ReclamationsPage = () => {
     const [shortageSaving, setShortageSaving] = useState(false);
     const [shortageEvidence, setShortageEvidence] = useState([]);
     const [shortagePostponeMinutes, setShortagePostponeMinutes] = useState(15);
+    const [ukdDraft, setUkdDraft] = useState(null);
+    const [ukdLoading, setUkdLoading] = useState(false);
+    const [ukdSaving, setUkdSaving] = useState(false);
+    const [ukdShipmentId, setUkdShipmentId] = useState('');
+    const [ukdSourceDocumentId, setUkdSourceDocumentId] = useState('');
 
     const [createOpen, setCreateOpen] = useState(false);
     const [createForm] = Form.useForm();
@@ -557,6 +578,28 @@ const ReclamationsPage = () => {
         }
     };
 
+    const loadUkdDraft = async (id) => {
+        setUkdLoading(true);
+        try {
+            const { data } = await getReclamationUkdDraft(id);
+            setUkdDraft(data || null);
+            setUkdShipmentId(data?.shipment_document_id || '');
+            setUkdSourceDocumentId(
+                data?.source_diadoc_outgoing_document_id || '',
+            );
+        } catch (err) {
+            if (err?.response?.status !== 404) {
+                message.error(
+                    err?.response?.data?.detail
+                    || 'Не удалось загрузить черновик УКД',
+                );
+            }
+            setUkdDraft(null);
+        } finally {
+            setUkdLoading(false);
+        }
+    };
+
     const refreshCorrespondence = async () => {
         if (!detail) {
             return;
@@ -642,10 +685,86 @@ const ReclamationsPage = () => {
             setShortagePostponeMinutes(15);
             setDetailOpen(true);
             void loadEmails(id);
+            void loadUkdDraft(id);
         } catch (err) {
             message.error(
                 err?.response?.data?.detail || 'Не удалось открыть рекламацию'
             );
+        }
+    };
+
+    const handleUkdRematch = async () => {
+        if (!detail) return;
+        setUkdSaving(true);
+        try {
+            const { data } = await rematchReclamationUkdDraft(detail.id);
+            setUkdDraft(data);
+            setUkdShipmentId(data?.shipment_document_id || '');
+            setUkdSourceDocumentId(
+                data?.source_diadoc_outgoing_document_id || '',
+            );
+            message.success('Исходная реализация и УПД проверены повторно');
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail || 'Не удалось повторить поиск',
+            );
+        } finally {
+            setUkdSaving(false);
+        }
+    };
+
+    const handleUkdLink = async () => {
+        if (!detail) return;
+        const shipmentId = Number(ukdShipmentId);
+        const sourceId = Number(ukdSourceDocumentId);
+        if (!Number.isInteger(shipmentId) || !Number.isInteger(sourceId)) {
+            message.warning('Укажите ID реализации и исходящей УПД');
+            return;
+        }
+        setUkdSaving(true);
+        try {
+            const { data } = await linkReclamationUkdDraftSource(detail.id, {
+                shipment_document_id: shipmentId,
+                source_diadoc_outgoing_document_id: sourceId,
+            });
+            setUkdDraft(data);
+            message.success('Исходная реализация и УПД привязаны');
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail || 'Не удалось привязать УПД',
+            );
+        } finally {
+            setUkdSaving(false);
+        }
+    };
+
+    const handleUkdDecision = async (decision) => {
+        if (!detail) return;
+        const comment = String(resolutionComment || '').trim();
+        if (decision === 'rejected' && !comment) {
+            message.warning('Для отказа укажите причину');
+            return;
+        }
+        setUkdSaving(true);
+        try {
+            const { data } = await decideReclamationUkdDraft(detail.id, {
+                decision,
+                comment: comment || null,
+            });
+            setUkdDraft(data);
+            const response = await getReclamation(detail.id);
+            applyDetailUpdate(response.data);
+            message.success(
+                decision === 'approved'
+                    ? 'Возврат коммерчески согласован'
+                    : 'Возврат отклонён',
+            );
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail || 'Не удалось сохранить решение',
+            );
+        } finally {
+            setUkdSaving(false);
         }
     };
 
@@ -1474,52 +1593,6 @@ const ReclamationsPage = () => {
 
                         <Card
                             size="small"
-                            title="История действий"
-                        >
-                            <Table
-                                size="small"
-                                rowKey="id"
-                                pagination={false}
-                                locale={{
-                                    emptyText: 'Действия ещё не зафиксированы',
-                                }}
-                                dataSource={detail.events || []}
-                                columns={[
-                                    {
-                                        title: 'Когда',
-                                        dataIndex: 'created_at',
-                                        width: 145,
-                                        render: (value) => (
-                                            value
-                                                ? dayjs(value).format('DD.MM.YYYY HH:mm')
-                                                : '—'
-                                        ),
-                                    },
-                                    {
-                                        title: 'Действие',
-                                        dataIndex: 'event_type',
-                                        width: 220,
-                                        render: (value) => (
-                                            EVENT_LABELS[value] || value
-                                        ),
-                                    },
-                                    {
-                                        title: 'Кто',
-                                        dataIndex: 'actor_user_name',
-                                        width: 170,
-                                        render: (value) => value || 'Система',
-                                    },
-                                    {
-                                        title: 'Детали',
-                                        dataIndex: 'details',
-                                        render: formatEventDetails,
-                                    },
-                                ]}
-                            />
-                        </Card>
-
-                        <Card
-                            size="small"
                             title={
                                 <Space>
                                     <SafetyCertificateOutlined />
@@ -2310,6 +2383,261 @@ const ReclamationsPage = () => {
                             </Card>
                         ) : null}
 
+                        {ukdDraft || ukdLoading ? (
+                            <Card
+                                size="small"
+                                loading={ukdLoading}
+                                title="Документ возврата и будущий УКД"
+                                extra={ukdDraft ? (
+                                    <Tag
+                                        color={
+                                            RETURN_STATUS_META[ukdDraft.status]
+                                                ?.color || 'default'
+                                        }
+                                    >
+                                        {RETURN_STATUS_META[ukdDraft.status]
+                                            ?.label || ukdDraft.status}
+                                    </Tag>
+                                ) : null}
+                            >
+                                {ukdDraft ? (
+                                    <Space
+                                        direction="vertical"
+                                        size={12}
+                                        style={{ width: '100%' }}
+                                    >
+                                        <Descriptions
+                                            bordered
+                                            size="small"
+                                            column={2}
+                                        >
+                                            <Descriptions.Item label="Документ клиента">
+                                                {ukdDraft.external_document_number
+                                                    || 'без номера'}
+                                                {ukdDraft.external_document_date
+                                                    ? ` от ${dayjs(
+                                                        ukdDraft.external_document_date,
+                                                    ).format('DD.MM.YYYY')}`
+                                                    : ''}
+                                            </Descriptions.Item>
+                                            <Descriptions.Item label="Основание из входящего УПД">
+                                                {ukdDraft.source_document_number
+                                                    || 'не распознано'}
+                                                {ukdDraft.source_document_date
+                                                    ? ` от ${dayjs(
+                                                        ukdDraft.source_document_date,
+                                                    ).format('DD.MM.YYYY')}`
+                                                    : ''}
+                                            </Descriptions.Item>
+                                            <Descriptions.Item label="Реализация">
+                                                {ukdDraft.shipment_document_id
+                                                    ? `#${ukdDraft.shipment_document_id}`
+                                                    : '—'}
+                                            </Descriptions.Item>
+                                            <Descriptions.Item label="Исходящая УПД Диадока">
+                                                {ukdDraft.source_diadoc_outgoing_document_id
+                                                    ? `#${ukdDraft.source_diadoc_outgoing_document_id}`
+                                                    : '—'}
+                                            </Descriptions.Item>
+                                            <Descriptions.Item label="Проверка основания" span={2}>
+                                                <Tag
+                                                    color={ukdDraft.source_basis_verified
+                                                        ? 'success'
+                                                        : 'warning'}
+                                                >
+                                                    {ukdDraft.source_basis_verified
+                                                        ? 'Номер и дата совпадают у реализации и нашей УПД'
+                                                        : 'Основание ещё не подтверждено'}
+                                                </Tag>
+                                            </Descriptions.Item>
+                                        </Descriptions>
+
+                                        {ukdDraft.blockers?.length ? (
+                                            <Alert
+                                                type="warning"
+                                                showIcon
+                                                message="УКД пока выпускать нельзя"
+                                                description={(
+                                                    <ul
+                                                        style={{
+                                                            margin: 0,
+                                                            paddingLeft: 18,
+                                                        }}
+                                                    >
+                                                        {ukdDraft.blockers.map(
+                                                            (item) => (
+                                                                <li key={item}>
+                                                                    {item}
+                                                                </li>
+                                                            ),
+                                                        )}
+                                                    </ul>
+                                                )}
+                                            />
+                                        ) : (
+                                            <Alert
+                                                type="success"
+                                                showIcon
+                                                message="Можно сформировать черновик УКД"
+                                                description="Количество, цена, НДС 22% и связь с исходящей УПД проверены."
+                                            />
+                                        )}
+
+                                        <Table
+                                            rowKey="return_item_id"
+                                            size="small"
+                                            pagination={false}
+                                            dataSource={ukdDraft.items || []}
+                                            columns={[
+                                                {
+                                                    title: 'Позиция',
+                                                    render: (_, row) => (
+                                                        <Space
+                                                            direction="vertical"
+                                                            size={0}
+                                                        >
+                                                            <Text strong>
+                                                                {row.brand_name || ''}{' '}
+                                                                {row.oem_number || '—'}
+                                                            </Text>
+                                                            <Text
+                                                                type="secondary"
+                                                                ellipsis={{ tooltip: row.name }}
+                                                                style={{ maxWidth: 250 }}
+                                                            >
+                                                                {row.name || '—'}
+                                                            </Text>
+                                                        </Space>
+                                                    ),
+                                                },
+                                                {
+                                                    title: 'Кол-во',
+                                                    width: 110,
+                                                    render: (_, row) => (
+                                                        <Text>
+                                                            {row.quantity_before ?? '—'}
+                                                            {' → '}
+                                                            {row.quantity_after ?? '—'}
+                                                            <br />
+                                                            <Text type="secondary">
+                                                                возврат {row.return_quantity}
+                                                            </Text>
+                                                        </Text>
+                                                    ),
+                                                },
+                                                {
+                                                    title: 'Цена / НДС',
+                                                    width: 105,
+                                                    render: (_, row) => (
+                                                        <Text>
+                                                            {row.gross_unit_price
+                                                                ? `${Number(
+                                                                    row.gross_unit_price,
+                                                                ).toLocaleString('ru-RU')} ₽`
+                                                                : '—'}
+                                                            <br />
+                                                            <Text type="secondary">
+                                                                НДС {row.vat_rate}%
+                                                            </Text>
+                                                        </Text>
+                                                    ),
+                                                },
+                                            ]}
+                                        />
+
+                                        <Space wrap>
+                                            {ukdDraft.status === 'created' ? (
+                                                <Button
+                                                    type="primary"
+                                                    loading={ukdSaving}
+                                                    onClick={() =>
+                                                        handleUkdDecision('approved')
+                                                    }
+                                                >
+                                                    Согласовать возврат
+                                                </Button>
+                                            ) : null}
+                                            {['created', 'approved'].includes(
+                                                ukdDraft.status,
+                                            ) ? (
+                                                <Popconfirm
+                                                    title="Отклонить возврат?"
+                                                    description="Причина берётся из комментария решения выше."
+                                                    okText="Отклонить"
+                                                    cancelText="Отмена"
+                                                    onConfirm={() =>
+                                                        handleUkdDecision('rejected')
+                                                    }
+                                                >
+                                                    <Button danger loading={ukdSaving}>
+                                                        Отклонить
+                                                    </Button>
+                                                </Popconfirm>
+                                            ) : null}
+                                            <Button
+                                                icon={<ReloadOutlined />}
+                                                loading={ukdSaving}
+                                                onClick={handleUkdRematch}
+                                                disabled={ukdDraft.status !== 'created'}
+                                            >
+                                                Повторить поиск
+                                            </Button>
+                                            <Button
+                                                onClick={() => window.open(
+                                                    `/warehouse/returns/customer/${ukdDraft.return_id}`,
+                                                    '_blank',
+                                                    'noopener,noreferrer',
+                                                )}
+                                            >
+                                                Открыть складской возврат
+                                            </Button>
+                                        </Space>
+
+                                        <details>
+                                            <summary>
+                                                Привязать реализацию и УПД вручную
+                                            </summary>
+                                            <Space
+                                                wrap
+                                                style={{ marginTop: 10 }}
+                                            >
+                                                <Input
+                                                    type="number"
+                                                    min={1}
+                                                    style={{ width: 190 }}
+                                                    placeholder="ID реализации"
+                                                    value={ukdShipmentId}
+                                                    onChange={(event) =>
+                                                        setUkdShipmentId(
+                                                            event.target.value,
+                                                        )
+                                                    }
+                                                />
+                                                <Input
+                                                    type="number"
+                                                    min={1}
+                                                    style={{ width: 220 }}
+                                                    placeholder="ID исходящей УПД"
+                                                    value={ukdSourceDocumentId}
+                                                    onChange={(event) =>
+                                                        setUkdSourceDocumentId(
+                                                            event.target.value,
+                                                        )
+                                                    }
+                                                />
+                                                <Button
+                                                    loading={ukdSaving}
+                                                    onClick={handleUkdLink}
+                                                >
+                                                    Привязать
+                                                </Button>
+                                            </Space>
+                                        </details>
+                                    </Space>
+                                ) : null}
+                            </Card>
+                        ) : null}
+
                         <Card size="small" title="Обработка">
                             <Space
                                 direction="vertical"
@@ -3043,6 +3371,72 @@ const ReclamationsPage = () => {
                             >
                                 {detail.email_body || '—'}
                             </Paragraph>
+                        </Card>
+
+                        <Card size="small" title="История действий">
+                            {(detail.events || []).length ? (
+                                <Space
+                                    direction="vertical"
+                                    size={10}
+                                    style={{ width: '100%' }}
+                                >
+                                    {(detail.events || []).map((event) => (
+                                        <div
+                                            key={event.id}
+                                            style={{
+                                                border: '1px solid #f0f0f0',
+                                                borderRadius: 8,
+                                                padding: '10px 12px',
+                                                minWidth: 0,
+                                            }}
+                                        >
+                                            <Space
+                                                wrap
+                                                size={[8, 4]}
+                                                style={{
+                                                    width: '100%',
+                                                    marginBottom: 8,
+                                                }}
+                                            >
+                                                <Text strong>
+                                                    {EVENT_LABELS[event.event_type]
+                                                        || event.event_type}
+                                                </Text>
+                                                <Text type="secondary">
+                                                    {event.created_at
+                                                        ? dayjs(event.created_at).format(
+                                                            'DD.MM.YYYY HH:mm',
+                                                        )
+                                                        : '—'}
+                                                </Text>
+                                                <Tag>
+                                                    {event.actor_user_name || 'Система'}
+                                                </Tag>
+                                            </Space>
+                                            <div
+                                                style={{
+                                                    padding: '8px 10px',
+                                                    borderRadius: 6,
+                                                    background: '#fafafa',
+                                                    color: '#595959',
+                                                    lineHeight: 1.5,
+                                                    whiteSpace: 'pre-wrap',
+                                                    overflowWrap: 'anywhere',
+                                                    wordBreak: 'break-word',
+                                                    maxWidth: '100%',
+                                                }}
+                                            >
+                                                {formatEventDetails(event.details)}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </Space>
+                            ) : (
+                                <Empty
+                                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                                    description="Действия ещё не зафиксированы"
+                                />
+                            )}
                         </Card>
                     </Space>
                 ) : null}
