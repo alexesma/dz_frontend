@@ -640,6 +640,23 @@ const CustomerOrderDetailPage = () => {
             render: (value) => value || '—',
         },
         {
+            title: 'Складская позиция',
+            key: 'actual_part',
+            width: 230,
+            render: (_, record) => {
+                if (!record.actual_oem) return '—';
+                const isCross = record.match_type === 'dragonzap_cross';
+                return (
+                    <div>
+                        <div>
+                            {record.actual_brand || '—'} {record.actual_oem}
+                        </div>
+                        {isCross ? <Tag color="blue">заказан кросс</Tag> : null}
+                    </div>
+                );
+            },
+        },
+        {
             title: 'Кол-во',
             dataIndex: 'requested_qty',
             key: 'requested_qty',

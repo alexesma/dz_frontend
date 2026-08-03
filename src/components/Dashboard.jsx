@@ -48,6 +48,7 @@ const TRACE_STATUS_COLOR = {
     success: 'green',
     error: 'red',
     running: 'blue',
+    needs_review: 'orange',
 };
 
 const formatNumber = (value, digits = 0) => {
@@ -99,6 +100,30 @@ const formatDurationMs = (value) => {
 const formatMemoryMb = (value) => (
     Number.isFinite(Number(value)) ? `${Number(value).toFixed(0)} MB` : '—'
 );
+
+const formatSchedulerError = (row) => {
+    const details = row?.details || {};
+    const directError = String(details.error || '').trim();
+    if (directError) return directError;
+    const providerErrors = Array.isArray(details.provider_errors)
+        ? details.provider_errors
+        : details.email_processing_summary?.error_details;
+    if (Array.isArray(providerErrors) && providerErrors.length) {
+        return providerErrors.map((item) => {
+            const provider = item.provider_name
+                || (item.provider_id ? `Поставщик #${item.provider_id}` : 'Поставщик');
+            const config = item.provider_config_id
+                ? `, конфигурация #${item.provider_config_id}`
+                : '';
+            const file = item.source_filename ? `, ${item.source_filename}` : '';
+            const error = item.error || item.error_type || 'неизвестная ошибка';
+            return `${provider}${config}${file}: ${error}`;
+        }).join('; ');
+    }
+    const errorCount = Number(details.email_processing_summary?.errors || 0);
+    if (errorCount > 0) return `Не обработано прайсов: ${errorCount}`;
+    return 'Причина не была записана старой версией программы';
+};
 
 const getWatchPriceState = (item) => {
     const prices = [
@@ -537,8 +562,43 @@ const Dashboard = () => {
     );
 
     const latestSchedulerErrors = useMemo(
-        () => schedulerErrorTraces.slice(0, 10),
-        [schedulerErrorTraces]
+        () => schedulerErrorTraces.slice(0, 10).map((trace) => {
+            if (String(trace?.details?.error || '').trim()) return trace;
+            if (trace.job_key !== 'download_price_provider') return trace;
+            const startedAt = new Date(trace.started_at).getTime();
+            const finishedAt = trace.finished_at
+                ? new Date(trace.finished_at).getTime()
+                : startedAt + Number(trace.duration_ms || 0);
+            if (!Number.isFinite(startedAt) || !Number.isFinite(finishedAt)) {
+                return trace;
+            }
+            const providerErrors = providerPricelistTraces
+                .filter((item) => {
+                    if (item.status !== 'error') return false;
+                    const childStartedAt = new Date(item.started_at).getTime();
+                    return Number.isFinite(childStartedAt)
+                        && childStartedAt >= startedAt
+                        && childStartedAt <= finishedAt;
+                })
+                .map((item) => ({
+                    provider_id: item.provider_id,
+                    provider_name: item.details?.provider_name,
+                    provider_config_id: item.provider_config_id,
+                    provider_config_name: item.details?.provider_config_name,
+                    source_filename: item.source_filename,
+                    error_type: item.details?.error_type,
+                    error: item.details?.error,
+                }));
+            if (!providerErrors.length) return trace;
+            return {
+                ...trace,
+                details: {
+                    ...trace.details,
+                    provider_errors: providerErrors,
+                },
+            };
+        }),
+        [providerPricelistTraces, schedulerErrorTraces]
     );
 
     const slowestPricelists = useMemo(
@@ -2128,7 +2188,7 @@ const Dashboard = () => {
                                             title: 'Ошибка',
                                             key: 'error',
                                             ellipsis: true,
-                                            render: (_, row) => row.details?.error || 'Без текста',
+                                            render: (_, row) => formatSchedulerError(row),
                                         },
                                     ]}
                                     dataSource={latestSchedulerErrors}

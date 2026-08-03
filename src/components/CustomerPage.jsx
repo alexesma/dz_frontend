@@ -2695,9 +2695,9 @@ const CustomerPage = () => {
 
                         <Form.Item
                             name="dz_expand_brands"
-                            label="Разворачивать бренды DZ"
+                            label="Показывать Dragonzap под марками автомобилей"
                             valuePropName="checked"
-                            tooltip="Позиции DRAGONZAP разворачиваются в отдельные строки по брендам (Haval, Geely, Chery…) до применения фильтров. Наименования не изменяются."
+                            tooltip="Дополнительный режим: позиции DRAGONZAP также выводятся под марками Haval, Geely, Chery и другими, определёнными по артикулу. По умолчанию выключен. Не влияет на автоматическую публикацию подтверждённых кроссов Dragonzap под брендом DRAGONZAP."
                         >
                             <Switch />
                         </Form.Item>

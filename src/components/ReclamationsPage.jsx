@@ -115,6 +115,7 @@ const RETURN_STATUS_META = {
 
 const TYPE_META = {
     customer_refusal: { label: 'Отказ клиента', color: 'blue' },
+    mis_sort: { label: 'Пересорт', color: 'cyan' },
     defect: { label: 'Брак', color: 'volcano' },
     shortage: { label: 'Недовоз', color: 'gold' },
     other: { label: 'Прочее', color: 'default' },
