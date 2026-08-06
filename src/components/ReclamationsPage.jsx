@@ -2935,31 +2935,71 @@ const ReclamationsPage = () => {
                                     rowKey="id"
                                     size="small"
                                     pagination={false}
+                                    tableLayout="fixed"
                                     dataSource={detail.items}
                                     columns={[
                                         {
-                                            title: 'Артикул',
-                                            dataIndex: 'oem_number',
-                                            width: 120,
-                                        },
-                                        {
-                                            title: 'Наименование',
-                                            dataIndex: 'autopart_name',
-                                            ellipsis: true,
+                                            title: 'Позиция',
+                                            key: 'position',
+                                            width: 210,
+                                            render: (_, item) => (
+                                                <div
+                                                    style={{
+                                                        display: 'grid',
+                                                        gap: 4,
+                                                        minWidth: 0,
+                                                    }}
+                                                >
+                                                    <Space size={[4, 4]} wrap>
+                                                        {item.brand_name ? (
+                                                            <Tag
+                                                                color="blue"
+                                                                style={{
+                                                                    margin: 0,
+                                                                }}
+                                                            >
+                                                                {
+                                                                    item
+                                                                        .brand_name
+                                                                }
+                                                            </Tag>
+                                                        ) : null}
+                                                        <Text strong>
+                                                            {item.oem_number}
+                                                        </Text>
+                                                    </Space>
+                                                    <Text
+                                                        type={
+                                                            item.autopart_name
+                                                                ? undefined
+                                                                : 'secondary'
+                                                        }
+                                                        style={{
+                                                            whiteSpace:
+                                                                'normal',
+                                                            overflowWrap:
+                                                                'anywhere',
+                                                        }}
+                                                    >
+                                                        {item.autopart_name
+                                                            || 'Наименование не определено'}
+                                                    </Text>
+                                                </div>
+                                            ),
                                         },
                                         {
                                             title: 'Кол-во',
                                             dataIndex: 'quantity',
-                                            width: 64,
+                                            width: 56,
                                         },
                                         {
                                             title: 'Источник',
                                             key: 'item_source',
-                                            width: 190,
+                                            width: 150,
                                             render: (_, item) => (
                                                 <Select
                                                     size="small"
-                                                    style={{ width: 180 }}
+                                                    style={{ width: '100%' }}
                                                     value={
                                                         item.item_source ||
                                                         'unknown'
@@ -2982,7 +3022,7 @@ const ReclamationsPage = () => {
                                         {
                                             title: 'Поставщик',
                                             key: 'source_provider',
-                                            width: 220,
+                                            width: 170,
                                             render: (_, item) => {
                                                 const checkedItem = (
                                                     detail.check_result
@@ -3007,7 +3047,7 @@ const ReclamationsPage = () => {
                                                             showSearch
                                                             optionFilterProp="label"
                                                             style={{
-                                                                width: 210,
+                                                                width: '100%',
                                                             }}
                                                             placeholder="Выберите поставщика"
                                                             value={
