@@ -42,7 +42,7 @@ import './ProcessArchitecturePage.css';
 const PAGE_KEY = 'dragonzap-operating-model';
 
 const SECTION_TITLES = {
-    'system-map': 'Контур систем и ответственность',
+    'system-map': 'Три контура и владельцы данных',
     'stock-model': 'Единая модель товара и остатков',
     receipt: 'Поступление товара и документов',
     'assortment-price': 'Номенклатура, кроссы и клиентские прайсы',
@@ -62,9 +62,62 @@ const DRAWING_COLORS = ['#e4572e', '#0c7c86', '#172a3a', '#e9a23b'];
 const systemTags = {
     dz: { label: 'Наша платформа', className: 'process-system-tag process-system-dz' },
     onec: { label: '1С:КА 2', className: 'process-system-tag process-system-onec' },
+    partssoft: { label: 'parts-soft', className: 'process-system-tag process-system-partssoft' },
     external: { label: 'Внешняя система', className: 'process-system-tag process-system-external' },
     warehouse: { label: 'Склад', className: 'process-system-tag process-system-warehouse' },
 };
+
+const OWNERSHIP_ROWS = [
+    {
+        entity: 'Каталог, бренды, кроссы и группы выпуска',
+        owner: 'Платформа',
+        ownerType: 'dz',
+        copy: 'В 1С только номенклатура с реальным движением',
+        rule: 'Поиск и решение о замене остаются в операционном контуре.',
+    },
+    {
+        entity: 'Контент, фото и карточки витрины',
+        owner: 'parts-soft',
+        ownerType: 'partssoft',
+        copy: 'Платформа хранит ID и нужный для заказа снимок',
+        rule: 'Не дублируем редактор витрины в нашей платформе.',
+    },
+    {
+        entity: 'Прайсы, цены, наценки и правила клиентов',
+        owner: 'Платформа',
+        ownerType: 'dz',
+        copy: 'Внешним системам уходит только результат',
+        rule: 'Это наша торговая логика и конкурентное преимущество.',
+    },
+    {
+        entity: 'Заказы, источник исполнения, резервы и готовность',
+        owner: 'Платформа',
+        ownerType: 'dz',
+        copy: '1С получает факт хозяйственной операции',
+        rule: 'Выбор склада, выпуска или cross-docking делает платформа.',
+    },
+    {
+        entity: 'Физический остаток, ячейки, операционные партии и подбор',
+        owner: 'Платформа',
+        ownerType: 'dz',
+        copy: '1С получает движения и сверяет остаток',
+        rule: 'Склад не зависит от доступности 1С в момент приёмки и сборки.',
+    },
+    {
+        entity: 'Реквизиты, договоры, бухгалтерские партии и себестоимость',
+        owner: '1С:КА 2',
+        ownerType: 'onec',
+        copy: 'Платформа получает ID, статус и учётную стоимость',
+        rule: 'Регламентированная истина и проводки остаются в 1С.',
+    },
+    {
+        entity: 'УПД, УКД, ЭДО и отчётность по маркировке',
+        owner: 'Один активный контур',
+        ownerType: 'shared',
+        copy: 'Вторая система хранит документ, ID и статус',
+        rule: 'До миграции может отправлять платформа, после миграции 1С, но никогда обе сразу.',
+    },
+];
 
 const authorName = (annotation) =>
     annotation?.created_by?.name || annotation?.created_by?.email || 'Сотрудник';
@@ -83,6 +136,10 @@ const SystemTag = ({ type }) => {
     const config = systemTags[type];
     return <span className={config.className}>{config.label}</span>;
 };
+
+const OwnerBadge = ({ type, children }) => (
+    <span className={`process-owner-badge process-owner-${type}`}>{children}</span>
+);
 
 const Flow = ({ steps, compact = false }) => (
     <div className={`process-flow${compact ? ' process-flow-compact' : ''}`}>
@@ -525,41 +582,67 @@ const ProcessArchitecturePage = () => {
             <ProcessSection
                 {...sectionProps('system-map')}
                 kicker="01 · Архитектура"
-                title="Контур систем и ответственность"
-                summary="Каждая система отвечает за свою часть процесса, а события передаются по API с внешними идентификаторами и статусами."
+                title="Три отдельных контура и один владелец каждой сущности"
+                summary="Граница проходит не по названиям функций, а по ответственности: одна система меняет и подтверждает сущность, остальные получают контролируемую копию."
             >
-                <div className="process-system-map">
-                    <RuleCard title="Клиенты и поставщики" tone="sand" icon={<ApartmentOutlined />}>
-                        <p>Прайсы, заказы, входящие документы, ответы по поставкам и возвратам.</p>
-                        <SystemTag type="external" />
-                    </RuleCard>
-                    <span className="process-map-arrow">⇄</span>
-                    <RuleCard title="Платформа DragonZap" tone="orange" icon={<CloudSyncOutlined />}>
+                <div className="process-contour-grid">
+                    <RuleCard title="Операционный контур" tone="orange" icon={<CloudSyncOutlined />}>
                         <DetailList items={[
-                            'Прайсы, кроссы, предложения и клиентские правила',
-                            'Заказы, маршрутизация, резервы и волны упаковки',
-                            'Складская оперативная аналитика, этикетки и рекламации',
+                            'Прайсы, цены, кроссы и правила клиентов',
+                            'Заказы, выбор источника, резервы и cross-docking',
+                            'Физический склад, ячейки, волны, этикетки и рекламации',
                         ]} />
                         <SystemTag type="dz" />
                     </RuleCard>
-                    <span className="process-map-arrow">⇄</span>
-                    <RuleCard title="1С:Комплексная автоматизация 2" tone="teal" icon={<HistoryOutlined />}>
+                    <RuleCard title="Торговый контур" tone="blue" icon={<ApartmentOutlined />}>
                         <DetailList items={[
-                            'Регламентированный складской и финансовый учёт',
-                            'Поступление, выпуск, реализация, возврат и взаиморасчёты',
-                            'Формализованные УПД/УКД и бухгалтерские проводки',
+                            'Витрина и внешняя торговая площадка',
+                            'Карточки, фото и описания',
+                            'Передача заказов и статусов по согласованному API',
+                        ]} />
+                        <SystemTag type="partssoft" />
+                    </RuleCard>
+                    <RuleCard title="Регуляторный контур" tone="teal" icon={<HistoryOutlined />}>
+                        <DetailList items={[
+                            'Реквизиты, договоры, проводки и взаиморасчёты',
+                            'Бухгалтерские партии, себестоимость и регламентированный учёт',
+                            'Проведение поступления, выпуска, реализации и возврата',
                         ]} />
                         <SystemTag type="onec" />
                     </RuleCard>
-                    <span className="process-map-arrow">⇄</span>
-                    <RuleCard title="Диадок · ГИС МТ · перевозчики" tone="blue" icon={<SafetyCertificateOutlined />}>
-                        <p>ЭДО, статусы подписания, КИЗ и транспортные документы.</p>
-                        <SystemTag type="external" />
-                    </RuleCard>
+                </div>
+                <div className="process-system-boundary">
+                    <span><ApartmentOutlined /> Клиенты и поставщики</span>
+                    <strong>↔</strong>
+                    <span><CloudSyncOutlined /> Платформа связывает контуры</span>
+                    <strong>↔</strong>
+                    <span><SafetyCertificateOutlined /> Диадок · ГИС МТ · перевозчики</span>
+                </div>
+                <div className="process-callout">
+                    <strong>Владелец не равен единственному хранилищу</strong>
+                    <span>Владелец изменяет и подтверждает запись. Другие контуры могут хранить её копию, внешний ID и статус, но не создают параллельную истину.</span>
+                </div>
+                <div className="process-ownership-table" role="table" aria-label="Владельцы сущностей">
+                    <div className="process-ownership-head" role="row">
+                        <strong role="columnheader">Сущность</strong>
+                        <strong role="columnheader">Владелец</strong>
+                        <strong role="columnheader">Копия</strong>
+                        <strong role="columnheader">Правило</strong>
+                    </div>
+                    {OWNERSHIP_ROWS.map((row) => (
+                        <div className="process-ownership-row" role="row" key={row.entity}>
+                            <strong role="cell" data-label="Сущность">{row.entity}</strong>
+                            <div role="cell" data-label="Владелец">
+                                <OwnerBadge type={row.ownerType}>{row.owner}</OwnerBadge>
+                            </div>
+                            <span role="cell" data-label="Копия">{row.copy}</span>
+                            <p role="cell" data-label="Правило">{row.rule}</p>
+                        </div>
+                    ))}
                 </div>
                 <div className="process-callout">
                     <strong>Ключевое правило интеграции</strong>
-                    <span>Платформа отправляет команду один раз с idempotency key, 1С возвращает свой ID документа и статус. Повтор команды не создаёт дубль.</span>
+                    <span>Платформа отправляет команду с idempotency key, внешняя система возвращает ID и статус. Повтор команды не создаёт дубль.</span>
                 </div>
             </ProcessSection>
 
@@ -567,42 +650,56 @@ const ProcessArchitecturePage = () => {
                 {...sectionProps('stock-model')}
                 kicker="02 · Номенклатура"
                 title="Единая модель товара и остатков"
-                summary="Оригинальная позиция может продаваться как есть или стать материалом DragonZap; это определяется потребностью заказа, а не в момент прихода."
+                summary="Каждая складская партия получает явную роль при приёмке. Маршрут исполнения заказа хранится отдельно и не подменяет состояние товара."
             >
                 <div className="process-grid process-grid-3">
-                    <RuleCard title="Оригинал на складе" tone="plain">
+                    <RuleCard title="ORIGINAL_GOOD · товар как есть" tone="plain">
                         <DetailList items={[
                             'Приходуется под брендом и артикулом поставщика',
-                            'Может продаваться напрямую',
-                            'Может быть зарезервирован как материал для выпуска DragonZap',
-                            'Партия, себестоимость, ГТД и КИЗ сохраняются у исходного прихода',
+                            'Резервируется и продаётся без выпуска DragonZap',
+                            'Партия, себестоимость, ГТД и КИЗ сохраняются у исходного товара',
                         ]} />
                     </RuleCard>
-                    <RuleCard title="Готовая продукция DragonZap" tone="orange">
+                    <RuleCard title="DRAGONZAP_MATERIAL · материал" tone="sand">
                         <DetailList items={[
-                            'Появляется только после задания на выпуск',
-                            'Юридическая номенклатура имеет бренд DragonZap',
-                            'Выпуск связывает материал, упаковку и готовую позицию',
-                            'Для маркируемой группы используется собственный GTIN и новый код маркировки',
+                            'Хранится под номенклатурой входящего документа и конкретной партией',
+                            'Не продаётся напрямую как DragonZap без задания на выпуск',
+                            'Резервируется только в допустимую группу выпуска',
                         ]} />
                     </RuleCard>
-                    <RuleCard title="Cross-docking" tone="teal">
+                    <RuleCard title="DRAGONZAP_FINISHED · готовая продукция" tone="orange">
                         <DetailList items={[
-                            'Не превращается в материал и не проходит производство',
-                            'Сохраняет заказанные клиентом бренд и артикул',
-                            'Приход и реализация связаны с конкретной строкой заказа',
-                            'Поставщик скрыт от клиентской этикетки и документов',
+                            'Появляется только после подтверждённого выпуска',
+                            'Имеет юридическую номенклатуру DragonZap',
+                            'Связана с материалом, упаковкой и строкой заказа',
+                            'После отмены или возврата остаётся готовым товаром, а не превращается обратно в материал',
                         ]} />
                     </RuleCard>
                 </div>
+                <div className="process-callout">
+                    <strong>Cross-docking не является четвёртым состоянием товара.</strong>
+                    <span>Это маршрут исполнения: позиция не проходит выпуск DragonZap, но связывается с заказом поставщику, приёмкой, клиентской этикеткой и общей отгрузкой.</span>
+                </div>
+                <div className="process-grid process-grid-3">
+                    <RuleCard title="Поставщик: только материал" tone="sand">
+                        <p>Все допустимые поступления поставщика по умолчанию получают роль материала DragonZap.</p>
+                    </RuleCard>
+                    <RuleCard title="Поставщик: только товар" tone="teal">
+                        <p>Поступления предназначены для прямой продажи и не участвуют в выпуске DragonZap.</p>
+                    </RuleCard>
+                    <RuleCard title="Поставщик: смешанный" tone="plain">
+                        <p>Роль определяется правилом конкретного артикула, бренда или категории; спорные строки уходят оператору.</p>
+                    </RuleCard>
+                </div>
                 <Flow steps={[
-                    { title: 'Один физический остаток', text: 'Партия исходного товара', system: 'warehouse' },
-                    { title: 'Решение заказа', text: 'Продать напрямую или выпустить DragonZap', system: 'dz', tone: 'orange' },
-                    { title: 'Юридическое движение', text: 'Резерв / выпуск / реализация', system: 'onec', tone: 'teal' },
+                    { title: 'Политика поставщика', text: 'Материал / товар / смешанный', system: 'dz' },
+                    { title: 'Точное правило', text: 'Артикул → бренд → категория', system: 'dz', tone: 'orange' },
+                    { title: 'Решение строки', text: 'Роль подтверждена при приёмке', system: 'warehouse' },
+                    { title: 'Снимок партии', text: 'Роль и основание неизменяемы', system: 'dz', tone: 'teal' },
                 ]} />
                 <div className="process-warning">
-                    <strong>Поисковый алиас не создаёт новый остаток.</strong>
-                    Кроссы и варианты с DZ расширяют выдачу и прайс, но физический товар и его партия остаются одними до оформленного выпуска.
+                    <strong>Изменение правила поставщика не меняет старые партии задним числом.</strong>
+                    Для уже принятой партии роль корректируется только отдельной операцией с пользователем, причиной и историей. Поисковый кросс по-прежнему не создаёт новый остаток.
                 </div>
             </ProcessSection>
 
@@ -631,9 +728,21 @@ const ProcessArchitecturePage = () => {
                     { title: 'Передать в 1С', text: 'Черновик поступления', system: 'onec', tone: 'teal' },
                     { title: 'Вернуть статус', text: 'Номер, проведение, ошибка', system: 'onec', tone: 'teal' },
                 ]} />
+                <div className="process-grid process-grid-2">
+                    <RuleCard title="Быстрая приёмка списком" tone="sand">
+                        <p>Сотрудник отмечает пришедшие строки, вводит фактическое количество и одной командой получает сгруппированные складские или клиентские этикетки.</p>
+                    </RuleCard>
+                    <RuleCard title="Приёмка сканером" tone="teal">
+                        <p>Скан определяет строку поступления, система спрашивает количество, фиксирует факт и сразу создаёт задание печати нужных этикеток.</p>
+                    </RuleCard>
+                </div>
                 <div className="process-two-column-note">
                     <div><strong>Обычный товар</strong><span>Принимается по документу и количеству; универсальное сканирование этикетки не требуется, потому что её часто нет.</span></div>
                     <div><strong>Маркируемый товар</strong><span>Коды КИЗ принимаются из УПД или отдельным сканированием и закрепляются за конкретной партией.</span></div>
+                </div>
+                <div className="process-callout">
+                    <strong>Сканирование на приёмке остаётся выбором сотрудника.</strong>
+                    <span>Массовый режим быстрее для однородной поставки, сканер удобнее для смешанного поступления. Внутренний логистический штрихкод и DataMatrix КИЗ учитываются как разные идентификаторы.</span>
                 </div>
             </ProcessSection>
 
@@ -653,13 +762,13 @@ const ProcessArchitecturePage = () => {
                     <div className="process-lane process-lane-highlight">
                         <span>Только подтверждённые AutoPartCross</span>
                         <strong>1014003218 · T113001111BA · DZ1014003218…</strong>
-                        <p>Бренд во всех дополнительных строках DragonZap. Количество алиасов изменяется по настроенному правилу, цена не изменяется.</p>
+                        <p>Бренд во всех дополнительных строках DragonZap. Количество дополнительных кроссов изменяется по настроенному правилу, цена не изменяется.</p>
                     </div>
                     <div className="process-lane-arrow">→</div>
                     <div className="process-lane">
                         <span>Клиентский прайс</span>
                         <strong>Одна физическая позиция · несколько поисковых входов</strong>
-                        <p>Фиксируется снимок опубликованных алиасов, чтобы последующий заказ можно было доказуемо сопоставить.</p>
+                        <p>Фиксируется снимок опубликованных кроссов, чтобы последующий заказ можно было доказуемо сопоставить.</p>
                     </div>
                 </div>
                 <div className="process-grid process-grid-2">
@@ -672,8 +781,24 @@ const ProcessArchitecturePage = () => {
                         ]} />
                     </RuleCard>
                     <RuleCard title="Защита от неоднозначности" tone="sand">
-                        <p>Если один заказанный алиас связан с несколькими остатками DragonZap, платформа выбирает самый дешёвый допустимый вариант и сохраняет фактическую позицию отдельно от заказанной.</p>
+                        <p>Если один заказанный кросс связан с несколькими остатками DragonZap, платформа выбирает самый дешёвый допустимый вариант и сохраняет фактическую позицию отдельно от заказанной.</p>
                     </RuleCard>
+                </div>
+                <div className="process-grid process-grid-2">
+                    <RuleCard title="Каталожный кросс" tone="plain">
+                        <p>Отвечает на вопрос: «Эти номера взаимозаменяемы для поиска, предложения и клиентского прайса?» Источник истины — подтверждённый AutoPartCross.</p>
+                    </RuleCard>
+                    <RuleCard title="Группа выпуска DragonZap" tone="orange">
+                        <p>Отвечает на другой вопрос: «Можно ли конкретную партию материала превратить в этот готовый SKU DragonZap?» Здесь действуют ограничения поставщика, партии, маркировки и упаковки.</p>
+                    </RuleCard>
+                </div>
+                <div className="process-callout">
+                    <strong>Двойного ввода кроссов не будет.</strong>
+                    <span>Группа выпуска автоматически строится из подтверждённых кроссов DragonZap. Пользователь настраивает только допустимые источники материала, приоритеты и исключения.</span>
+                </div>
+                <div className="process-two-column-note">
+                    <div><strong>Одинаковый GEELY 123 у разных поставщиков</strong><span>Каталожная карточка может быть общей, но партия поставщика А сохраняется как материал, а партия поставщика Б — как оригинальный товар. Различие хранится в партии и снимке применённого правила.</span></div>
+                    <div><strong>Цена предложения DragonZap</strong><span>Рассчитывается по последовательности допустимых партий, покрывающих показываемое количество, плюс упаковка и наценка. Нельзя ориентироваться только на первую дешёвую FIFO-партию.</span></div>
                 </div>
             </ProcessSection>
 
@@ -686,7 +811,7 @@ const ProcessArchitecturePage = () => {
                 <Flow steps={[
                     { title: 'Получить заказ', text: 'Почта / сайт / ручной ввод', system: 'external' },
                     { title: 'Нормализовать', text: 'Бренд, артикул, цена, количество', system: 'dz' },
-                    { title: 'Найти снимок прайса', text: 'Прямой номер или опубликованный алиас', system: 'dz' },
+                    { title: 'Найти снимок прайса', text: 'Прямой номер или опубликованный кросс', system: 'dz' },
                     { title: 'Выбрать исполнение', text: 'Склад напрямую / DragonZap / cross-docking', system: 'dz', tone: 'orange' },
                     { title: 'Создать резервы', text: 'Фактический SKU и партия', system: 'onec', tone: 'teal' },
                 ]} />
@@ -700,6 +825,16 @@ const ProcessArchitecturePage = () => {
                     <RuleCard title="DragonZap" tone="orange"><p>Материал резервируется в волну выпуска под заказанный клиентом артикул DragonZap.</p></RuleCard>
                     <RuleCard title="Cross-docking" tone="teal"><p>Формируется черновик заказа поставщику; после подтверждения ожидается конкретная строка поступления.</p></RuleCard>
                 </div>
+                <Flow steps={[
+                    { title: 'Отфильтровать партии', text: 'Группа выпуска, роль, доступность, ограничения КИЗ', system: 'dz' },
+                    { title: 'Рассчитать покрытие', text: 'FIFO и фактическая себестоимость всего количества', system: 'dz', tone: 'orange' },
+                    { title: 'Зафиксировать выбор', text: 'Партии и количество по каждой', system: 'dz' },
+                    { title: 'Поставить резерв', text: 'Сразу после подтверждения строки', system: 'onec', tone: 'teal' },
+                ]} />
+                <div className="process-warning">
+                    <strong>Ручная замена материала допускается, но не остаётся незаметной.</strong>
+                    Сотрудник выбирает другую допустимую партию, указывает причину, а система пересчитывает себестоимость и сохраняет аудит решения.
+                </div>
             </ProcessSection>
 
             <ProcessSection
@@ -708,6 +843,10 @@ const ProcessArchitecturePage = () => {
                 title="Волны упаковки и выпуска"
                 summary="Вместо сотен отдельных документов система накапливает потребность и создаёт одну волну по складу и выпускающему подразделению."
             >
+                <div className="process-callout">
+                    <strong>Переупаковка признаётся выпуском.</strong>
+                    <span>Материал и упаковка списываются, готовая номенклатура DragonZap приходуется. Связь исходной партии, выпуска и клиентской строки сохраняется полностью.</span>
+                </div>
                 <Flow steps={[
                     { title: 'Накопить потребность', text: 'Все подтверждённые строки DragonZap', system: 'dz' },
                     { title: 'Запустить волну', text: 'По расписанию или вручную', system: 'dz', tone: 'orange' },
@@ -723,6 +862,21 @@ const ProcessArchitecturePage = () => {
                     <RuleCard title="Состав документов 1С" tone="teal">
                         <p>Один склад и одно выпускающее подразделение позволяют агрегировать множество заказов и строк в документе выпуска, сохраняя аналитическую связь с каждой клиентской строкой.</p>
                     </RuleCard>
+                </div>
+                <div className="process-grid process-grid-3">
+                    <RuleCard title="1. Допуск материала" tone="plain">
+                        <p>Партия входит в группу выпуска, имеет роль материала, не заблокирована и соответствует ограничениям маркировки.</p>
+                    </RuleCard>
+                    <RuleCard title="2. Распределение" tone="sand">
+                        <p>FIFO с предпочтением одной партии, покрывающей строку; если количества не хватает, система делит потребность между партиями.</p>
+                    </RuleCard>
+                    <RuleCard title="3. Фактическая стоимость" tone="orange">
+                        <p>Себестоимость готовой позиции складывается из реально списанных партий и упаковки, а не из цены первой доступной партии.</p>
+                    </RuleCard>
+                </div>
+                <div className="process-two-column-note">
+                    <div><strong>Пример расчёта</strong><span>2 шт. по 100 + 8 шт. по 150 дают среднюю стоимость материала 140 за штуку. После упаковки 10 итоговая себестоимость равна 150, а не 110.</span></div>
+                    <div><strong>Отмена или возврат</strong><span>Уже выпущенная позиция возвращается в остаток DRAGONZAP_FINISHED. Обратное превращение в материал возможно только отдельным документированным процессом.</span></div>
                 </div>
                 <div className="process-warning">
                     <strong>Обычная продукция не требует обязательного сканирования материала.</strong>
@@ -777,6 +931,14 @@ const ProcessArchitecturePage = () => {
                     <div><strong>DragonZap</strong><span>Этикетка сопровождает выпуск и переупаковку готовой продукции.</span></div>
                     <div><strong>Cross-docking</strong><span>Этикетка тоже печатается, но с брендом и артикулом именно из заказа клиента, без оформления производства.</span></div>
                 </div>
+                <div className="process-grid process-grid-2">
+                    <RuleCard title="Массовая печать" tone="sand">
+                        <p>После приёмки списком или запуска волны система группирует задания и автоматически печатает рассчитанное количество этикеток.</p>
+                    </RuleCard>
+                    <RuleCard title="Печать после сканирования" tone="teal">
+                        <p>После скана и подтверждения количества этикетка создаётся для конкретной строки. Повторная печать доступна с обязательной записью в историю.</p>
+                    </RuleCard>
+                </div>
             </ProcessSection>
 
             <ProcessSection
@@ -796,8 +958,25 @@ const ProcessArchitecturePage = () => {
                 ]} />
                 <div className="process-grid process-grid-3">
                     <RuleCard title="Документы есть" tone="teal"><p>Поступление передаётся в 1С с реальными реквизитами, ГТД/РНПТ и КИЗ, если они пришли.</p></RuleCard>
-                    <RuleCard title="Документы ожидаются" tone="sand"><p>Строка остаётся в контроле исключений до получения основания; операционный статус не подменяет юридический.</p></RuleCard>
+                    <RuleCard title="Документы ожидаются" tone="sand"><p>Товар получает статус DOC_PENDING и остаётся в контроле исключений. Это не блокирует продажу по умолчанию, но задолженность по документам видна ответственному.</p></RuleCard>
                     <RuleCard title="Клиентская видимость" tone="plain"><p>В этикетке, реализации и УПД используется заказанная клиентом номенклатура; внутренний источник хранится в связи строки.</p></RuleCard>
+                </div>
+                <div className="process-grid process-grid-2">
+                    <RuleCard title="Быстрая приёмка" tone="sand">
+                        <p>Галочками отмечаются пришедшие строки и фактическое количество, затем одним заданием печатаются клиентские этикетки.</p>
+                    </RuleCard>
+                    <RuleCard title="Приёмка сканером" tone="teal">
+                        <p>Скан открывает ожидаемую строку, сотрудник подтверждает количество, после чего этикетка печатается и позиция попадает в клиентскую коробку.</p>
+                    </RuleCard>
+                </div>
+                <Flow steps={[
+                    { title: 'PHYSICALLY_RECEIVED', text: 'Товар фактически принят', system: 'warehouse' },
+                    { title: 'DOC_PENDING', text: 'Документ отсутствует или ожидается', system: 'dz', tone: 'orange' },
+                    { title: 'READY_FOR_CUSTOMER', text: 'Позиция промаркирована и готова к сборке', system: 'dz', tone: 'teal' },
+                ]} />
+                <div className="process-warning">
+                    <strong>Отсутствующий документ не скрывается и не останавливает обычный cross-docking автоматически.</strong>
+                    Система разрешает продажу по принятому бизнес-правилу, сохраняет исключение и отдельно контролирует последующее получение основания.
                 </div>
             </ProcessSection>
 
@@ -871,6 +1050,17 @@ const ProcessArchitecturePage = () => {
                         ]} />
                     </RuleCard>
                 </div>
+                <div className="process-grid process-grid-3">
+                    <RuleCard title="Обычный контроль" tone="teal">
+                        <p>Сотрудник сканирует внутренний штрихкод строки, система проверяет клиента, заказ, артикул и оставшееся количество.</p>
+                    </RuleCard>
+                    <RuleCard title="Аварийный обход" tone="sand">
+                        <p>Только сотрудник с отдельным правом может продолжить без полного сканирования. Причина обязательна, действие попадает в аудит и выделяется предупреждением.</p>
+                    </RuleCard>
+                    <RuleCard title="КИЗ отдельно" tone="plain">
+                        <p>Внутренний штрихкод подтверждает логистическую строку, DataMatrix КИЗ подтверждает конкретную маркированную единицу. Один код не заменяет другой.</p>
+                    </RuleCard>
+                </div>
             </ProcessSection>
 
             <ProcessSection
@@ -891,6 +1081,29 @@ const ProcessArchitecturePage = () => {
                 <div className="process-callout">
                     <strong>Технический минимум каждого сообщения</strong>
                     <span>event_id, idempotency_key, source_document_id, timestamp, payload_version, статус, текст ошибки и идентификатор документа 1С.</span>
+                </div>
+                <div className="process-grid process-grid-2">
+                    <RuleCard title="Единый реестр внешних документов" tone="teal">
+                        <DetailList items={[
+                            'Внутренняя операция, вид и версия документа',
+                            'Организация, контрагент, номер, дата и сумма',
+                            'Diadoc MessageId / EntityId и идентификатор 1С',
+                            'Система-отправитель, статус, хеш содержимого и последняя ошибка',
+                        ]} />
+                    </RuleCard>
+                    <RuleCard title="Один активный отправитель" tone="orange">
+                        <p>Для каждого типа документа назначается один контур отправки. Второй контур получает внешний ID и статус, но не отправляет тот же документ повторно.</p>
+                    </RuleCard>
+                </div>
+                <Flow steps={[
+                    { title: 'Сформировать ключ', text: 'shipment:1258:UPD:version-1', system: 'dz' },
+                    { title: 'Захватить блокировку', text: 'Уникальная запись до отправки', system: 'dz', tone: 'orange' },
+                    { title: 'Отправить один раз', text: '1С или платформа → Диадок', system: 'external' },
+                    { title: 'Сохранить результат', text: 'MessageId, EntityId и статус', system: 'dz', tone: 'teal' },
+                ]} />
+                <div className="process-warning">
+                    <strong>Исправление не считается дублем исходного документа.</strong>
+                    Для УКД, исправления или новой редакции создаётся следующая версия с собственным ключом и явной ссылкой на основание.
                 </div>
             </ProcessSection>
 
@@ -926,6 +1139,19 @@ const ProcessArchitecturePage = () => {
                     <Tag color="gold">Этикетка до упаковки</Tag>
                     <Tag color="blue">Факт учёта в 1С</Tag>
                     <Tag color="green">Партия и КИЗ прослеживаются</Tag>
+                    <Tag color="orange">Роль фиксируется в партии</Tag>
+                    <Tag color="geekblue">Один отправитель ЭДО</Tag>
+                </div>
+                <div className="process-grid process-grid-3">
+                    <RuleCard title="Пилот 1 · материал и выпуск" tone="orange">
+                        <p>Один поставщик, одна группа DragonZap и несколько партий с разной себестоимостью: приёмка, резерв, волна, этикетка и возврат.</p>
+                    </RuleCard>
+                    <RuleCard title="Пилот 2 · cross-docking" tone="teal">
+                        <p>Один клиентский заказ с документом и без него: быстрая приёмка, клиентская этикетка, общая сборка и контроль DOC_PENDING.</p>
+                    </RuleCard>
+                    <RuleCard title="Пилот 3 · 1С и ЭДО" tone="plain">
+                        <p>Поступление, выпуск, реализация, УПД и УКД проходят повторяемый обмен без дублей с возвратом статусов в платформу.</p>
+                    </RuleCard>
                 </div>
             </ProcessSection>
 
