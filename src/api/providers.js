@@ -57,6 +57,31 @@ export const deleteProviderApi = async (providerId) => {
     return api.delete(`/providers/${providerId}/`);
 };
 
+export const getProviderInventoryRoleRules = async (providerId) => {
+    return api.get(`/providers/${providerId}/inventory-role-rules`);
+};
+
+export const createProviderInventoryRoleRule = async (providerId, data) => {
+    return api.post(`/providers/${providerId}/inventory-role-rules`, data);
+};
+
+export const updateProviderInventoryRoleRule = async (
+    providerId,
+    ruleId,
+    data
+) => {
+    return api.patch(
+        `/providers/${providerId}/inventory-role-rules/${ruleId}`,
+        data
+    );
+};
+
+export const deleteProviderInventoryRoleRule = async (providerId, ruleId) => {
+    return api.delete(
+        `/providers/${providerId}/inventory-role-rules/${ruleId}`
+    );
+};
+
 // Конфиги
 export const createProviderConfig = async (providerId, data) => {
     return api.post(`/providers/${providerId}/pricelist-config/`, data);

@@ -29,6 +29,7 @@ import {
     UndoOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { Link } from 'react-router-dom';
 
 import {
     createProcessAnnotation,
@@ -541,7 +542,7 @@ const ProcessArchitecturePage = () => {
             <header className="process-hero">
                 <div className="process-hero-copy">
                     <span className="process-hero-eyebrow">Рабочая модель · версия для обсуждения</span>
-                    <h1>Как DragonZap проходит путь от прайса до УПД</h1>
+                    <h1>Схема работы с товарами DragonZap</h1>
                     <p>
                         Общая карта будущего контура: наша платформа управляет ассортиментом,
                         заказом и складской операцией; 1С:КА 2 ведёт регламентированный учёт;
@@ -790,6 +791,7 @@ const ProcessArchitecturePage = () => {
                     </RuleCard>
                     <RuleCard title="Группа выпуска DragonZap" tone="orange">
                         <p>Отвечает на другой вопрос: «Можно ли конкретную партию материала превратить в этот готовый SKU DragonZap?» Здесь действуют ограничения поставщика, партии, маркировки и упаковки.</p>
+                        <Link to="/warehouse/production-groups">Открыть рабочие группы выпуска</Link>
                     </RuleCard>
                 </div>
                 <div className="process-callout">

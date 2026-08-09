@@ -55,8 +55,31 @@ export const listStockLots = (params = {}) =>
 export const getStockLot = (id) =>
     api.get(`/inventory/lots/${id}`);
 
+export const updateStockLotRole = (id, data) =>
+    api.patch(`/inventory/lots/${id}/role`, data);
+
+export const getStockLotRoleHistory = (id) =>
+    api.get(`/inventory/lots/${id}/role-history`);
+
 export const getAutopartLots = (autopartId, params = {}) =>
     api.get(`/inventory/autoparts/${autopartId}/lots`, { params });
+
+// ── DragonZap production groups ─────────────────────────────────────────────
+
+export const listProductionGroups = (params = {}) =>
+    api.get('/inventory/production-groups', { params });
+
+export const syncProductionGroups = () =>
+    api.post('/inventory/production-groups/sync');
+
+export const updateProductionGroup = (id, data) =>
+    api.patch(`/inventory/production-groups/${id}`, data);
+
+export const updateProductionMaterial = (groupId, autopartId, data) =>
+    api.put(`/inventory/production-groups/${groupId}/materials/${autopartId}`, data);
+
+export const resetProductionMaterial = (groupId, autopartId) =>
+    api.delete(`/inventory/production-groups/${groupId}/materials/${autopartId}`);
 
 // ── StockDocument ─────────────────────────────────────────────────────────────
 

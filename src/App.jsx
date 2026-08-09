@@ -63,6 +63,7 @@ import ReturnsPage from './components/ReturnsPage';
 import ReclamationsPage from './components/ReclamationsPage';
 import ReturnDetailPage from './components/ReturnDetailPage';
 import StockLotsPage from './components/StockLotsPage';
+import ProductionGroupsPage from './components/ProductionGroupsPage';
 import TransferPage from './components/TransferPage';
 import StockOverviewPage from './components/StockOverviewPage';
 import FinancePage from './components/FinancePage';
@@ -214,6 +215,7 @@ const AppRoutes = () => (
             element={<RequireAuth><ReturnDetailPage kind="supplier" /></RequireAuth>}
         />
         <Route path="/warehouse/lots" element={<RequireAuth><StockLotsPage /></RequireAuth>} />
+        <Route path="/warehouse/production-groups" element={<RequireAuth><ProductionGroupsPage /></RequireAuth>} />
         <Route path="/warehouse/transfer" element={<RequireAuth><TransferPage /></RequireAuth>} />
 
         {/* Autopart price history */}

@@ -5,24 +5,32 @@ import {
     Col,
     Form,
     Input,
+    Modal,
     Row,
     Select,
     Space,
     Spin,
     Table,
     Tag,
+    Timeline,
     Tooltip,
     Typography,
     message,
 } from 'antd';
 import {
     FilterOutlined,
+    HistoryOutlined,
     ReloadOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { listStockLots } from '../api/inventory';
+import {
+    getStockLotRoleHistory,
+    listStockLots,
+    updateStockLotRole,
+} from '../api/inventory';
 import { searchAutopartsByOem } from '../api/autoparts';
 import { getStorageLocations } from '../api/storage';
+import useAuth from '../context/useAuth';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -47,6 +55,28 @@ const SOURCE_LABELS = {
     customer_return:      'Возврат клиента',
 };
 
+const ROLE_COLORS = {
+    original_good:       'blue',
+    dragonzap_material:  'orange',
+    dragonzap_finished:  'green',
+};
+
+const ROLE_LABELS = {
+    original_good:       'Обычный товар',
+    dragonzap_material:  'Материал для DragonZap',
+    dragonzap_finished:  'Готовый товар DragonZap',
+};
+
+const ROLE_SOURCE_LABELS = {
+    system_default:  'Автоматически',
+    legacy_migration: 'Перенос старых данных',
+    manual:          'Вручную',
+    provider_policy: 'Правило поставщика',
+    item_rule:       'Правило позиции',
+    production:      'Выпуск',
+    customer_return: 'Возврат клиента',
+};
+
 const fmtDate = (d) => (d ? dayjs(d).format('DD.MM.YYYY HH:mm') : '—');
 const fmtQty  = (remaining, initial) => {
     const pct = initial > 0 ? Math.round((remaining / initial) * 100) : 0;
@@ -62,6 +92,7 @@ const fmtQty  = (remaining, initial) => {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 const StockLotsPage = () => {
+    const { user } = useAuth();
     const [data, setData]           = useState([]);
     const [loading, setLoading]     = useState(false);
     const [total, setTotal]         = useState(0);
@@ -73,6 +104,11 @@ const StockLotsPage = () => {
     const [locOptions, setLocOptions] = useState([]);
     const [searchingAp, setSearchingAp] = useState(false);
     const searchTimer                    = useRef(null);
+    const [roleForm] = Form.useForm();
+    const [roleModal, setRoleModal] = useState(null);
+    const [roleHistory, setRoleHistory] = useState([]);
+    const [roleHistoryLoading, setRoleHistoryLoading] = useState(false);
+    const [roleSaving, setRoleSaving] = useState(false);
 
     useEffect(() => {
         getStorageLocations({ limit: 500 })
@@ -134,11 +170,47 @@ const StockLotsPage = () => {
             autopart_id:          vals.autopart_id || undefined,
             storage_location_id:  vals.storage_location_id || undefined,
             gtd_number:           vals.gtd_number || undefined,
+            inventory_role:       vals.inventory_role || undefined,
             only_active:          vals.only_active !== false,
         };
         setFilters(newFilters);
         setPage(1);
         fetchData(1, pageSize, newFilters);
+    };
+
+    const openRoleModal = async (row) => {
+        setRoleModal(row);
+        setRoleHistory([]);
+        roleForm.setFieldsValue({
+            inventory_role: row.inventory_role,
+            reason: '',
+        });
+        setRoleHistoryLoading(true);
+        try {
+            const response = await getStockLotRoleHistory(row.id);
+            setRoleHistory(Array.isArray(response.data) ? response.data : []);
+        } catch (error) {
+            message.error(error?.response?.data?.detail || 'Не удалось загрузить историю роли');
+        } finally {
+            setRoleHistoryLoading(false);
+        }
+    };
+
+    const saveRole = async () => {
+        if (!roleModal) return;
+        try {
+            const values = await roleForm.validateFields();
+            setRoleSaving(true);
+            await updateStockLotRole(roleModal.id, values);
+            message.success('Роль партии изменена');
+            setRoleModal(null);
+            await fetchData();
+        } catch (error) {
+            if (error?.errorFields) return;
+            message.error(error?.response?.data?.detail || 'Не удалось изменить роль партии');
+        } finally {
+            setRoleSaving(false);
+        }
     };
 
     const resetFilters = () => {
@@ -158,6 +230,23 @@ const StockLotsPage = () => {
             width: 130,
             render: (v) => (
                 <Tag color={SOURCE_COLORS[v] || 'default'}>{SOURCE_LABELS[v] || v}</Tag>
+            ),
+        },
+        {
+            title: 'Роль партии',
+            dataIndex: 'inventory_role',
+            width: 190,
+            render: (value, row) => (
+                <Tooltip
+                    title={[
+                        ROLE_SOURCE_LABELS[row.role_source] || row.role_source,
+                        row.role_change_reason,
+                    ].filter(Boolean).join(': ')}
+                >
+                    <Tag color={ROLE_COLORS[value] || 'default'}>
+                        {ROLE_LABELS[value] || value}
+                    </Tag>
+                </Tooltip>
             ),
         },
         {
@@ -221,6 +310,21 @@ const StockLotsPage = () => {
             dataIndex: 'created_at',
             width: 140,
             render: fmtDate,
+        },
+        {
+            title: '',
+            key: 'actions',
+            width: 52,
+            fixed: 'right',
+            render: (_, row) => user?.role === 'admin' ? (
+                <Tooltip title="Изменить роль и посмотреть историю">
+                    <Button
+                        type="text"
+                        icon={<HistoryOutlined />}
+                        onClick={() => openRoleModal(row)}
+                    />
+                </Tooltip>
+            ) : null,
         },
     ];
 
@@ -287,6 +391,17 @@ const StockLotsPage = () => {
                     <Form.Item name="gtd_number" style={{ marginBottom: 4 }}>
                         <Input placeholder="ГТД номер" style={{ width: 180 }} allowClear />
                     </Form.Item>
+                    <Form.Item name="inventory_role" style={{ marginBottom: 4 }}>
+                        <Select
+                            allowClear
+                            placeholder="Роль партии"
+                            style={{ width: 220 }}
+                            options={Object.entries(ROLE_LABELS).map(([value, label]) => ({
+                                value,
+                                label,
+                            }))}
+                        />
+                    </Form.Item>
                     <Form.Item name="only_active" label="Только активные" style={{ marginBottom: 4 }}>
                         <Select style={{ width: 120 }}>
                             <Option value={true}>Да</Option>
@@ -318,6 +433,81 @@ const StockLotsPage = () => {
                 }}
                 scroll={{ x: 1200 }}
             />
+
+            <Modal
+                title={roleModal ? `Роль партии №${roleModal.id}` : 'Роль партии'}
+                open={Boolean(roleModal)}
+                onCancel={() => setRoleModal(null)}
+                onOk={saveRole}
+                okText="Сохранить изменение"
+                cancelText="Отмена"
+                confirmLoading={roleSaving}
+                width={720}
+            >
+                {roleModal && (
+                    <>
+                        <Space direction="vertical" size={2} style={{ marginBottom: 16 }}>
+                            <Text strong>
+                                {roleModal.autopart_brand} {roleModal.autopart_oem}
+                            </Text>
+                            <Text type="secondary">{roleModal.autopart_name || 'Без наименования'}</Text>
+                            <Text type="secondary">
+                                Остаток: {roleModal.remaining_quantity} из {roleModal.initial_quantity}
+                            </Text>
+                        </Space>
+                        <Form form={roleForm} layout="vertical">
+                            <Form.Item
+                                name="inventory_role"
+                                label="Новая роль"
+                                rules={[{ required: true, message: 'Выберите роль партии' }]}
+                            >
+                                <Select
+                                    options={Object.entries(ROLE_LABELS).map(([value, label]) => ({
+                                        value,
+                                        label,
+                                    }))}
+                                />
+                            </Form.Item>
+                            <Form.Item
+                                name="reason"
+                                label="Причина изменения"
+                                rules={[
+                                    { required: true, message: 'Укажите причину изменения' },
+                                    { min: 3, message: 'Минимум 3 символа' },
+                                ]}
+                            >
+                                <Input.TextArea
+                                    rows={3}
+                                    maxLength={1000}
+                                    showCount
+                                    placeholder="Например: партия получена как материал для переупаковки DragonZap"
+                                />
+                            </Form.Item>
+                        </Form>
+                        <Title level={5}>История роли</Title>
+                        <Spin spinning={roleHistoryLoading}>
+                            {roleHistory.length ? (
+                                <Timeline
+                                    items={roleHistory.map((entry) => ({
+                                        color: ROLE_COLORS[entry.new_role] || 'gray',
+                                        children: (
+                                            <Space direction="vertical" size={0}>
+                                                <Text strong>{ROLE_LABELS[entry.new_role] || entry.new_role}</Text>
+                                                <Text type="secondary">
+                                                    {fmtDate(entry.changed_at)} · {entry.changed_by_name || ROLE_SOURCE_LABELS[entry.source] || 'Система'}
+                                                </Text>
+                                                {entry.reason && <Text>{entry.reason}</Text>}
+                                            </Space>
+                                        ),
+                                    }))}
+                                />
+                            ) : (
+                                <Text type="secondary">История пока отсутствует</Text>
+                            )}
+                        </Spin>
+                    </>
+                )}
+            </Modal>
         </div>
     );
 };

@@ -1,5 +1,5 @@
 // src/components/ProviderPage.jsx
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
     useNavigate,
     useParams,
@@ -73,7 +73,12 @@ import {
     downloadProviderPricelistReview,
     approveProviderPricelistReview,
     rejectProviderPricelistReview,
+    getProviderInventoryRoleRules,
+    createProviderInventoryRoleRule,
+    updateProviderInventoryRoleRule,
+    deleteProviderInventoryRoleRule,
 } from "../api/providers";
+import { searchAutopartsByOem } from "../api/autoparts";
 import { updateCustomerPricelistSource } from "../api/customers";
 import { getBrands } from "../api/brands";
 import { getEmailAccounts } from "../api/emailAccounts";
@@ -98,6 +103,26 @@ const deliveryMethodOptions = [
     { value: "Self pickup", label: "Забираем сами" },
     { value: "Courier foot", label: "Курьер пеший" },
     { value: "Courier car", label: "Курьер авто" },
+];
+
+const inventoryPolicyOptions = [
+    {
+        value: "original_goods",
+        label: "Обычный товар",
+    },
+    {
+        value: "dragonzap_material",
+        label: "Всегда материал DragonZap",
+    },
+    {
+        value: "mixed",
+        label: "Смешанный поставщик",
+    },
+];
+
+const inventoryRoleOptions = [
+    { value: "original_good", label: "Обычный товар" },
+    { value: "dragonzap_material", label: "Материал DragonZap" },
 ];
 
 const supplierResponseMessageTypeOptions = [
@@ -143,6 +168,14 @@ const ProviderPage = () => {
     const [expandedPricelistReviewIds, setExpandedPricelistReviewIds] = useState([]);
     const [rejectReview, setRejectReview] = useState(null);
     const [rejectReason, setRejectReason] = useState("");
+    const [inventoryRules, setInventoryRules] = useState([]);
+    const [inventoryRulesLoading, setInventoryRulesLoading] = useState(false);
+    const [inventoryRuleModalOpen, setInventoryRuleModalOpen] = useState(false);
+    const [editingInventoryRule, setEditingInventoryRule] = useState(null);
+    const [inventoryRuleSaving, setInventoryRuleSaving] = useState(false);
+    const [autopartOptions, setAutopartOptions] = useState([]);
+    const [autopartSearching, setAutopartSearching] = useState(false);
+    const inventoryRuleSearchTimer = useRef(null);
 
     const [configModalVisible, setConfigModalVisible] = useState(false);
     const [editingConfig, setEditingConfig] = useState(null);
@@ -189,6 +222,7 @@ const ProviderPage = () => {
     const [abbrForm] = Form.useForm();
     const [externalRefForm] = Form.useForm();
     const [mergeForm] = Form.useForm();
+    const [inventoryRuleForm] = Form.useForm();
 
     const refreshAnalytics = () => {
         setAnalyticsRefreshKey((prev) => prev + 1);
@@ -201,6 +235,33 @@ const ProviderPage = () => {
         refreshAnalytics();
         return data;
     };
+
+    const loadInventoryRules = useCallback(async () => {
+        if (!providerId) return;
+        setInventoryRulesLoading(true);
+        try {
+            const { data } = await getProviderInventoryRoleRules(providerId);
+            setInventoryRules(data || []);
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail
+                || "Не удалось загрузить правила складской роли"
+            );
+        } finally {
+            setInventoryRulesLoading(false);
+        }
+    }, [providerId]);
+
+    useEffect(() => {
+        if (!isNew && providerId) {
+            loadInventoryRules();
+        }
+        return () => {
+            if (inventoryRuleSearchTimer.current) {
+                clearTimeout(inventoryRuleSearchTimer.current);
+            }
+        };
+    }, [isNew, providerId, loadInventoryRules]);
 
     const loadPricelistReviews = async () => {
         if (!providerId || user?.role !== 'admin') {
@@ -348,6 +409,8 @@ const ProviderPage = () => {
                 order_schedule_days: [],
                 order_schedule_times: [],
                 default_warehouse_id: undefined,
+                inventory_policy: "original_goods",
+                inventory_policy_note: "",
             });
             setProviderData(null);
             setLoading(false);
@@ -384,6 +447,10 @@ const ProviderPage = () => {
                     autopurchase_block_reason:
                         data.provider.autopurchase_block_reason || "",
                     default_warehouse_id: data.provider.default_warehouse_id,
+                    inventory_policy:
+                        data.provider.inventory_policy || "original_goods",
+                    inventory_policy_note:
+                        data.provider.inventory_policy_note || "",
                     default_delivery_method:
                         data.provider.default_delivery_method || "Delivered",
                     order_schedule_days: data.provider.order_schedule_days || [],
@@ -517,6 +584,10 @@ const ProviderPage = () => {
             ...values,
             is_vat_payer: deriveVatPayerFromPriceType(values.type_prices),
         };
+        if (user?.role !== "admin") {
+            delete normalizedValues.inventory_policy;
+            delete normalizedValues.inventory_policy_note;
+        }
         setSaving(true);
         try {
             if (isNew) {
@@ -534,6 +605,98 @@ const ProviderPage = () => {
             message.error("Ошибка сохранения поставщика");
         } finally {
             setSaving(false);
+        }
+    };
+
+    const openInventoryRuleModal = (rule = null) => {
+        setEditingInventoryRule(rule);
+        setAutopartOptions(rule ? [{
+            value: rule.autopart_id,
+            label: [
+                rule.autopart_brand,
+                rule.autopart_oem,
+                rule.autopart_name,
+            ].filter(Boolean).join(" · "),
+        }] : []);
+        inventoryRuleForm.setFieldsValue({
+            autopart_id: rule?.autopart_id,
+            inventory_role: rule?.inventory_role || "dragonzap_material",
+            reason: rule?.reason || "",
+            is_active: rule?.is_active ?? true,
+        });
+        setInventoryRuleModalOpen(true);
+    };
+
+    const handleInventoryRuleSearch = (value) => {
+        if (inventoryRuleSearchTimer.current) {
+            clearTimeout(inventoryRuleSearchTimer.current);
+        }
+        const query = String(value || "").trim();
+        if (query.length < 2) {
+            setAutopartOptions([]);
+            return;
+        }
+        inventoryRuleSearchTimer.current = setTimeout(async () => {
+            setAutopartSearching(true);
+            try {
+                const { data } = await searchAutopartsByOem(query, 30);
+                setAutopartOptions((data || []).map((item) => ({
+                    value: item.id,
+                    label: [item.brand, item.oem_number, item.name]
+                        .filter(Boolean)
+                        .join(" · "),
+                })));
+            } catch {
+                setAutopartOptions([]);
+            } finally {
+                setAutopartSearching(false);
+            }
+        }, 300);
+    };
+
+    const saveInventoryRule = async () => {
+        const values = await inventoryRuleForm.validateFields();
+        setInventoryRuleSaving(true);
+        try {
+            if (editingInventoryRule) {
+                await updateProviderInventoryRoleRule(
+                    providerId,
+                    editingInventoryRule.id,
+                    {
+                        inventory_role: values.inventory_role,
+                        reason: values.reason,
+                        is_active: values.is_active,
+                    }
+                );
+            } else {
+                await createProviderInventoryRoleRule(providerId, values);
+            }
+            message.success("Правило складской роли сохранено");
+            setInventoryRuleModalOpen(false);
+            setEditingInventoryRule(null);
+            inventoryRuleForm.resetFields();
+            await loadInventoryRules();
+        } catch (err) {
+            if (!err?.errorFields) {
+                message.error(
+                    err?.response?.data?.detail
+                    || "Не удалось сохранить правило"
+                );
+            }
+        } finally {
+            setInventoryRuleSaving(false);
+        }
+    };
+
+    const removeInventoryRule = async (ruleId) => {
+        try {
+            await deleteProviderInventoryRoleRule(providerId, ruleId);
+            message.success("Правило удалено");
+            await loadInventoryRules();
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail || "Не удалось удалить правило"
+            );
         }
     };
 
@@ -2477,6 +2640,48 @@ const ProviderPage = () => {
                         />
                     </Form.Item>
 
+                    <Divider orientation="left">
+                        Роль товара при поступлении
+                    </Divider>
+
+                    <Alert
+                        type="info"
+                        showIcon
+                        style={{ marginBottom: 16 }}
+                        message="Правило применяется при проведении нового поступления"
+                        description={(
+                            "Уже проведённые партии не изменяются. "
+                            + "Для смешанного поставщика позиция без точного "
+                            + "правила останется обычным товаром."
+                        )}
+                    />
+
+                    <Form.Item
+                        name="inventory_policy"
+                        label="Правило поставщика"
+                        rules={[{
+                            required: true,
+                            message: "Выберите правило поступления",
+                        }]}
+                    >
+                        <Select
+                            options={inventoryPolicyOptions}
+                            disabled={user?.role !== "admin"}
+                        />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="inventory_policy_note"
+                        label="Пояснение к правилу"
+                        extra="Например: материалом считаются только позиции из списка исключений."
+                    >
+                        <Input.TextArea
+                            rows={2}
+                            maxLength={1000}
+                            disabled={user?.role !== "admin"}
+                        />
+                    </Form.Item>
+
                     <Form.Item
                         name="email_contact"
                         label="Контактный Email"
@@ -2651,6 +2856,128 @@ const ProviderPage = () => {
             {/* Блоки только для существующего поставщика */}
             {!isNew && providerData && (
                 <>
+                    <Card
+                        title="Точные правила по номенклатуре"
+                        style={{ marginBottom: 20 }}
+                        extra={user?.role === "admin" ? (
+                            <Button
+                                type="primary"
+                                icon={<PlusOutlined />}
+                                onClick={() => openInventoryRuleModal()}
+                            >
+                                Добавить правило
+                            </Button>
+                        ) : null}
+                    >
+                        <Text type="secondary">
+                            Точное правило имеет приоритет над общим правилом
+                            поставщика. Готовая продукция DragonZap здесь не
+                            назначается: она появляется только после выпуска.
+                        </Text>
+                        <Table
+                            style={{ marginTop: 16 }}
+                            rowKey="id"
+                            loading={inventoryRulesLoading}
+                            dataSource={inventoryRules}
+                            pagination={{ pageSize: 10, hideOnSinglePage: true }}
+                            scroll={{ x: 760 }}
+                            columns={[
+                                {
+                                    title: "Номенклатура",
+                                    key: "autopart",
+                                    render: (_, rule) => (
+                                        <Space direction="vertical" size={0}>
+                                            <Text strong>
+                                                {rule.autopart_brand || "Без бренда"}
+                                                {" · "}
+                                                {rule.autopart_oem}
+                                            </Text>
+                                            <Text type="secondary">
+                                                {rule.autopart_name || "Без названия"}
+                                            </Text>
+                                        </Space>
+                                    ),
+                                },
+                                {
+                                    title: "Роль",
+                                    dataIndex: "inventory_role",
+                                    width: 190,
+                                    render: (value) => (
+                                        <Tag color={
+                                            value === "dragonzap_material"
+                                                ? "gold"
+                                                : "blue"
+                                        }>
+                                            {inventoryRoleOptions.find(
+                                                (option) => option.value === value
+                                            )?.label || value}
+                                        </Tag>
+                                    ),
+                                },
+                                {
+                                    title: "Причина",
+                                    dataIndex: "reason",
+                                    render: (value) => value || "—",
+                                },
+                                {
+                                    title: "Изменено",
+                                    key: "updated",
+                                    width: 170,
+                                    render: (_, rule) => (
+                                        <Space direction="vertical" size={0}>
+                                            <Text>
+                                                {rule.updated_by_name || "Система"}
+                                            </Text>
+                                            <Text type="secondary">
+                                                {formatMoscow(rule.updated_at)}
+                                            </Text>
+                                        </Space>
+                                    ),
+                                },
+                                {
+                                    title: "Статус",
+                                    dataIndex: "is_active",
+                                    width: 110,
+                                    render: (value) => (
+                                        <Tag color={value ? "green" : "default"}>
+                                            {value ? "Активно" : "Выключено"}
+                                        </Tag>
+                                    ),
+                                },
+                                {
+                                    title: "Действия",
+                                    key: "actions",
+                                    width: 120,
+                                    render: (_, rule) => user?.role === "admin" ? (
+                                        <Space>
+                                            <Button
+                                                type="text"
+                                                icon={<EditOutlined />}
+                                                onClick={() => (
+                                                    openInventoryRuleModal(rule)
+                                                )}
+                                            />
+                                            <Popconfirm
+                                                title="Удалить правило?"
+                                                okText="Удалить"
+                                                cancelText="Отмена"
+                                                onConfirm={() => (
+                                                    removeInventoryRule(rule.id)
+                                                )}
+                                            >
+                                                <Button
+                                                    type="text"
+                                                    danger
+                                                    icon={<DeleteOutlined />}
+                                                />
+                                            </Popconfirm>
+                                        </Space>
+                                    ) : "—",
+                                },
+                            ]}
+                        />
+                    </Card>
+
                     {/* Аббревиатуры */}
                     <Card
                         title="Аббревиатуры"
@@ -2947,6 +3274,75 @@ const ProviderPage = () => {
                     )}
                 </>
             )}
+
+            <Modal
+                title={
+                    editingInventoryRule
+                        ? "Редактирование точного правила"
+                        : "Новое точное правило"
+                }
+                open={inventoryRuleModalOpen}
+                confirmLoading={inventoryRuleSaving}
+                okText="Сохранить"
+                cancelText="Отмена"
+                onOk={saveInventoryRule}
+                onCancel={() => {
+                    setInventoryRuleModalOpen(false);
+                    setEditingInventoryRule(null);
+                    inventoryRuleForm.resetFields();
+                }}
+                destroyOnHidden
+            >
+                <Form form={inventoryRuleForm} layout="vertical">
+                    <Form.Item
+                        name="autopart_id"
+                        label="Номенклатура"
+                        rules={[{
+                            required: true,
+                            message: "Выберите номенклатуру",
+                        }]}
+                    >
+                        <Select
+                            showSearch
+                            filterOption={false}
+                            options={autopartOptions}
+                            loading={autopartSearching}
+                            onSearch={handleInventoryRuleSearch}
+                            placeholder="Введите артикул"
+                            disabled={Boolean(editingInventoryRule)}
+                            notFoundContent={
+                                autopartSearching
+                                    ? <Spin size="small" />
+                                    : "Введите не менее двух символов"
+                            }
+                        />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="inventory_role"
+                        label="Роль при поступлении"
+                        rules={[{ required: true }]}
+                    >
+                        <Select options={inventoryRoleOptions} />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="reason"
+                        label="Причина"
+                        extra="Пояснение сохранится в истории каждой созданной партии."
+                    >
+                        <Input.TextArea rows={3} maxLength={1000} />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="is_active"
+                        label="Правило активно"
+                        valuePropName="checked"
+                    >
+                        <Switch />
+                    </Form.Item>
+                </Form>
+            </Modal>
 
             {/* Модалка конфигурации */}
             <Modal

@@ -101,6 +101,7 @@ const Sidebar = () => {
         if (path.startsWith('/warehouse/returns')) return 'warehouse-returns';
         if (path.startsWith('/reclamations')) return 'reclamations';
         if (path.startsWith('/warehouse/lots')) return 'warehouse-lots';
+        if (path.startsWith('/warehouse/production-groups')) return 'warehouse-production-groups';
         if (path.startsWith('/warehouse/transfer')) return 'warehouse-transfer';
         if (path.startsWith('/warehouse/overview')) return 'warehouse-overview';
         if (path.startsWith('/process-architecture')) return 'process-architecture';
@@ -259,6 +260,9 @@ const Sidebar = () => {
                 )}
                 <Menu.Item key="warehouse-lots" icon={<UnorderedListOutlined />}>
                     <Link to="/warehouse/lots">Партии / ГТД</Link>
+                </Menu.Item>
+                <Menu.Item key="warehouse-production-groups" icon={<ApartmentOutlined />}>
+                    <Link to="/warehouse/production-groups">Группы выпуска DragonZap</Link>
                 </Menu.Item>
                 <Menu.Item key="warehouse-transfer" icon={<SwapOutlined />}>
                     <Link to="/warehouse/transfer">Перемещение</Link>
