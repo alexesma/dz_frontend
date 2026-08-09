@@ -31,6 +31,7 @@ import {
     CloudSyncOutlined,
     CloseOutlined,
     BarcodeOutlined,
+    ApartmentOutlined,
 } from '@ant-design/icons';
 import useAuth from '../context/useAuth';
 
@@ -102,6 +103,7 @@ const Sidebar = () => {
         if (path.startsWith('/warehouse/lots')) return 'warehouse-lots';
         if (path.startsWith('/warehouse/transfer')) return 'warehouse-transfer';
         if (path.startsWith('/warehouse/overview')) return 'warehouse-overview';
+        if (path.startsWith('/process-architecture')) return 'process-architecture';
         return '1';
     })();
 
@@ -267,6 +269,9 @@ const Sidebar = () => {
             </Menu.Item>
             <Menu.Item key="finance" icon={<DollarOutlined />}>
                 <Link to="/finance">Финансы</Link>
+            </Menu.Item>
+            <Menu.Item key="process-architecture" icon={<ApartmentOutlined />}>
+                <Link to="/process-architecture">Карта процессов</Link>
             </Menu.Item>
             {user.role === 'admin' && (
                 <Menu.SubMenu

@@ -67,6 +67,7 @@ import TransferPage from './components/TransferPage';
 import StockOverviewPage from './components/StockOverviewPage';
 import FinancePage from './components/FinancePage';
 import InvoiceDetailPage from './components/InvoiceDetailPage';
+import ProcessArchitecturePage from './components/ProcessArchitecturePage';
 import { AuthProvider } from './context/AuthContext';
 import useAuth from './context/useAuth';
 
@@ -233,6 +234,7 @@ const AppRoutes = () => (
         {/* Finance */}
         <Route path="/finance" element={<RequireAuth><FinancePage /></RequireAuth>} />
         <Route path="/finance/invoices/:invoiceId" element={<RequireAuth><InvoiceDetailPage /></RequireAuth>} />
+        <Route path="/process-architecture" element={<RequireAuth><ProcessArchitecturePage /></RequireAuth>} />
     </Routes>
 );
 
