@@ -9,6 +9,38 @@ export const updateStockOrderItemPick = (itemId, payload) =>
 export const dispatchStockOrder = (orderId) =>
     api.post(`/customer-orders/stock/orders/${orderId}/dispatch`);
 
+export const getStockOrderPacking = (orderId) =>
+    api.get(`/customer-orders/stock/orders/${orderId}/packing`);
+
+export const createStockOrderPackage = (orderId, payload = {}) =>
+    api.post(`/customer-orders/stock/orders/${orderId}/packages`, payload);
+
+export const updateStockOrderPackageContents = (packageId, payload) =>
+    api.put(`/customer-orders/stock/packages/${packageId}/contents`, payload);
+
+export const sealStockOrderPackage = (packageId) =>
+    api.post(`/customer-orders/stock/packages/${packageId}/seal`);
+
+export const scanStockOrderPackage = (packageId, scanCode) =>
+    api.post(`/customer-orders/stock/packages/${packageId}/scan`, {
+        scan_code: scanCode,
+    });
+
+export const verifyStockOrderPackage = (packageId) =>
+    api.post(`/customer-orders/stock/packages/${packageId}/verify`);
+
+export const reopenStockOrderPackage = (packageId, reason) =>
+    api.post(`/customer-orders/stock/packages/${packageId}/reopen`, { reason });
+
+export const printStockOrderPackageLabel = (packageId, reason = null) =>
+    api.post(`/customer-orders/stock/packages/${packageId}/label-print`, { reason });
+
+export const deleteStockOrderPackage = (packageId) =>
+    api.delete(`/customer-orders/stock/packages/${packageId}`);
+
+export const syncCrossDockingStockOrders = () =>
+    api.post('/customer-orders/stock/sync-cross-docking');
+
 export const getCustomerOrders = (params) =>
     api.get('/customer-orders/', { params });
 
@@ -47,6 +79,21 @@ export const getSupplierReceipts = (params) =>
 
 export const getSupplierReceipt = (receiptId) =>
     api.get(`/customer-orders/supplier-receipts/${receiptId}`);
+
+export const getCrossDockingLabels = (receiptId) =>
+    api.get(`/customer-orders/supplier-receipts/${receiptId}/cross-docking-labels`);
+
+export const printCrossDockingLabels = (receiptId, payload) =>
+    api.post(
+        `/customer-orders/supplier-receipts/${receiptId}/cross-docking-labels/print`,
+        payload
+    );
+
+export const updateCrossDockingDocument = (receiptId, payload) =>
+    api.patch(
+        `/customer-orders/supplier-receipts/${receiptId}/cross-docking-document`,
+        payload
+    );
 
 export const postSupplierReceipt = (receiptId) =>
     api.post(`/customer-orders/supplier-receipts/${receiptId}/post`);

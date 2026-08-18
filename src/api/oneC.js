@@ -6,6 +6,15 @@ export const getOneCStatus = () =>
 export const resetOneCExport = (params = {}) =>
     api.post('/1c/reset-export', null, { params });
 
+export const getOneCEvents = (params = {}) =>
+    api.get('/1c/events', { params });
+
+export const getOneCBatches = (params = {}) =>
+    api.get('/1c/batches', { params });
+
+export const retryOneCEvent = (eventId) =>
+    api.post(`/1c/events/${eventId}/retry`);
+
 const downloadBlob = (data, filename) => {
     const url = URL.createObjectURL(data);
     const link = document.createElement('a');

@@ -62,7 +62,7 @@ const DRAWING_COLORS = ['#e4572e', '#0c7c86', '#172a3a', '#e9a23b'];
 
 const systemTags = {
     dz: { label: 'Наша платформа', className: 'process-system-tag process-system-dz' },
-    onec: { label: '1С:КА 2', className: 'process-system-tag process-system-onec' },
+    onec: { label: '1С:УТ 11', className: 'process-system-tag process-system-onec' },
     partssoft: { label: 'parts-soft', className: 'process-system-tag process-system-partssoft' },
     external: { label: 'Внешняя система', className: 'process-system-tag process-system-external' },
     warehouse: { label: 'Склад', className: 'process-system-tag process-system-warehouse' },
@@ -106,7 +106,7 @@ const OWNERSHIP_ROWS = [
     },
     {
         entity: 'Реквизиты, договоры, бухгалтерские партии и себестоимость',
-        owner: '1С:КА 2',
+        owner: '1С:УТ 11 + Бухгалтерия 3.0',
         ownerType: 'onec',
         copy: 'Платформа получает ID, статус и учётную стоимость',
         rule: 'Регламентированная истина и проводки остаются в 1С.',
@@ -545,7 +545,8 @@ const ProcessArchitecturePage = () => {
                     <h1>Схема работы с товарами DragonZap</h1>
                     <p>
                         Общая карта будущего контура: наша платформа управляет ассортиментом,
-                        заказом и складской операцией; 1С:КА 2 ведёт регламентированный учёт;
+                        заказом и складской операцией; 1С:УТ 11 ведёт
+                        торговый учёт и передаёт данные в 1С:Бухгалтерию;
                         ЭДО и ГИС МТ возвращают юридические статусы.
                     </p>
                     <div className="process-hero-actions">
@@ -860,6 +861,7 @@ const ProcessArchitecturePage = () => {
                 <div className="process-grid process-grid-2">
                     <RuleCard title="Запуск волны" tone="sand">
                         <p>Администратор задаёт любое количество отсечек в течение дня. Дополнительно доступна ручная команда «Сформировать волну сейчас».</p>
+                        <Link to="/warehouse/production-waves">Открыть производственные волны</Link>
                     </RuleCard>
                     <RuleCard title="Состав документов 1С" tone="teal">
                         <p>Один склад и одно выпускающее подразделение позволяют агрегировать множество заказов и строк в документе выпуска, сохраняя аналитическую связь с каждой клиентской строкой.</p>

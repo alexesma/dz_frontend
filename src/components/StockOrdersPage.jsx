@@ -25,18 +25,24 @@ import {
     CameraOutlined,
     CheckOutlined,
     ClearOutlined,
+    InboxOutlined,
     PlusOutlined,
+    ReloadOutlined,
     ScanOutlined,
     SendOutlined,
 } from '@ant-design/icons';
+import { Link } from 'react-router-dom';
 
 import api from '../api';
 import { getCustomersSummary } from '../api/customers';
 import {
     dispatchStockOrder,
     getStockOrders,
+    syncCrossDockingStockOrders,
     updateStockOrderItemPick,
 } from '../api/customerOrders';
+import useAuth from '../context/useAuth';
+import StockOrderPackagesModal from './StockOrderPackagesModal';
 
 const { RangePicker } = DatePicker;
 const { Title, Text } = Typography;
@@ -96,9 +102,11 @@ const AudioContextCtor =
         : null;
 
 const StockOrdersPage = () => {
+    const { user } = useAuth();
     const screens = useBreakpoint();
     const [orders, setOrders] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [syncingCrossDocking, setSyncingCrossDocking] = useState(false);
     const [scanSubmitting, setScanSubmitting] = useState(false);
     const [customers, setCustomers] = useState([]);
     const [brands, setBrands] = useState([]);
@@ -119,6 +127,7 @@ const StockOrdersPage = () => {
     const [torchSupported, setTorchSupported] = useState(false);
     const [torchEnabled, setTorchEnabled] = useState(false);
     const [activeItemId, setActiveItemId] = useState(null);
+    const [packingOrderId, setPackingOrderId] = useState(null);
     const videoRef = useRef(null);
     const streamRef = useRef(null);
     const detectorRef = useRef(null);
@@ -242,6 +251,12 @@ const StockOrdersPage = () => {
                     key: `${order.id}-${item.id}`,
                     orderId: order.id,
                     stockOrderStatus: order.status,
+                    shipmentDocumentId: order.shipment_document_id,
+                    packingRequired: Boolean(order.packing_required),
+                    packageCount: Number(order.package_count || 0),
+                    packingReady: Boolean(order.packing_ready),
+                    sourceType: item.source_type || 'own_stock',
+                    providerName: item.provider_name || '',
                     customerId: order.customer_id,
                     customerName: order.customer_name || customerMap[order.customer_id] || '—',
                     createdAt: order.created_at,
@@ -731,13 +746,24 @@ const StockOrdersPage = () => {
     const handleDispatch = useCallback(async (orderId) => {
         try {
             const response = await dispatchStockOrder(orderId);
-            if (response?.data?.credit_warning?.message) {
-                message.warning(response.data.credit_warning.message, 8);
+            const result = response?.data || {};
+            if (result.credit_warning?.message) {
+                message.warning(result.credit_warning.message, 8);
             }
-            message.success(`Заказ #${orderId} отгружен — остатки списаны по FIFO`);
+            message.success(
+                result.already_dispatched
+                    ? `Заказ #${orderId} уже связан с проведённой накладной`
+                    : `Заказ #${orderId} отгружен через накладную ${result.shipment_document_number || ''}`,
+            );
             setOrders((prev) =>
                 prev.map((o) =>
-                    o.id === orderId ? { ...o, status: 'DISPATCHED' } : o
+                    o.id === orderId
+                        ? {
+                            ...o,
+                            status: 'DISPATCHED',
+                            shipment_document_id: result.shipment_document_id,
+                        }
+                        : o
                 )
             );
         } catch (err) {
@@ -749,6 +775,38 @@ const StockOrdersPage = () => {
             );
         }
     }, []);
+
+    const handleCrossDockingSync = useCallback(async () => {
+        setSyncingCrossDocking(true);
+        try {
+            const response = await syncCrossDockingStockOrders();
+            const result = response?.data || {};
+            const skipped = Number(result.receipts_skipped || 0);
+            const summary = `Добавлено ${result.items_created || 0} позиций`;
+            if (skipped > 0) {
+                const firstError = result.errors?.[0];
+                const errorHint = firstError
+                    ? ` Документ #${firstError.receipt_id}: ${firstError.error}`
+                    : '';
+                message.warning(
+                    `${summary}. Пропущено документов: ${skipped}.${errorHint}`,
+                    8,
+                );
+            } else {
+                message.success(`Синхронизация завершена: ${summary}`);
+            }
+            await fetchOrders();
+        } catch (err) {
+            message.error(
+                formatApiDetail(
+                    err?.response?.data?.detail,
+                    'Не удалось синхронизировать cross-docking',
+                ),
+            );
+        } finally {
+            setSyncingCrossDocking(false);
+        }
+    }, [fetchOrders]);
 
 
 
@@ -782,18 +840,46 @@ const StockOrdersPage = () => {
                     </>
                 )}
                 {row.stockOrderStatus === 'COMPLETED' && (
-                    <Tooltip title="Отгрузить заказ — списать с остатков по ГТД/FIFO">
-                        <Button
-                            size="small"
-                            type="primary"
-                            icon={<SendOutlined />}
-                            onClick={() => handleDispatch(row.orderId)}
-                        >
-                            Отгрузить
-                        </Button>
-                    </Tooltip>
+                    <>
+                        <Tooltip title="Распределить заказ по коробкам и выполнить финальную проверку">
+                            <Button
+                                size="small"
+                                icon={<InboxOutlined />}
+                                type={row.packingReady ? 'default' : 'primary'}
+                                onClick={() => setPackingOrderId(row.orderId)}
+                            >
+                                Коробки{row.packageCount ? ` · ${row.packageCount}` : ''}
+                            </Button>
+                        </Tooltip>
+                        <Tooltip title={
+                            row.packingRequired && !row.packingReady
+                                ? 'Сначала упакуйте и проверьте все коробки'
+                                : 'Создать и провести накладную с партиями, ГТД и маркировкой'
+                        }>
+                            <span>
+                                <Button
+                                    size="small"
+                                    type="primary"
+                                    icon={<SendOutlined />}
+                                    disabled={row.packingRequired && !row.packingReady}
+                                    onClick={() => handleDispatch(row.orderId)}
+                                >
+                                    Отгрузить
+                                </Button>
+                            </span>
+                        </Tooltip>
+                    </>
                 )}
-                {isDispatched && <Tag color="blue">Отгружен</Tag>}
+                {isDispatched && (
+                    <>
+                        <Tag color="blue">Отгружен</Tag>
+                        {row.shipmentDocumentId && (
+                            <Link to={`/warehouse/shipments/${row.shipmentDocumentId}`}>
+                                Накладная #{row.shipmentDocumentId}
+                            </Link>
+                        )}
+                    </>
+                )}
             </Space>
         );
     };
@@ -822,6 +908,23 @@ const StockOrdersPage = () => {
                 <div className="stock-compact-cell">
                     <Text strong>{row.oem || '—'}</Text>
                     <Text type="secondary">{brandMap[row.brandId] || '—'}</Text>
+                </div>
+            ),
+        },
+        {
+            title: 'Источник',
+            key: 'sourceType',
+            width: 145,
+            render: (_, row) => (
+                <div className="stock-compact-cell">
+                    <Tag color={row.sourceType === 'cross_docking' ? 'cyan' : 'green'}>
+                        {row.sourceType === 'cross_docking' ? 'Cross-docking' : 'Наш склад'}
+                    </Tag>
+                    {row.providerName && (
+                        <Text ellipsis={{ tooltip: row.providerName }}>
+                            {row.providerName}
+                        </Text>
+                    )}
                 </div>
             ),
         },
@@ -903,8 +1006,21 @@ const StockOrdersPage = () => {
             }}
         >
             <Card>
-                <Title level={3}>Заказы с нашего склада</Title>
-                <Row gutter={12} style={{ marginBottom: 16 }}>
+                <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
+                    <Title level={3} style={{ margin: 0 }}>
+                        Комплектация заказов клиентов
+                    </Title>
+                    {user?.role === 'admin' && (
+                        <Button
+                            icon={<ReloadOutlined />}
+                            loading={syncingCrossDocking}
+                            onClick={handleCrossDockingSync}
+                        >
+                            Синхронизировать cross-docking
+                        </Button>
+                    )}
+                </Space>
+                <Row gutter={12} style={{ marginTop: 16, marginBottom: 16 }}>
                     <Col xs={24} md={8}>
                         <RangePicker
                             style={{ width: '100%' }}
@@ -1143,6 +1259,13 @@ const StockOrdersPage = () => {
                     )}
                 />
             </Modal>
+
+            <StockOrderPackagesModal
+                orderId={packingOrderId}
+                open={Boolean(packingOrderId)}
+                onClose={() => setPackingOrderId(null)}
+                onChanged={() => void fetchOrders()}
+            />
 
             <Modal
                 open={cameraOpen}

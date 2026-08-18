@@ -41,6 +41,7 @@ import EmailAccountsPage from './components/EmailAccountsPage';
 import SettingsPage from './components/SettingsPage';
 import AdminMonitoringPage from './components/AdminMonitoringPage';
 import PriceControlPage from './components/PriceControlPage';
+import CustomerPricelistStudioPage from './components/CustomerPricelistStudioPage';
 import BrandManagementPage from './components/BrandManagementPage';
 import OrderStatusMappingsPage from './components/OrderStatusMappingsPage';
 import LoginPage from './components/LoginPage';
@@ -64,6 +65,7 @@ import ReclamationsPage from './components/ReclamationsPage';
 import ReturnDetailPage from './components/ReturnDetailPage';
 import StockLotsPage from './components/StockLotsPage';
 import ProductionGroupsPage from './components/ProductionGroupsPage';
+import ProductionWavesPage from './components/ProductionWavesPage';
 import TransferPage from './components/TransferPage';
 import StockOverviewPage from './components/StockOverviewPage';
 import FinancePage from './components/FinancePage';
@@ -216,6 +218,7 @@ const AppRoutes = () => (
         />
         <Route path="/warehouse/lots" element={<RequireAuth><StockLotsPage /></RequireAuth>} />
         <Route path="/warehouse/production-groups" element={<RequireAuth><ProductionGroupsPage /></RequireAuth>} />
+        <Route path="/warehouse/production-waves" element={<RequireAuth><ProductionWavesPage /></RequireAuth>} />
         <Route path="/warehouse/transfer" element={<RequireAuth><TransferPage /></RequireAuth>} />
 
         {/* Autopart price history */}
@@ -227,6 +230,7 @@ const AppRoutes = () => (
         <Route path="/admin/settings" element={<RequireAdmin><SettingsPage /></RequireAdmin>} />
         <Route path="/admin/monitor" element={<RequireAdmin><AdminMonitoringPage /></RequireAdmin>} />
         <Route path="/admin/price-control" element={<RequireAdmin><PriceControlPage /></RequireAdmin>} />
+        <Route path="/admin/customer-pricelists" element={<RequireAdmin><CustomerPricelistStudioPage /></RequireAdmin>} />
         <Route path="/admin/brands" element={<RequireAdmin><BrandManagementPage /></RequireAdmin>} />
         <Route path="/admin/order-status-mappings" element={<RequireAdmin><OrderStatusMappingsPage /></RequireAdmin>} />
         <Route path="/admin/order-windows" element={<RequireAdmin><OrderWindowsPage /></RequireAdmin>} />

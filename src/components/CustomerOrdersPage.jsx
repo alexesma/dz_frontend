@@ -525,7 +525,11 @@ const CustomerOrdersPage = () => {
                     >
                         Открыть
                     </Button>
-                    {record.status === 'ERROR' && (
+                    {(record.status === 'ERROR' || (
+                        record.status === 'NEW'
+                        && record.source_filename
+                        && !(record.items || []).length
+                    )) && (
                         <Button
                             size="small"
                             onClick={(event) => {

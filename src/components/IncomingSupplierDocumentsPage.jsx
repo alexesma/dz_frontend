@@ -4,6 +4,7 @@ import React, {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import {
+    Alert,
     AutoComplete,
     Button,
     Card,
@@ -50,11 +51,13 @@ import {
     postSupplierReceipt,
     sendSupplierReceiptUpdEmail,
     unpostSupplierReceipt,
+    updateCrossDockingDocument,
     updateSupplierReceipt,
     updateSupplierReceiptItem,
 } from '../api/customerOrders';
 import { listDiadocInboundDocuments } from '../api/diadoc';
 import useAuth from '../context/useAuth';
+import CrossDockingLabelsModal from './CrossDockingLabelsModal';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -357,6 +360,11 @@ const IncomingSupplierDocumentsPage = () => {
 
     // Label modal
     const [labelVisible, setLabelVisible] = useState(false);
+    const [crossDockingLabelsVisible, setCrossDockingLabelsVisible] = useState(false);
+    const [documentPendingVisible, setDocumentPendingVisible] = useState(false);
+    const [documentPendingNumber, setDocumentPendingNumber] = useState('');
+    const [documentPendingDate, setDocumentPendingDate] = useState(dayjs());
+    const [documentPendingSaving, setDocumentPendingSaving] = useState(false);
 
     // Create document modal
     const [createVisible, setCreateVisible] = useState(false);
@@ -494,6 +502,43 @@ const IncomingSupplierDocumentsPage = () => {
             return null;
         }
     }, []);
+
+    const openDocumentPendingModal = useCallback(() => {
+        if (!detailReceipt) return;
+        setDocumentPendingNumber(detailReceipt.document_number || '');
+        setDocumentPendingDate(
+            detailReceipt.document_date ? dayjs(detailReceipt.document_date) : dayjs()
+        );
+        setDocumentPendingVisible(true);
+    }, [detailReceipt]);
+
+    const handleResolveDocumentPending = async () => {
+        const normalizedNumber = documentPendingNumber.trim();
+        if (!normalizedNumber) {
+            message.warning('Укажите номер входящего документа');
+            return;
+        }
+        setDocumentPendingSaving(true);
+        try {
+            await updateCrossDockingDocument(detailReceipt.id, {
+                document_pending: false,
+                document_number: normalizedNumber,
+                document_date: documentPendingDate
+                    ? documentPendingDate.format('YYYY-MM-DD')
+                    : null,
+            });
+            await reloadDetail(detailReceipt.id);
+            await fetchDocuments();
+            setDocumentPendingVisible(false);
+            message.success('Входящий документ зарегистрирован, DOC_PENDING снят');
+        } catch (error) {
+            message.error(
+                error?.response?.data?.detail || 'Не удалось зарегистрировать документ'
+            );
+        } finally {
+            setDocumentPendingSaving(false);
+        }
+    };
 
     // ── edit mode helpers ───────────────────────────────────────────────────
     const enterEditMode = () => {
@@ -764,9 +809,16 @@ const IncomingSupplierDocumentsPage = () => {
         },
         {
             title: 'Статус', key: 'status', width: 110,
-            render: (_, row) => row.posted_at
-                ? <Tag color="green">Проведен</Tag>
-                : <Tag color="gold">Документ</Tag>,
+            render: (_, row) => (
+                <Space direction="vertical" size={2}>
+                    {row.posted_at
+                        ? <Tag color="green">Проведен</Tag>
+                        : <Tag color="gold">Документ</Tag>}
+                    {(row.items || []).some((item) => item.document_pending) && (
+                        <Tag color="orange">DOC_PENDING</Tag>
+                    )}
+                </Space>
+            ),
         },
         {
             title: 'Документ', key: 'document', width: 200,
@@ -967,6 +1019,19 @@ const IncomingSupplierDocumentsPage = () => {
                     return parts.length ? (
                         <Tooltip title={parts.join(' / ')}>{parts.join(' / ')}</Tooltip>
                     ) : '—';
+                },
+            },
+            {
+                title: 'Cross-docking', key: 'cross_docking', width: 150,
+                render: (_, row) => {
+                    if (!row.cross_docking_status) return '—';
+                    if (row.cross_docking_status === 'ready_for_customer') {
+                        return <Tag color="green">Готово клиенту</Tag>;
+                    }
+                    if (row.cross_docking_status === 'label_pending') {
+                        return <Tag color="gold">Ожидает этикетку</Tag>;
+                    }
+                    return <Tag color="blue">Принято</Tag>;
                 },
             },
             {
@@ -1306,6 +1371,12 @@ const IncomingSupplierDocumentsPage = () => {
                     const isVatPayer = detailReceipt.provider_is_vat_payer;
                     const isDraft = !detailReceipt.posted_at;
                     const items = detailReceipt.items || [];
+                    const crossDockingItems = items.filter(
+                        (item) => item.customer_order_item_id
+                    );
+                    const hasDocumentPending = crossDockingItems.some(
+                        (item) => item.document_pending
+                    );
                     const diadocDoc = diadocByReceiptId[detailReceipt.id];
                     const { qty, sum, vat, total } = calcTotals(items, isVatPayer);
                     const itemCols = buildItemColumns(isVatPayer, isDraft);
@@ -1407,6 +1478,21 @@ const IncomingSupplierDocumentsPage = () => {
                                 </Form>
                             )}
 
+                            {hasDocumentPending && (
+                                <Alert
+                                    type="warning"
+                                    showIcon
+                                    message="DOC_PENDING · ожидается документ поставщика"
+                                    description="Товар уже принят и может участвовать в сборке клиента. После получения УПД или накладной зарегистрируйте номер и дату."
+                                    action={(
+                                        <Button size="small" onClick={openDocumentPendingModal}>
+                                            Зарегистрировать документ
+                                        </Button>
+                                    )}
+                                    style={{ marginBottom: 12 }}
+                                />
+                            )}
+
                             {/* Items table */}
                             <Table
                                 size="small"
@@ -1489,7 +1575,16 @@ const IncomingSupplierDocumentsPage = () => {
                                         {!editMode && (
                                             <Button icon={<PrinterOutlined />}
                                                 onClick={() => setLabelVisible(true)}>
-                                                Этикетки
+                                                Этикетки поступления
+                                            </Button>
+                                        )}
+                                        {!editMode && !isDraft && crossDockingItems.length > 0 && (
+                                            <Button
+                                                type="primary"
+                                                icon={<PrinterOutlined />}
+                                                onClick={() => setCrossDockingLabelsVisible(true)}
+                                            >
+                                                Клиентские этикетки
                                             </Button>
                                         )}
                                         {!editMode && (
@@ -1562,6 +1657,35 @@ const IncomingSupplierDocumentsPage = () => {
                 receipt={detailReceipt}
                 onClose={() => setLabelVisible(false)}
             />
+            <CrossDockingLabelsModal
+                receiptId={detailReceipt?.id}
+                open={crossDockingLabelsVisible}
+                onClose={() => setCrossDockingLabelsVisible(false)}
+            />
+            <Modal
+                title="Регистрация входящего документа"
+                open={documentPendingVisible}
+                okText="Сохранить и снять DOC_PENDING"
+                cancelText="Отмена"
+                confirmLoading={documentPendingSaving}
+                okButtonProps={{ disabled: !documentPendingNumber.trim() }}
+                onOk={() => void handleResolveDocumentPending()}
+                onCancel={() => setDocumentPendingVisible(false)}
+            >
+                <Space direction="vertical" style={{ width: '100%' }} size={12}>
+                    <Input
+                        value={documentPendingNumber}
+                        onChange={(event) => setDocumentPendingNumber(event.target.value)}
+                        placeholder="Номер УПД или накладной"
+                    />
+                    <DatePicker
+                        value={documentPendingDate}
+                        onChange={setDocumentPendingDate}
+                        format="DD.MM.YYYY"
+                        style={{ width: '100%' }}
+                    />
+                </Space>
+            </Modal>
 
             {/* ─── Create document modal ───────────────────────────────────── */}
             <Modal

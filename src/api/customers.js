@@ -48,6 +48,81 @@ export const deleteCustomerPricelistSource = (customerId, configId, sourceId) =>
 export const sendCustomerPricelistNow = (customerId, configId) =>
     api.post(`/customers/${customerId}/pricelist-configs/${configId}/send-now`);
 
+export const listCustomerPricelistPublicationRules = (customerId, configId) =>
+    api.get(`/customers/${customerId}/pricelist-configs/${configId}/publication-rules`);
+
+export const saveCustomerPricelistPublicationRule = (customerId, configId, data) =>
+    api.post(`/customers/${customerId}/pricelist-configs/${configId}/publication-rules`, data);
+
+export const deleteCustomerPricelistPublicationRule = (customerId, configId, ruleId) =>
+    api.delete(`/customers/${customerId}/pricelist-configs/${configId}/publication-rules/${ruleId}`);
+
+export const searchCustomerPricelistPublicationCandidates = (
+    customerId,
+    configId,
+    params
+) => api.get(
+    `/customers/${customerId}/pricelist-configs/${configId}/publication-candidates`,
+    { params }
+);
+
+export const listCustomerPricelistPublicationCrosses = (
+    customerId,
+    configId,
+    autopartId
+) => api.get(
+    `/customers/${customerId}/pricelist-configs/${configId}`
+    + `/publication-candidates/${autopartId}/crosses`
+);
+
+export const buildCustomerPricelistDraft = (customerId, configId) =>
+    api.post(
+        `/customers/${customerId}/pricelist-configs/${configId}/drafts`,
+        null,
+        { timeout: 3600000 }
+    );
+
+export const listCustomerPricelistDrafts = (customerId, configId, params = {}) =>
+    api.get(`/customers/${customerId}/pricelist-configs/${configId}/drafts`, { params });
+
+export const listCustomerPricelistDraftRows = (
+    customerId,
+    configId,
+    pricelistId,
+    params = {}
+) => api.get(
+    `/customers/${customerId}/pricelist-configs/${configId}/drafts/${pricelistId}/rows`,
+    { params }
+);
+
+export const downloadCustomerPricelistDraft = (
+    customerId,
+    configId,
+    pricelistId
+) => api.get(
+    `/customers/${customerId}/pricelist-configs/${configId}/drafts/${pricelistId}/download`,
+    { responseType: 'blob', timeout: 120000 }
+);
+
+export const approveCustomerPricelistDraft = (customerId, configId, pricelistId) =>
+    api.post(
+        `/customers/${customerId}/pricelist-configs/${configId}`
+        + `/drafts/${pricelistId}/approve`,
+        null,
+        { timeout: 120000 }
+    );
+
+export const rejectCustomerPricelistDraft = (
+    customerId,
+    configId,
+    pricelistId,
+    reason
+) => api.post(
+    `/customers/${customerId}/pricelist-configs/${configId}`
+    + `/drafts/${pricelistId}/reject`,
+    { reason }
+);
+
 // ===== Customer Pricelists =====
 export const getCustomerPricelists = (customerId) =>
     api.get(`/customers/${customerId}/pricelists/`);

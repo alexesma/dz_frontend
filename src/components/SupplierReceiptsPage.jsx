@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import dayjs from 'dayjs';
 import {
+    Alert,
     Button,
     Card,
     Col,
@@ -8,7 +9,6 @@ import {
     Empty,
     Input,
     InputNumber,
-    Modal,
     Row,
     Select,
     Space,
@@ -18,7 +18,13 @@ import {
     Typography,
     message,
 } from 'antd';
-import { MinusOutlined, PlusOutlined } from '@ant-design/icons';
+import {
+    CheckCircleOutlined,
+    MinusOutlined,
+    PlusOutlined,
+    SaveOutlined,
+    ScanOutlined,
+} from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 
 import {
@@ -27,9 +33,15 @@ import {
     getSupplierReceiptProviders,
     processSupplierResponses,
 } from '../api/customerOrders';
+import CrossDockingLabelsModal from './CrossDockingLabelsModal';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
+
+const normalizeCode = (value) => String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-ZА-ЯЁ0-9]/g, '');
 
 const getDefaultDateRange = () => {
     const today = dayjs();
@@ -67,6 +79,8 @@ const SupplierReceiptsPage = () => {
     const [documentNumber, setDocumentNumber] = useState('');
     const [documentDate, setDocumentDate] = useState(dayjs());
     const [comment, setComment] = useState('');
+    const [scannerValue, setScannerValue] = useState('');
+    const [labelReceiptId, setLabelReceiptId] = useState(null);
 
     const fetchProviders = useCallback(async () => {
         setProvidersLoading(true);
@@ -145,6 +159,38 @@ const SupplierReceiptsPage = () => {
         updateDraft(row, next);
     }, [drafts, updateDraft]);
 
+    const handleScannerSubmit = useCallback(() => {
+        const code = normalizeCode(scannerValue);
+        if (!code) return;
+        const availableRows = rows.filter((row) => {
+            const current = Number(
+                drafts[row.supplier_order_item_id]?.received_quantity || 0
+            );
+            return Number(row.pending_quantity || 0) > current;
+        });
+        const barcodeMatches = availableRows.filter(
+            (row) => normalizeCode(row.barcode) === code
+        );
+        const oemMatches = availableRows.filter(
+            (row) => normalizeCode(row.oem_number) === code
+        );
+        const matches = barcodeMatches.length ? barcodeMatches : oemMatches;
+        const row = matches[0];
+        if (!row) {
+            message.warning(`Позиция ${scannerValue.trim()} не найдена среди ожидаемых`);
+            setScannerValue('');
+            return;
+        }
+        const current = Number(
+            drafts[row.supplier_order_item_id]?.received_quantity || 0
+        );
+        updateDraft(row, current + 1);
+        setScannerValue('');
+        message.success(
+            `${row.brand_name || ''} ${row.oem_number || ''}: принято ${current + 1} из ${row.pending_quantity}`
+        );
+    }, [drafts, rows, scannerValue, updateDraft]);
+
     // ── checkbox selection: check = mark all arrived ───────────────────────────
     const checkedKeys = useMemo(() => (
         rows
@@ -161,8 +207,7 @@ const SupplierReceiptsPage = () => {
         selectedRowKeys: checkedKeys,
         onSelect: (record, selected) => {
             if (selected) {
-                const expected = Number(record.confirmed_quantity ?? record.ordered_quantity ?? 0);
-                updateDraft(record, expected || record.pending_quantity);
+                updateDraft(record, Number(record.pending_quantity || 0));
             } else {
                 resetDraft(record.supplier_order_item_id);
             }
@@ -170,8 +215,7 @@ const SupplierReceiptsPage = () => {
         onSelectAll: (selected, _selectedRows, changeRows) => {
             if (selected) {
                 changeRows.forEach((row) => {
-                    const expected = Number(row.confirmed_quantity ?? row.ordered_quantity ?? 0);
-                    updateDraft(row, expected || row.pending_quantity);
+                    updateDraft(row, Number(row.pending_quantity || 0));
                 });
             } else {
                 changeRows.forEach((row) => resetDraft(row.supplier_order_item_id));
@@ -195,7 +239,7 @@ const SupplierReceiptsPage = () => {
     }, [touchedRows, drafts]);
 
     // ── create receipt ─────────────────────────────────────────────────────────
-    const handleCreateReceipt = async () => {
+    const handleCreateReceipt = async (postNow = false) => {
         if (!filters.providerId) { message.warning('Сначала выберите поставщика'); return; }
         const items = touchedRows.map((row) => ({
             supplier_order_item_id: row.supplier_order_item_id,
@@ -207,7 +251,7 @@ const SupplierReceiptsPage = () => {
         try {
             const payload = {
                 provider_id: filters.providerId,
-                post_now: false,
+                post_now: postNow,
                 document_number: documentNumber || undefined,
                 document_date: documentDate ? documentDate.format('YYYY-MM-DD') : undefined,
                 comment: comment || undefined,
@@ -215,14 +259,21 @@ const SupplierReceiptsPage = () => {
             };
             const response = await createSupplierReceipt(payload);
             const receiptId = response.data.id;
-            message.success(`Документ #${receiptId} создан (${response.data.items.length} строк)`);
+            message.success(
+                postNow
+                    ? `Поступление #${receiptId} принято и проведено`
+                    : `Черновик #${receiptId} создан (${response.data.items.length} строк)`
+            );
             setDrafts({});
             setDocumentNumber('');
             setComment('');
             setDocumentDate(dayjs());
-            fetchRows();
-            // Redirect to incoming documents and auto-open this receipt
-            navigate(`/documents/incoming?openId=${receiptId}`);
+            await fetchRows();
+            if (postNow) {
+                setLabelReceiptId(receiptId);
+            } else {
+                navigate(`/documents/incoming?openId=${receiptId}`);
+            }
         } catch (err) {
             message.error(err?.response?.data?.detail || 'Не удалось создать документ');
         } finally {
@@ -503,6 +554,25 @@ const SupplierReceiptsPage = () => {
                     style={{ marginBottom: 16, background: '#fafafa' }}
                     styles={{ body: { padding: '10px 12px' } }}
                 >
+                    <Row gutter={10} align="middle" style={{ marginBottom: 10 }}>
+                        <Col xs={24} md={12}>
+                            <Input
+                                autoFocus
+                                allowClear
+                                prefix={<ScanOutlined />}
+                                placeholder="Сканируйте штрихкод или введите артикул и нажмите Enter"
+                                value={scannerValue}
+                                onChange={(event) => setScannerValue(event.target.value)}
+                                onPressEnter={handleScannerSubmit}
+                                disabled={!filters.providerId || !rows.length}
+                            />
+                        </Col>
+                        <Col xs={24} md={12}>
+                            <Text type="secondary">
+                                Каждый скан добавляет 1 шт. к первой ожидаемой строке. Полную поставку можно отметить галочками.
+                            </Text>
+                        </Col>
+                    </Row>
                     <Row gutter={10} align="middle">
                         <Col xs={24} md={5}>
                             <Input
@@ -521,7 +591,7 @@ const SupplierReceiptsPage = () => {
                                 size="middle"
                             />
                         </Col>
-                        <Col xs={24} md={9}>
+                        <Col xs={24} md={7}>
                             <Input
                                 placeholder="Комментарий к документу"
                                 value={comment}
@@ -529,18 +599,37 @@ const SupplierReceiptsPage = () => {
                                 size="middle"
                             />
                         </Col>
-                        <Col xs={24} md={6}>
-                            <Button
-                                type="primary"
-                                block
-                                onClick={handleCreateReceipt}
-                                loading={submitting}
-                                disabled={!touchedRows.length}
-                            >
-                                Создать документ{touchedRows.length ? ` (${touchedRows.length})` : ''}
-                            </Button>
+                        <Col xs={24} md={8}>
+                            <Space.Compact block>
+                                <Button
+                                    icon={<SaveOutlined />}
+                                    onClick={() => void handleCreateReceipt(false)}
+                                    loading={submitting}
+                                    disabled={!touchedRows.length}
+                                >
+                                    Черновик
+                                </Button>
+                                <Button
+                                    type="primary"
+                                    icon={<CheckCircleOutlined />}
+                                    onClick={() => void handleCreateReceipt(true)}
+                                    loading={submitting}
+                                    disabled={!touchedRows.length}
+                                >
+                                    Принять и провести
+                                </Button>
+                            </Space.Compact>
                         </Col>
                     </Row>
+                    {!documentNumber.trim() && touchedRows.length > 0 && (
+                        <Alert
+                            type="warning"
+                            showIcon
+                            message="Документ поставщика не указан"
+                            description="Поступление провести можно, но строки cross-docking получат статус DOC_PENDING до регистрации входящего документа."
+                            style={{ marginTop: 10 }}
+                        />
+                    )}
                     <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
                         {legend}
                         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
@@ -577,6 +666,11 @@ const SupplierReceiptsPage = () => {
                     />
                 )}
             </Card>
+            <CrossDockingLabelsModal
+                receiptId={labelReceiptId}
+                open={Boolean(labelReceiptId)}
+                onClose={() => setLabelReceiptId(null)}
+            />
         </div>
     );
 };

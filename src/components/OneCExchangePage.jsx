@@ -10,6 +10,10 @@ import {
     Row,
     Space,
     Statistic,
+    Table,
+    Tabs,
+    Tag,
+    Tooltip,
     Typography,
     Upload,
     message,
@@ -18,6 +22,7 @@ import {
     DownloadOutlined,
     FileExcelOutlined,
     ReloadOutlined,
+    RetweetOutlined,
     UndoOutlined,
     UploadOutlined,
 } from '@ant-design/icons';
@@ -25,13 +30,36 @@ import dayjs from 'dayjs';
 import {
     downloadOneCExport,
     getOneCStatus,
+    getOneCBatches,
+    getOneCEvents,
     getSalesHistorySummary,
     importSalesHistory,
     resetOneCExport,
+    retryOneCEvent,
 } from '../api/oneC';
 
 const { Text, Paragraph } = Typography;
 const { RangePicker } = DatePicker;
+
+const EVENT_STATUS = {
+    pending: { label: 'Ожидает', color: 'gold' },
+    in_flight: { label: 'Передано', color: 'blue' },
+    succeeded: { label: 'Подтверждено', color: 'green' },
+    error: { label: 'Ошибка', color: 'red' },
+};
+
+const BATCH_STATUS = {
+    sent: { label: 'Ждёт подтверждения', color: 'blue' },
+    succeeded: { label: 'Подтверждён', color: 'green' },
+    error: { label: 'Ошибка', color: 'red' },
+};
+
+const ENTITY_LABELS = {
+    shipment: 'Реализация',
+    supplier_receipt: 'Поступление',
+    stock_document: 'Складской документ',
+    production_wave: 'Выпуск DragonZap',
+};
 
 const OneCExchangePage = () => {
     const [status, setStatus] = useState(null);
@@ -44,15 +72,23 @@ const OneCExchangePage = () => {
     const [resetting, setResetting] = useState(false);
     const [salesSummary, setSalesSummary] = useState(null);
     const [salesUploading, setSalesUploading] = useState(false);
+    const [events, setEvents] = useState([]);
+    const [batches, setBatches] = useState([]);
+    const [retryingEventId, setRetryingEventId] = useState(null);
 
     const loadStatus = useCallback(async () => {
         setStatusLoading(true);
         try {
-            const { data } = await getOneCStatus();
-            setStatus(data || null);
-            const salesResponse = await getSalesHistorySummary().catch(
-                () => ({ data: null })
-            );
+            const [statusResponse, eventsResponse, batchesResponse, salesResponse] =
+                await Promise.all([
+                    getOneCStatus(),
+                    getOneCEvents({ limit: 100 }),
+                    getOneCBatches({ limit: 50 }),
+                    getSalesHistorySummary().catch(() => ({ data: null })),
+                ]);
+            setStatus(statusResponse.data || null);
+            setEvents(eventsResponse.data?.items || []);
+            setBatches(batchesResponse.data?.items || []);
             setSalesSummary(salesResponse.data || null);
         } catch (err) {
             message.error(
@@ -111,6 +147,119 @@ const OneCExchangePage = () => {
     };
 
     const exchangeUrl = `${window.location.origin}/api/1c/exchange`;
+
+    const handleRetryEvent = async (eventId) => {
+        setRetryingEventId(eventId);
+        try {
+            await retryOneCEvent(eventId);
+            message.success('Событие возвращено в очередь');
+            await loadStatus();
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail || 'Не удалось повторить событие'
+            );
+        } finally {
+            setRetryingEventId(null);
+        }
+    };
+
+    const eventColumns = [
+        {
+            title: 'Создано',
+            dataIndex: 'created_at',
+            width: 145,
+            render: (value) => dayjs(value).format('DD.MM.YY HH:mm:ss'),
+        },
+        {
+            title: 'Документ',
+            key: 'entity',
+            width: 190,
+            render: (_, row) => (
+                <Space direction="vertical" size={0}>
+                    <Text strong>{ENTITY_LABELS[row.entity_type] || row.entity_type}</Text>
+                    <Text type="secondary">ID {row.entity_id} · {row.event_type}</Text>
+                </Space>
+            ),
+        },
+        {
+            title: 'Статус',
+            dataIndex: 'status',
+            width: 135,
+            render: (value) => {
+                const meta = EVENT_STATUS[value] || { label: value };
+                return <Tag color={meta.color}>{meta.label}</Tag>;
+            },
+        },
+        {
+            title: 'Попыток',
+            dataIndex: 'attempt_count',
+            width: 85,
+            align: 'center',
+        },
+        {
+            title: 'ID в 1С / ошибка',
+            key: 'result',
+            ellipsis: true,
+            render: (_, row) => row.external_id || row.last_error || <Text type="secondary">—</Text>,
+        },
+        {
+            title: '',
+            key: 'actions',
+            width: 55,
+            render: (_, row) => row.status !== 'succeeded' ? (
+                <Tooltip title="Вернуть в очередь">
+                    <Button
+                        type="text"
+                        icon={<RetweetOutlined />}
+                        loading={retryingEventId === row.id}
+                        onClick={() => handleRetryEvent(row.id)}
+                    />
+                </Tooltip>
+            ) : null,
+        },
+    ];
+
+    const batchColumns = [
+        {
+            title: 'Отправлен',
+            dataIndex: 'sent_at',
+            width: 160,
+            render: (value) => dayjs(value).format('DD.MM.YY HH:mm:ss'),
+        },
+        {
+            title: 'Канал',
+            dataIndex: 'channel',
+            width: 130,
+            render: (value) => value === 'commerceml' ? 'CommerceML' : 'JSON API',
+        },
+        {
+            title: 'Пакет',
+            dataIndex: 'batch_uid',
+            ellipsis: true,
+            render: (value) => <Text copyable={{ text: value }}>{value}</Text>,
+        },
+        {
+            title: 'Событий',
+            dataIndex: 'event_count',
+            width: 90,
+            align: 'center',
+        },
+        {
+            title: 'Попыток',
+            dataIndex: 'attempt_count',
+            width: 85,
+            align: 'center',
+        },
+        {
+            title: 'Статус',
+            dataIndex: 'status',
+            width: 170,
+            render: (value) => {
+                const meta = BATCH_STATUS[value] || { label: value };
+                return <Tag color={meta.color}>{meta.label}</Tag>;
+            },
+        },
+    ];
 
     const exportButtons = [
         {
@@ -187,7 +336,31 @@ const OneCExchangePage = () => {
                                 value={status?.synced_shipments ?? '—'}
                             />
                         </Col>
+                        <Col xs={12} md={6}>
+                            <Statistic
+                                title="Передано, ждёт ответа"
+                                value={status?.in_flight_events ?? '—'}
+                            />
+                        </Col>
+                        <Col xs={12} md={6}>
+                            <Statistic
+                                title="Ошибок обмена"
+                                value={status?.error_events ?? '—'}
+                                valueStyle={status?.error_events ? { color: '#cf1322' } : undefined}
+                            />
+                        </Col>
                     </Row>
+                    {status?.active_batch_uid ? (
+                        <Alert
+                            type="info"
+                            showIcon
+                            style={{ marginTop: 16 }}
+                            message="1С получила пакет, ожидается подтверждение"
+                            description={
+                                <Text copyable>{status.active_batch_uid}</Text>
+                            }
+                        />
+                    ) : null}
                     <Descriptions
                         column={1}
                         size="small"
@@ -210,10 +383,46 @@ const OneCExchangePage = () => {
                         сайтом → включить, указать адрес и логин/пароль,
                         отметить «Обмен заказами». 1С будет по расписанию
                         забирать проведённые отгрузки как заказы —
-                        реализация создаётся «на основании» заказа. Каждая
-                        отгрузка выгружается один раз; если 1С не приняла
-                        пакет, верните период в очередь кнопкой ниже.
+                        реализация создаётся «на основании» заказа. Повторный
+                        запрос до подтверждения получает тот же
+                        пакет. Отгрузка считается синхронизированной только
+                        после ответа success от 1С.
                     </Paragraph>
+                </Card>
+
+                <Card title="Надёжная очередь и история обмена">
+                    <Tabs
+                        items={[
+                            {
+                                key: 'events',
+                                label: `События (${events.length})`,
+                                children: (
+                                    <Table
+                                        rowKey="id"
+                                        size="small"
+                                        columns={eventColumns}
+                                        dataSource={events}
+                                        pagination={{ pageSize: 15, showSizeChanger: false }}
+                                        scroll={{ x: 850 }}
+                                    />
+                                ),
+                            },
+                            {
+                                key: 'batches',
+                                label: `Пакеты (${batches.length})`,
+                                children: (
+                                    <Table
+                                        rowKey="id"
+                                        size="small"
+                                        columns={batchColumns}
+                                        dataSource={batches}
+                                        pagination={{ pageSize: 10, showSizeChanger: false }}
+                                        scroll={{ x: 850 }}
+                                    />
+                                ),
+                            },
+                        ]}
+                    />
                 </Card>
 
                 <Card title="Ручные выгрузки для бухгалтерии">

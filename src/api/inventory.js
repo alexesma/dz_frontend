@@ -81,6 +81,41 @@ export const updateProductionMaterial = (groupId, autopartId, data) =>
 export const resetProductionMaterial = (groupId, autopartId) =>
     api.delete(`/inventory/production-groups/${groupId}/materials/${autopartId}`);
 
+// ── DragonZap production waves ──────────────────────────────────────────────
+
+export const listProductionWaveEligible = (params = {}) =>
+    api.get('/inventory/production-waves/eligible', { params });
+
+export const listProductionWaves = (params = {}) =>
+    api.get('/inventory/production-waves', { params });
+
+export const getProductionWave = (id) =>
+    api.get(`/inventory/production-waves/${id}`);
+
+export const createProductionWave = (data) =>
+    api.post('/inventory/production-waves', data);
+
+export const replanProductionWave = (id) =>
+    api.post(`/inventory/production-waves/${id}/replan`);
+
+export const planProductionWave = (id) =>
+    api.post(`/inventory/production-waves/${id}/plan`);
+
+export const startProductionWave = (id) =>
+    api.post(`/inventory/production-waves/${id}/start`);
+
+export const completeProductionWave = (id) =>
+    api.post(`/inventory/production-waves/${id}/complete`);
+
+export const cancelProductionWave = (id) =>
+    api.post(`/inventory/production-waves/${id}/cancel`);
+
+export const listProductionWaveLabels = (id) =>
+    api.get(`/inventory/production-waves/${id}/labels`);
+
+export const markProductionWaveLabelsPrinted = (id, data = {}) =>
+    api.post(`/inventory/production-waves/${id}/labels/printed`, data);
+
 // ── StockDocument ─────────────────────────────────────────────────────────────
 
 export const listStockDocuments = (params = {}) =>

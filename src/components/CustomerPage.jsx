@@ -1750,13 +1750,22 @@ const CustomerPage = () => {
                 <Card
                     title="Конфигурации прайс-листов"
                     extra={
-                        <Button
-                            type="primary"
-                            icon={<PlusOutlined />}
-                            onClick={() => openConfigModal()}
-                        >
-                            Добавить конфигурацию
-                        </Button>
+                        <Space wrap>
+                            {user?.role === 'admin' && (
+                                <Button
+                                    onClick={() => navigate('/admin/customer-pricelists')}
+                                >
+                                    Управление прайсами
+                                </Button>
+                            )}
+                            <Button
+                                type="primary"
+                                icon={<PlusOutlined />}
+                                onClick={() => openConfigModal()}
+                            >
+                                Добавить конфигурацию
+                            </Button>
+                        </Space>
                     }
                 >
                     <Table

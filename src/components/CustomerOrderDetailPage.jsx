@@ -785,6 +785,10 @@ const CustomerOrderDetailPage = () => {
         },
     ];
 
+    const interruptedImport = order?.status === 'NEW'
+        && order?.source_filename
+        && !(order?.items || []).length;
+
     return (
         <div className="page-shell">
             <Card loading={loading}>
@@ -792,7 +796,7 @@ const CustomerOrderDetailPage = () => {
                     <Button onClick={() => navigate('/customer-orders')}>
                         Назад к списку
                     </Button>
-                    {order?.status === 'NEW' && (
+                    {order?.status === 'NEW' && !interruptedImport && (
                         <Button
                             type="primary"
                             onClick={handleProcessOrder}
@@ -801,7 +805,7 @@ const CustomerOrderDetailPage = () => {
                             Автообработать
                         </Button>
                     )}
-                    {order?.status === 'ERROR' && (
+                    {(order?.status === 'ERROR' || interruptedImport) && (
                         <Button
                             type="primary"
                             onClick={handleRetryOrder}

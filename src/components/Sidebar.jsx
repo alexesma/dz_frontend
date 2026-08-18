@@ -32,6 +32,8 @@ import {
     CloseOutlined,
     BarcodeOutlined,
     ApartmentOutlined,
+    ExperimentOutlined,
+    FileSearchOutlined,
 } from '@ant-design/icons';
 import useAuth from '../context/useAuth';
 
@@ -87,6 +89,7 @@ const Sidebar = () => {
         if (path.startsWith('/admin/email-accounts')) return 'admin-emails';
         if (path.startsWith('/admin/settings')) return 'admin-settings';
         if (path.startsWith('/admin/price-control')) return 'admin-price-control';
+        if (path.startsWith('/admin/customer-pricelists')) return 'admin-customer-pricelists';
         if (path.startsWith('/admin/brands')) return 'admin-brands';
         if (path.startsWith('/admin/order-status-mappings')) return 'admin-order-status-mappings';
         if (path.startsWith('/admin/monitor')) return 'admin-monitor';
@@ -102,6 +105,7 @@ const Sidebar = () => {
         if (path.startsWith('/reclamations')) return 'reclamations';
         if (path.startsWith('/warehouse/lots')) return 'warehouse-lots';
         if (path.startsWith('/warehouse/production-groups')) return 'warehouse-production-groups';
+        if (path.startsWith('/warehouse/production-waves')) return 'warehouse-production-waves';
         if (path.startsWith('/warehouse/transfer')) return 'warehouse-transfer';
         if (path.startsWith('/warehouse/overview')) return 'warehouse-overview';
         if (path.startsWith('/process-architecture')) return 'process-architecture';
@@ -264,6 +268,9 @@ const Sidebar = () => {
                 <Menu.Item key="warehouse-production-groups" icon={<ApartmentOutlined />}>
                     <Link to="/warehouse/production-groups">Группы выпуска DragonZap</Link>
                 </Menu.Item>
+                <Menu.Item key="warehouse-production-waves" icon={<ExperimentOutlined />}>
+                    <Link to="/warehouse/production-waves">Волны выпуска DragonZap</Link>
+                </Menu.Item>
                 <Menu.Item key="warehouse-transfer" icon={<SwapOutlined />}>
                     <Link to="/warehouse/transfer">Перемещение</Link>
                 </Menu.Item>
@@ -294,6 +301,9 @@ const Sidebar = () => {
                     </Menu.Item>
                     <Menu.Item key="admin-price-control" icon={<DollarOutlined />}>
                         <Link to="/admin/price-control">Контроль цен</Link>
+                    </Menu.Item>
+                    <Menu.Item key="admin-customer-pricelists" icon={<FileSearchOutlined />}>
+                        <Link to="/admin/customer-pricelists">Прайсы клиентов</Link>
                     </Menu.Item>
                     <Menu.Item key="admin-brands" icon={<TagsOutlined />}>
                         <Link to="/admin/brands">Бренды</Link>
