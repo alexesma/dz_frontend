@@ -6,6 +6,7 @@ import {
     Col,
     Collapse,
     Divider,
+    Empty,
     Form,
     Input,
     InputNumber,
@@ -23,7 +24,10 @@ import {
 } from 'antd';
 import {
     CloudDownloadOutlined,
+    CheckCircleOutlined,
     FileSearchOutlined,
+    FilterOutlined,
+    HolderOutlined,
     PlusOutlined,
     ReloadOutlined,
     SaveOutlined,
@@ -34,6 +38,7 @@ import {
     approveCustomerPricelistDraft,
     buildCustomerPricelistDraft,
     deleteCustomerPricelistPublicationRule,
+    diagnoseCustomerPricelistPosition,
     downloadCustomerPricelistDraft,
     getCustomerPricelistConfigs,
     getCustomerPricelistSources,
@@ -48,6 +53,7 @@ import {
     updateCustomerPricelistConfig,
     updateCustomerPricelistSource,
 } from '../api/customers';
+import { getBrands } from '../api/brands';
 import { getProviderConfigOptions } from '../api/providers';
 import { formatMoscow } from '../utils/time';
 import './CustomerPricelistStudioPage.css';
@@ -78,6 +84,81 @@ const ROW_TYPE_META = {
     automatic_cross: { color: 'cyan', label: 'Автоматический кросс' },
     manual_cross: { color: 'green', label: 'Ручная замена' },
     zzap_transform: { color: 'orange', label: 'Преобразование ZZap' },
+    transformed_cross: { color: 'gold', label: 'Оригинальный кросс DragonZap' },
+};
+
+const PIPELINE_BLOCKS = {
+    source_filters: { title: 'Фильтры источников', tone: 'blue' },
+    price_control_before: { title: 'Контроль цены до преобразования', tone: 'cyan' },
+    dragonzap_crosses: { title: 'Подтверждённые кроссы DragonZap', tone: 'gold' },
+    dragonzap_transform: { title: 'Преобразование в оригинал', tone: 'orange' },
+    product_labels: { title: 'Метки в наименовании', tone: 'green' },
+    price_control_after: { title: 'Контроль цены после преобразования', tone: 'cyan' },
+    publication_rules: { title: 'Ручные правила публикации', tone: 'purple' },
+    deduplication: { title: 'Самая дешёвая строка Бренд + Артикул', tone: 'volcano' },
+    quality_control: { title: 'Контроль качества', tone: 'red' },
+};
+
+const DEFAULT_PIPELINE_ORDER = Object.keys(PIPELINE_BLOCKS);
+const PIPELINE_DEPENDENCIES = {
+    price_control_before: ['source_filters'],
+    dragonzap_crosses: ['source_filters', 'price_control_before'],
+    dragonzap_transform: ['dragonzap_crosses'],
+    product_labels: ['dragonzap_transform'],
+    price_control_after: ['dragonzap_transform'],
+    publication_rules: [
+        'price_control_before',
+        'dragonzap_crosses',
+        'dragonzap_transform',
+        'product_labels',
+        'price_control_after',
+    ],
+    deduplication: DEFAULT_PIPELINE_ORDER.filter((step) => (
+        !['deduplication', 'quality_control'].includes(step)
+    )),
+    quality_control: DEFAULT_PIPELINE_ORDER.filter((step) => step !== 'quality_control'),
+};
+
+const normalizePipelineOrder = (requested) => {
+    const unique = (requested || []).filter((step, index, values) => (
+        PIPELINE_BLOCKS[step] && values.indexOf(step) === index
+    ));
+    DEFAULT_PIPELINE_ORDER.forEach((step) => {
+        if (!unique.includes(step)) unique.push(step);
+    });
+    const ordered = [];
+    const pending = [...unique];
+    while (pending.length) {
+        const availableIndex = pending.findIndex((step) => (
+            (PIPELINE_DEPENDENCIES[step] || []).every((dependency) => ordered.includes(dependency))
+        ));
+        const index = availableIndex >= 0 ? availableIndex : 0;
+        ordered.push(pending[index]);
+        pending.splice(index, 1);
+    }
+    return ordered;
+};
+
+const ZZAP_TEMPLATE = {
+    PIPELINE_V2_ENABLED: true,
+    PROFILE_TEMPLATE: 'zzap',
+    DZ_ORIGINAL_TRANSFORM_ENABLED: true,
+    DZ_TRANSFORM_INCLUDE_CROSSES: true,
+    DZ_TRANSFORM_KEEP_DRAGONZAP: false,
+    PUBLISH_CONFIRMED_DZ_CROSSES: false,
+    PRODUCT_LABELS_ENABLED: true,
+    LABEL_ORIGINAL_ENABLED: true,
+    LABEL_TRANSFORMED_ENABLED: true,
+    LABEL_ORIGINAL_TEXT: '>>Оригинал<<',
+    LABEL_TRANSFORMED_TEXT: '>>Неоригинал<<',
+    PRICE_CONTROL_ENABLED: true,
+    PRICE_CONTROL_STAGES: ['before', 'after'],
+    PRICE_CONTROL_MULTIPLIER: 1.2,
+    PRICE_CONTROL_ROUNDING_STEP: 10,
+    DUPLICATE_POLICY: 'cheapest_then_stock_then_original',
+    QUALITY_CONTROL_ENABLED: true,
+    REQUIRE_DRAFT_APPROVAL: true,
+    PIPELINE_ORDER: DEFAULT_PIPELINE_ORDER,
 };
 
 const safeNumber = (value, fallback) => {
@@ -96,9 +177,12 @@ const candidateLabel = (item) => (
 const CustomerPricelistStudioPage = () => {
     const [settingsForm] = Form.useForm();
     const [ruleForm] = Form.useForm();
+    const [sourceFilterForm] = Form.useForm();
+    const pipelineV2Enabled = Form.useWatch('pipeline_v2_enabled', settingsForm);
     const [customers, setCustomers] = useState([]);
     const [configs, setConfigs] = useState([]);
     const [providerOptions, setProviderOptions] = useState([]);
+    const [brandOptions, setBrandOptions] = useState([]);
     const [customerId, setCustomerId] = useState(null);
     const [configId, setConfigId] = useState(null);
     const [sources, setSources] = useState([]);
@@ -120,6 +204,13 @@ const CustomerPricelistStudioPage = () => {
     const [crossOptions, setCrossOptions] = useState([]);
     const [candidateLoading, setCandidateLoading] = useState(false);
     const [ruleSaving, setRuleSaving] = useState(false);
+    const [pipelineOrder, setPipelineOrder] = useState(DEFAULT_PIPELINE_ORDER);
+    const [draggedPipelineStep, setDraggedPipelineStep] = useState(null);
+    const [sourceFilterOpen, setSourceFilterOpen] = useState(false);
+    const [sourceFilterTarget, setSourceFilterTarget] = useState(null);
+    const [sourceFilterSaving, setSourceFilterSaving] = useState(false);
+    const [positionDiagnostic, setPositionDiagnostic] = useState(null);
+    const [diagnosticLoading, setDiagnosticLoading] = useState(false);
 
     const activeConfig = useMemo(
         () => configs.find((item) => item.id === configId) || null,
@@ -132,7 +223,7 @@ const CustomerPricelistStudioPage = () => {
 
     const loadInitial = useCallback(async () => {
         try {
-            const [customersResponse, providerResponse] = await Promise.all([
+            const [customersResponse, providerResponse, brandsResponse] = await Promise.all([
                 getCustomersSummary({
                     page: 1,
                     page_size: 200,
@@ -140,9 +231,14 @@ const CustomerPricelistStudioPage = () => {
                     sort_dir: 'asc',
                 }),
                 getProviderConfigOptions(),
+                getBrands(),
             ]);
             setCustomers(customersResponse.data?.items || []);
             setProviderOptions(providerResponse.data || []);
+            setBrandOptions((brandsResponse.data || []).map((brand) => ({
+                value: brand.id,
+                label: brand.name,
+            })));
         } catch (error) {
             message.error(getErrorText(error, 'Не удалось загрузить справочники'));
         }
@@ -189,6 +285,11 @@ const CustomerPricelistStudioPage = () => {
             return;
         }
         const extra = activeConfig.additional_filters || {};
+        setPipelineOrder(
+            Array.isArray(extra.PIPELINE_ORDER) && extra.PIPELINE_ORDER.length
+                ? extra.PIPELINE_ORDER
+                : DEFAULT_PIPELINE_ORDER
+        );
         settingsForm.setFieldsValue({
             name: activeConfig.name,
             is_active: activeConfig.is_active,
@@ -215,6 +316,28 @@ const CustomerPricelistStudioPage = () => {
             require_draft_approval: Boolean(extra.REQUIRE_DRAFT_APPROVAL),
             publish_confirmed_dz_crosses:
                 extra.PUBLISH_CONFIRMED_DZ_CROSSES !== false,
+            pipeline_v2_enabled: Boolean(extra.PIPELINE_V2_ENABLED),
+            profile_template: extra.PROFILE_TEMPLATE || 'custom',
+            dz_transform_enabled: Boolean(extra.DZ_ORIGINAL_TRANSFORM_ENABLED),
+            dz_transform_include_crosses: extra.DZ_TRANSFORM_INCLUDE_CROSSES !== false,
+            dz_transform_keep_dragonzap: Boolean(extra.DZ_TRANSFORM_KEEP_DRAGONZAP),
+            product_labels_enabled: Boolean(extra.PRODUCT_LABELS_ENABLED),
+            label_original_enabled: extra.LABEL_ORIGINAL_ENABLED !== false,
+            label_transformed_enabled: extra.LABEL_TRANSFORMED_ENABLED !== false,
+            label_original_text: extra.LABEL_ORIGINAL_TEXT || '>>Оригинал<<',
+            label_transformed_text: extra.LABEL_TRANSFORMED_TEXT || '>>Неоригинал<<',
+            price_control_enabled: Boolean(extra.PRICE_CONTROL_ENABLED),
+            price_control_provider_config_ids:
+                extra.PRICE_CONTROL_PROVIDER_CONFIG_IDS || [],
+            price_control_stages: extra.PRICE_CONTROL_STAGES || [],
+            price_control_multiplier: safeNumber(extra.PRICE_CONTROL_MULTIPLIER, 1.2),
+            price_control_rounding_step:
+                safeNumber(extra.PRICE_CONTROL_ROUNDING_STEP, 10),
+            duplicate_policy:
+                extra.DUPLICATE_POLICY || 'cheapest_then_stock_then_original',
+            quality_control_enabled: extra.QUALITY_CONTROL_ENABLED == null
+                ? Boolean(extra.PIPELINE_V2_ENABLED)
+                : Boolean(extra.QUALITY_CONTROL_ENABLED),
         });
     }, [activeConfig, settingsForm]);
 
@@ -239,6 +362,22 @@ const CustomerPricelistStudioPage = () => {
             );
             setDraftRows(data.items || []);
             setDraftRowsTotal(data.total || 0);
+            if (draftSearch && Number(data.total || 0) === 0) {
+                setDiagnosticLoading(true);
+                try {
+                    const diagnosticResponse = await diagnoseCustomerPricelistPosition(
+                        customerId,
+                        configId,
+                        selectedDraftId,
+                        draftSearch
+                    );
+                    setPositionDiagnostic(diagnosticResponse.data || null);
+                } finally {
+                    setDiagnosticLoading(false);
+                }
+            } else {
+                setPositionDiagnostic(null);
+            }
         } catch (error) {
             message.error(getErrorText(error, 'Не удалось загрузить строки черновика'));
         } finally {
@@ -280,18 +419,40 @@ const CustomerPricelistStudioPage = () => {
         setSavingSettings(true);
         try {
             const values = await settingsForm.validateFields();
+            const normalizedPipelineOrder = normalizePipelineOrder(pipelineOrder);
+            setPipelineOrder(normalizedPipelineOrder);
             const additionalFilters = {
                 ...(activeConfig.additional_filters || {}),
-                ZZAP: Boolean(values.zzap_enabled),
-                ZZAP_BENCHMARK_PROVIDER_CONFIG_ID:
-                    values.zzap_benchmark_provider_config_id || null,
-                ZZAP_MIN_PRICE_MULTIPLIER:
-                    values.zzap_min_price_multiplier ?? 1.2,
-                ZZAP_ROUNDING_STEP: values.zzap_rounding_step ?? 10,
-                ZZAP_LABEL_PRODUCTS: values.zzap_label_products !== false,
+                ZZAP: values.pipeline_v2_enabled
+                    ? false
+                    : Boolean(activeConfig.additional_filters?.ZZAP),
                 REQUIRE_DRAFT_APPROVAL: Boolean(values.require_draft_approval),
                 PUBLISH_CONFIRMED_DZ_CROSSES:
                     values.publish_confirmed_dz_crosses !== false,
+                PIPELINE_V2_ENABLED: Boolean(values.pipeline_v2_enabled),
+                PROFILE_TEMPLATE: values.profile_template || 'custom',
+                PIPELINE_ORDER: normalizedPipelineOrder,
+                DZ_ORIGINAL_TRANSFORM_ENABLED: Boolean(values.dz_transform_enabled),
+                DZ_TRANSFORM_INCLUDE_CROSSES:
+                    values.dz_transform_include_crosses !== false,
+                DZ_TRANSFORM_KEEP_DRAGONZAP:
+                    Boolean(values.dz_transform_keep_dragonzap),
+                PRODUCT_LABELS_ENABLED: Boolean(values.product_labels_enabled),
+                LABEL_ORIGINAL_ENABLED: values.label_original_enabled !== false,
+                LABEL_TRANSFORMED_ENABLED: values.label_transformed_enabled !== false,
+                LABEL_ORIGINAL_TEXT: values.label_original_text || '>>Оригинал<<',
+                LABEL_TRANSFORMED_TEXT:
+                    values.label_transformed_text || '>>Неоригинал<<',
+                PRICE_CONTROL_ENABLED: Boolean(values.price_control_enabled),
+                PRICE_CONTROL_PROVIDER_CONFIG_IDS:
+                    values.price_control_provider_config_ids || [],
+                PRICE_CONTROL_STAGES: values.price_control_stages || [],
+                PRICE_CONTROL_MULTIPLIER: values.price_control_multiplier ?? 1.2,
+                PRICE_CONTROL_ROUNDING_STEP:
+                    values.price_control_rounding_step ?? 10,
+                DUPLICATE_POLICY:
+                    values.duplicate_policy || 'cheapest_then_stock_then_original',
+                QUALITY_CONTROL_ENABLED: Boolean(values.quality_control_enabled),
             };
             const { data } = await updateCustomerPricelistConfig(
                 customerId,
@@ -322,6 +483,42 @@ const CustomerPricelistStudioPage = () => {
         } finally {
             setSavingSettings(false);
         }
+    };
+
+    const applyZzapTemplate = () => {
+        setPipelineOrder(ZZAP_TEMPLATE.PIPELINE_ORDER);
+        settingsForm.setFieldsValue({
+            pipeline_v2_enabled: ZZAP_TEMPLATE.PIPELINE_V2_ENABLED,
+            profile_template: ZZAP_TEMPLATE.PROFILE_TEMPLATE,
+            dz_transform_enabled: ZZAP_TEMPLATE.DZ_ORIGINAL_TRANSFORM_ENABLED,
+            dz_transform_include_crosses: ZZAP_TEMPLATE.DZ_TRANSFORM_INCLUDE_CROSSES,
+            dz_transform_keep_dragonzap: ZZAP_TEMPLATE.DZ_TRANSFORM_KEEP_DRAGONZAP,
+            publish_confirmed_dz_crosses: ZZAP_TEMPLATE.PUBLISH_CONFIRMED_DZ_CROSSES,
+            product_labels_enabled: ZZAP_TEMPLATE.PRODUCT_LABELS_ENABLED,
+            label_original_enabled: ZZAP_TEMPLATE.LABEL_ORIGINAL_ENABLED,
+            label_transformed_enabled: ZZAP_TEMPLATE.LABEL_TRANSFORMED_ENABLED,
+            label_original_text: ZZAP_TEMPLATE.LABEL_ORIGINAL_TEXT,
+            label_transformed_text: ZZAP_TEMPLATE.LABEL_TRANSFORMED_TEXT,
+            price_control_enabled: ZZAP_TEMPLATE.PRICE_CONTROL_ENABLED,
+            price_control_stages: ZZAP_TEMPLATE.PRICE_CONTROL_STAGES,
+            price_control_multiplier: ZZAP_TEMPLATE.PRICE_CONTROL_MULTIPLIER,
+            price_control_rounding_step: ZZAP_TEMPLATE.PRICE_CONTROL_ROUNDING_STEP,
+            duplicate_policy: ZZAP_TEMPLATE.DUPLICATE_POLICY,
+            quality_control_enabled: ZZAP_TEMPLATE.QUALITY_CONTROL_ENABLED,
+            require_draft_approval: ZZAP_TEMPLATE.REQUIRE_DRAFT_APPROVAL,
+        });
+        message.info('Шаблон ZZap заполнен. Выберите контрольные прайсы и сохраните настройки.');
+    };
+
+    const handlePipelineDrop = (targetStep) => {
+        if (!draggedPipelineStep || draggedPipelineStep === targetStep) return;
+        setPipelineOrder((previous) => {
+            const next = previous.filter((step) => step !== draggedPipelineStep);
+            const targetIndex = next.indexOf(targetStep);
+            next.splice(targetIndex, 0, draggedPipelineStep);
+            return next;
+        });
+        setDraggedPipelineStep(null);
     };
 
     const handleSourceChange = (sourceId, patch) => {
@@ -360,6 +557,74 @@ const CustomerPricelistStudioPage = () => {
             message.success(`Источник «${source.provider_config_name || source.provider_name}» сохранён`);
         } catch (error) {
             message.error(getErrorText(error, 'Не удалось сохранить источник'));
+        }
+    };
+
+    const openSourceFilters = (source) => {
+        const extra = source.additional_filters || {};
+        const dragonzapBrandIds = new Set(
+            brandOptions
+                .filter((brand) => String(brand.label || '').trim().toUpperCase() === 'DRAGONZAP')
+                .map((brand) => Number(brand.value))
+        );
+        const dragonzapIsExcluded = source.brand_filters?.type === 'exclude'
+            && (source.brand_filters?.brands || []).some((brandId) => (
+                dragonzapBrandIds.has(Number(brandId))
+            ));
+        const inferredDragonzapMode = (
+            settingsForm.getFieldValue('pipeline_v2_enabled')
+            && settingsForm.getFieldValue('dz_transform_enabled')
+            && dragonzapIsExcluded
+        ) ? 'transform_only' : 'normal';
+        setSourceFilterTarget(source);
+        sourceFilterForm.setFieldsValue({
+            dragonzap_mode: extra.DRAGONZAP_MODE || inferredDragonzapMode,
+            brand_filter_type: source.brand_filters?.type || 'exclude',
+            brand_filter_ids: source.brand_filters?.brands || [],
+            min_price: source.min_price ?? null,
+            max_price: source.max_price ?? null,
+            min_quantity: source.min_quantity ?? null,
+            max_quantity: source.max_quantity ?? null,
+            brand_rules: extra.BRAND_FILTER_RULES || [],
+        });
+        setSourceFilterOpen(true);
+    };
+
+    const saveSourceFilters = async () => {
+        if (!sourceFilterTarget) return;
+        setSourceFilterSaving(true);
+        try {
+            const values = await sourceFilterForm.validateFields();
+            const additionalFilters = {
+                ...(sourceFilterTarget.additional_filters || {}),
+                DRAGONZAP_MODE: values.dragonzap_mode || 'normal',
+                BRAND_FILTER_RULES: values.brand_rules || [],
+            };
+            const { data } = await updateCustomerPricelistSource(
+                customerId,
+                configId,
+                sourceFilterTarget.id,
+                {
+                    brand_filters: {
+                        type: values.brand_filter_type || 'exclude',
+                        brands: values.brand_filter_ids || [],
+                    },
+                    min_price: values.min_price ?? null,
+                    max_price: values.max_price ?? null,
+                    min_quantity: values.min_quantity ?? null,
+                    max_quantity: values.max_quantity ?? null,
+                    additional_filters: additionalFilters,
+                }
+            );
+            setSources((previous) => previous.map((source) => (
+                source.id === data.id ? { ...source, ...data } : source
+            )));
+            setSourceFilterOpen(false);
+            message.success('Фильтры источника сохранены');
+        } catch (error) {
+            message.error(getErrorText(error, 'Не удалось сохранить фильтры'));
+        } finally {
+            setSourceFilterSaving(false);
         }
     };
 
@@ -543,6 +808,7 @@ const CustomerPricelistStudioPage = () => {
 
     const settingsPanel = (
         <Form form={settingsForm} layout="vertical" className="pricelist-studio-form">
+            <Form.Item name="profile_template" hidden><Input /></Form.Item>
             <Row gutter={[18, 0]}>
                 <Col xs={24} lg={12}>
                     <Form.Item name="name" label="Название конфигурации" rules={[{ required: true }]}>
@@ -557,10 +823,12 @@ const CustomerPricelistStudioPage = () => {
                 <Col xs={12} lg={6}>
                     <Form.Item
                         name="collapse_duplicates_by_min_price"
-                        label="Сворачивать дубли"
+                        label={pipelineV2Enabled
+                            ? 'Сворачивание дублей выполняется конвейером'
+                            : 'Сворачивать дубли'}
                         valuePropName="checked"
                     >
-                        <Switch />
+                        <Switch disabled={pipelineV2Enabled} />
                     </Form.Item>
                 </Col>
             </Row>
@@ -633,46 +901,157 @@ const CustomerPricelistStudioPage = () => {
                 </Col>
             </Row>
             <div className="zzap-settings-block">
-                <div>
-                    <Text className="eyebrow">Специальный профиль</Text>
-                    <Title level={4}>ZZap</Title>
+                <div className="profile-heading">
+                    <div>
+                        <Text className="eyebrow">Шаблон независимых настроек</Text>
+                        <Title level={4}>Профиль ZZap</Title>
+                        <Text type="secondary">
+                            Заполняет преобразование, контроль цены, метки и проверку черновика.
+                            Каждый параметр после этого можно изменить отдельно.
+                        </Text>
+                    </div>
+                    <Button type="primary" onClick={applyZzapTemplate}>Применить шаблон</Button>
                 </div>
-                <Form.Item name="zzap_enabled" label="Режим ZZap" valuePropName="checked">
+                <Form.Item name="pipeline_v2_enabled" label="Новый конвейер" valuePropName="checked">
                     <Switch />
                 </Form.Item>
-                <Row gutter={[18, 0]}>
-                    <Col xs={24} lg={12}>
-                        <Form.Item
-                            name="zzap_benchmark_provider_config_id"
-                            label="Контрольный прайс для ограничения цены"
+            </div>
+
+            <Divider orientation="left">Преобразование DragonZap</Divider>
+            <Row gutter={[18, 0]}>
+                <Col xs={24} md={8}>
+                    <Form.Item name="dz_transform_enabled" label="Преобразовывать в оригинал" valuePropName="checked">
+                        <Switch />
+                    </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                    <Form.Item name="dz_transform_include_crosses" label="Использовать подтверждённые кроссы" valuePropName="checked">
+                        <Switch />
+                    </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                    <Form.Item name="dz_transform_keep_dragonzap" label="Оставлять исходный DragonZap" valuePropName="checked">
+                        <Switch />
+                    </Form.Item>
+                </Col>
+            </Row>
+
+            <Divider orientation="left">Контроль цены по нескольким прайсам</Divider>
+            <Row gutter={[18, 0]}>
+                <Col xs={24} md={6}>
+                    <Form.Item name="price_control_enabled" label="Контроль цены" valuePropName="checked">
+                        <Switch />
+                    </Form.Item>
+                </Col>
+                <Col xs={24} md={18}>
+                    <Form.Item name="price_control_provider_config_ids" label="Контрольные прайсы (можно несколько)">
+                        <Select
+                            mode="multiple"
+                            showSearch
+                            optionFilterProp="label"
+                            options={providerOptions.map((item) => ({
+                                value: item.id,
+                                label: `${item.provider_name} · ${item.name_price || `конфигурация ${item.id}`}`,
+                            }))}
+                        />
+                    </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                    <Form.Item name="price_control_stages" label="Этапы сравнения">
+                        <Select
+                            mode="multiple"
+                            options={[
+                                { value: 'before', label: 'До преобразования' },
+                                { value: 'after', label: 'После преобразования' },
+                            ]}
+                        />
+                    </Form.Item>
+                </Col>
+                <Col xs={12} md={4}>
+                    <Form.Item name="price_control_multiplier" label="Мин. коэффициент к их цене">
+                        <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
+                    </Form.Item>
+                </Col>
+                <Col xs={12} md={4}>
+                    <Form.Item name="price_control_rounding_step" label="Округление, ₽">
+                        <InputNumber min={0.01} step={1} style={{ width: '100%' }} />
+                    </Form.Item>
+                </Col>
+            </Row>
+
+            <Divider orientation="left">Метки в наименовании</Divider>
+            <Row gutter={[18, 0]}>
+                <Col xs={24} md={6}>
+                    <Form.Item name="product_labels_enabled" label="Добавлять метки" valuePropName="checked">
+                        <Switch />
+                    </Form.Item>
+                </Col>
+                <Col xs={24} md={9}>
+                    <Form.Item name="label_original_text" label="Исходный оригинал">
+                        <Input addonBefore="Текст" />
+                    </Form.Item>
+                    <Form.Item name="label_original_enabled" valuePropName="checked">
+                        <Switch checkedChildren="Включено" unCheckedChildren="Выключено" />
+                    </Form.Item>
+                </Col>
+                <Col xs={24} md={9}>
+                    <Form.Item name="label_transformed_text" label="Преобразовано из DragonZap">
+                        <Input addonBefore="Текст" />
+                    </Form.Item>
+                    <Form.Item name="label_transformed_enabled" valuePropName="checked">
+                        <Switch checkedChildren="Включено" unCheckedChildren="Выключено" />
+                    </Form.Item>
+                </Col>
+            </Row>
+
+            <Divider orientation="left">Совпадения и контроль</Divider>
+            <Row gutter={[18, 0]}>
+                <Col xs={24} md={12}>
+                    <Form.Item
+                        name="duplicate_policy"
+                        label="При совпадении Бренд + Артикул"
+                        extra="Сначала выбирается минимальная цена. При равной цене — больший остаток, затем исходное оригинальное предложение вместо преобразованного DragonZap."
+                    >
+                        <Select options={[
+                            {
+                                value: 'cheapest_then_stock_then_original',
+                                label: 'Оставлять самое дешёвое предложение',
+                            },
+                        ]} />
+                    </Form.Item>
+                </Col>
+                <Col xs={24} md={6}>
+                    <Form.Item name="quality_control_enabled" label="Контроль качества" valuePropName="checked">
+                        <Switch />
+                    </Form.Item>
+                </Col>
+            </Row>
+
+            <Divider orientation="left">Порядок обработки</Divider>
+            <Alert
+                showIcon
+                type="info"
+                message="Перетаскивайте блоки. При сохранении система автоматически соблюдает обязательные зависимости."
+                style={{ marginBottom: 12 }}
+            />
+            <div className="pipeline-board">
+                {pipelineOrder.map((step, index) => {
+                    const meta = PIPELINE_BLOCKS[step] || { title: step, tone: 'default' };
+                    return (
+                        <div
+                            className={`pipeline-step pipeline-${meta.tone}`}
+                            draggable
+                            key={step}
+                            onDragStart={() => setDraggedPipelineStep(step)}
+                            onDragOver={(event) => event.preventDefault()}
+                            onDrop={() => handlePipelineDrop(step)}
                         >
-                            <Select
-                                allowClear
-                                showSearch
-                                optionFilterProp="label"
-                                options={providerOptions.map((item) => ({
-                                    value: item.id,
-                                    label: `${item.provider_name} · ${item.name_price || `конфигурация ${item.id}`}`,
-                                }))}
-                            />
-                        </Form.Item>
-                    </Col>
-                    <Col xs={12} lg={4}>
-                        <Form.Item name="zzap_min_price_multiplier" label="Коэффициент">
-                            <InputNumber min={1} step={0.01} style={{ width: '100%' }} />
-                        </Form.Item>
-                    </Col>
-                    <Col xs={12} lg={4}>
-                        <Form.Item name="zzap_rounding_step" label="Округление, ₽">
-                            <InputNumber min={0.01} step={1} style={{ width: '100%' }} />
-                        </Form.Item>
-                    </Col>
-                    <Col xs={24} lg={4}>
-                        <Form.Item name="zzap_label_products" label="Метки в названии" valuePropName="checked">
-                            <Switch />
-                        </Form.Item>
-                    </Col>
-                </Row>
+                            <HolderOutlined />
+                            <span>{String(index + 1).padStart(2, '0')}</span>
+                            <strong>{meta.title}</strong>
+                        </div>
+                    );
+                })}
             </div>
             <Button
                 type="primary"
@@ -735,8 +1114,26 @@ const CustomerPricelistStudioPage = () => {
             ),
         },
         {
+            title: 'Фильтры',
+            width: 190,
+            render: (_, row) => (
+                <Space direction="vertical" size={4}>
+                    <Button icon={<FilterOutlined />} onClick={() => openSourceFilters(row)}>
+                        Настроить
+                    </Button>
+                    {(row.additional_filters?.DRAGONZAP_MODE === 'transform_only'
+                        || row.additional_filters?.DRAGONZAP_MODE === 'exclude'
+                        || (row.brand_filters?.brands || []).length > 0
+                        || row.min_price || row.max_price || row.min_quantity || row.max_quantity
+                        || (row.additional_filters?.BRAND_FILTER_RULES || []).length > 0) && (
+                        <Tag color="orange">Фильтр действует</Tag>
+                    )}
+                </Space>
+            ),
+        },
+        {
             title: '',
-            width: 70,
+            width: 60,
             render: (_, row) => (
                 <Button icon={<SaveOutlined />} onClick={() => handleSaveSource(row)} />
             ),
@@ -849,7 +1246,13 @@ const CustomerPricelistStudioPage = () => {
                                 title="Отправить именно этот сохранённый файл?"
                                 onConfirm={() => handleApprove(row)}
                             >
-                                <Button size="small" type="primary" icon={<SendOutlined />}>
+                                <Button
+                                    size="small"
+                                    type="primary"
+                                    icon={<SendOutlined />}
+                                    disabled={Boolean(row.generation_summary?.quality_control?.enabled)
+                                        && row.generation_summary?.quality_control?.status === 'failed'}
+                                >
                                     Принять и отправить
                                 </Button>
                             </Popconfirm>
@@ -952,7 +1355,7 @@ const CustomerPricelistStudioPage = () => {
                         <Col xs={12} lg={6}><Card><Statistic title="Источников" value={sources.length} /></Card></Col>
                         <Col xs={12} lg={6}><Card><Statistic title="Правил публикации" value={rules.length} /></Card></Col>
                         <Col xs={12} lg={6}><Card><Statistic title="Последний файл" value={drafts[0]?.positions_count || 0} suffix="стр." /></Card></Col>
-                        <Col xs={12} lg={6}><Card><Statistic title="Профиль" value={activeConfig.additional_filters?.ZZAP ? 'ZZap' : 'Стандарт'} /></Card></Col>
+                        <Col xs={12} lg={6}><Card><Statistic title="Профиль" value={activeConfig.additional_filters?.PROFILE_TEMPLATE === 'zzap' || activeConfig.additional_filters?.ZZAP ? 'ZZap' : 'Стандарт'} /></Card></Col>
                     </Row>
 
                     <Collapse
@@ -1052,6 +1455,28 @@ const CustomerPricelistStudioPage = () => {
                                                     <Col xs={12} md={6}><Statistic title="Ручных замен" value={selectedDraft.generation_summary?.manual_aliases || 0} /></Col>
                                                     <Col xs={12} md={6}><Statistic title="Итоговых строк" value={selectedDraft.positions_count || 0} /></Col>
                                                 </Row>
+                                                {selectedDraft.generation_summary?.quality_control?.enabled && (
+                                                    <div className={`quality-panel quality-${selectedDraft.generation_summary.quality_control.status}`}>
+                                                        <div className="quality-title">
+                                                            <CheckCircleOutlined />
+                                                            <strong>
+                                                                {selectedDraft.generation_summary.quality_control.status === 'passed'
+                                                                    ? 'Контроль качества пройден'
+                                                                    : 'Контроль качества не пройден'}
+                                                            </strong>
+                                                        </div>
+                                                        <div className="quality-checks">
+                                                            {(selectedDraft.generation_summary.quality_control.checks || []).map((check) => (
+                                                                <Tag
+                                                                    key={check.key}
+                                                                    color={check.status === 'passed' ? 'green' : 'red'}
+                                                                >
+                                                                    {check.message}
+                                                                </Tag>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
                                                 {(selectedDraft.generation_summary?.publication_rule_warnings || []).length > 0 && (
                                                     <Alert
                                                         type="warning"
@@ -1081,6 +1506,46 @@ const CustomerPricelistStudioPage = () => {
                                                         options={Object.entries(ROW_TYPE_META).map(([value, meta]) => ({ value, label: meta.label }))}
                                                     />
                                                 </div>
+                                                {(diagnosticLoading || positionDiagnostic) && draftSearch && (
+                                                    <Card
+                                                        size="small"
+                                                        className="position-diagnostic"
+                                                        loading={diagnosticLoading}
+                                                        title={`Диагностика позиции «${draftSearch}»`}
+                                                    >
+                                                        {positionDiagnostic?.items?.length ? (
+                                                            <div className="diagnostic-list">
+                                                                {positionDiagnostic.items.map((item, index) => (
+                                                                    <div
+                                                                        className="diagnostic-item"
+                                                                        key={`${item.autopart_id || item.oem}-${index}`}
+                                                                    >
+                                                                        <div>
+                                                                            <Text strong>{item.brand} {item.oem}</Text>
+                                                                            <div className="muted-line diagnostic-name">
+                                                                                {item.name || 'Без наименования'}
+                                                                            </div>
+                                                                        </div>
+                                                                        <Tag color={{ published: 'green', transformed: 'gold' }[item.status] || 'red'}>
+                                                                            {{
+                                                                                published: 'В файле',
+                                                                                transformed: 'Преобразована',
+                                                                            }[item.status] || 'Исключена'}
+                                                                        </Tag>
+                                                                        <Text>{item.quantity ?? '—'} шт.</Text>
+                                                                        <Text>{item.price != null ? `${item.price} ₽` : '—'}</Text>
+                                                                        <Text type="secondary">{item.reason || positionDiagnostic.message}</Text>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        ) : (
+                                                            <Empty
+                                                                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                                                                description={positionDiagnostic?.message || 'Проверяем источники'}
+                                                            />
+                                                        )}
+                                                    </Card>
+                                                )}
                                                 <Table
                                                     rowKey="id"
                                                     columns={rowColumns}
@@ -1108,6 +1573,103 @@ const CustomerPricelistStudioPage = () => {
                     />
                 </>
             )}
+
+            <Modal
+                title={`Фильтры источника${sourceFilterTarget ? ` · ${sourceFilterTarget.provider_name}` : ''}`}
+                open={sourceFilterOpen}
+                onCancel={() => setSourceFilterOpen(false)}
+                onOk={saveSourceFilters}
+                okText="Сохранить фильтры"
+                confirmLoading={sourceFilterSaving}
+                width={880}
+            >
+                <Form form={sourceFilterForm} layout="vertical">
+                    <Alert
+                        showIcon
+                        type="info"
+                        message="Исключение удаляет DragonZap полностью. Режим «только для преобразования» скрывает исходную строку, но разрешает сформировать из неё оригинальное предложение."
+                        style={{ marginBottom: 16 }}
+                    />
+                    <Form.Item name="dragonzap_mode" label="Как обрабатывать DragonZap в этом источнике">
+                        <Select options={[
+                            { value: 'normal', label: 'Публиковать как обычные позиции' },
+                            { value: 'transform_only', label: 'Использовать только для преобразования' },
+                            { value: 'exclude', label: 'Полностью исключить' },
+                        ]} />
+                    </Form.Item>
+                    <Divider orientation="left">Общий фильтр брендов</Divider>
+                    <Row gutter={[14, 0]}>
+                        <Col xs={24} md={7}>
+                            <Form.Item name="brand_filter_type" label="Режим">
+                                <Select options={[
+                                    { value: 'exclude', label: 'Исключить выбранные' },
+                                    { value: 'include', label: 'Оставить только выбранные' },
+                                ]} />
+                            </Form.Item>
+                        </Col>
+                        <Col xs={24} md={17}>
+                            <Form.Item name="brand_filter_ids" label="Бренды">
+                                <Select
+                                    mode="multiple"
+                                    showSearch
+                                    optionFilterProp="label"
+                                    options={brandOptions}
+                                />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+                    <Divider orientation="left">Общие ограничения источника</Divider>
+                    <Row gutter={[14, 0]}>
+                        <Col xs={12} md={6}><Form.Item name="min_price" label="Цена от"><InputNumber min={0} style={{ width: '100%' }} /></Form.Item></Col>
+                        <Col xs={12} md={6}><Form.Item name="max_price" label="Цена до"><InputNumber min={0} style={{ width: '100%' }} /></Form.Item></Col>
+                        <Col xs={12} md={6}><Form.Item name="min_quantity" label="Остаток от"><InputNumber min={0} style={{ width: '100%' }} /></Form.Item></Col>
+                        <Col xs={12} md={6}><Form.Item name="max_quantity" label="Остаток до"><InputNumber min={0} style={{ width: '100%' }} /></Form.Item></Col>
+                    </Row>
+                    <Divider orientation="left">Отдельные правила для брендов</Divider>
+                    <Form.List name="brand_rules">
+                        {(fields, { add, remove }) => (
+                            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                                {fields.map(({ key, name, ...restField }) => (
+                                    <Card
+                                        size="small"
+                                        key={key}
+                                        className="brand-filter-rule"
+                                        extra={<Button danger type="text" icon={<StopOutlined />} onClick={() => remove(name)}>Удалить</Button>}
+                                    >
+                                        <Row gutter={[12, 0]}>
+                                            <Col xs={24} md={14}>
+                                                <Form.Item
+                                                    {...restField}
+                                                    name={[name, 'brand_ids']}
+                                                    label="Бренды"
+                                                    rules={[{ required: true, message: 'Выберите хотя бы один бренд' }]}
+                                                >
+                                                    <Select mode="multiple" showSearch optionFilterProp="label" options={brandOptions} />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24} md={10}>
+                                                <Form.Item {...restField} name={[name, 'action']} label="Действие" initialValue="include">
+                                                    <Select options={[
+                                                        { value: 'include', label: 'Оставить в указанных пределах' },
+                                                        { value: 'exclude', label: 'Исключить в указанных пределах' },
+                                                    ]} />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={12} md={6}><Form.Item {...restField} name={[name, 'min_price']} label="Цена от"><InputNumber min={0} style={{ width: '100%' }} /></Form.Item></Col>
+                                            <Col xs={12} md={6}><Form.Item {...restField} name={[name, 'max_price']} label="Цена до"><InputNumber min={0} style={{ width: '100%' }} /></Form.Item></Col>
+                                            <Col xs={12} md={6}><Form.Item {...restField} name={[name, 'min_quantity']} label="Остаток от"><InputNumber min={0} style={{ width: '100%' }} /></Form.Item></Col>
+                                            <Col xs={12} md={6}><Form.Item {...restField} name={[name, 'max_quantity']} label="Остаток до"><InputNumber min={0} style={{ width: '100%' }} /></Form.Item></Col>
+                                        </Row>
+                                    </Card>
+                                ))}
+                                <Button type="dashed" icon={<PlusOutlined />} onClick={() => add({ action: 'include' })}>
+                                    Добавить правило бренда
+                                </Button>
+                            </Space>
+                        )}
+                    </Form.List>
+                </Form>
+            </Modal>
 
             <Modal
                 title="Новое правило публикации"

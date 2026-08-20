@@ -95,6 +95,17 @@ export const listCustomerPricelistDraftRows = (
     { params }
 );
 
+export const diagnoseCustomerPricelistPosition = (
+    customerId,
+    configId,
+    pricelistId,
+    search
+) => api.get(
+    `/customers/${customerId}/pricelist-configs/${configId}`
+    + `/drafts/${pricelistId}/diagnostics`,
+    { params: { search } }
+);
+
 export const downloadCustomerPricelistDraft = (
     customerId,
     configId,
