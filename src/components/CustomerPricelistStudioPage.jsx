@@ -95,6 +95,7 @@ const PIPELINE_BLOCKS = {
     product_labels: { title: 'Метки в наименовании', tone: 'green' },
     price_control_after: { title: 'Контроль цены после преобразования', tone: 'cyan' },
     publication_rules: { title: 'Ручные правила публикации', tone: 'purple' },
+    final_filters: { title: 'Финальная фильтрация', tone: 'blue' },
     deduplication: { title: 'Самая дешёвая строка Бренд + Артикул', tone: 'volcano' },
     quality_control: { title: 'Контроль качества', tone: 'red' },
 };
@@ -113,6 +114,7 @@ const PIPELINE_DEPENDENCIES = {
         'product_labels',
         'price_control_after',
     ],
+    final_filters: ['publication_rules'],
     deduplication: DEFAULT_PIPELINE_ORDER.filter((step) => (
         !['deduplication', 'quality_control'].includes(step)
     )),
@@ -157,6 +159,8 @@ const ZZAP_TEMPLATE = {
     PRICE_CONTROL_ROUNDING_STEP: 10,
     DUPLICATE_POLICY: 'cheapest_then_stock_then_original',
     QUALITY_CONTROL_ENABLED: true,
+    FINAL_FILTER_ENABLED: false,
+    FINAL_FILTER_RULES: [],
     REQUIRE_DRAFT_APPROVAL: true,
     PIPELINE_ORDER: DEFAULT_PIPELINE_ORDER,
 };
@@ -179,6 +183,7 @@ const CustomerPricelistStudioPage = () => {
     const [ruleForm] = Form.useForm();
     const [sourceFilterForm] = Form.useForm();
     const pipelineV2Enabled = Form.useWatch('pipeline_v2_enabled', settingsForm);
+    const finalFilterEnabled = Form.useWatch('final_filter_enabled', settingsForm);
     const [customers, setCustomers] = useState([]);
     const [configs, setConfigs] = useState([]);
     const [providerOptions, setProviderOptions] = useState([]);
@@ -209,6 +214,8 @@ const CustomerPricelistStudioPage = () => {
     const [sourceFilterOpen, setSourceFilterOpen] = useState(false);
     const [sourceFilterTarget, setSourceFilterTarget] = useState(null);
     const [sourceFilterSaving, setSourceFilterSaving] = useState(false);
+    const [sourcePositionOptions, setSourcePositionOptions] = useState([]);
+    const [sourcePositionLoading, setSourcePositionLoading] = useState(false);
     const [positionDiagnostic, setPositionDiagnostic] = useState(null);
     const [diagnosticLoading, setDiagnosticLoading] = useState(false);
 
@@ -338,6 +345,13 @@ const CustomerPricelistStudioPage = () => {
             quality_control_enabled: extra.QUALITY_CONTROL_ENABLED == null
                 ? Boolean(extra.PIPELINE_V2_ENABLED)
                 : Boolean(extra.QUALITY_CONTROL_ENABLED),
+            final_filter_enabled: Boolean(extra.FINAL_FILTER_ENABLED),
+            final_filter_rules: (extra.FINAL_FILTER_RULES || []).map((rule) => ({
+                ...rule,
+                enabled: rule.enabled !== false,
+                action: rule.action || 'exclude',
+                oem_match: rule.oem_match || 'exact',
+            })),
         });
     }, [activeConfig, settingsForm]);
 
@@ -453,6 +467,12 @@ const CustomerPricelistStudioPage = () => {
                 DUPLICATE_POLICY:
                     values.duplicate_policy || 'cheapest_then_stock_then_original',
                 QUALITY_CONTROL_ENABLED: Boolean(values.quality_control_enabled),
+                FINAL_FILTER_ENABLED: Boolean(values.final_filter_enabled),
+                FINAL_FILTER_RULES: (values.final_filter_rules || []).map((rule, index) => ({
+                    ...rule,
+                    id: rule.id || `final-${Date.now()}-${index}`,
+                    enabled: rule.enabled !== false,
+                })),
             };
             const { data } = await updateCustomerPricelistConfig(
                 customerId,
@@ -577,10 +597,13 @@ const CustomerPricelistStudioPage = () => {
             && dragonzapIsExcluded
         ) ? 'transform_only' : 'normal';
         setSourceFilterTarget(source);
+        setSourcePositionOptions(source.position_filters?.items || []);
         sourceFilterForm.setFieldsValue({
             dragonzap_mode: extra.DRAGONZAP_MODE || inferredDragonzapMode,
             brand_filter_type: source.brand_filters?.type || 'exclude',
             brand_filter_ids: source.brand_filters?.brands || [],
+            position_filter_type: source.position_filters?.type || 'exclude',
+            position_filter_ids: source.position_filters?.autoparts || [],
             min_price: source.min_price ?? null,
             max_price: source.max_price ?? null,
             min_quantity: source.min_quantity ?? null,
@@ -588,6 +611,31 @@ const CustomerPricelistStudioPage = () => {
             brand_rules: extra.BRAND_FILTER_RULES || [],
         });
         setSourceFilterOpen(true);
+    };
+
+    const searchSourcePositions = async (value) => {
+        if (!sourceFilterTarget || String(value || '').trim().length < 2) return;
+        setSourcePositionLoading(true);
+        try {
+            const { data } = await searchCustomerPricelistPublicationCandidates(
+                customerId,
+                configId,
+                {
+                    search: String(value).trim(),
+                    limit: 50,
+                    provider_config_id: sourceFilterTarget.provider_config_id,
+                }
+            );
+            setSourcePositionOptions((previous) => {
+                const merged = new Map(previous.map((item) => [item.autopart_id, item]));
+                (data || []).forEach((item) => merged.set(item.autopart_id, item));
+                return Array.from(merged.values());
+            });
+        } catch (error) {
+            message.error(getErrorText(error, 'Не удалось найти позиции источника'));
+        } finally {
+            setSourcePositionLoading(false);
+        }
     };
 
     const saveSourceFilters = async () => {
@@ -600,6 +648,10 @@ const CustomerPricelistStudioPage = () => {
                 DRAGONZAP_MODE: values.dragonzap_mode || 'normal',
                 BRAND_FILTER_RULES: values.brand_rules || [],
             };
+            const selectedPositionIds = values.position_filter_ids || [];
+            const selectedPositionItems = sourcePositionOptions.filter((item) => (
+                selectedPositionIds.includes(item.autopart_id)
+            ));
             const { data } = await updateCustomerPricelistSource(
                 customerId,
                 configId,
@@ -608,6 +660,11 @@ const CustomerPricelistStudioPage = () => {
                     brand_filters: {
                         type: values.brand_filter_type || 'exclude',
                         brands: values.brand_filter_ids || [],
+                    },
+                    position_filters: {
+                        type: values.position_filter_type || 'exclude',
+                        autoparts: selectedPositionIds,
+                        items: selectedPositionItems,
                     },
                     min_price: values.min_price ?? null,
                     max_price: values.max_price ?? null,
@@ -653,7 +710,7 @@ const CustomerPricelistStudioPage = () => {
     };
 
     const handleSourceCandidateChange = async (autopartId) => {
-        ruleForm.setFieldValue('target_autopart_id', null);
+        ruleForm.setFieldValue('target_autopart_ids', []);
         setCrossOptions([]);
         if (!autopartId) return;
         try {
@@ -1004,6 +1061,130 @@ const CustomerPricelistStudioPage = () => {
                 </Col>
             </Row>
 
+            <Divider orientation="left">Финальная фильтрация готового прайса</Divider>
+            <Alert
+                showIcon
+                type={finalFilterEnabled ? 'warning' : 'info'}
+                message={finalFilterEnabled
+                    ? 'Финальный фильтр действует и изменит отправляемый файл'
+                    : 'Финальный фильтр сейчас выключен'}
+                description="Правила применяются к уже преобразованным брендам, артикулам, ценам и наименованиям. Запрещающее правило всегда исключает строку; ручные кроссы могут обходить только общий разрешающий список."
+                style={{ marginBottom: 12 }}
+            />
+            <Form.Item name="final_filter_enabled" label="Использовать финальные фильтры" valuePropName="checked">
+                <Switch disabled={!pipelineV2Enabled} />
+            </Form.Item>
+            <Form.List name="final_filter_rules">
+                {(fields, { add, remove }) => (
+                    <Space direction="vertical" size={12} style={{ width: '100%', marginBottom: 18 }}>
+                        {fields.map(({ key, name, ...restField }) => (
+                            <Card
+                                size="small"
+                                key={key}
+                                className="final-filter-rule"
+                                extra={(
+                                    <Button danger type="text" icon={<StopOutlined />} onClick={() => remove(name)}>
+                                        Удалить
+                                    </Button>
+                                )}
+                            >
+                                <Form.Item {...restField} name={[name, 'id']} hidden><Input /></Form.Item>
+                                <Row gutter={[12, 0]}>
+                                    <Col xs={24} md={3}>
+                                        <Form.Item {...restField} name={[name, 'enabled']} label="Активно" valuePropName="checked" initialValue>
+                                            <Switch />
+                                        </Form.Item>
+                                    </Col>
+                                    <Col xs={24} md={9}>
+                                        <Form.Item {...restField} name={[name, 'name']} label="Название правила">
+                                            <Input placeholder="Например, исключить масла" />
+                                        </Form.Item>
+                                    </Col>
+                                    <Col xs={24} md={5}>
+                                        <Form.Item {...restField} name={[name, 'action']} label="Действие" initialValue="exclude">
+                                            <Select options={[
+                                                { value: 'exclude', label: 'Исключить совпадения' },
+                                                { value: 'include', label: 'Разрешить совпадения' },
+                                            ]} />
+                                        </Form.Item>
+                                    </Col>
+                                    <Col xs={24} md={7}>
+                                        <Form.Item {...restField} name={[name, 'brands']} label="Итоговые бренды">
+                                            <Select
+                                                mode="tags"
+                                                showSearch
+                                                optionFilterProp="label"
+                                                options={brandOptions.map((brand) => ({
+                                                    value: brand.label,
+                                                    label: brand.label,
+                                                }))}
+                                            />
+                                        </Form.Item>
+                                    </Col>
+                                    <Col xs={12} md={5}>
+                                        <Form.Item {...restField} name={[name, 'oem_match']} label="Сравнение артикула" initialValue="exact">
+                                            <Select options={[
+                                                { value: 'exact', label: 'Точное совпадение' },
+                                                { value: 'prefix', label: 'Начинается с' },
+                                                { value: 'contains', label: 'Содержит' },
+                                            ]} />
+                                        </Form.Item>
+                                    </Col>
+                                    <Col xs={12} md={7}>
+                                        <Form.Item {...restField} name={[name, 'oem']} label="Итоговый артикул">
+                                            <Input placeholder="1064001701" />
+                                        </Form.Item>
+                                    </Col>
+                                    <Col xs={24} md={12}>
+                                        <Form.Item {...restField} name={[name, 'name_contains']} label="Наименование содержит">
+                                            <Input placeholder="масло" />
+                                        </Form.Item>
+                                    </Col>
+                                    <Col xs={24} md={8}>
+                                        <Form.Item {...restField} name={[name, 'row_types']} label="Типы строк">
+                                            <Select mode="multiple" options={Object.entries(ROW_TYPE_META).map(([value, meta]) => ({ value, label: meta.label }))} />
+                                        </Form.Item>
+                                    </Col>
+                                    <Col xs={24} md={8}>
+                                        <Form.Item {...restField} name={[name, 'origin_types']} label="Происхождение">
+                                            <Select mode="multiple" options={[
+                                                { value: 'original_source', label: 'Исходное предложение' },
+                                                { value: 'dragonzap_source', label: 'DragonZap без преобразования' },
+                                                { value: 'dragonzap_transform', label: 'Преобразовано из DragonZap' },
+                                            ]} />
+                                        </Form.Item>
+                                    </Col>
+                                    <Col xs={24} md={8}>
+                                        <Form.Item {...restField} name={[name, 'provider_config_ids']} label="Исходные прайсы">
+                                            <Select
+                                                mode="multiple"
+                                                showSearch
+                                                optionFilterProp="label"
+                                                options={providerOptions.map((item) => ({
+                                                    value: item.id,
+                                                    label: `${item.provider_name} · ${item.name_price || `конфигурация ${item.id}`}`,
+                                                }))}
+                                            />
+                                        </Form.Item>
+                                    </Col>
+                                    <Col xs={12} md={4}><Form.Item {...restField} name={[name, 'min_price']} label="Цена от"><InputNumber min={0} style={{ width: '100%' }} /></Form.Item></Col>
+                                    <Col xs={12} md={4}><Form.Item {...restField} name={[name, 'max_price']} label="Цена до"><InputNumber min={0} style={{ width: '100%' }} /></Form.Item></Col>
+                                    <Col xs={12} md={4}><Form.Item {...restField} name={[name, 'min_quantity']} label="Остаток от"><InputNumber min={0} style={{ width: '100%' }} /></Form.Item></Col>
+                                    <Col xs={12} md={4}><Form.Item {...restField} name={[name, 'max_quantity']} label="Остаток до"><InputNumber min={0} style={{ width: '100%' }} /></Form.Item></Col>
+                                </Row>
+                            </Card>
+                        ))}
+                        <Button
+                            type="dashed"
+                            icon={<PlusOutlined />}
+                            onClick={() => add({ enabled: true, action: 'exclude', oem_match: 'exact' })}
+                        >
+                            Добавить финальное правило
+                        </Button>
+                    </Space>
+                )}
+            </Form.List>
+
             <Divider orientation="left">Совпадения и контроль</Divider>
             <Row gutter={[18, 0]}>
                 <Col xs={24} md={12}>
@@ -1124,6 +1305,7 @@ const CustomerPricelistStudioPage = () => {
                     {(row.additional_filters?.DRAGONZAP_MODE === 'transform_only'
                         || row.additional_filters?.DRAGONZAP_MODE === 'exclude'
                         || (row.brand_filters?.brands || []).length > 0
+                        || (row.position_filters?.autoparts || []).length > 0
                         || row.min_price || row.max_price || row.min_quantity || row.max_quantity
                         || (row.additional_filters?.BRAND_FILTER_RULES || []).length > 0) && (
                         <Tag color="orange">Фильтр действует</Tag>
@@ -1165,10 +1347,18 @@ const CustomerPricelistStudioPage = () => {
             title: 'Публиковать как',
             key: 'target',
             render: (_, row) => row.mode === 'hide' ? '—' : (
-                <div>
-                    <Text strong>{row.target_brand} {row.target_oem}</Text>
-                    <div className="muted-line">{row.target_name || 'Без наименования'}</div>
-                </div>
+                <Space direction="vertical" size={4}>
+                    {(row.targets?.length ? row.targets : [{
+                        brand: row.target_brand,
+                        oem: row.target_oem,
+                        name: row.target_name,
+                    }]).map((target) => (
+                        <div key={`${target.autopart_id || ''}-${target.brand}-${target.oem}`}>
+                            <Text strong>{target.brand} {target.oem}</Text>
+                            <div className="muted-line">{target.name || 'Без наименования'}</div>
+                        </div>
+                    ))}
+                </Space>
             ),
         },
         {
@@ -1391,7 +1581,14 @@ const CustomerPricelistStudioPage = () => {
                                         icon={<PlusOutlined />}
                                         onClick={(event) => {
                                             event.stopPropagation();
-                                            ruleForm.setFieldsValue({ mode: 'only_cross', is_active: true });
+                                            ruleForm.resetFields();
+                                            setCandidateOptions([]);
+                                            setCrossOptions([]);
+                                            ruleForm.setFieldsValue({
+                                                mode: 'only_cross',
+                                                is_active: true,
+                                                target_autopart_ids: [],
+                                            });
                                             setRuleModalOpen(true);
                                         }}
                                     >
@@ -1485,6 +1682,38 @@ const CustomerPricelistStudioPage = () => {
                                                         description={selectedDraft.generation_summary.publication_rule_warnings.join('; ')}
                                                         style={{ margin: '16px 0' }}
                                                     />
+                                                )}
+                                                {selectedDraft.generation_summary?.final_filters?.enabled && (
+                                                    <Card
+                                                        size="small"
+                                                        className="final-filter-summary"
+                                                        title="Результат финальной фильтрации"
+                                                        style={{ margin: '16px 0' }}
+                                                    >
+                                                        <Space wrap>
+                                                            <Tag color="blue">
+                                                                До фильтра: {selectedDraft.generation_summary.final_filters.input_count || 0}
+                                                            </Tag>
+                                                            <Tag color="green">
+                                                                Осталось: {selectedDraft.generation_summary.final_filters.output_count || 0}
+                                                            </Tag>
+                                                            <Tag color="red">
+                                                                Исключено: {selectedDraft.generation_summary.final_filters.excluded_count || 0}
+                                                            </Tag>
+                                                        </Space>
+                                                        {(selectedDraft.generation_summary.final_filters.examples || []).length > 0 && (
+                                                            <div className="final-filter-examples">
+                                                                {(selectedDraft.generation_summary.final_filters.examples || []).map((item, index) => (
+                                                                    <div key={`${item.source_autopart_id || item.oem}-${index}`}>
+                                                                        <Text strong>{item.brand} {item.oem}</Text>
+                                                                        <Text type="secondary">
+                                                                            {item.rule_name ? ` · ${item.rule_name}` : ''} · {item.reason}
+                                                                        </Text>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </Card>
                                                 )}
                                                 <div className="row-filters">
                                                     <Input.Search
@@ -1618,6 +1847,39 @@ const CustomerPricelistStudioPage = () => {
                             </Form.Item>
                         </Col>
                     </Row>
+                    <Divider orientation="left">Конкретные позиции источника</Divider>
+                    <Alert
+                        showIcon
+                        type="info"
+                        message="Поиск выполняется только в последнем активном прайсе этого источника. Выбранные позиции сохраняются по внутреннему ID и продолжат действовать после обновления файла."
+                        style={{ marginBottom: 12 }}
+                    />
+                    <Row gutter={[14, 0]}>
+                        <Col xs={24} md={7}>
+                            <Form.Item name="position_filter_type" label="Режим">
+                                <Select options={[
+                                    { value: 'exclude', label: 'Исключить выбранные' },
+                                    { value: 'include', label: 'Оставить только выбранные' },
+                                ]} />
+                            </Form.Item>
+                        </Col>
+                        <Col xs={24} md={17}>
+                            <Form.Item name="position_filter_ids" label="Позиции">
+                                <Select
+                                    mode="multiple"
+                                    showSearch
+                                    filterOption={false}
+                                    onSearch={searchSourcePositions}
+                                    loading={sourcePositionLoading}
+                                    placeholder="Введите бренд, артикул или наименование"
+                                    options={sourcePositionOptions.map((item) => ({
+                                        value: item.autopart_id,
+                                        label: `${candidateLabel(item)} · ${item.quantity ?? 0} шт. · ${item.price ?? '—'} ₽`,
+                                    }))}
+                                />
+                            </Form.Item>
+                        </Col>
+                    </Row>
                     <Divider orientation="left">Общие ограничения источника</Divider>
                     <Row gutter={[14, 0]}>
                         <Col xs={12} md={6}><Form.Item name="min_price" label="Цена от"><InputNumber min={0} style={{ width: '100%' }} /></Form.Item></Col>
@@ -1674,7 +1936,12 @@ const CustomerPricelistStudioPage = () => {
             <Modal
                 title="Новое правило публикации"
                 open={ruleModalOpen}
-                onCancel={() => setRuleModalOpen(false)}
+                onCancel={() => {
+                    setRuleModalOpen(false);
+                    ruleForm.resetFields();
+                    setCandidateOptions([]);
+                    setCrossOptions([]);
+                }}
                 onOk={handleSaveRule}
                 okText="Сохранить правило"
                 confirmLoading={ruleSaving}
@@ -1711,14 +1978,15 @@ const CustomerPricelistStudioPage = () => {
                     <Form.Item noStyle shouldUpdate={(previous, current) => previous.mode !== current.mode}>
                         {({ getFieldValue }) => getFieldValue('mode') !== 'hide' && (
                             <Form.Item
-                                name="target_autopart_id"
-                                label="Подтверждённый кросс"
+                                name="target_autopart_ids"
+                                label="Подтверждённые кроссы"
                                 rules={[{ required: true }]}
                             >
                                 <Select
+                                    mode="multiple"
                                     showSearch
                                     optionFilterProp="label"
-                                    placeholder={crossOptions.length ? 'Выберите кросс' : 'У позиции нет подтверждённых кроссов'}
+                                    placeholder={crossOptions.length ? 'Выберите один или несколько кроссов' : 'У позиции нет подтверждённых кроссов'}
                                     options={crossOptions.map((item) => ({
                                         value: item.autopart_id,
                                         label: candidateLabel(item),

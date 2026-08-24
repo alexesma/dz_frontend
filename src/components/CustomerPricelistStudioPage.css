@@ -283,6 +283,22 @@
     background: #fbfcfa;
 }
 
+.final-filter-rule {
+    border-color: rgba(31, 111, 120, 0.2);
+    background: linear-gradient(135deg, #f7fbfa 0%, #fffdf7 100%);
+}
+
+.final-filter-summary {
+    border-color: rgba(31, 111, 120, 0.24);
+    background: #f5fbfa;
+}
+
+.final-filter-examples {
+    display: grid;
+    gap: 6px;
+    margin-top: 12px;
+}
+
 .row-filters {
     display: grid;
     grid-template-columns: minmax(260px, 1fr) minmax(220px, 0.35fr);

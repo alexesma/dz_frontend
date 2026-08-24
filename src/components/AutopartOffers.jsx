@@ -12,6 +12,7 @@ import {
     Table,
     Space,
     Select,
+    Segmented,
     Tag,
     Divider,
     message,
@@ -70,6 +71,7 @@ import useAuth from '../context/useAuth';
 const OEM_HISTORY_KEY = 'autopart_oem_history_v1';
 const STATE_STORAGE_KEY = 'autopart_offers_state_v2';
 const SITE_OFFER_FILTER_STORAGE_PREFIX = 'autopart_site_offer_filters_v1';
+const VIEW_MODE_STORAGE_KEY = 'autopart_offers_view_mode_v1';
 const MAX_PERSISTED_CART_ITEMS = 200;
 const MAX_SITE_EXACT_CROSS_REQUESTS = 3;
 const SITE_RECOMMENDATION_LOW_STOCK_QTY = 10;
@@ -852,6 +854,9 @@ const AutopartOffers = () => {
         normalizeSiteOfferFilters(DEFAULT_SITE_OFFER_FILTERS)
     );
     const [siteOfferFiltersSaved, setSiteOfferFiltersSaved] = useState(false);
+    const [viewMode, setViewMode] = useState(() =>
+        safeStorageGet(VIEW_MODE_STORAGE_KEY) === 'large' ? 'large' : 'normal'
+    );
     const [pendingRestoredSearch, setPendingRestoredSearch] = useState(null);
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
@@ -2503,6 +2508,10 @@ const AutopartOffers = () => {
     ]);
 
     useEffect(() => {
+        safeStorageSet(VIEW_MODE_STORAGE_KEY, viewMode);
+    }, [viewMode]);
+
+    useEffect(() => {
         const normalized = String(oemInput || '').trim();
         if (normalized.length < 2) {
             setLookupResults([]);
@@ -3544,6 +3553,75 @@ const AutopartOffers = () => {
             return true;
         });
     }, [offers, localFilters]);
+
+    const comparisonSnapshots = useMemo(() => {
+        const summarize = (rows, { quantityKey, getLabel }) => {
+            const sourceRows = Array.isArray(rows) ? rows : [];
+            const pricedRows = sourceRows.filter((row) => {
+                const price = Number(row?.price);
+                return Number.isFinite(price) && price > 0;
+            });
+            const bestPriceRow = pricedRows.reduce((best, row) => {
+                if (!best || Number(row.price) < Number(best.price)) {
+                    return row;
+                }
+                return best;
+            }, null);
+            const maxQuantity = sourceRows.reduce((maximum, row) => {
+                const quantity = Number(row?.[quantityKey]);
+                return Number.isFinite(quantity)
+                    ? Math.max(maximum, quantity)
+                    : maximum;
+            }, 0);
+            return {
+                count: sourceRows.length,
+                minPrice: bestPriceRow ? Number(bestPriceRow.price) : null,
+                maxQuantity,
+                bestLabel: bestPriceRow ? getLabel(bestPriceRow) : '',
+            };
+        };
+
+        const ownRows = [
+            ...(ourStockRows || []),
+            ...(unverifiedStockRows || []),
+        ];
+        const supplierRows = filteredOffers.filter((row) => !row?.is_own_price);
+
+        return {
+            own: summarize(ownRows, {
+                quantityKey: 'quantity',
+                getLabel: (row) =>
+                    [row?.brand || row?.brand_name, row?.oem_number]
+                        .filter(Boolean)
+                        .join(' '),
+            }),
+            suppliers: summarize(supplierRows, {
+                quantityKey: 'quantity',
+                getLabel: (row) =>
+                    [row?.provider_name, row?.brand_name, row?.oem_number]
+                        .filter(Boolean)
+                        .join(' · '),
+            }),
+            site: summarize(filteredRemoteSiteOffers, {
+                quantityKey: 'qnt',
+                getLabel: (row) =>
+                    [
+                        getSiteOfferSupplierName(row),
+                        getSiteOfferBrandName(row),
+                        getSiteOfferOemNumber(row),
+                    ]
+                        .filter(Boolean)
+                        .join(' · '),
+            }),
+        };
+    }, [filteredOffers, filteredRemoteSiteOffers, ourStockRows, unverifiedStockRows]);
+
+    const scrollToOffersSection = useCallback((sectionId) => {
+        document.getElementById(sectionId)?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+        });
+    }, []);
 
     const effectiveCartItems = useMemo(() => {
         if (!selectedCartKeys.length) {
@@ -4789,7 +4867,14 @@ const AutopartOffers = () => {
     };
 
     return (
-        <Card title="Поиск позиций по артикулу" style={{ margin: '20px' }}>
+        <Card
+            title="Поиск позиций по артикулу"
+            className={[
+                'autopart-offers-page',
+                viewMode === 'large' ? 'autopart-offers-page--large' : '',
+            ].filter(Boolean).join(' ')}
+            style={{ margin: '20px' }}
+        >
             <div className="autopart-offers-search-sticky">
                 <Form
                     form={form}
@@ -4874,6 +4959,7 @@ const AutopartOffers = () => {
 
             {/* Статусная строка: бренд · номенклатура · наше наличие (с кроссами) */}
             <div
+                className="autopart-offers-status-row"
                 style={{
                     display: 'flex',
                     flexWrap: 'wrap',
@@ -4933,6 +5019,108 @@ const AutopartOffers = () => {
                 {!partialSearch && currentOem ? renderOurStockSummary() : null}
             </div>
 
+            <section
+                className="autopart-offers-comparison-sticky"
+                aria-label="Сравнение предложений"
+            >
+                <div className="autopart-offers-comparison-toolbar">
+                    <div>
+                        <div className="autopart-offers-comparison-title">
+                            Предложения по позиции
+                        </div>
+                        <div className="autopart-offers-comparison-hint">
+                            Цена и остаток считаются отдельно: остатки разных вариантов не складываются.
+                        </div>
+                    </div>
+                    <div className="autopart-offers-comparison-controls">
+                        <Segmented
+                            aria-label="Быстрый переход по разделам"
+                            options={[
+                                { label: 'Прайсы', value: 'autopart-price-offers' },
+                                { label: 'Сайт', value: 'autopart-site-offers' },
+                                { label: 'История', value: 'autopart-order-history' },
+                                { label: 'Сводка', value: 'autopart-order-summary' },
+                            ]}
+                            onChange={scrollToOffersSection}
+                        />
+                        <Segmented
+                            aria-label="Размер текста"
+                            value={viewMode}
+                            options={[
+                                { label: 'Обычный', value: 'normal' },
+                                { label: 'Крупный', value: 'large' },
+                            ]}
+                            onChange={setViewMode}
+                        />
+                    </div>
+                </div>
+                <div className="autopart-offers-comparison-grid">
+                    {[
+                        {
+                            key: 'own',
+                            title: 'Наш склад',
+                            icon: <ShopOutlined />,
+                            sectionId: 'autopart-price-offers',
+                            snapshot: comparisonSnapshots.own,
+                        },
+                        {
+                            key: 'suppliers',
+                            title: 'Прайсы поставщиков',
+                            icon: <CloudDownloadOutlined />,
+                            sectionId: 'autopart-price-offers',
+                            snapshot: comparisonSnapshots.suppliers,
+                        },
+                        {
+                            key: 'site',
+                            title: 'Предложения сайта',
+                            icon: <SearchOutlined />,
+                            sectionId: 'autopart-site-offers',
+                            snapshot: comparisonSnapshots.site,
+                        },
+                    ].map((item) => (
+                        <button
+                            key={item.key}
+                            type="button"
+                            className={`autopart-offers-comparison-card autopart-offers-comparison-card--${item.key}`}
+                            onClick={() => scrollToOffersSection(item.sectionId)}
+                        >
+                            <span className="autopart-offers-comparison-card-title">
+                                {item.icon}
+                                {item.title}
+                                <Tag>{item.snapshot.count} вар.</Tag>
+                            </span>
+                            <span className="autopart-offers-comparison-values">
+                                <span>
+                                    <small>Цена от</small>
+                                    <strong>
+                                        {item.snapshot.minPrice == null
+                                            ? '—'
+                                            : `${formatInsightMoney(item.snapshot.minPrice)} ₽`}
+                                    </strong>
+                                </span>
+                                <span>
+                                    <small>Макс. остаток</small>
+                                    <strong>{item.snapshot.maxQuantity} шт.</strong>
+                                </span>
+                            </span>
+                            <span className="autopart-offers-comparison-best">
+                                {item.snapshot.bestLabel || 'Предложения пока не найдены'}
+                            </span>
+                        </button>
+                    ))}
+                </div>
+            </section>
+
+            <section
+                id="autopart-price-offers"
+                className="autopart-offers-section autopart-offers-price-section"
+            >
+                <div className="autopart-offers-section-heading">
+                    <div>
+                        <h2>Наличие в подключённых прайсах</h2>
+                        <p>Наш склад и актуальные предложения поставщиков с ценой и сроком.</p>
+                    </div>
+                </div>
             <Space wrap style={{ marginBottom: 12 }}>
                 <AutoComplete
                     options={brandOptions}
@@ -5009,530 +5197,23 @@ const AutopartOffers = () => {
                     scroll={{ x: 820 }}
                 />
             </Spin>
+            </section>
 
             <Divider />
 
-            <Space direction="vertical" style={{ width: '100%' }} size="small">
-                {Array.isArray(trackingInsights?.cross_offer_rows) &&
-                trackingInsights.cross_offer_rows.length ? (
-                    <Space
-                        direction="vertical"
-                        style={{ width: '100%' }}
-                        size="small"
-                    >
-                        <div>
-                            <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                                В прайсах поставщиков по кроссам
-                            </div>
-                            <div style={{ color: '#6b7280' }}>
-                                Ниже показываем найденные предложения по кросс-артикулам,
-                                которые попали в выборку из нашей базы и из подсказок сайта.
-                            </div>
-                        </div>
-                        <Table
-                            className="autopart-offers-table"
-                            rowKey={(record) =>
-                                `cross-${record.autopart_id}-${record.provider_id}-${record.provider_config_id || 'base'}-${record.oem_number}`
-                            }
-                            columns={localColumns}
-                            dataSource={trackingInsights.cross_offer_rows}
-                            size="small"
-                            pagination={{ pageSize: 5, showSizeChanger: false }}
-                            tableLayout="fixed"
-                            scroll={{ x: 820 }}
-                        />
-                    </Space>
-                ) : null}
-                <div>
-                    <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                        Что уже заказывали через программу за 1 год
+            <Space
+                id="autopart-site-offers"
+                className="autopart-offers-section autopart-offers-site-section"
+                direction="vertical"
+                style={{ width: '100%' }}
+                size="middle"
+            >
+                <div className="autopart-offers-section-heading">
+                    <div>
+                        <h2>Предложения с сайта</h2>
+                        <p>Уникальные сочетания бренда и номера, отсортированные по лучшей цене.</p>
                     </div>
-                    <div style={{ color: '#6b7280' }}>
-                        Здесь видно, где мы уже заказывали эту позицию, по какой цене,
-                        сколько заказали, сколько получили и какой статус сейчас.
-                        Для заказов с сайта статусы подтягиваются автоматически.
-                    </div>
-                    {summaryCrossItems.length ? (
-                        <div style={{ color: '#2563eb', marginTop: 8 }}>
-                            <div>В выборку также включены кросс-артикулы:</div>
-                            <div
-                                style={{
-                                    display: 'flex',
-                                    flexWrap: 'wrap',
-                                    gap: 6,
-                                    marginTop: 6,
-                                }}
-                            >
-                                {visibleSummaryCrossItems.map((item) => (
-                                    <div
-                                        key={item.key}
-                                        style={{
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: 4,
-                                            padding: '4px 8px',
-                                            borderRadius: 999,
-                                            background: item.isInvalid
-                                                ? '#fff1f2'
-                                                : '#eff6ff',
-                                            border: item.isInvalid
-                                                ? '1px solid #fecdd3'
-                                                : '1px solid #bfdbfe',
-                                            color: '#1e3a8a',
-                                            fontSize: 12,
-                                        }}
-                                    >
-                                        <span>
-                                            <strong>{item.brand_name || '—'}</strong>{' '}
-                                            {item.oem_number}
-                                        </span>
-                                        {item.isConfirmed ? (
-                                            <Tag color="green" style={{ marginInlineEnd: 0 }}>
-                                                подтвержден
-                                            </Tag>
-                                        ) : null}
-                                        {item.isInvalid ? (
-                                            <Tag color="red" style={{ marginInlineEnd: 0 }}>
-                                                исключён
-                                            </Tag>
-                                        ) : null}
-                                        {nomenclatureInfo?.in_nomenclature &&
-                                        !item.isInvalid ? (
-                                            <>
-                                                {item.isSiteSuggested &&
-                                                !item.isConfirmed ? (
-                                                    <Popconfirm
-                                                        title="Подтвердить кросс"
-                                                        description={`Подтверждаете кросс нашей позиции ${(nomenclatureInfo?.brand || selectedBrand || '—').trim()} ${(currentOem || '—').trim()} и позиции ${item.brand_name || '—'} ${item.oem_number || '—'}?`}
-                                                        okText="Подтвердить"
-                                                        cancelText="Отмена"
-                                                        onConfirm={() => handleApproveSiteCross(item)}
-                                                        okButtonProps={{
-                                                            loading:
-                                                                crossActionLoadingKey === `approve:${item.key}`,
-                                                        }}
-                                                    >
-                                                        <Tooltip title="Подтвердить кросс и сохранить в систему">
-                                                            <Button
-                                                                type="text"
-                                                                size="small"
-                                                                shape="circle"
-                                                                icon={<CheckOutlined />}
-                                                                loading={
-                                                                    crossActionLoadingKey === `approve:${item.key}`
-                                                                }
-                                                            />
-                                                        </Tooltip>
-                                                    </Popconfirm>
-                                                ) : null}
-                                                <Popconfirm
-                                                    title="Исключить неверный кросс"
-                                                    description={`Подтверждаете, что ${item.brand_name || '—'} ${item.oem_number || '—'} не является кроссом для позиции ${(nomenclatureInfo?.brand || selectedBrand || '—').trim()} ${(currentOem || '—').trim()}?`}
-                                                    okText="Исключить"
-                                                    cancelText="Отмена"
-                                                    okButtonProps={{
-                                                        danger: true,
-                                                        loading:
-                                                            crossActionLoadingKey === `reject:${item.key}`,
-                                                    }}
-                                                    onConfirm={() => handleRejectSiteCross(item)}
-                                                >
-                                                    <Tooltip title="Пометить как неверный кросс">
-                                                        <Button
-                                                            danger
-                                                            type="text"
-                                                            size="small"
-                                                            shape="circle"
-                                                            icon={<CloseOutlined />}
-                                                            loading={
-                                                                crossActionLoadingKey === `reject:${item.key}`
-                                                            }
-                                                        />
-                                                    </Tooltip>
-                                                </Popconfirm>
-                                            </>
-                                        ) : null}
-                                    </div>
-                                ))}
-                                {summaryCrossItems.length > visibleSummaryCrossItems.length ? (
-                                    <Button
-                                        type="link"
-                                        size="small"
-                                        style={{ paddingInline: 0 }}
-                                        onClick={() => setShowAllSummaryCrosses(true)}
-                                    >
-                                        Показать ещё {summaryCrossItems.length - visibleSummaryCrossItems.length}
-                                    </Button>
-                                ) : null}
-                                {showAllSummaryCrosses && summaryCrossItems.length > 8 ? (
-                                    <Button
-                                        type="link"
-                                        size="small"
-                                        style={{ paddingInline: 0 }}
-                                        onClick={() => setShowAllSummaryCrosses(false)}
-                                    >
-                                        Свернуть
-                                    </Button>
-                                ) : null}
-                            </div>
-                            {summaryCrossItems.length && !nomenclatureInfo?.in_nomenclature ? (
-                                <div style={{ color: '#64748b', fontSize: 12, marginTop: 6 }}>
-                                    Чтобы подтверждать или исключать кроссы, позиция должна быть в номенклатуре.
-                                </div>
-                            ) : null}
-                        </div>
-                    ) : null}
                 </div>
-                <TrackingOrderHistoryTable
-                    rows={trackingHistory}
-                    loading={trackingHistoryLoading}
-                    compact
-                    showOem
-                    allowEdit={isAdmin}
-                    allowStatusMappingSuggestion={isAdmin}
-                    onUpdated={reloadTrackingHistory}
-                    emptyText="По этой позиции за последний год заказов через программу не было"
-                />
-                <Spin spinning={trackingInsightsLoading}>
-                    {trackingInsights ? (
-                        <Space
-                            direction="vertical"
-                            style={{ width: '100%' }}
-                            size="middle"
-                        >
-                            <div>
-                                <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                                    Краткая сводка для заказа
-                                </div>
-                                <div style={{ color: '#6b7280' }}>
-                                    Здесь сводим вместе актуальные прайсы, сайт Dragonzap
-                                    и историю заказов через программу, чтобы быстрее понять,
-                                    как лучше заказывать позицию прямо сейчас.
-                                </div>
-                            </div>
-
-                            {combinedInsightTiles.length ? (
-                                <div
-                                    style={{
-                                        display: 'grid',
-                                        gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
-                                        gap: 8,
-                                    }}
-                                >
-                                    {combinedInsightTiles.map((tile) => (
-                                        <InsightTile key={tile.key} {...tile} />
-                                    ))}
-                                </div>
-                            ) : null}
-
-                            {!trackingInsights?.own_price_analysis &&
-                            (trackingInsights?.own_price_configs || []).length ? (
-                                <div style={{ color: '#6b7280' }}>
-                                    Для блока по нашему прайсу выбери один конфиг в
-                                    настройках поставщика: `Конфигурации прайс-листов` →
-                                    `Использовать для сводки заказа`.
-                                </div>
-                            ) : null}
-
-                            {Array.isArray(trackingInsights?.exceptions) &&
-                            trackingInsights.exceptions.length ? (
-                                <Card
-                                    size="small"
-                                    title="Очередь исключений по позиции"
-                                    style={{ borderRadius: 10 }}
-                                >
-                                    <Space
-                                        direction="vertical"
-                                        size={8}
-                                        style={{ width: '100%' }}
-                                    >
-                                        {trackingInsights.exceptions.map((item) => (
-                                            <Alert
-                                                key={item.code}
-                                                type={
-                                                    item.severity === 'critical'
-                                                        ? 'error'
-                                                        : item.severity === 'warning'
-                                                            ? 'warning'
-                                                            : 'info'
-                                                }
-                                                showIcon
-                                                message={item.title}
-                                                description={item.description}
-                                            />
-                                        ))}
-                                    </Space>
-                                </Card>
-                            ) : null}
-
-                            {(() => {
-                                const recommendationRows = bestSiteOffersForOrder.map(
-                                    (row, index) => ({
-                                        key: `recommended-${index}`,
-                                        title:
-                                            index === 0
-                                                ? 'Лучший по цене для заказа'
-                                                : `Доп. вариант ${index + 1}`,
-                                        tone:
-                                            index === 0
-                                                ? INSIGHT_TONE_STYLES.green
-                                                : INSIGHT_TONE_STYLES.blue,
-                                        row,
-                                    })
-                                );
-
-                                if (!recommendationRows.length) {
-                                    return null;
-                                }
-
-                                return (
-                                    <div
-                                        style={{
-                                            display: 'grid',
-                                            gridTemplateColumns:
-                                                'repeat(auto-fit, minmax(240px, 1fr))',
-                                            gap: 8,
-                                        }}
-                                    >
-                                        {recommendationRows.map(({ key, title, tone, row }, index) => {
-                                            const deliveryStr = formatInsightDelivery(
-                                                row.min_delivery_day,
-                                                row.max_delivery_day
-                                            );
-                                            const rowOem = row.oem || row.oem_number || currentOem;
-                                            const rowBrand =
-                                                row.make_name || row.brand_name || '—';
-                                            const rowQty = Number(row.qnt ?? 0);
-                                            const rowSupplier =
-                                                normalizeSupplierName(
-                                                    row.supplier_name ||
-                                                        row.sup_logo ||
-                                                        row.provider_name
-                                                ) || 'Dragonzap';
-                                            return (
-                                                <div
-                                                    key={key}
-                                                    style={{
-                                                        ...tone,
-                                                        borderRadius: 10,
-                                                        padding: 12,
-                                                        display: 'flex',
-                                                        flexDirection: 'column',
-                                                        gap: 8,
-                                                        boxShadow:
-                                                            '0 6px 18px rgba(15, 23, 42, 0.05)',
-                                                    }}
-                                                >
-                                                    <div
-                                                        style={{
-                                                            color: '#475569',
-                                                            fontSize: 11,
-                                                            fontWeight: 700,
-                                                        }}
-                                                    >
-                                                        {title}
-                                                    </div>
-                                                    <div
-                                                        style={{
-                                                            color: '#0f172a',
-                                                            fontSize: 15,
-                                                            fontWeight: 800,
-                                                        }}
-                                                    >
-                                                        {rowSupplier}
-                                                    </div>
-                                                    <div style={{ color: '#334155', fontSize: 12 }}>
-                                                        {`${rowBrand} ${rowOem || '—'}`}
-                                                    </div>
-                                                    <div style={{ color: '#334155', fontSize: 12 }}>
-                                                        {row.price != null
-                                                            ? `${formatInsightMoney(row.price)} руб.`
-                                                            : 'Цена: —'}
-                                                        {rowQty > 0
-                                                            ? ` · ${rowQty} шт`
-                                                            : ''}
-                                                        {deliveryStr !== 'срок не указан'
-                                                            ? ` · ${deliveryStr}`
-                                                            : ''}
-                                                    </div>
-                                                    <div style={{ color: '#64748b', fontSize: 11 }}>
-                                                        {row.recommendation_source === 'cross_exact'
-                                                            ? 'Dragonzap · найдено прямым запросом по кроссу без режима кроссов'
-                                                            : 'Dragonzap · учитываем прямой OEM, cross-режим и прямые запросы по найденным кроссам'}
-                                                    </div>
-                                                    <div style={{ color: '#64748b', fontSize: 11 }}>
-                                                        {index === 0
-                                                            ? (
-                                                                rowOem &&
-                                                                normalizeOemKey(rowOem) !== normalizedCurrentOem
-                                                                    ? `Сработал кросс: ${rowOem}`
-                                                                    : 'Лучшее предложение по текущему OEM на сайте'
-                                                            )
-                                                            : Number(
-                                                                recommendationRows[index - 1]?.row?.qnt ?? 0
-                                                            ) < SITE_RECOMMENDATION_LOW_STOCK_QTY
-                                                                ? `Показываем ещё вариант, потому что у предыдущего меньше ${SITE_RECOMMENDATION_LOW_STOCK_QTY} шт`
-                                                                : 'Дополнительный вариант по сайту'}
-                                                    </div>
-                                                    {row.price != null ? (
-                                                        <Space>
-                                                            <InputNumber
-                                                                min={1}
-                                                                max={rowQty > 0 ? rowQty : undefined}
-                                                                value={bestSupplierQty}
-                                                                size="small"
-                                                                style={{ width: 70 }}
-                                                                onChange={(v) => setBestSupplierQty(v || 1)}
-                                                            />
-                                                            <Button
-                                                                type="primary"
-                                                                size="small"
-                                                                icon={<ShoppingCartOutlined />}
-                                                                onClick={() => {
-                                                                    addDragonzapOfferToCart(row);
-                                                                    if (bestSupplierQty > 1) {
-                                                                        const cartKey = buildCartKey(
-                                                                            'dragonzap',
-                                                                            row
-                                                                        );
-                                                                        updateCartQty(cartKey, bestSupplierQty);
-                                                                    }
-                                                                }}
-                                                            >
-                                                                В корзину
-                                                            </Button>
-                                                        </Space>
-                                                    ) : null}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                );
-                            })()}
-
-                            {trackingInsights?.draft_purchase_order ? (
-                                <Card
-                                    size="small"
-                                    title="Авточерновик закупки"
-                                    style={{ borderRadius: 10 }}
-                                >
-                                    <Space
-                                        direction="vertical"
-                                        size={8}
-                                        style={{ width: '100%' }}
-                                    >
-                                        <div style={{ color: '#334155' }}>
-                                            <strong>{trackingInsights.draft_purchase_order.provider_name}</strong>
-                                            {trackingInsights.draft_purchase_order.provider_config_name
-                                                ? ` · ${trackingInsights.draft_purchase_order.provider_config_name}`
-                                                : ''}
-                                        </div>
-                                        <div style={{ color: '#475569', fontSize: 12 }}>
-                                            {trackingInsights.draft_purchase_order.brand_name || '—'}{' '}
-                                            {trackingInsights.draft_purchase_order.oem_number}
-                                            {trackingInsights.draft_purchase_order.price != null
-                                                ? ` · ${formatInsightMoney(trackingInsights.draft_purchase_order.price)} руб.`
-                                                : ''}
-                                        </div>
-                                        <div style={{ color: '#475569', fontSize: 12 }}>
-                                            В наличии/в пути: {trackingInsights.draft_purchase_order.available_qty} шт · цель: {trackingInsights.draft_purchase_order.target_qty ?? '—'} шт
-                                            {trackingInsights.draft_purchase_order.lead_days_used != null
-                                                ? ` · срок для расчёта: ${trackingInsights.draft_purchase_order.lead_days_used} дн`
-                                                : ''}
-                                        </div>
-                                        {trackingInsights.draft_purchase_order.reason ? (
-                                            <div style={{ color: '#64748b', fontSize: 12 }}>
-                                                {trackingInsights.draft_purchase_order.reason}
-                                            </div>
-                                        ) : null}
-                                        <Space wrap>
-                                            <InputNumber
-                                                min={1}
-                                                value={draftOrderQty}
-                                                size="small"
-                                                style={{ width: 90 }}
-                                                onChange={(v) => setDraftOrderQty(v || 1)}
-                                            />
-                                            <Button
-                                                type="primary"
-                                                icon={<PlusOutlined />}
-                                                loading={cartSubmitting}
-                                                onClick={() => handleCreateAutoDraftOrder(false)}
-                                            >
-                                                Создать черновик
-                                            </Button>
-                                            <Button
-                                                icon={<MailOutlined />}
-                                                loading={cartSubmitting}
-                                                onClick={() => handleCreateAutoDraftOrder(true)}
-                                            >
-                                                Создать и отправить
-                                            </Button>
-                                        </Space>
-                                    </Space>
-                                </Card>
-                            ) : null}
-
-                            {supplierScoreRows.length ? (
-                                <Collapse
-                                    size="small"
-                                    activeKey={supplierScoreExpanded ? ['supplier-score'] : []}
-                                    onChange={(keys) => {
-                                        const nextKeys = Array.isArray(keys)
-                                            ? keys
-                                            : [keys];
-                                        setSupplierScoreExpanded(
-                                            nextKeys.includes('supplier-score')
-                                        );
-                                    }}
-                                    items={[
-                                        {
-                                            key: 'supplier-score',
-                                            label: (
-                                                <span>
-                                                    Сравнение поставщиков для заказа · {supplierScoreRows.length}
-                                                </span>
-                                            ),
-                                            children: (
-                                                <Space
-                                                    direction="vertical"
-                                                    size="small"
-                                                    style={{ width: '100%' }}
-                                                >
-                                                    <div
-                                                        style={{
-                                                            color: '#6b7280',
-                                                            fontSize: 12,
-                                                        }}
-                                                    >
-                                                        Сравниваем текущую цену, наличие,
-                                                        фактический срок, исполнение прошлых
-                                                        заказов и частоту заказов.
-                                                    </div>
-                                                    <Table
-                                                        rowKey={(row) =>
-                                                            `${row.provider_id || row.provider_name}:${row.current_provider_config_id || 'base'}`
-                                                        }
-                                                        columns={supplierScoreColumns}
-                                                        dataSource={supplierScoreRows}
-                                                        size="small"
-                                                        pagination={{ pageSize: 5, showSizeChanger: false }}
-                                                        scroll={{ x: 760 }}
-                                                    />
-                                                </Space>
-                                            ),
-                                        },
-                                    ]}
-                                />
-                            ) : null}
-                        </Space>
-                    ) : null}
-                </Spin>
-            </Space>
-
-            <Divider />
-
-            <Space direction="vertical" style={{ width: '100%' }} size="middle">
                 <Space wrap>
                     <AutoComplete
                         options={brandOptions}
@@ -5898,7 +5579,12 @@ const AutopartOffers = () => {
 
             <Divider />
 
-            <Space direction="vertical" style={{ width: '100%' }} size="middle">
+            <Space
+                className="autopart-offers-section autopart-offers-cart-section"
+                direction="vertical"
+                style={{ width: '100%' }}
+                size="middle"
+            >
                 <div>
                     <div style={{ fontWeight: 600, marginBottom: 4 }}>
                         Корзина заказа
@@ -5959,6 +5645,539 @@ const AutopartOffers = () => {
                     </Space>
                 </>
             ) : null}
+            <Space
+                id="autopart-order-history"
+                className="autopart-offers-section autopart-offers-history-section"
+                direction="vertical"
+                style={{ width: '100%' }}
+                size="small"
+            >
+                <div className="autopart-offers-section-heading">
+                    <div>
+                        <h2>История заказов и итоговая сводка</h2>
+                        <p>Прошлые закупки, найденные кроссы и рекомендация для текущего заказа.</p>
+                    </div>
+                </div>
+                {Array.isArray(trackingInsights?.cross_offer_rows) &&
+                trackingInsights.cross_offer_rows.length ? (
+                    <Space
+                        direction="vertical"
+                        style={{ width: '100%' }}
+                        size="small"
+                    >
+                        <div>
+                            <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                                В прайсах поставщиков по кроссам
+                            </div>
+                            <div style={{ color: '#6b7280' }}>
+                                Ниже показываем найденные предложения по кросс-артикулам,
+                                которые попали в выборку из нашей базы и из подсказок сайта.
+                            </div>
+                        </div>
+                        <Table
+                            className="autopart-offers-table"
+                            rowKey={(record) =>
+                                `cross-${record.autopart_id}-${record.provider_id}-${record.provider_config_id || 'base'}-${record.oem_number}`
+                            }
+                            columns={localColumns}
+                            dataSource={trackingInsights.cross_offer_rows}
+                            size="small"
+                            pagination={{ pageSize: 5, showSizeChanger: false }}
+                            tableLayout="fixed"
+                            scroll={{ x: 820 }}
+                        />
+                    </Space>
+                ) : null}
+                <div>
+                    <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                        Что уже заказывали через программу за 1 год
+                    </div>
+                    <div style={{ color: '#6b7280' }}>
+                        Здесь видно, где мы уже заказывали эту позицию, по какой цене,
+                        сколько заказали, сколько получили и какой статус сейчас.
+                        Для заказов с сайта статусы подтягиваются автоматически.
+                    </div>
+                    {summaryCrossItems.length ? (
+                        <div style={{ color: '#2563eb', marginTop: 8 }}>
+                            <div>В выборку также включены кросс-артикулы:</div>
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    flexWrap: 'wrap',
+                                    gap: 6,
+                                    marginTop: 6,
+                                }}
+                            >
+                                {visibleSummaryCrossItems.map((item) => (
+                                    <div
+                                        key={item.key}
+                                        style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: 4,
+                                            padding: '4px 8px',
+                                            borderRadius: 999,
+                                            background: item.isInvalid
+                                                ? '#fff1f2'
+                                                : '#eff6ff',
+                                            border: item.isInvalid
+                                                ? '1px solid #fecdd3'
+                                                : '1px solid #bfdbfe',
+                                            color: '#1e3a8a',
+                                            fontSize: 12,
+                                        }}
+                                    >
+                                        <span>
+                                            <strong>{item.brand_name || '—'}</strong>{' '}
+                                            {item.oem_number}
+                                        </span>
+                                        {item.isConfirmed ? (
+                                            <Tag color="green" style={{ marginInlineEnd: 0 }}>
+                                                подтвержден
+                                            </Tag>
+                                        ) : null}
+                                        {item.isInvalid ? (
+                                            <Tag color="red" style={{ marginInlineEnd: 0 }}>
+                                                исключён
+                                            </Tag>
+                                        ) : null}
+                                        {nomenclatureInfo?.in_nomenclature &&
+                                        !item.isInvalid ? (
+                                            <>
+                                                {item.isSiteSuggested &&
+                                                !item.isConfirmed ? (
+                                                    <Popconfirm
+                                                        title="Подтвердить кросс"
+                                                        description={`Подтверждаете кросс нашей позиции ${(nomenclatureInfo?.brand || selectedBrand || '—').trim()} ${(currentOem || '—').trim()} и позиции ${item.brand_name || '—'} ${item.oem_number || '—'}?`}
+                                                        okText="Подтвердить"
+                                                        cancelText="Отмена"
+                                                        onConfirm={() => handleApproveSiteCross(item)}
+                                                        okButtonProps={{
+                                                            loading:
+                                                                crossActionLoadingKey === `approve:${item.key}`,
+                                                        }}
+                                                    >
+                                                        <Tooltip title="Подтвердить кросс и сохранить в систему">
+                                                            <Button
+                                                                type="text"
+                                                                size="small"
+                                                                shape="circle"
+                                                                icon={<CheckOutlined />}
+                                                                loading={
+                                                                    crossActionLoadingKey === `approve:${item.key}`
+                                                                }
+                                                            />
+                                                        </Tooltip>
+                                                    </Popconfirm>
+                                                ) : null}
+                                                <Popconfirm
+                                                    title="Исключить неверный кросс"
+                                                    description={`Подтверждаете, что ${item.brand_name || '—'} ${item.oem_number || '—'} не является кроссом для позиции ${(nomenclatureInfo?.brand || selectedBrand || '—').trim()} ${(currentOem || '—').trim()}?`}
+                                                    okText="Исключить"
+                                                    cancelText="Отмена"
+                                                    okButtonProps={{
+                                                        danger: true,
+                                                        loading:
+                                                            crossActionLoadingKey === `reject:${item.key}`,
+                                                    }}
+                                                    onConfirm={() => handleRejectSiteCross(item)}
+                                                >
+                                                    <Tooltip title="Пометить как неверный кросс">
+                                                        <Button
+                                                            danger
+                                                            type="text"
+                                                            size="small"
+                                                            shape="circle"
+                                                            icon={<CloseOutlined />}
+                                                            loading={
+                                                                crossActionLoadingKey === `reject:${item.key}`
+                                                            }
+                                                        />
+                                                    </Tooltip>
+                                                </Popconfirm>
+                                            </>
+                                        ) : null}
+                                    </div>
+                                ))}
+                                {summaryCrossItems.length > visibleSummaryCrossItems.length ? (
+                                    <Button
+                                        type="link"
+                                        size="small"
+                                        style={{ paddingInline: 0 }}
+                                        onClick={() => setShowAllSummaryCrosses(true)}
+                                    >
+                                        Показать ещё {summaryCrossItems.length - visibleSummaryCrossItems.length}
+                                    </Button>
+                                ) : null}
+                                {showAllSummaryCrosses && summaryCrossItems.length > 8 ? (
+                                    <Button
+                                        type="link"
+                                        size="small"
+                                        style={{ paddingInline: 0 }}
+                                        onClick={() => setShowAllSummaryCrosses(false)}
+                                    >
+                                        Свернуть
+                                    </Button>
+                                ) : null}
+                            </div>
+                            {summaryCrossItems.length && !nomenclatureInfo?.in_nomenclature ? (
+                                <div style={{ color: '#64748b', fontSize: 12, marginTop: 6 }}>
+                                    Чтобы подтверждать или исключать кроссы, позиция должна быть в номенклатуре.
+                                </div>
+                            ) : null}
+                        </div>
+                    ) : null}
+                </div>
+                <TrackingOrderHistoryTable
+                    rows={trackingHistory}
+                    loading={trackingHistoryLoading}
+                    compact
+                    showOem
+                    allowEdit={isAdmin}
+                    allowStatusMappingSuggestion={isAdmin}
+                    onUpdated={reloadTrackingHistory}
+                    emptyText="По этой позиции за последний год заказов через программу не было"
+                />
+                <Spin
+                    id="autopart-order-summary"
+                    className="autopart-offers-order-summary"
+                    spinning={trackingInsightsLoading}
+                >
+                    {trackingInsights ? (
+                        <Space
+                            direction="vertical"
+                            style={{ width: '100%' }}
+                            size="middle"
+                        >
+                            <div className="autopart-offers-order-summary-heading">
+                                <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                                    Краткая сводка для заказа
+                                </div>
+                                <div style={{ color: '#6b7280' }}>
+                                    Здесь сводим вместе актуальные прайсы, сайт Dragonzap
+                                    и историю заказов через программу, чтобы быстрее понять,
+                                    как лучше заказывать позицию прямо сейчас.
+                                </div>
+                            </div>
+
+                            {combinedInsightTiles.length ? (
+                                <div
+                                    style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+                                        gap: 8,
+                                    }}
+                                >
+                                    {combinedInsightTiles.map((tile) => (
+                                        <InsightTile key={tile.key} {...tile} />
+                                    ))}
+                                </div>
+                            ) : null}
+
+                            {!trackingInsights?.own_price_analysis &&
+                            (trackingInsights?.own_price_configs || []).length ? (
+                                <div style={{ color: '#6b7280' }}>
+                                    Для блока по нашему прайсу выбери один конфиг в
+                                    настройках поставщика: `Конфигурации прайс-листов` →
+                                    `Использовать для сводки заказа`.
+                                </div>
+                            ) : null}
+
+                            {Array.isArray(trackingInsights?.exceptions) &&
+                            trackingInsights.exceptions.length ? (
+                                <Card
+                                    size="small"
+                                    title="Очередь исключений по позиции"
+                                    style={{ borderRadius: 10 }}
+                                >
+                                    <Space
+                                        direction="vertical"
+                                        size={8}
+                                        style={{ width: '100%' }}
+                                    >
+                                        {trackingInsights.exceptions.map((item) => (
+                                            <Alert
+                                                key={item.code}
+                                                type={
+                                                    item.severity === 'critical'
+                                                        ? 'error'
+                                                        : item.severity === 'warning'
+                                                            ? 'warning'
+                                                            : 'info'
+                                                }
+                                                showIcon
+                                                message={item.title}
+                                                description={item.description}
+                                            />
+                                        ))}
+                                    </Space>
+                                </Card>
+                            ) : null}
+
+                            {(() => {
+                                const recommendationRows = bestSiteOffersForOrder.map(
+                                    (row, index) => ({
+                                        key: `recommended-${index}`,
+                                        title:
+                                            index === 0
+                                                ? 'Лучший по цене для заказа'
+                                                : `Доп. вариант ${index + 1}`,
+                                        tone:
+                                            index === 0
+                                                ? INSIGHT_TONE_STYLES.green
+                                                : INSIGHT_TONE_STYLES.blue,
+                                        row,
+                                    })
+                                );
+
+                                if (!recommendationRows.length) {
+                                    return null;
+                                }
+
+                                return (
+                                    <div
+                                        style={{
+                                            display: 'grid',
+                                            gridTemplateColumns:
+                                                'repeat(auto-fit, minmax(240px, 1fr))',
+                                            gap: 8,
+                                        }}
+                                    >
+                                        {recommendationRows.map(({ key, title, tone, row }, index) => {
+                                            const deliveryStr = formatInsightDelivery(
+                                                row.min_delivery_day,
+                                                row.max_delivery_day
+                                            );
+                                            const rowOem = row.oem || row.oem_number || currentOem;
+                                            const rowBrand =
+                                                row.make_name || row.brand_name || '—';
+                                            const rowQty = Number(row.qnt ?? 0);
+                                            const rowSupplier =
+                                                normalizeSupplierName(
+                                                    row.supplier_name ||
+                                                        row.sup_logo ||
+                                                        row.provider_name
+                                                ) || 'Dragonzap';
+                                            return (
+                                                <div
+                                                    key={key}
+                                                    style={{
+                                                        ...tone,
+                                                        borderRadius: 10,
+                                                        padding: 12,
+                                                        display: 'flex',
+                                                        flexDirection: 'column',
+                                                        gap: 8,
+                                                        boxShadow:
+                                                            '0 6px 18px rgba(15, 23, 42, 0.05)',
+                                                    }}
+                                                >
+                                                    <div
+                                                        style={{
+                                                            color: '#475569',
+                                                            fontSize: 11,
+                                                            fontWeight: 700,
+                                                        }}
+                                                    >
+                                                        {title}
+                                                    </div>
+                                                    <div
+                                                        style={{
+                                                            color: '#0f172a',
+                                                            fontSize: 15,
+                                                            fontWeight: 800,
+                                                        }}
+                                                    >
+                                                        {rowSupplier}
+                                                    </div>
+                                                    <div style={{ color: '#334155', fontSize: 12 }}>
+                                                        {`${rowBrand} ${rowOem || '—'}`}
+                                                    </div>
+                                                    <div style={{ color: '#334155', fontSize: 12 }}>
+                                                        {row.price != null
+                                                            ? `${formatInsightMoney(row.price)} руб.`
+                                                            : 'Цена: —'}
+                                                        {rowQty > 0
+                                                            ? ` · ${rowQty} шт`
+                                                            : ''}
+                                                        {deliveryStr !== 'срок не указан'
+                                                            ? ` · ${deliveryStr}`
+                                                            : ''}
+                                                    </div>
+                                                    <div style={{ color: '#64748b', fontSize: 11 }}>
+                                                        {row.recommendation_source === 'cross_exact'
+                                                            ? 'Dragonzap · найдено прямым запросом по кроссу без режима кроссов'
+                                                            : 'Dragonzap · учитываем прямой OEM, cross-режим и прямые запросы по найденным кроссам'}
+                                                    </div>
+                                                    <div style={{ color: '#64748b', fontSize: 11 }}>
+                                                        {index === 0
+                                                            ? (
+                                                                rowOem &&
+                                                                normalizeOemKey(rowOem) !== normalizedCurrentOem
+                                                                    ? `Сработал кросс: ${rowOem}`
+                                                                    : 'Лучшее предложение по текущему OEM на сайте'
+                                                            )
+                                                            : Number(
+                                                                recommendationRows[index - 1]?.row?.qnt ?? 0
+                                                            ) < SITE_RECOMMENDATION_LOW_STOCK_QTY
+                                                                ? `Показываем ещё вариант, потому что у предыдущего меньше ${SITE_RECOMMENDATION_LOW_STOCK_QTY} шт`
+                                                                : 'Дополнительный вариант по сайту'}
+                                                    </div>
+                                                    {row.price != null ? (
+                                                        <Space>
+                                                            <InputNumber
+                                                                min={1}
+                                                                max={rowQty > 0 ? rowQty : undefined}
+                                                                value={bestSupplierQty}
+                                                                size="small"
+                                                                style={{ width: 70 }}
+                                                                onChange={(v) => setBestSupplierQty(v || 1)}
+                                                            />
+                                                            <Button
+                                                                type="primary"
+                                                                size="small"
+                                                                icon={<ShoppingCartOutlined />}
+                                                                onClick={() => {
+                                                                    addDragonzapOfferToCart(row);
+                                                                    if (bestSupplierQty > 1) {
+                                                                        const cartKey = buildCartKey(
+                                                                            'dragonzap',
+                                                                            row
+                                                                        );
+                                                                        updateCartQty(cartKey, bestSupplierQty);
+                                                                    }
+                                                                }}
+                                                            >
+                                                                В корзину
+                                                            </Button>
+                                                        </Space>
+                                                    ) : null}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                );
+                            })()}
+
+                            {trackingInsights?.draft_purchase_order ? (
+                                <Card
+                                    size="small"
+                                    title="Авточерновик закупки"
+                                    style={{ borderRadius: 10 }}
+                                >
+                                    <Space
+                                        direction="vertical"
+                                        size={8}
+                                        style={{ width: '100%' }}
+                                    >
+                                        <div style={{ color: '#334155' }}>
+                                            <strong>{trackingInsights.draft_purchase_order.provider_name}</strong>
+                                            {trackingInsights.draft_purchase_order.provider_config_name
+                                                ? ` · ${trackingInsights.draft_purchase_order.provider_config_name}`
+                                                : ''}
+                                        </div>
+                                        <div style={{ color: '#475569', fontSize: 12 }}>
+                                            {trackingInsights.draft_purchase_order.brand_name || '—'}{' '}
+                                            {trackingInsights.draft_purchase_order.oem_number}
+                                            {trackingInsights.draft_purchase_order.price != null
+                                                ? ` · ${formatInsightMoney(trackingInsights.draft_purchase_order.price)} руб.`
+                                                : ''}
+                                        </div>
+                                        <div style={{ color: '#475569', fontSize: 12 }}>
+                                            В наличии/в пути: {trackingInsights.draft_purchase_order.available_qty} шт · цель: {trackingInsights.draft_purchase_order.target_qty ?? '—'} шт
+                                            {trackingInsights.draft_purchase_order.lead_days_used != null
+                                                ? ` · срок для расчёта: ${trackingInsights.draft_purchase_order.lead_days_used} дн`
+                                                : ''}
+                                        </div>
+                                        {trackingInsights.draft_purchase_order.reason ? (
+                                            <div style={{ color: '#64748b', fontSize: 12 }}>
+                                                {trackingInsights.draft_purchase_order.reason}
+                                            </div>
+                                        ) : null}
+                                        <Space wrap>
+                                            <InputNumber
+                                                min={1}
+                                                value={draftOrderQty}
+                                                size="small"
+                                                style={{ width: 90 }}
+                                                onChange={(v) => setDraftOrderQty(v || 1)}
+                                            />
+                                            <Button
+                                                type="primary"
+                                                icon={<PlusOutlined />}
+                                                loading={cartSubmitting}
+                                                onClick={() => handleCreateAutoDraftOrder(false)}
+                                            >
+                                                Создать черновик
+                                            </Button>
+                                            <Button
+                                                icon={<MailOutlined />}
+                                                loading={cartSubmitting}
+                                                onClick={() => handleCreateAutoDraftOrder(true)}
+                                            >
+                                                Создать и отправить
+                                            </Button>
+                                        </Space>
+                                    </Space>
+                                </Card>
+                            ) : null}
+
+                            {supplierScoreRows.length ? (
+                                <Collapse
+                                    size="small"
+                                    activeKey={supplierScoreExpanded ? ['supplier-score'] : []}
+                                    onChange={(keys) => {
+                                        const nextKeys = Array.isArray(keys)
+                                            ? keys
+                                            : [keys];
+                                        setSupplierScoreExpanded(
+                                            nextKeys.includes('supplier-score')
+                                        );
+                                    }}
+                                    items={[
+                                        {
+                                            key: 'supplier-score',
+                                            label: (
+                                                <span>
+                                                    Сравнение поставщиков для заказа · {supplierScoreRows.length}
+                                                </span>
+                                            ),
+                                            children: (
+                                                <Space
+                                                    direction="vertical"
+                                                    size="small"
+                                                    style={{ width: '100%' }}
+                                                >
+                                                    <div
+                                                        style={{
+                                                            color: '#6b7280',
+                                                            fontSize: 12,
+                                                        }}
+                                                    >
+                                                        Сравниваем текущую цену, наличие,
+                                                        фактический срок, исполнение прошлых
+                                                        заказов и частоту заказов.
+                                                    </div>
+                                                    <Table
+                                                        rowKey={(row) =>
+                                                            `${row.provider_id || row.provider_name}:${row.current_provider_config_id || 'base'}`
+                                                        }
+                                                        columns={supplierScoreColumns}
+                                                        dataSource={supplierScoreRows}
+                                                        size="small"
+                                                        pagination={{ pageSize: 5, showSizeChanger: false }}
+                                                        scroll={{ x: 760 }}
+                                                    />
+                                                </Space>
+                                            ),
+                                        },
+                                    ]}
+                                />
+                            ) : null}
+                        </Space>
+                    ) : null}
+                </Spin>
+            </Space>
         </Card>
     );
 };
