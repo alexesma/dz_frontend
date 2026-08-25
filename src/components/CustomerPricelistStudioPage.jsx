@@ -160,7 +160,15 @@ const ZZAP_TEMPLATE = {
     DUPLICATE_POLICY: 'cheapest_then_stock_then_original',
     QUALITY_CONTROL_ENABLED: true,
     FINAL_FILTER_ENABLED: false,
+    FINAL_FILTER_POLICY: {
+        brand_mode: 'all',
+        brands: [],
+        position_mode: 'all',
+        positions: [],
+        min_quantity: null,
+    },
     FINAL_FILTER_RULES: [],
+    PUBLICATION_RULES_ONLY_CONFIGURED: true,
     REQUIRE_DRAFT_APPROVAL: true,
     PIPELINE_ORDER: DEFAULT_PIPELINE_ORDER,
 };
@@ -184,6 +192,12 @@ const CustomerPricelistStudioPage = () => {
     const [sourceFilterForm] = Form.useForm();
     const pipelineV2Enabled = Form.useWatch('pipeline_v2_enabled', settingsForm);
     const finalFilterEnabled = Form.useWatch('final_filter_enabled', settingsForm);
+    const finalFilterBrandMode = Form.useWatch('final_filter_brand_mode', settingsForm);
+    const finalFilterPositionMode = Form.useWatch('final_filter_position_mode', settingsForm);
+    const publicationOnlyConfigured = Form.useWatch(
+        'publication_rules_only_configured',
+        settingsForm
+    );
     const [customers, setCustomers] = useState([]);
     const [configs, setConfigs] = useState([]);
     const [providerOptions, setProviderOptions] = useState([]);
@@ -292,6 +306,7 @@ const CustomerPricelistStudioPage = () => {
             return;
         }
         const extra = activeConfig.additional_filters || {};
+        const finalFilterPolicy = extra.FINAL_FILTER_POLICY || {};
         setPipelineOrder(
             Array.isArray(extra.PIPELINE_ORDER) && extra.PIPELINE_ORDER.length
                 ? extra.PIPELINE_ORDER
@@ -346,12 +361,24 @@ const CustomerPricelistStudioPage = () => {
                 ? Boolean(extra.PIPELINE_V2_ENABLED)
                 : Boolean(extra.QUALITY_CONTROL_ENABLED),
             final_filter_enabled: Boolean(extra.FINAL_FILTER_ENABLED),
+            final_filter_brand_mode: finalFilterPolicy.brand_mode || 'all',
+            final_filter_brands: finalFilterPolicy.brands || [],
+            final_filter_position_mode: finalFilterPolicy.position_mode || 'all',
+            final_filter_positions: (finalFilterPolicy.positions || []).map((position) => {
+                if (typeof position === 'string') return position;
+                return [position?.brand, position?.oem || position?.oem_number]
+                    .filter(Boolean)
+                    .join(' | ');
+            }),
+            final_filter_min_quantity: finalFilterPolicy.min_quantity ?? null,
             final_filter_rules: (extra.FINAL_FILTER_RULES || []).map((rule) => ({
                 ...rule,
                 enabled: rule.enabled !== false,
                 action: rule.action || 'exclude',
                 oem_match: rule.oem_match || 'exact',
             })),
+            publication_rules_only_configured:
+                extra.PUBLICATION_RULES_ONLY_CONFIGURED !== false,
         });
     }, [activeConfig, settingsForm]);
 
@@ -468,11 +495,22 @@ const CustomerPricelistStudioPage = () => {
                     values.duplicate_policy || 'cheapest_then_stock_then_original',
                 QUALITY_CONTROL_ENABLED: Boolean(values.quality_control_enabled),
                 FINAL_FILTER_ENABLED: Boolean(values.final_filter_enabled),
+                FINAL_FILTER_POLICY: {
+                    brand_mode: values.final_filter_brand_mode || 'all',
+                    brands: values.final_filter_brands || [],
+                    position_mode: values.final_filter_position_mode || 'all',
+                    positions: (values.final_filter_positions || [])
+                        .map((value) => String(value || '').trim())
+                        .filter(Boolean),
+                    min_quantity: values.final_filter_min_quantity ?? null,
+                },
                 FINAL_FILTER_RULES: (values.final_filter_rules || []).map((rule, index) => ({
                     ...rule,
                     id: rule.id || `final-${Date.now()}-${index}`,
                     enabled: rule.enabled !== false,
                 })),
+                PUBLICATION_RULES_ONLY_CONFIGURED:
+                    values.publication_rules_only_configured !== false,
             };
             const { data } = await updateCustomerPricelistConfig(
                 customerId,
@@ -691,6 +729,21 @@ const CustomerPricelistStudioPage = () => {
             source.additional_filters?.DZ_EXPAND_BRANDS
         ),
     })), [sources]);
+
+    const finalPositionOptions = useMemo(() => {
+        const options = new Map();
+        for (const row of draftRows || []) {
+            const brand = String(row?.advertised_brand || '').trim();
+            const oem = String(row?.advertised_oem || '').trim();
+            if (!oem) continue;
+            const value = brand ? `${brand} | ${oem}` : oem;
+            options.set(value, {
+                value,
+                label: `${value}${row?.advertised_name ? ` · ${row.advertised_name}` : ''}`,
+            });
+        }
+        return Array.from(options.values());
+    }, [draftRows]);
 
     const searchCandidates = async (value) => {
         if (!customerId || !configId || String(value || '').trim().length < 2) return;
@@ -1068,12 +1121,100 @@ const CustomerPricelistStudioPage = () => {
                 message={finalFilterEnabled
                     ? 'Финальный фильтр действует и изменит отправляемый файл'
                     : 'Финальный фильтр сейчас выключен'}
-                description="Правила применяются к уже преобразованным брендам, артикулам, ценам и наименованиям. Запрещающее правило всегда исключает строку; ручные кроссы могут обходить только общий разрешающий список."
+                description="Фильтры применяются последними — к бренду, артикулу и остатку, которые реально попадут в файл клиента. Белые списки оставляют только выбранное, чёрные исключают выбранное."
                 style={{ marginBottom: 12 }}
             />
             <Form.Item name="final_filter_enabled" label="Использовать финальные фильтры" valuePropName="checked">
                 <Switch disabled={!pipelineV2Enabled} />
             </Form.Item>
+            <div className="final-filter-policy-grid">
+                <Card size="small" className="final-filter-policy-card">
+                    <Title level={5}>Бренды готового прайса</Title>
+                    <Form.Item name="final_filter_brand_mode" label="Режим" initialValue="all">
+                        <Select
+                            disabled={!finalFilterEnabled}
+                            options={[
+                                { value: 'all', label: 'Все бренды' },
+                                { value: 'include', label: 'Белый список — только выбранные' },
+                                { value: 'exclude', label: 'Чёрный список — исключить выбранные' },
+                            ]}
+                        />
+                    </Form.Item>
+                    <Form.Item
+                        name="final_filter_brands"
+                        label={finalFilterBrandMode === 'exclude' ? 'Исключить бренды' : 'Оставить бренды'}
+                        extra="Проверяется итоговый бренд после всех преобразований."
+                    >
+                        <Select
+                            mode="tags"
+                            showSearch
+                            allowClear
+                            disabled={!finalFilterEnabled || finalFilterBrandMode === 'all'}
+                            optionFilterProp="label"
+                            placeholder="Выберите или введите бренды"
+                            options={brandOptions.map((brand) => ({
+                                value: brand.label,
+                                label: brand.label,
+                            }))}
+                        />
+                    </Form.Item>
+                </Card>
+
+                <Card size="small" className="final-filter-policy-card">
+                    <Title level={5}>Позиции готового прайса</Title>
+                    <Form.Item name="final_filter_position_mode" label="Режим" initialValue="all">
+                        <Select
+                            disabled={!finalFilterEnabled}
+                            options={[
+                                { value: 'all', label: 'Все позиции' },
+                                { value: 'include', label: 'Белый список — только выбранные' },
+                                { value: 'exclude', label: 'Чёрный список — исключить выбранные' },
+                            ]}
+                        />
+                    </Form.Item>
+                    <Form.Item
+                        name="final_filter_positions"
+                        label={finalFilterPositionMode === 'exclude' ? 'Исключить позиции' : 'Оставить позиции'}
+                        extra="Формат: БРЕНД | АРТИКУЛ. Если указать только артикул, правило действует для любого бренда."
+                    >
+                        <Select
+                            mode="tags"
+                            allowClear
+                            showSearch
+                            optionFilterProp="label"
+                            tokenSeparators={[',', ';']}
+                            disabled={!finalFilterEnabled || finalFilterPositionMode === 'all'}
+                            placeholder="Например: TOYOTA | 9098012353"
+                            options={finalPositionOptions}
+                        />
+                    </Form.Item>
+                </Card>
+
+                <Card size="small" className="final-filter-policy-card final-filter-policy-card--quantity">
+                    <Title level={5}>Минимальный остаток</Title>
+                    <Form.Item
+                        name="final_filter_min_quantity"
+                        label="Публиковать от указанного количества"
+                        extra="Например, при значении 3 строки с остатком 0, 1 или 2 не попадут в файл."
+                    >
+                        <InputNumber
+                            min={1}
+                            precision={0}
+                            addonAfter="шт."
+                            disabled={!finalFilterEnabled}
+                            style={{ width: '100%' }}
+                            placeholder="Без ограничения"
+                        />
+                    </Form.Item>
+                </Card>
+            </div>
+
+            <Collapse
+                className="final-filter-advanced"
+                items={[{
+                    key: 'advanced-final-filters',
+                    label: 'Дополнительные сложные правила',
+                    children: (
             <Form.List name="final_filter_rules">
                 {(fields, { add, remove }) => (
                     <Space direction="vertical" size={12} style={{ width: '100%', marginBottom: 18 }}>
@@ -1184,6 +1325,9 @@ const CustomerPricelistStudioPage = () => {
                     </Space>
                 )}
             </Form.List>
+                    ),
+                }]}
+            />
 
             <Divider orientation="left">Совпадения и контроль</Divider>
             <Row gutter={[18, 0]}>
@@ -1326,9 +1470,12 @@ const CustomerPricelistStudioPage = () => {
         {
             title: 'Фактическая позиция',
             key: 'source',
+            width: 280,
             render: (_, row) => (
-                <div>
-                    <Text strong>{row.source_brand} {row.source_oem}</Text>
+                <div className="publication-rule-position">
+                    <Text strong className="publication-rule-code">
+                        {row.source_brand} {row.source_oem}
+                    </Text>
                     <div className="muted-line">{row.source_name || 'Без наименования'}</div>
                 </div>
             ),
@@ -1346,19 +1493,25 @@ const CustomerPricelistStudioPage = () => {
         {
             title: 'Публиковать как',
             key: 'target',
+            width: 390,
             render: (_, row) => row.mode === 'hide' ? '—' : (
-                <Space direction="vertical" size={4}>
+                <div className="publication-rule-targets">
                     {(row.targets?.length ? row.targets : [{
                         brand: row.target_brand,
                         oem: row.target_oem,
                         name: row.target_name,
                     }]).map((target) => (
-                        <div key={`${target.autopart_id || ''}-${target.brand}-${target.oem}`}>
-                            <Text strong>{target.brand} {target.oem}</Text>
+                        <div
+                            className="publication-rule-target"
+                            key={`${target.autopart_id || ''}-${target.brand}-${target.oem}`}
+                        >
+                            <Text strong className="publication-rule-code">
+                                {target.brand} {target.oem}
+                            </Text>
                             <div className="muted-line">{target.name || 'Без наименования'}</div>
                         </div>
                     ))}
-                </Space>
+                </div>
             ),
         },
         {
@@ -1603,12 +1756,49 @@ const CustomerPricelistStudioPage = () => {
                                             message="Для замены предлагаются только подтверждённые двусторонние кроссы из номенклатуры. Цена и физический остаток остаются у исходной позиции."
                                             style={{ marginBottom: 16 }}
                                         />
+                                        <Card
+                                            size="small"
+                                            className="publication-rule-scope"
+                                        >
+                                            <div className="publication-rule-scope-control">
+                                                <div>
+                                                    <Text strong>
+                                                        Если есть правила — публиковать только настроенные позиции
+                                                    </Text>
+                                                    <div className="muted-line">
+                                                        Включено по умолчанию. Позиции без отдельного правила не попадут в клиентский прайс. Правило «Не публиковать» исключит позицию полностью.
+                                                    </div>
+                                                </div>
+                                                <Switch
+                                                    checked={publicationOnlyConfigured !== false}
+                                                    onChange={(checked) =>
+                                                        settingsForm.setFieldValue(
+                                                            'publication_rules_only_configured',
+                                                            checked
+                                                        )
+                                                    }
+                                                    checkedChildren="Только по правилам"
+                                                    unCheckedChildren="Правила дополняют прайс"
+                                                />
+                                                <Button
+                                                    size="small"
+                                                    type="primary"
+                                                    icon={<SaveOutlined />}
+                                                    loading={savingSettings}
+                                                    onClick={handleSaveSettings}
+                                                >
+                                                    Сохранить режим
+                                                </Button>
+                                            </div>
+                                        </Card>
                                         <Table
+                                            className="publication-rules-table"
                                             rowKey="id"
                                             columns={ruleColumns}
                                             dataSource={rules}
                                             pagination={{ pageSize: 20 }}
-                                            scroll={{ x: 900 }}
+                                            tableLayout="fixed"
+                                            scroll={{ x: 1120 }}
                                         />
                                     </>
                                 ),

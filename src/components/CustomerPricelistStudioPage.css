@@ -288,6 +288,78 @@
     background: linear-gradient(135deg, #f7fbfa 0%, #fffdf7 100%);
 }
 
+.final-filter-policy-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.final-filter-policy-card {
+    min-width: 0;
+    border-color: rgba(31, 111, 120, 0.2);
+    background: linear-gradient(140deg, #f7fbfa 0%, #fffdf7 100%);
+}
+
+.final-filter-policy-card--quantity {
+    grid-column: 1 / -1;
+}
+
+.final-filter-policy-card .ant-typography {
+    margin-top: 0;
+}
+
+.final-filter-advanced {
+    margin-bottom: 18px;
+    border-color: rgba(31, 111, 120, 0.16);
+    background: #fbfdfc;
+}
+
+.publication-rule-scope {
+    margin-bottom: 14px;
+    border-color: rgba(196, 98, 45, 0.28);
+    background: #fffaf3;
+}
+
+.publication-rule-scope-control {
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) auto auto;
+    gap: 14px;
+    align-items: center;
+}
+
+.publication-rules-table .ant-table-cell {
+    word-break: normal;
+    overflow-wrap: normal;
+}
+
+.publication-rule-position {
+    min-width: 0;
+}
+
+.publication-rule-code {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.publication-rule-targets {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+    gap: 6px;
+    max-height: 116px;
+    overflow-y: auto;
+}
+
+.publication-rule-target {
+    min-width: 0;
+    padding: 6px 8px;
+    border: 1px solid rgba(31, 111, 120, 0.14);
+    border-radius: 8px;
+    background: #f7fbfa;
+}
+
 .final-filter-summary {
     border-color: rgba(31, 111, 120, 0.24);
     background: #f5fbfa;
@@ -323,6 +395,19 @@
 
     .row-filters {
         grid-template-columns: 1fr;
+    }
+
+    .final-filter-policy-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .final-filter-policy-card--quantity {
+        grid-column: auto;
+    }
+
+    .publication-rule-scope-control {
+        grid-template-columns: 1fr;
+        align-items: flex-start;
     }
 
     .profile-heading {

@@ -1135,20 +1135,35 @@ const AutopartOffers = () => {
     const crossOemsForOwnStock = useMemo(() => {
         const base = normalizeOemKey(currentOem);
         const set = new Set();
-        const push = (value) => {
+        const push = (value, brandName) => {
             const oem = normalizeOemKey(value);
-            if (oem && oem !== base && !verifiedStockOemSet.has(oem)) {
+            const crossKey = normalizeCrossKey(brandName, oem);
+            if (
+                oem &&
+                oem !== base &&
+                !verifiedStockOemSet.has(oem) &&
+                !invalidCrossKeySet.has(crossKey)
+            ) {
                 set.add(oem);
             }
         };
         for (const item of siteCrossItems || []) {
-            push(item?.oem_number);
+            push(item?.oem_number, item?.brand_name);
         }
         for (const offer of siteExactCrossOffers || []) {
-            push(offer?.oem || offer?.oem_number);
+            push(
+                offer?.oem || offer?.oem_number,
+                offer?.make_name || offer?.brand_name
+            );
         }
         return Array.from(set);
-    }, [siteCrossItems, siteExactCrossOffers, currentOem, verifiedStockOemSet]);
+    }, [
+        currentOem,
+        invalidCrossKeySet,
+        siteCrossItems,
+        siteExactCrossOffers,
+        verifiedStockOemSet,
+    ]);
 
     useEffect(() => {
         let cancelled = false;
@@ -1606,7 +1621,7 @@ const AutopartOffers = () => {
     const handleApproveSiteCross = useCallback(async (crossItem) => {
         if (!nomenclatureInfo?.id) {
             message.warning('Сначала нужна позиция в номенклатуре');
-            return;
+            return false;
         }
         const actionKey = `approve:${crossItem.key}`;
         setCrossActionLoadingKey(actionKey);
@@ -1667,6 +1682,7 @@ const AutopartOffers = () => {
                     ? 'Кросс добавлен в систему и привязан к позиции номенклатуры'
                     : 'Кросс добавлен в систему без привязки к позиции номенклатуры'
             );
+            return true;
         } catch (error) {
             console.error('Approve site cross error:', error);
             message.error(
@@ -1674,6 +1690,7 @@ const AutopartOffers = () => {
                     error?.message ||
                     'Не удалось сохранить кросс'
             );
+            return false;
         } finally {
             setCrossActionLoadingKey('');
         }
@@ -1691,7 +1708,7 @@ const AutopartOffers = () => {
     const handleRejectSiteCross = useCallback(async (crossItem) => {
         if (!nomenclatureInfo?.id) {
             message.warning('Сначала нужна позиция в номенклатуре');
-            return;
+            return false;
         }
         const actionKey = `reject:${crossItem.key}`;
         setCrossActionLoadingKey(actionKey);
@@ -1782,18 +1799,20 @@ const AutopartOffers = () => {
                 });
             }
             message.success('Кросс исключён из выборки');
+            return true;
         } catch (error) {
             console.error('Reject site cross error:', error);
             if (error?.response?.status === 409) {
                 await fetchCrossStates(nomenclatureInfo.id);
                 message.success('Кросс уже был исключён ранее');
-                return;
+                return true;
             }
             message.error(
                 error?.response?.data?.detail ||
                     error?.message ||
                     'Не удалось исключить кросс'
             );
+            return false;
         } finally {
             setCrossActionLoadingKey('');
         }
@@ -1807,6 +1826,82 @@ const AutopartOffers = () => {
         confirmedCrosses,
         siteOffersWithCrosses,
     ]);
+
+    const handleApproveOwnStockCross = useCallback(async (row) => {
+        const crossItem = {
+            key: normalizeCrossKey(row?.brand_name, row?.oem_number),
+            brand_name: row?.brand_name || '',
+            oem_number: row?.oem_number || '',
+            autopart_id: row?.autopart_id ?? null,
+        };
+        const saved = await handleApproveSiteCross(crossItem);
+        if (!saved) {
+            return;
+        }
+
+        const promotedRows = (unverifiedStockRows || []).filter(
+            (candidate) =>
+                normalizeCrossKey(
+                    candidate?.brand_name,
+                    candidate?.oem_number
+                ) === crossItem.key
+        );
+        setOurStockRows((previousRows) => {
+            const nextRows = Array.isArray(previousRows)
+                ? [...previousRows]
+                : [];
+            const existingKeys = new Set(
+                nextRows.map(
+                    (candidate) =>
+                        `${candidate?.autopart_id}-${candidate?.pricelist_id}`
+                )
+            );
+            for (const candidate of promotedRows) {
+                const rowKey = `${candidate?.autopart_id}-${candidate?.pricelist_id}`;
+                if (existingKeys.has(rowKey)) {
+                    continue;
+                }
+                existingKeys.add(rowKey);
+                nextRows.push({
+                    ...candidate,
+                    unverified_cross: false,
+                    is_requested_oem: false,
+                });
+            }
+            return nextRows;
+        });
+        setUnverifiedStockRows((previousRows) =>
+            (Array.isArray(previousRows) ? previousRows : []).filter(
+                (candidate) =>
+                    normalizeCrossKey(
+                        candidate?.brand_name,
+                        candidate?.oem_number
+                    ) !== crossItem.key
+            )
+        );
+    }, [handleApproveSiteCross, unverifiedStockRows]);
+
+    const handleRejectOwnStockCross = useCallback(async (row) => {
+        const crossItem = {
+            key: normalizeCrossKey(row?.brand_name, row?.oem_number),
+            brand_name: row?.brand_name || '',
+            oem_number: row?.oem_number || '',
+            autopart_id: row?.autopart_id ?? null,
+        };
+        const saved = await handleRejectSiteCross(crossItem);
+        if (!saved) {
+            return;
+        }
+        setUnverifiedStockRows((previousRows) =>
+            (Array.isArray(previousRows) ? previousRows : []).filter(
+                (candidate) =>
+                    normalizeCrossKey(
+                        candidate?.brand_name,
+                        candidate?.oem_number
+                    ) !== crossItem.key
+            )
+        );
+    }, [handleRejectSiteCross]);
 
     const insightTiles = useMemo(() => {
         if (!trackingInsights) {
@@ -4691,19 +4786,103 @@ const AutopartOffers = () => {
             title: 'Бренд',
             dataIndex: 'brand_name',
             key: 'brand_name',
-            width: 120,
-            render: (value, record) => (
-                <Space size={4} wrap>
-                    <strong>{value || '—'}</strong>
-                    {record.is_requested_oem ? (
-                        <Tag color="green">точно</Tag>
-                    ) : record.unverified_cross ? (
-                        <Tag color="orange">кросс ⚠ не проверен</Tag>
-                    ) : (
-                        <Tag color="blue">кросс</Tag>
-                    )}
-                </Space>
-            ),
+            width: 240,
+            render: (value, record) => {
+                const crossKey = normalizeCrossKey(
+                    record?.brand_name,
+                    record?.oem_number
+                );
+                const canDecide = Boolean(nomenclatureInfo?.in_nomenclature);
+                const basePosition = `${(
+                    nomenclatureInfo?.brand || selectedBrand || '—'
+                ).trim()} ${(currentOem || '—').trim()}`;
+                const crossPosition = `${record?.brand_name || '—'} ${
+                    record?.oem_number || '—'
+                }`;
+
+                return (
+                    <Space size={4} wrap>
+                        <strong>{value || '—'}</strong>
+                        {record.is_requested_oem ? (
+                            <Tag color="green">точно</Tag>
+                        ) : record.unverified_cross ? (
+                            <Tag color="orange">кросс ⚠ не проверен</Tag>
+                        ) : (
+                            <Tag color="blue">кросс</Tag>
+                        )}
+                        {record.unverified_cross ? (
+                            <Space size={2}>
+                                <Popconfirm
+                                    title="Подтвердить кросс"
+                                    description={`Подтверждаете кросс нашей позиции ${basePosition} и позиции ${crossPosition}?`}
+                                    okText="Подтвердить"
+                                    cancelText="Отмена"
+                                    disabled={!canDecide}
+                                    onConfirm={() => handleApproveOwnStockCross(record)}
+                                    okButtonProps={{
+                                        loading:
+                                            crossActionLoadingKey === `approve:${crossKey}`,
+                                    }}
+                                >
+                                    <Tooltip
+                                        title={
+                                            canDecide
+                                                ? 'Подтвердить и сохранить кросс'
+                                                : 'Сначала нужна позиция в номенклатуре'
+                                        }
+                                    >
+                                        <Button
+                                            type="text"
+                                            size="small"
+                                            shape="circle"
+                                            icon={<CheckOutlined />}
+                                            aria-label={`Подтвердить кросс ${crossPosition}`}
+                                            disabled={!canDecide}
+                                            loading={
+                                                crossActionLoadingKey === `approve:${crossKey}`
+                                            }
+                                        />
+                                    </Tooltip>
+                                </Popconfirm>
+                                <Popconfirm
+                                    title="Исключить неверный кросс"
+                                    description={`Подтверждаете, что ${crossPosition} не является кроссом для позиции ${basePosition}?`}
+                                    okText="Исключить"
+                                    cancelText="Отмена"
+                                    disabled={!canDecide}
+                                    okButtonProps={{
+                                        danger: true,
+                                        loading:
+                                            crossActionLoadingKey === `reject:${crossKey}`,
+                                    }}
+                                    onConfirm={() => handleRejectOwnStockCross(record)}
+                                >
+                                    <Tooltip
+                                        title={
+                                            canDecide
+                                                ? 'Пометить как неверный кросс'
+                                                : 'Сначала нужна позиция в номенклатуре'
+                                        }
+                                    >
+                                        <Button
+                                            danger
+                                            type="text"
+                                            size="small"
+                                            shape="circle"
+                                            icon={<CloseOutlined />}
+                                            aria-label={`Исключить кросс ${crossPosition}`}
+                                            disabled={!canDecide}
+                                            loading={
+                                                crossActionLoadingKey === `reject:${crossKey}`
+                                            }
+                                        />
+                                    </Tooltip>
+                                </Popconfirm>
+                            </Space>
+                        ) : null}
+                    </Space>
+                );
+            },
         },
         {
             title: 'Номер',
@@ -4833,7 +5012,7 @@ const AutopartOffers = () => {
                 placement="bottomLeft"
                 title="Наше наличие (с кроссами)"
                 content={
-                    <div style={{ maxWidth: 680 }}>
+                    <div style={{ maxWidth: 820 }}>
                         <Table
                             rowKey={(row) =>
                                 `${row.autopart_id}-${row.pricelist_id}`
@@ -4843,7 +5022,7 @@ const AutopartOffers = () => {
                             size="small"
                             pagination={false}
                             tableLayout="fixed"
-                            scroll={{ x: 660, y: 320 }}
+                            scroll={{ x: 790, y: 320 }}
                         />
                         {unverifiedCount ? (
                             <div
