@@ -18,6 +18,7 @@ import CustomerPage from './components/CustomerPage';
 import AutopartOffers from './components/AutopartOffers';
 import InvalidCrossesPage from './components/InvalidCrossesPage';
 import NomenclaturePage from './components/NomenclaturePage';
+import CertificatesPage from './components/CertificatesPage';
 import ProductLabelsPage from './components/ProductLabelsPage';
 import PriceHistoryPlot from './components/PriceHistoryPlot';
 import OrdersTrackingPage from './components/OrdersTrackingPage';
@@ -192,6 +193,7 @@ const AppRoutes = () => (
 
         {/* Nomenclature catalog */}
         <Route path="/autoparts/nomenclature" element={<RequireAuth><NomenclaturePage /></RequireAuth>} />
+        <Route path="/autoparts/certificates" element={<RequireAuth><CertificatesPage /></RequireAuth>} />
         <Route path="/autoparts/labels" element={<RequireAuth><ProductLabelsPage /></RequireAuth>} />
 
         {/* Warehouse */}

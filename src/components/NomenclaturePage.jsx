@@ -557,6 +557,32 @@ const NomenclaturePage = () => {
             render: (v) => v ? <Tag color="purple" style={{ fontSize: 11 }}>{v}</Tag> : null,
         },
         {
+            title: 'Реквизиты',
+            key: 'regulatory',
+            width: 150,
+            render: (_, record) => {
+                // Показываем, чего не хватает для выгрузки прайса: пустые
+                // реквизиты попадут в файл клиенту пустыми колонками.
+                const missing = [];
+                if (!record.tnved_code) missing.push('ТН ВЭД');
+                if (!record.okpd2_code) missing.push('ОКПД 2');
+                if (record.certification_required !== false
+                    && !record.eac_cert_number) {
+                    missing.push('сертификат');
+                }
+                if (!missing.length) {
+                    return <Tag color="green" style={{ fontSize: 11 }}>заполнено</Tag>;
+                }
+                return (
+                    <Tooltip title={`Не заполнено: ${missing.join(', ')}`}>
+                        <Tag color="orange" style={{ fontSize: 11 }}>
+                            нет {missing.length} из 3
+                        </Tag>
+                    </Tooltip>
+                );
+            },
+        },
+        {
             title: '',
             key: 'actions',
             width: 60,
@@ -921,6 +947,81 @@ const NomenclaturePage = () => {
                                         <Form.Item name="barcode" label="Штрих-код (генерируется автоматически)">
                                             <Input disabled style={{ background: '#f5f5f5' }} />
                                         </Form.Item>
+                                    </>
+                                ),
+                            },
+                            // ── Реквизиты для прайса ──────────────────────────
+                            {
+                                key: 'regulatory',
+                                label: 'Реквизиты',
+                                children: (
+                                    <>
+                                        <div style={{ marginBottom: 12 }}>
+                                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                                Обязательные колонки прайс-листа. Заполняются один раз
+                                                и подставляются во все выгрузки автоматически.
+                                            </Text>
+                                        </div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                            <Form.Item
+                                                name="tnved_code"
+                                                label="ТН ВЭД"
+                                                tooltip="Эталон — графа 33 ГТД или УПД поставщика"
+                                            >
+                                                <Input placeholder="10 знаков" />
+                                            </Form.Item>
+                                            <Form.Item
+                                                name="okpd2_code"
+                                                label="ОКПД 2"
+                                                tooltip="Выводится из ТН ВЭД по переходным ключам, выбор подтверждает человек"
+                                            >
+                                                <Input placeholder="Например: 29.32.30.390" />
+                                            </Form.Item>
+                                        </div>
+                                        <Form.Item
+                                            name="certification_required"
+                                            label="Оценка соответствия"
+                                        >
+                                            <Select
+                                                allowClear
+                                                placeholder="Не определено"
+                                                options={[
+                                                    { value: true, label: 'Требует сертификации' },
+                                                    { value: false, label: 'Не требует сертификации' },
+                                                ]}
+                                            />
+                                        </Form.Item>
+                                        <Form.Item name="eac_cert_number" label="Номер сертификата ЕАС">
+                                            <Input placeholder="ЕАЭС RU Д-CN.XXXX.XX.XXXXX/XX" />
+                                        </Form.Item>
+                                        <Form.Item name="eac_cert_url" label="Ссылка ФГИС">
+                                            <Input placeholder="https://pub.fsa.gov.ru/..." />
+                                        </Form.Item>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                            <Form.Item
+                                                name="eac_cert_valid_until"
+                                                label="Действует до"
+                                                tooltip="По истечении позиция попадёт в отчёт незаполненных"
+                                            >
+                                                <Input placeholder="ГГГГ-ММ-ДД" />
+                                            </Form.Item>
+                                            <Form.Item
+                                                name="regulatory_source"
+                                                label="Источник данных"
+                                            >
+                                                <Select
+                                                    allowClear
+                                                    placeholder="Откуда взято"
+                                                    options={[
+                                                        { value: 'gtd', label: 'ГТД' },
+                                                        { value: 'supplier_doc', label: 'Документ поставщика' },
+                                                        { value: 'registry', label: 'Реестр ФГИС' },
+                                                        { value: 'manual', label: 'Вручную' },
+                                                        { value: 'rule', label: 'Правило по названию' },
+                                                    ]}
+                                                />
+                                            </Form.Item>
+                                        </div>
                                     </>
                                 ),
                             },
