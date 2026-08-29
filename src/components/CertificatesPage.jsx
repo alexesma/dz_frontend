@@ -26,6 +26,7 @@ import {
 import { getBrands } from '../api/brands';
 import {
     applyCertificateToBrand,
+    backfillCertificateBrands,
     createCertificate,
     deleteCertificate,
     getCertificateAutoparts,
@@ -61,6 +62,9 @@ const CertificatesPage = () => {
     const [pageSize, setPageSize] = useState(25);
     const [search, setSearch] = useState('');
     const [onlyExpiring, setOnlyExpiring] = useState(false);
+    // Из прайсов поставщиков приходят сотни номеров на чужой
+    // ассортимент — по умолчанию показываем только рабочие.
+    const [onlyLinked, setOnlyLinked] = useState(true);
     const [brands, setBrands] = useState([]);
 
     const [editOpen, setEditOpen] = useState(false);
@@ -88,6 +92,7 @@ const CertificatesPage = () => {
                 page_size: pageSize,
                 search: search || undefined,
                 only_expiring: onlyExpiring || undefined,
+                only_linked: onlyLinked,
             });
             setItems(data.items || []);
             setTotal(data.total || 0);
@@ -98,7 +103,7 @@ const CertificatesPage = () => {
         } finally {
             setLoading(false);
         }
-    }, [page, pageSize, search, onlyExpiring]);
+    }, [page, pageSize, search, onlyExpiring, onlyLinked]);
 
     useEffect(() => { void load(); }, [load]);
 
@@ -148,6 +153,12 @@ const CertificatesPage = () => {
             } else {
                 await createCertificate(payload);
                 message.success('Сертификат добавлен');
+                // Новый документ ещё ни к чему не привязан и под фильтром
+                // «только со связями» исчез бы сразу после сохранения —
+                // а его как раз и нужно применить к бренду.
+                if (onlyLinked) {
+                    setOnlyLinked(false);
+                }
             }
             setEditOpen(false);
             await load();
@@ -238,17 +249,50 @@ const CertificatesPage = () => {
             ),
         },
         {
-            title: 'Бренд',
-            dataIndex: 'brand_name',
-            width: 150,
-            render: (value, row) => (
-                <Space direction="vertical" size={0}>
-                    <Text>{value || '—'}</Text>
-                    {row.covers_whole_brand ? (
-                        <Tag color="blue">на весь бренд</Tag>
-                    ) : null}
-                </Space>
-            ),
+            title: 'Бренды',
+            dataIndex: 'brands',
+            width: 210,
+            render: (value, row) => {
+                // Объявленный бренд — один, но документ из прайса может
+                // покрывать несколько; показываем всё, что реально связано.
+                const linked = value || [];
+                const declared = row.brand_name;
+                const rest = linked.filter((item) => item !== declared);
+                if (!declared && !linked.length) {
+                    // Бренда нет в каталоге — показываем, как он написан
+                    // в прайсе поставщика, иначе документ выглядит ничьим.
+                    return row.source_brand ? (
+                        <Space direction="vertical" size={0}>
+                            <Tag>{row.source_brand}</Tag>
+                            <Text type="secondary" style={{ fontSize: 11 }}>
+                                нет в каталоге
+                            </Text>
+                        </Space>
+                    ) : (
+                        <Text type="secondary">не определён</Text>
+                    );
+                }
+                return (
+                    <Space direction="vertical" size={2}>
+                        <Space size={4} wrap>
+                            {declared ? (
+                                <Tag color="geekblue">{declared}</Tag>
+                            ) : null}
+                            {rest.map((item) => (
+                                <Tag key={item}>{item}</Tag>
+                            ))}
+                        </Space>
+                        {row.covers_whole_brand ? (
+                            <Tag color="blue">на весь бренд</Tag>
+                        ) : null}
+                        {rest.length && declared ? (
+                            <Text type="secondary" style={{ fontSize: 11 }}>
+                                объявлен {declared}, ещё {rest.length} по связям
+                            </Text>
+                        ) : null}
+                    </Space>
+                );
+            },
         },
         {
             title: 'Действует до',
@@ -371,10 +415,20 @@ const CertificatesPage = () => {
                 <Space wrap>
                     <Input.Search
                         allowClear
-                        placeholder="Номер, заявитель, объект"
-                        style={{ width: 260 }}
+                        placeholder="Номер, бренд, заявитель, объект"
+                        style={{ width: 280 }}
                         onSearch={(value) => { setPage(1); setSearch(value); }}
                     />
+                    <Space size={6}>
+                        <Switch
+                            checked={onlyLinked}
+                            onChange={(value) => {
+                                setPage(1);
+                                setOnlyLinked(value);
+                            }}
+                        />
+                        <Text>Только со связями</Text>
+                    </Space>
                     <Space size={6}>
                         <Switch
                             checked={onlyExpiring}
@@ -387,6 +441,25 @@ const CertificatesPage = () => {
                     </Space>
                     <Button icon={<ReloadOutlined />} onClick={() => void load()}>
                         Обновить
+                    </Button>
+                    <Button
+                        onClick={async () => {
+                            try {
+                                const { data } = await backfillCertificateBrands(false);
+                                message.success(
+                                    `Бренд проставлен: ${data.updated}, `
+                                    + `неоднозначных: ${data.ambiguous}`
+                                );
+                                await load();
+                            } catch (error) {
+                                message.error(
+                                    error?.response?.data?.detail
+                                    || 'Не удалось дозаполнить бренды'
+                                );
+                            }
+                        }}
+                    >
+                        Дозаполнить бренды
                     </Button>
                     <Button
                         type="primary"

@@ -739,6 +739,14 @@ const ProviderPage = () => {
                 ),
                 qty_col: adjustForDisplay(config.qty_col, true),
                 price_col: adjustForDisplay(config.price_col, true),
+                tnved_col: adjustForDisplay(config.tnved_col, true),
+                okpd2_col: adjustForDisplay(config.okpd2_col, true),
+                honest_sign_col: adjustForDisplay(config.honest_sign_col, true),
+                eac_cert_col: adjustForDisplay(config.eac_cert_col, true),
+                eac_cert_url_col: adjustForDisplay(
+                    config.eac_cert_url_col,
+                    true
+                ),
             });
         } else {
             configForm.resetFields();
@@ -776,6 +784,26 @@ const ProviderPage = () => {
                 ),
                 qty_col: adjustForPayload(values.qty_col, configNumberingFromOne),
                 price_col: adjustForPayload(values.price_col, configNumberingFromOne),
+                tnved_col: adjustForPayload(
+                    values.tnved_col,
+                    configNumberingFromOne
+                ),
+                okpd2_col: adjustForPayload(
+                    values.okpd2_col,
+                    configNumberingFromOne
+                ),
+                honest_sign_col: adjustForPayload(
+                    values.honest_sign_col,
+                    configNumberingFromOne
+                ),
+                eac_cert_col: adjustForPayload(
+                    values.eac_cert_col,
+                    configNumberingFromOne
+                ),
+                eac_cert_url_col: adjustForPayload(
+                    values.eac_cert_url_col,
+                    configNumberingFromOne
+                ),
             };
             if (editingConfig) {
                 await updateProviderConfig(providerId, editingConfig.id, payload);
@@ -3542,6 +3570,50 @@ const ProviderPage = () => {
                             label="Колонка цены"
                             rules={[{ required: true, message: "Укажите колонку цены" }]}
                         >
+                            <InputNumber
+                                min={configNumberingFromOne ? 1 : 0}
+                                placeholder="Номер колонки"
+                                style={{ width: "100%" }}
+                            />
+                        </Form.Item>
+                    </div>
+
+                    <Divider>Обязательные реквизиты прайса</Divider>
+                    <div style={{ marginBottom: 12, opacity: 0.65, fontSize: 12 }}>
+                        Заполняйте, если поставщик передаёт их в том же файле.
+                        Без колонки бренда реквизиты не читаются: позицию не с
+                        чем сопоставить. Ручной ввод в карточке не перетирается.
+                    </div>
+                    <div className="responsive-form-grid-2">
+                        <Form.Item name="tnved_col" label="Колонка ТН ВЭД">
+                            <InputNumber
+                                min={configNumberingFromOne ? 1 : 0}
+                                placeholder="Номер колонки"
+                                style={{ width: "100%" }}
+                            />
+                        </Form.Item>
+                        <Form.Item name="okpd2_col" label="Колонка ОКПД 2">
+                            <InputNumber
+                                min={configNumberingFromOne ? 1 : 0}
+                                placeholder="Номер колонки"
+                                style={{ width: "100%" }}
+                            />
+                        </Form.Item>
+                        <Form.Item name="honest_sign_col" label="Колонка Честный знак">
+                            <InputNumber
+                                min={configNumberingFromOne ? 1 : 0}
+                                placeholder="Номер колонки"
+                                style={{ width: "100%" }}
+                            />
+                        </Form.Item>
+                        <Form.Item name="eac_cert_col" label="Колонка сертификата ЕАС">
+                            <InputNumber
+                                min={configNumberingFromOne ? 1 : 0}
+                                placeholder="Номер колонки"
+                                style={{ width: "100%" }}
+                            />
+                        </Form.Item>
+                        <Form.Item name="eac_cert_url_col" label="Колонка ссылки ФГИС">
                             <InputNumber
                                 min={configNumberingFromOne ? 1 : 0}
                                 placeholder="Номер колонки"

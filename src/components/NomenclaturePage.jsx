@@ -271,6 +271,15 @@ const NomenclaturePage = () => {
                 length: data.length,
                 weight: data.weight,
                 barcode: data.barcode,
+                // Обязательные колонки прайса: без них вкладка «Реквизиты»
+                // открывалась пустой, хотя данные в карточке есть.
+                tnved_code: data.tnved_code,
+                okpd2_code: data.okpd2_code,
+                certification_required: data.certification_required,
+                eac_cert_number: data.eac_cert_number,
+                eac_cert_url: data.eac_cert_url,
+                eac_cert_valid_until: data.eac_cert_valid_until,
+                regulatory_source: data.regulatory_source,
                 category_ids: (data.categories || []).map(
                     (c) => categories.find((opt) => opt.label === c)?.value
                 ).filter(Boolean),

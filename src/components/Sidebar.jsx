@@ -139,6 +139,9 @@ const Sidebar = () => {
                 <Menu.Item key="autoparts-certificates">
                     <Link to="/autoparts/certificates">Сертификаты</Link>
                 </Menu.Item>
+                <Menu.Item key="autoparts-regulatory">
+                    <Link to="/autoparts/regulatory">Реквизиты прайса</Link>
+                </Menu.Item>
                 <Menu.Item key="autopart-crosses" icon={<TagsOutlined />}>
                     <Link to="/autoparts/crosses">Кроссы</Link>
                 </Menu.Item>

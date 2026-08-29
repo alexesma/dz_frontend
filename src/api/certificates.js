@@ -21,5 +21,10 @@ export const linkAutoparts = (id, autopartIds) =>
 export const unlinkAutopart = (id, autopartId) =>
     api.delete(`/certificates/${id}/autoparts/${autopartId}/`);
 
+export const backfillCertificateBrands = (dryRun = true) =>
+    api.post('/certificates/backfill-brands/', null, {
+        params: { dry_run: dryRun },
+    });
+
 export const applyCertificateToBrand = (id, data) =>
     api.post(`/certificates/${id}/apply-brand/`, data);
