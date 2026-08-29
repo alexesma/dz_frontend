@@ -45,8 +45,23 @@ export const updateCustomerPricelistSource = (customerId, configId, sourceId, da
 export const deleteCustomerPricelistSource = (customerId, configId, sourceId) =>
     api.delete(`/customers/${customerId}/pricelist-configs/${configId}/sources/${sourceId}`);
 
+// Сборка прайса идёт минутами: с общим таймаутом в 30 секунд запрос
+// обрывался на клиенте, и кнопка выглядела нерабочей.
+const PRICELIST_BUILD_TIMEOUT = 900000;
+
 export const sendCustomerPricelistNow = (customerId, configId) =>
-    api.post(`/customers/${customerId}/pricelist-configs/${configId}/send-now`);
+    api.post(
+        `/customers/${customerId}/pricelist-configs/${configId}/send-now`,
+        null,
+        { timeout: PRICELIST_BUILD_TIMEOUT }
+    );
+
+export const buildCustomerPricelistFile = (customerId, configId) =>
+    api.post(
+        `/customers/${customerId}/pricelist-configs/${configId}/build-file`,
+        null,
+        { responseType: 'blob', timeout: PRICELIST_BUILD_TIMEOUT }
+    );
 
 export const listCustomerPricelistPublicationRules = (customerId, configId) =>
     api.get(`/customers/${customerId}/pricelist-configs/${configId}/publication-rules`);

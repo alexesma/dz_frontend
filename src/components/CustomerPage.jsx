@@ -22,7 +22,8 @@ import {
 } from 'antd';
 import {
     SaveOutlined, ArrowLeftOutlined, PlusOutlined,
-    EditOutlined, DeleteOutlined, SendOutlined, SettingOutlined
+    EditOutlined, DeleteOutlined, SendOutlined, SettingOutlined,
+    DownloadOutlined
 } from '@ant-design/icons';
 
 const { Text } = Typography;
@@ -55,6 +56,7 @@ import {
     updateCustomerPricelistSource,
     deleteCustomerPricelistSource,
     sendCustomerPricelistNow,
+    buildCustomerPricelistFile,
     getCustomerOrderConfigs,
     createCustomerOrderConfig,
     updateCustomerOrderConfig,
@@ -85,6 +87,9 @@ const CustomerPage = () => {
     const customerId = !isNew ? Number(customerIdParam) : null;
 
     const [loading, setLoading] = useState(!isNew);
+    // Какая конфигурация сейчас собирается: сборка идёт минутами,
+    // и без индикатора кнопка выглядит не нажатой.
+    const [busyConfigId, setBusyConfigId] = useState(null);
     const [saving, setSaving] = useState(false);
     const [customerData, setCustomerData] = useState(null);
     const [loadError, setLoadError] = useState('');
@@ -1339,14 +1344,63 @@ const CustomerPage = () => {
         }
     };
 
+    // Ошибка приходит текстом от сервера: «не указан получатель» и
+    // «не прошёл контроль качества» человек должен видеть дословно,
+    // иначе кнопка выглядит просто сломанной.
+    const describeError = async (err, fallback) => {
+        const data = err?.response?.data;
+        if (data instanceof Blob) {
+            try {
+                const parsed = JSON.parse(await data.text());
+                return parsed?.detail || fallback;
+            } catch {
+                return fallback;
+            }
+        }
+        if (err?.code === 'ECONNABORTED') {
+            return 'Сборка прайса не уложилась во время ожидания';
+        }
+        return data?.detail || fallback;
+    };
+
     const handleSendNow = async (configId) => {
         if (!customerId) return;
+        setBusyConfigId(configId);
         try {
             await sendCustomerPricelistNow(customerId, configId);
             message.success('Прайс отправлен');
         } catch (err) {
             console.error(err);
-            message.error('Ошибка отправки прайса');
+            message.error(await describeError(err, 'Ошибка отправки прайса'));
+        } finally {
+            setBusyConfigId(null);
+        }
+    };
+
+    const handleDownloadPricelist = async (configId) => {
+        if (!customerId) return;
+        setBusyConfigId(configId);
+        try {
+            const response = await buildCustomerPricelistFile(
+                customerId,
+                configId
+            );
+            const disposition = response.headers?.['content-disposition'] || '';
+            const match = disposition.match(/filename="?([^";]+)"?/);
+            const url = window.URL.createObjectURL(response.data);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = match ? decodeURIComponent(match[1]) : 'price.xlsx';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+            message.success('Файл прайса собран');
+        } catch (err) {
+            console.error(err);
+            message.error(await describeError(err, 'Ошибка сборки прайса'));
+        } finally {
+            setBusyConfigId(null);
         }
     };
 
@@ -1417,9 +1471,19 @@ const CustomerPage = () => {
                         onClick={() => openSourcesModal(record)}
                     />
                     <Button
+                        type="default"
+                        size="small"
+                        icon={<DownloadOutlined />}
+                        title="Скачать прайс, не отправляя"
+                        loading={busyConfigId === record.id}
+                        onClick={() => handleDownloadPricelist(record.id)}
+                    />
+                    <Button
                         type="primary"
                         size="small"
                         icon={<SendOutlined />}
+                        title="Отправить прайс получателям"
+                        loading={busyConfigId === record.id}
                         onClick={() => handleSendNow(record.id)}
                     />
                     <Popconfirm
