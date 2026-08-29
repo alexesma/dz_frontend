@@ -1856,7 +1856,13 @@ const CustomerPricelistStudioPage = () => {
                                                             {(selectedDraft.generation_summary.quality_control.checks || []).map((check) => (
                                                                 <Tag
                                                                     key={check.key}
-                                                                    color={check.status === 'passed' ? 'green' : 'red'}
+                                                                    color={
+                                                                        check.status === 'passed'
+                                                                            ? 'green'
+                                                                            : check.status === 'warning'
+                                                                                ? 'orange'
+                                                                                : 'red'
+                                                                    }
                                                                 >
                                                                     {check.message}
                                                                 </Tag>
