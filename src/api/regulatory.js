@@ -22,3 +22,18 @@ export const refreshFromRegistry = (params = {}) =>
         // Реестр отвечает медленно, порция документов идёт минутами.
         timeout: 900000,
     });
+
+export const importTnvedOkpd2Table = (file, params = {}) => {
+    const body = new FormData();
+    body.append('file', file);
+    return api.post('/regulatory/tnved-okpd2/import/', body, {
+        params,
+        timeout: 600000,
+    });
+};
+
+export const fillOkpd2FromTnved = (params = {}) =>
+    api.post('/regulatory/okpd2-from-tnved/', null, {
+        params,
+        timeout: 600000,
+    });

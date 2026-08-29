@@ -16,6 +16,8 @@ import {
 import { InboxOutlined, ReloadOutlined } from '@ant-design/icons';
 import {
     applyCertificationRules,
+    fillOkpd2FromTnved,
+    importTnvedOkpd2Table,
     getRegulatoryCoverage,
     importRegulatoryFile,
     refreshFromRegistry,
@@ -43,6 +45,9 @@ const RegulatoryPage = () => {
 
     const [rulesResult, setRulesResult] = useState(null);
     const [rulesBusy, setRulesBusy] = useState(false);
+    const [okpdBusy, setOkpdBusy] = useState(false);
+    const [okpdResult, setOkpdResult] = useState(null);
+    const [tableResult, setTableResult] = useState(null);
 
     const [registryResult, setRegistryResult] = useState(null);
     const [registryBusy, setRegistryBusy] = useState(false);
@@ -86,6 +91,39 @@ const RegulatoryPage = () => {
             );
         } finally {
             setImporting(false);
+        }
+    };
+
+    const uploadTable = async (file) => {
+        setOkpdBusy(true);
+        try {
+            const { data } = await importTnvedOkpd2Table(file, {
+                dry_run: false,
+            });
+            setTableResult(data);
+            message.success(`Загружено строк: ${data.created}`);
+        } catch (error) {
+            message.error(
+                error?.response?.data?.detail || 'Не удалось загрузить таблицу'
+            );
+        } finally {
+            setOkpdBusy(false);
+        }
+        return false;
+    };
+
+    const runOkpd = async (dryRun) => {
+        setOkpdBusy(true);
+        try {
+            const { data } = await fillOkpd2FromTnved({ dry_run: dryRun });
+            setOkpdResult(data);
+            if (!dryRun) message.success(`Проставлено: ${data.updated}`);
+        } catch (error) {
+            message.error(
+                error?.response?.data?.detail || 'Не удалось проставить ОКПД 2'
+            );
+        } finally {
+            setOkpdBusy(false);
         }
     };
 
@@ -431,6 +469,81 @@ const RegulatoryPage = () => {
                                         <Statistic
                                             title="Требует"
                                             value={rulesResult.required}
+                                        />
+                                    </Space>
+                                )}
+                            </Card>
+                        ),
+                    },
+                    {
+                        key: 'okpd2',
+                        label: 'ОКПД 2 по ТН ВЭД',
+                        children: (
+                            <Card>
+                                <Alert
+                                    type="info"
+                                    showIcon
+                                    message="Таблицу соответствия нужно загрузить из официального источника"
+                                    description="Формулой ОКПД 2 из ТН ВЭД не считается — соответствие устанавливается опубликованной таблицей. Файл CSV с колонками «ТН ВЭД» и «ОКПД 2», разделитель — точка с запятой. Соответствие один ко многим, поэтому код проставляется только там, где он единственный; спорное остаётся вам."
+                                />
+                                <Space style={{ marginTop: 16 }} wrap>
+                                    <Upload
+                                        beforeUpload={uploadTable}
+                                        showUploadList={false}
+                                        accept=".csv"
+                                    >
+                                        <Button loading={okpdBusy}>
+                                            Загрузить таблицу
+                                        </Button>
+                                    </Upload>
+                                    <Button
+                                        onClick={() => runOkpd(true)}
+                                        loading={okpdBusy}
+                                    >
+                                        Предпросмотр
+                                    </Button>
+                                    <Button
+                                        type="primary"
+                                        disabled={!okpdResult}
+                                        onClick={() => runOkpd(false)}
+                                        loading={okpdBusy}
+                                    >
+                                        Проставить
+                                    </Button>
+                                </Space>
+                                {tableResult && (
+                                    <Space size={32} wrap style={{ marginTop: 16 }}>
+                                        <Statistic
+                                            title="Добавлено строк"
+                                            value={tableResult.created}
+                                        />
+                                        <Statistic
+                                            title="Уже было"
+                                            value={tableResult.existing}
+                                        />
+                                    </Space>
+                                )}
+                                {okpdResult && (
+                                    <Space size={32} wrap style={{ marginTop: 16 }}>
+                                        <Statistic
+                                            title="Строк в таблице"
+                                            value={okpdResult.table_rows}
+                                        />
+                                        <Statistic
+                                            title="Позиций с ТН ВЭД"
+                                            value={okpdResult.positions}
+                                        />
+                                        <Statistic
+                                            title="Будет проставлено"
+                                            value={okpdResult.updated}
+                                        />
+                                        <Statistic
+                                            title="Неоднозначных"
+                                            value={okpdResult.ambiguous}
+                                        />
+                                        <Statistic
+                                            title="Нет в таблице"
+                                            value={okpdResult.no_match}
                                         />
                                     </Space>
                                 )}
