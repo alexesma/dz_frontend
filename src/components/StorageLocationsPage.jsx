@@ -541,7 +541,7 @@ export default function StorageLocationsPage() {
         try {
             const [warehousesRes, locationsRes] = await Promise.all([
                 getWarehouses({ include_inactive: true }),
-                getStorageLocations({ skip: 0, limit: 500, include_autoparts: true }),
+                getStorageLocations({ skip: 0, limit: 500 }),
             ]);
             const warehouseRows = warehousesRes.data || [];
             const locationRows = locationsRes.data || [];
@@ -712,21 +712,10 @@ export default function StorageLocationsPage() {
             key: 'capacity',
             width: 160,
             render: (_, record) => {
-                const cnt = record.autoparts?.length ?? 0;
                 const cap = record.capacity;
-                if (!cap) return <Text type="secondary">{cnt} SKU</Text>;
-                const pct = Math.min(100, Math.round((cnt / cap) * 100));
-                return (
-                    <Tooltip title={`${cnt} / ${cap} SKU`}>
-                        <Progress
-                            percent={pct}
-                            size="small"
-                            status={cnt >= cap ? 'exception' : 'normal'}
-                            format={() => `${cnt}/${cap}`}
-                            style={{ width: 110 }}
-                        />
-                    </Tooltip>
-                );
+                return cap
+                    ? <Text type="secondary">до {cap} SKU</Text>
+                    : <Text type="secondary">—</Text>;
             },
         },
         {
@@ -909,7 +898,6 @@ export default function StorageLocationsPage() {
                     {shelfKeys.map((shelf) => {
                         const locs = shelves[shelf];
                         const totalCap = locs.reduce((s, l) => s + (l.capacity ?? 0), 0);
-                        const totalUsed = locs.reduce((s, l) => s + (l.autoparts?.length ?? 0), 0);
                         return (
                             <Panel
                                 key={shelf}
@@ -919,7 +907,7 @@ export default function StorageLocationsPage() {
                                         <Tag>{locs.length} ячеек</Tag>
                                         {totalCap > 0 && (
                                             <Text type="secondary" style={{ fontSize: 12 }}>
-                                                {totalUsed}/{totalCap} SKU
+                                                вместимость до {totalCap} SKU
                                             </Text>
                                         )}
                                     </Space>
