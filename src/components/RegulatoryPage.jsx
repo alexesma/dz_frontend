@@ -342,6 +342,14 @@ const RegulatoryPage = () => {
                                                 title="Ручной ввод сохранён"
                                                 value={importResult.skipped_manual}
                                             />
+                                            <Statistic
+                                                title="Связано сертификатов"
+                                                value={importResult.links_created || 0}
+                                            />
+                                            <Statistic
+                                                title="Связано категорий ЧЗ"
+                                                value={importResult.honest_sign_linked || 0}
+                                            />
                                         </Space>
                                         {!!Object.keys(
                                             importResult.unmatched_brands || {}
@@ -365,6 +373,40 @@ const RegulatoryPage = () => {
                                                             .join(', ')}
                                                     </Text>
                                                 )}
+                                            />
+                                        )}
+                                        {importResult.certificate_links_rejected > 0 && (
+                                            <Alert
+                                                style={{ marginTop: 16 }}
+                                                type="error"
+                                                showIcon
+                                                message={`Отклонено связей с сертификатами: ${importResult.certificate_links_rejected}`}
+                                                description="Документ относится к другому бренду или сейчас не действует. Такая связь не записана; позицию нужно проверить вручную."
+                                            />
+                                        )}
+                                        {!!Object.keys(
+                                            importResult.honest_sign_unknown || {}
+                                        ).length && (
+                                            <Alert
+                                                style={{ marginTop: 16 }}
+                                                type="warning"
+                                                showIcon
+                                                message="Не распознаны категории «Честного знака»"
+                                                description={Object.entries(
+                                                    importResult.honest_sign_unknown
+                                                )
+                                                    .slice(0, 8)
+                                                    .map(([category, count]) => `${category} (${count})`)
+                                                    .join(', ')}
+                                            />
+                                        )}
+                                        {importResult.honest_sign_flag_only > 0 && (
+                                            <Alert
+                                                style={{ marginTop: 16 }}
+                                                type="info"
+                                                showIcon
+                                                message={`В ${importResult.honest_sign_flag_only} строках указан только признак ЧЗ`}
+                                                description="Значение «да/нет» не определяет категорию маркировки, поэтому категория не назначалась автоматически."
                                             />
                                         )}
                                     </div>
