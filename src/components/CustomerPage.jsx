@@ -88,8 +88,10 @@ const CustomerPage = () => {
 
     const [loading, setLoading] = useState(!isNew);
     // Какая конфигурация сейчас собирается: сборка идёт минутами,
-    // и без индикатора кнопка выглядит не нажатой.
-    const [busyConfigId, setBusyConfigId] = useState(null);
+    // и без индикатора кнопка выглядит не нажатой. Признаки раздельные —
+    // общий заставлял крутиться обе кнопки сразу.
+    const [sendingConfigId, setSendingConfigId] = useState(null);
+    const [downloadingConfigId, setDownloadingConfigId] = useState(null);
     const [saving, setSaving] = useState(false);
     const [customerData, setCustomerData] = useState(null);
     const [loadError, setLoadError] = useState('');
@@ -1365,7 +1367,7 @@ const CustomerPage = () => {
 
     const handleSendNow = async (configId) => {
         if (!customerId) return;
-        setBusyConfigId(configId);
+        setSendingConfigId(configId);
         try {
             await sendCustomerPricelistNow(customerId, configId);
             message.success('Прайс отправлен');
@@ -1373,13 +1375,13 @@ const CustomerPage = () => {
             console.error(err);
             message.error(await describeError(err, 'Ошибка отправки прайса'));
         } finally {
-            setBusyConfigId(null);
+            setSendingConfigId(null);
         }
     };
 
     const handleDownloadPricelist = async (configId) => {
         if (!customerId) return;
-        setBusyConfigId(configId);
+        setDownloadingConfigId(configId);
         try {
             const response = await buildCustomerPricelistFile(
                 customerId,
@@ -1400,7 +1402,7 @@ const CustomerPage = () => {
             console.error(err);
             message.error(await describeError(err, 'Ошибка сборки прайса'));
         } finally {
-            setBusyConfigId(null);
+            setDownloadingConfigId(null);
         }
     };
 
@@ -1475,7 +1477,7 @@ const CustomerPage = () => {
                         size="small"
                         icon={<DownloadOutlined />}
                         title="Скачать прайс, не отправляя"
-                        loading={busyConfigId === record.id}
+                        loading={downloadingConfigId === record.id}
                         onClick={() => handleDownloadPricelist(record.id)}
                     />
                     <Button
@@ -1483,7 +1485,7 @@ const CustomerPage = () => {
                         size="small"
                         icon={<SendOutlined />}
                         title="Отправить прайс получателям"
-                        loading={busyConfigId === record.id}
+                        loading={sendingConfigId === record.id}
                         onClick={() => handleSendNow(record.id)}
                     />
                     <Popconfirm
