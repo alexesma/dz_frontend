@@ -541,7 +541,7 @@ export default function StorageLocationsPage() {
         try {
             const [warehousesRes, locationsRes] = await Promise.all([
                 getWarehouses({ include_inactive: true }),
-                getStorageLocations({ skip: 0, limit: 500 }),
+                getStorageLocations({ skip: 0, limit: 500, include_autoparts: true }),
             ]);
             const warehouseRows = warehousesRes.data || [];
             const locationRows = locationsRes.data || [];

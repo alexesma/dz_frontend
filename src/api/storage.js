@@ -6,9 +6,13 @@ export const getStorageLocations = (skipOrParams = 0, limit = 200) => {
         && typeof skipOrParams === 'object'
         && !Array.isArray(skipOrParams)
     ) {
-        return api.get('/storage/', { params: skipOrParams });
+        return api.get('/storage/', {
+            params: { include_autoparts: false, ...skipOrParams },
+        });
     }
-    return api.get('/storage/', { params: { skip: skipOrParams, limit } });
+    return api.get('/storage/', {
+        params: { skip: skipOrParams, limit, include_autoparts: false },
+    });
 };
 
 export const getStorageLocation = (id) =>
