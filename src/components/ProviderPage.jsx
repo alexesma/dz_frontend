@@ -1896,6 +1896,7 @@ const ProviderPage = () => {
         processing: { label: 'Публикуется', color: 'processing' },
         approved: { label: 'Принят', color: 'green' },
         rejected: { label: 'Отклонён', color: 'red' },
+        superseded: { label: 'Заменён новым', color: 'default' },
     };
 
     const formatReviewMoney = (value) => {

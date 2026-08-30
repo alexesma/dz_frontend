@@ -25,6 +25,7 @@ import {
 import {
     CloudDownloadOutlined,
     CheckCircleOutlined,
+    DeleteOutlined,
     FileSearchOutlined,
     FilterOutlined,
     HolderOutlined,
@@ -37,7 +38,9 @@ import {
 import {
     approveCustomerPricelistDraft,
     buildCustomerPricelistDraft,
+    createCustomerPricelistSource,
     deleteCustomerPricelistPublicationRule,
+    deleteCustomerPricelistSource,
     diagnoseCustomerPricelistPosition,
     downloadCustomerPricelistDraft,
     getCustomerPricelistConfigs,
@@ -205,6 +208,8 @@ const CustomerPricelistStudioPage = () => {
     const [customerId, setCustomerId] = useState(null);
     const [configId, setConfigId] = useState(null);
     const [sources, setSources] = useState([]);
+    const [sourceToAdd, setSourceToAdd] = useState(null);
+    const [addingSource, setAddingSource] = useState(false);
     const [rules, setRules] = useState([]);
     const [drafts, setDrafts] = useState([]);
     const [selectedDraftId, setSelectedDraftId] = useState(null);
@@ -241,6 +246,12 @@ const CustomerPricelistStudioPage = () => {
         () => drafts.find((item) => item.id === selectedDraftId) || null,
         [drafts, selectedDraftId]
     );
+    const availableProviderOptions = useMemo(() => {
+        const connected = new Set(
+            sources.map((source) => Number(source.provider_config_id))
+        );
+        return providerOptions.filter((item) => !connected.has(Number(item.id)));
+    }, [providerOptions, sources]);
 
     const loadInitial = useCallback(async () => {
         try {
@@ -441,6 +452,7 @@ const CustomerPricelistStudioPage = () => {
     const handleCustomerChange = async (value) => {
         setCustomerId(value);
         setConfigId(null);
+        setSourceToAdd(null);
         setConfigs([]);
         setSources([]);
         setRules([]);
@@ -451,6 +463,7 @@ const CustomerPricelistStudioPage = () => {
 
     const handleConfigChange = async (value) => {
         setConfigId(value);
+        setSourceToAdd(null);
         setDraftRowsPage(1);
         await loadWorkspace(customerId, value);
     };
@@ -583,6 +596,45 @@ const CustomerPricelistStudioPage = () => {
         setSources((previous) => previous.map((source) => (
             source.id === sourceId ? { ...source, ...patch } : source
         )));
+    };
+
+    const handleAddSource = async () => {
+        if (!customerId || !configId || !sourceToAdd) return;
+        setAddingSource(true);
+        try {
+            const { data } = await createCustomerPricelistSource(
+                customerId,
+                configId,
+                {
+                    provider_config_id: sourceToAdd,
+                    enabled: true,
+                    markup: 1,
+                }
+            );
+            setSources((previous) => [...previous, data]);
+            setSourceToAdd(null);
+            message.success(
+                `Источник «${data.provider_name} · ${data.provider_config_name || data.provider_config_id}» подключён`
+            );
+        } catch (error) {
+            message.error(getErrorText(error, 'Не удалось подключить источник'));
+        } finally {
+            setAddingSource(false);
+        }
+    };
+
+    const handleDeleteSource = async (source) => {
+        try {
+            await deleteCustomerPricelistSource(
+                customerId,
+                configId,
+                source.id
+            );
+            setSources((previous) => previous.filter((item) => item.id !== source.id));
+            message.success('Источник отключён от прайса клиента');
+        } catch (error) {
+            message.error(getErrorText(error, 'Не удалось удалить источник'));
+        }
     };
 
     const handleSaveSource = async (source) => {
@@ -1459,9 +1511,28 @@ const CustomerPricelistStudioPage = () => {
         },
         {
             title: '',
-            width: 60,
+            width: 110,
             render: (_, row) => (
-                <Button icon={<SaveOutlined />} onClick={() => handleSaveSource(row)} />
+                <Space size={4}>
+                    <Button
+                        title="Сохранить источник"
+                        icon={<SaveOutlined />}
+                        onClick={() => handleSaveSource(row)}
+                    />
+                    <Popconfirm
+                        title="Отключить источник?"
+                        description="Настройки фильтров этого источника будут удалены."
+                        okText="Отключить"
+                        cancelText="Отмена"
+                        onConfirm={() => handleDeleteSource(row)}
+                    >
+                        <Button
+                            danger
+                            title="Отключить источник"
+                            icon={<DeleteOutlined />}
+                        />
+                    </Popconfirm>
+                </Space>
             ),
         },
     ];
@@ -1714,14 +1785,54 @@ const CustomerPricelistStudioPage = () => {
                                 key: 'sources',
                                 label: `Источники (${sources.length})`,
                                 children: (
-                                    <Table
-                                        rowKey="id"
-                                        loading={loading}
-                                        columns={sourceColumns}
-                                        dataSource={normalizedSources}
-                                        pagination={false}
-                                        scroll={{ x: 820 }}
-                                    />
+                                    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                                        <Card size="small" title="Подключить прайс поставщика">
+                                            <Space wrap style={{ width: '100%' }}>
+                                                <Select
+                                                    showSearch
+                                                    allowClear
+                                                    value={sourceToAdd}
+                                                    placeholder="Найдите поставщика или название прайса"
+                                                    optionFilterProp="label"
+                                                    style={{ width: 'min(520px, 100%)', minWidth: 240 }}
+                                                    onChange={setSourceToAdd}
+                                                    options={availableProviderOptions.map((item) => ({
+                                                        value: item.id,
+                                                        label: `${item.provider_name} · ${item.name_price || `конфигурация ${item.id}`}`,
+                                                    }))}
+                                                    notFoundContent={providerOptions.length
+                                                        ? 'Все доступные прайсы уже подключены'
+                                                        : 'Конфигурации прайсов поставщиков не найдены'}
+                                                />
+                                                <Button
+                                                    type="primary"
+                                                    icon={<PlusOutlined />}
+                                                    disabled={!sourceToAdd}
+                                                    loading={addingSource}
+                                                    onClick={handleAddSource}
+                                                >
+                                                    Подключить источник
+                                                </Button>
+                                                <Button
+                                                    icon={<ReloadOutlined />}
+                                                    onClick={loadInitial}
+                                                >
+                                                    Обновить список прайсов
+                                                </Button>
+                                            </Space>
+                                        </Card>
+                                        <Table
+                                            rowKey="id"
+                                            loading={loading}
+                                            columns={sourceColumns}
+                                            dataSource={normalizedSources}
+                                            pagination={false}
+                                            locale={{
+                                                emptyText: 'Источники пока не подключены. Выберите прайс выше.',
+                                            }}
+                                            scroll={{ x: 900 }}
+                                        />
+                                    </Space>
                                 ),
                             },
                             {

@@ -10,6 +10,7 @@ import {
     Input,
     List,
     Modal,
+    Popconfirm,
     Select,
     Space,
     Switch,
@@ -23,7 +24,9 @@ import {
 import {
     BellOutlined,
     CheckOutlined,
+    CloseOutlined,
     ClockCircleOutlined,
+    DownloadOutlined,
     NotificationOutlined,
     UploadOutlined,
 } from '@ant-design/icons';
@@ -40,6 +43,11 @@ import {
     postponeReclamationShortage,
     uploadReclamationShortageEvidence,
 } from '../api/reclamations';
+import {
+    approveProviderPricelistReview,
+    downloadProviderPricelistReview,
+    rejectProviderPricelistReview,
+} from '../api/providers';
 
 const POLL_INTERVAL_MS = 30000;
 const MAX_NOTIFICATIONS = 50;
@@ -113,6 +121,30 @@ const isBlockedPricelistNotification = (item) => (
     && String(item.title || '').startsWith(PRICELIST_BLOCKED_PREFIX)
 );
 
+const getBlockedPricelistReference = (item) => {
+    const payload = item?.payload || {};
+    const payloadProviderId = Number(payload.provider_id);
+    const payloadReviewId = Number(payload.review_id);
+    if (payloadProviderId > 0 && payloadReviewId > 0) {
+        return {
+            providerId: payloadProviderId,
+            reviewId: payloadReviewId,
+        };
+    }
+    const match = String(item?.link || '').match(
+        /\/providers\/(\d+)\/edit\?pricelist_review=(\d+)/
+    );
+    return match
+        ? { providerId: Number(match[1]), reviewId: Number(match[2]) }
+        : null;
+};
+
+const getBlockedPricelistGroupKey = (item) => (
+    item?.payload?.provider_config_id
+        ? `config:${item.payload.provider_config_id}`
+        : String(item?.title || '')
+);
+
 const getNotificationPriority = (item) => {
     if (isWatchlistPriceNotification(item)) {
         return 2;
@@ -158,6 +190,10 @@ const NotificationCenter = () => {
     const [shortageEvidence, setShortageEvidence] = useState([]);
     const [shortagePostponeMinutes, setShortagePostponeMinutes] = useState(15);
     const [shortageActionLoading, setShortageActionLoading] = useState(false);
+    const [blockedActionLoading, setBlockedActionLoading] = useState(false);
+    const [blockedDownloadLoading, setBlockedDownloadLoading] = useState(false);
+    const [blockedRejectOpen, setBlockedRejectOpen] = useState(false);
+    const [blockedRejectReason, setBlockedRejectReason] = useState('');
     const initializedRef = useRef(false);
     const seenIdsRef = useRef(new Set());
     const titleFlashIntervalRef = useRef(null);
@@ -530,11 +566,25 @@ const NotificationCenter = () => {
         ),
         [sortedItems, watchlistOnlyEnabled]
     );
-    const blockedPricelistItem = useMemo(
-        () => sortedItems.find(
-            (item) => !item.read_at && isBlockedPricelistNotification(item)
-        ) || null,
-        [sortedItems]
+    const blockedPricelistItems = useMemo(() => {
+        const groups = new Set();
+        return sortedItems.filter((item) => {
+            if (item.read_at || !isBlockedPricelistNotification(item)) {
+                return false;
+            }
+            const groupKey = getBlockedPricelistGroupKey(item);
+            if (groups.has(groupKey)) {
+                return false;
+            }
+            groups.add(groupKey);
+            return true;
+        });
+    }, [sortedItems]);
+    const blockedPricelistItem = blockedPricelistItems[0] || null;
+    const blockedPricelistPayload = blockedPricelistItem?.payload || {};
+    const blockedPricelistReference = useMemo(
+        () => getBlockedPricelistReference(blockedPricelistItem),
+        [blockedPricelistItem]
     );
     const shortageNotificationItem = useMemo(
         () => sortedItems.find(
@@ -556,6 +606,11 @@ const NotificationCenter = () => {
         setShortageEvidence([]);
         setShortagePostponeMinutes(15);
     }, [shortageNotificationItem?.id]);
+
+    useEffect(() => {
+        setBlockedRejectOpen(false);
+        setBlockedRejectReason('');
+    }, [blockedPricelistItem?.id]);
 
     const finishShortageNotification = useCallback(async () => {
         if (!shortageNotificationItem) {
@@ -635,24 +690,100 @@ const NotificationCenter = () => {
         shortagePostponeMinutes,
     ]);
 
-    const acknowledgeBlockedPricelist = useCallback(async (openDetails = false) => {
-        if (!blockedPricelistItem) {
+    const finishBlockedPricelistAction = useCallback(async () => {
+        if (!blockedPricelistItem) return;
+        try {
+            const result = await markNotificationRead(blockedPricelistItem.id);
+            updateReadState(blockedPricelistItem.id, result.read_at);
+        } catch (err) {
+            // Endpoint решения уже закрывает уведомления на сервере. Если
+            // локальная отметка не удалась, следующий poll синхронизирует UI.
+            console.debug('Pricelist notification was already closed', err);
+        }
+        await fetchNotificationState({ silent: true });
+    }, [
+        blockedPricelistItem,
+        fetchNotificationState,
+        updateReadState,
+    ]);
+
+    const handleApproveBlockedPricelist = useCallback(async () => {
+        if (!blockedPricelistReference) return;
+        setBlockedActionLoading(true);
+        try {
+            await approveProviderPricelistReview(
+                blockedPricelistReference.providerId,
+                blockedPricelistReference.reviewId,
+                'Проверено и принято из центрального уведомления'
+            );
+            message.success('Прайс принят и опубликован');
+            await finishBlockedPricelistAction();
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail
+                || 'Не удалось принять и опубликовать прайс'
+            );
+        } finally {
+            setBlockedActionLoading(false);
+        }
+    }, [blockedPricelistReference, finishBlockedPricelistAction]);
+
+    const handleRejectBlockedPricelist = useCallback(async () => {
+        const reason = blockedRejectReason.trim();
+        if (!blockedPricelistReference || reason.length < 3) {
+            message.warning('Укажите причину отклонения');
             return;
         }
-        if (!blockedPricelistItem.read_at) {
-            try {
-                const result = await markNotificationRead(blockedPricelistItem.id);
-                updateReadState(blockedPricelistItem.id, result.read_at);
-            } catch (err) {
-                console.error('Failed to acknowledge pricelist alert', err);
-                message.error('Не удалось подтвердить предупреждение.');
-                return;
-            }
+        setBlockedActionLoading(true);
+        try {
+            await rejectProviderPricelistReview(
+                blockedPricelistReference.providerId,
+                blockedPricelistReference.reviewId,
+                reason
+            );
+            setBlockedRejectOpen(false);
+            setBlockedRejectReason('');
+            message.success('Прайс отклонён, действующий прайс не изменён');
+            await finishBlockedPricelistAction();
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail || 'Не удалось отклонить прайс'
+            );
+        } finally {
+            setBlockedActionLoading(false);
         }
-        if (openDetails && blockedPricelistItem.link) {
-            navigateByLink(blockedPricelistItem.link);
+    }, [
+        blockedPricelistReference,
+        blockedRejectReason,
+        finishBlockedPricelistAction,
+    ]);
+
+    const handleDownloadBlockedPricelist = useCallback(async () => {
+        if (!blockedPricelistReference) return;
+        setBlockedDownloadLoading(true);
+        try {
+            const { data } = await downloadProviderPricelistReview(
+                blockedPricelistReference.providerId,
+                blockedPricelistReference.reviewId
+            );
+            const objectUrl = URL.createObjectURL(data);
+            const anchor = document.createElement('a');
+            anchor.href = objectUrl;
+            anchor.download = blockedPricelistPayload.source_filename
+                || 'pricelist';
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            URL.revokeObjectURL(objectUrl);
+            message.success('Файл скачан без публикации');
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail || 'Не удалось скачать прайс'
+            );
+        } finally {
+            setBlockedDownloadLoading(false);
         }
-    }, [blockedPricelistItem, navigateByLink, updateReadState]);
+    }, [blockedPricelistPayload.source_filename, blockedPricelistReference]);
 
     if (!isAuthenticated) {
         return null;
@@ -662,30 +793,51 @@ const NotificationCenter = () => {
         <>
             {contextHolder}
             <Modal
-                open={Boolean(blockedPricelistItem)}
+                open={Boolean(blockedPricelistItem) && !blockedRejectOpen}
                 centered
+                width={920}
                 closable={false}
                 maskClosable={false}
                 keyboard={false}
-                title="Заблокировано подозрительное обновление прайса"
+                title={`Проверка обновления прайса${
+                    blockedPricelistItems.length > 1
+                        ? ` · в очереди ${blockedPricelistItems.length}`
+                        : ''
+                }`}
                 footer={(
                     <Space wrap>
                         <Button
-                            onClick={() => {
-                                void acknowledgeBlockedPricelist(false);
-                            }}
+                            icon={<DownloadOutlined />}
+                            loading={blockedDownloadLoading}
+                            disabled={!blockedPricelistReference}
+                            onClick={() => void handleDownloadBlockedPricelist()}
                         >
-                            Понятно
+                            Скачать и проверить
                         </Button>
                         <Button
-                            type="primary"
                             danger
-                            onClick={() => {
-                                void acknowledgeBlockedPricelist(true);
-                            }}
+                            icon={<CloseOutlined />}
+                            disabled={!blockedPricelistReference}
+                            onClick={() => setBlockedRejectOpen(true)}
                         >
-                            Открыть поставщика
+                            Отклонить
                         </Button>
+                        <Popconfirm
+                            title="Принять и опубликовать этот файл?"
+                            description="Он станет новым действующим прайсом и базой следующего сравнения."
+                            okText="Принять"
+                            cancelText="Отмена"
+                            onConfirm={handleApproveBlockedPricelist}
+                        >
+                            <Button
+                                type="primary"
+                                icon={<CheckOutlined />}
+                                loading={blockedActionLoading}
+                                disabled={!blockedPricelistReference}
+                            >
+                                Принять и опубликовать
+                            </Button>
+                        </Popconfirm>
                     </Space>
                 )}
             >
@@ -695,10 +847,85 @@ const NotificationCenter = () => {
                 <Typography.Paragraph style={{ whiteSpace: 'pre-line' }}>
                     {blockedPricelistItem?.message}
                 </Typography.Paragraph>
-                <Typography.Text type="secondary">
-                    Автоматическая загрузка остановлена до проверки. Действующий
-                    прайс и его история не изменены.
-                </Typography.Text>
+                {(blockedPricelistPayload.examples || []).length > 0 && (
+                    <Table
+                        style={{ marginTop: 16 }}
+                        size="small"
+                        rowKey={(row) => `${row.brand}-${row.oem_number}`}
+                        pagination={false}
+                        dataSource={(blockedPricelistPayload.examples || []).slice(0, 10)}
+                        scroll={{ x: 700 }}
+                        columns={[
+                            {
+                                title: 'Бренд',
+                                dataIndex: 'brand',
+                                width: 130,
+                            },
+                            {
+                                title: 'Артикул / наименование',
+                                key: 'position',
+                                render: (_, row) => (
+                                    <div>
+                                        <Typography.Text strong>
+                                            {row.oem_number}
+                                        </Typography.Text>
+                                        <div>{row.name || '—'}</div>
+                                    </div>
+                                ),
+                            },
+                            {
+                                title: 'Кол-во',
+                                dataIndex: 'quantity',
+                                width: 85,
+                            },
+                            {
+                                title: 'Цена',
+                                dataIndex: 'price',
+                                width: 110,
+                            },
+                            {
+                                title: 'Изменение',
+                                dataIndex: 'price_change_percent',
+                                width: 110,
+                                render: (value) => (
+                                    value == null ? 'Новая' : `${value > 0 ? '+' : ''}${value}%`
+                                ),
+                            },
+                        ]}
+                    />
+                )}
+                <Alert
+                    style={{ marginTop: 16 }}
+                    type="warning"
+                    showIcon
+                    message="Сначала примите или отклоните этот файл"
+                    description="Следующий прайс из очереди появится только после сохранения решения. Действующий прайс до принятия не меняется."
+                />
+            </Modal>
+            <Modal
+                open={Boolean(blockedPricelistItem) && blockedRejectOpen}
+                centered
+                title="Отклонить обновление прайса"
+                okText="Отклонить"
+                okButtonProps={{
+                    danger: true,
+                    loading: blockedActionLoading,
+                    disabled: blockedRejectReason.trim().length < 3,
+                }}
+                cancelText="Вернуться"
+                onOk={() => void handleRejectBlockedPricelist()}
+                onCancel={() => setBlockedRejectOpen(false)}
+            >
+                <Typography.Paragraph>
+                    Укажите причину. Она сохранится в истории проверки.
+                </Typography.Paragraph>
+                <Input.TextArea
+                    rows={4}
+                    maxLength={4000}
+                    value={blockedRejectReason}
+                    placeholder="Например: поставщик прислал неполный файл"
+                    onChange={(event) => setBlockedRejectReason(event.target.value)}
+                />
             </Modal>
             <Modal
                 open={Boolean(
