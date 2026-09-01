@@ -57,6 +57,7 @@ import {
     updateCustomerPricelistSource,
 } from '../api/customers';
 import { getBrands } from '../api/brands';
+import { getEmailAccounts } from '../api/emailAccounts';
 import { getProviderConfigOptions } from '../api/providers';
 import { formatMoscow } from '../utils/time';
 import './CustomerPricelistStudioPage.css';
@@ -204,6 +205,7 @@ const CustomerPricelistStudioPage = () => {
     const [customers, setCustomers] = useState([]);
     const [configs, setConfigs] = useState([]);
     const [providerOptions, setProviderOptions] = useState([]);
+    const [outgoingEmailAccounts, setOutgoingEmailAccounts] = useState([]);
     const [brandOptions, setBrandOptions] = useState([]);
     const [customerId, setCustomerId] = useState(null);
     const [configId, setConfigId] = useState(null);
@@ -255,7 +257,12 @@ const CustomerPricelistStudioPage = () => {
 
     const loadInitial = useCallback(async () => {
         try {
-            const [customersResponse, providerResponse, brandsResponse] = await Promise.all([
+            const [
+                customersResponse,
+                providerResponse,
+                brandsResponse,
+                emailAccountsResponse,
+            ] = await Promise.all([
                 getCustomersSummary({
                     page: 1,
                     page_size: 200,
@@ -264,6 +271,7 @@ const CustomerPricelistStudioPage = () => {
                 }),
                 getProviderConfigOptions(),
                 getBrands(),
+                getEmailAccounts(),
             ]);
             setCustomers(customersResponse.data?.items || []);
             setProviderOptions(providerResponse.data || []);
@@ -271,6 +279,13 @@ const CustomerPricelistStudioPage = () => {
                 value: brand.id,
                 label: brand.name,
             })));
+            setOutgoingEmailAccounts((emailAccountsResponse.data || []).filter((account) => {
+                if (!account?.is_active) return false;
+                const purposes = account.purposes || [];
+                return ['prices_out', 'orders_out', 'orders_in'].some(
+                    (purpose) => purposes.includes(purpose)
+                );
+            }));
         } catch (error) {
             message.error(getErrorText(error, 'Не удалось загрузить справочники'));
         }
@@ -335,6 +350,8 @@ const CustomerPricelistStudioPage = () => {
             collapse_duplicates_by_min_price:
                 activeConfig.collapse_duplicates_by_min_price !== false,
             emails: activeConfig.emails || [],
+            outgoing_email_account_id:
+                activeConfig.outgoing_email_account_id || null,
             schedule_days: activeConfig.schedule_days || [],
             schedule_times: activeConfig.schedule_times || [],
             zzap_enabled: Boolean(extra.ZZAP),
@@ -540,6 +557,8 @@ const CustomerPricelistStudioPage = () => {
                     collapse_duplicates_by_min_price:
                         values.collapse_duplicates_by_min_price,
                     emails: values.emails || [],
+                    outgoing_email_account_id:
+                        values.outgoing_email_account_id || null,
                     schedule_days: values.schedule_days || [],
                     schedule_times: values.schedule_times || [],
                     additional_filters: additionalFilters,
@@ -548,7 +567,19 @@ const CustomerPricelistStudioPage = () => {
             setConfigs((previous) => previous.map((item) => (
                 item.id === configId ? data : item
             )));
-            message.success('Настройки прайса сохранены');
+            const requestedAccountId = values.outgoing_email_account_id || null;
+            const savedAccountId = data.outgoing_email_account_id || null;
+            if (requestedAccountId !== savedAccountId) {
+                throw new Error(
+                    'Сервер не подтвердил сохранение почты отправителя. Обновите страницу и повторите.'
+                );
+            }
+            const sender = outgoingEmailAccounts.find(
+                (account) => account.id === savedAccountId
+            );
+            message.success(sender
+                ? `Настройки сохранены. Отправитель: ${sender.email}`
+                : 'Настройки сохранены. Используется почта отправителя по умолчанию');
         } catch (error) {
             message.error(getErrorText(error, 'Не удалось сохранить настройки'));
         } finally {
@@ -1028,6 +1059,24 @@ const CustomerPricelistStudioPage = () => {
                 <Col xs={24} md={8}>
                     <Form.Item name="emails" label="Получатели">
                         <Select mode="tags" tokenSeparators={[',', ';']} />
+                    </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                    <Form.Item
+                        name="outgoing_email_account_id"
+                        label="Почта отправителя"
+                        extra="Письмо будет отправлено именно с выбранного ящика."
+                    >
+                        <Select
+                            allowClear
+                            showSearch
+                            optionFilterProp="label"
+                            placeholder="Использовать ящик по умолчанию"
+                            options={outgoingEmailAccounts.map((account) => ({
+                                value: account.id,
+                                label: `${account.name} (${account.email})`,
+                            }))}
+                        />
                     </Form.Item>
                 </Col>
                 <Col xs={24} md={12}>
@@ -1697,6 +1746,12 @@ const CustomerPricelistStudioPage = () => {
             dataIndex: 'quantity',
             width: 90,
             sorter: false,
+        },
+        {
+            title: 'Кратность',
+            dataIndex: 'multiplicity',
+            width: 100,
+            render: (value) => Number(value || 1),
         },
         {
             title: 'Цена',
