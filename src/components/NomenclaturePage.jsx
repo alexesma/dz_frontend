@@ -473,102 +473,96 @@ const NomenclaturePage = () => {
             title: 'Бренд',
             dataIndex: 'brand_name',
             key: 'brand',
-            width: 100,
-            render: (v) => <Tag color="blue">{v}</Tag>,
+            width: 112,
+            responsive: ['sm'],
+            ellipsis: true,
+            render: (v) => (
+                <Tooltip title={v}>
+                    <Tag
+                        color="blue"
+                        style={{
+                            maxWidth: '100%',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                        }}
+                    >
+                        {v}
+                    </Tag>
+                </Tooltip>
+            ),
         },
         {
             title: 'Артикул (OEM)',
             dataIndex: 'oem_number',
             key: 'oem',
-            width: 140,
-            render: (v) => <Text code>{v}</Text>,
+            width: 155,
+            ellipsis: true,
+            render: (v) => (
+                <Tooltip title={v}>
+                    <Text code style={{ whiteSpace: 'nowrap' }}>{v}</Text>
+                </Tooltip>
+            ),
         },
         {
             title: 'Наименование',
             dataIndex: 'name',
             key: 'name',
-            ellipsis: true,
+            ellipsis: { showTitle: false },
+            render: (v) => <Tooltip title={v}>{v || '—'}</Tooltip>,
         },
         {
-            title: 'Закуп',
-            dataIndex: 'purchase_price',
-            key: 'purchase_price',
-            width: 95,
+            title: 'Цены',
+            key: 'prices',
+            width: 132,
             align: 'right',
-            render: (v) => fmtPrice(v),
+            responsive: ['md'],
+            render: (_, record) => (
+                <div style={{ lineHeight: 1.45, whiteSpace: 'nowrap' }}>
+                    <div><Text type="secondary">Закуп:</Text> {fmtPrice(record.purchase_price)}</div>
+                    <div><Text type="secondary">Розн.:</Text> {fmtPrice(record.retail_price)}</div>
+                </div>
+            ),
         },
         {
-            title: 'Розница',
-            dataIndex: 'retail_price',
-            key: 'retail_price',
-            width: 95,
-            align: 'right',
-            render: (v) => fmtPrice(v),
-        },
-        {
-            title: 'Остаток',
-            dataIndex: 'stock_quantity',
+            title: 'Склад',
             key: 'stock',
-            width: 80,
-            align: 'center',
-            render: (v, record) => {
-                const qty = v ?? 0;
+            width: 145,
+            responsive: ['md'],
+            render: (_, record) => {
+                const qty = record.stock_quantity ?? 0;
                 const minBal = record.minimum_balance ?? 0;
                 let color = '#000';
                 if (minBal > 0) {
                     color = qty === 0 ? '#cf1322' : qty < minBal ? '#d46b08' : '#389e0d';
                 }
-                return <span style={{ color, fontWeight: 600 }}>{qty}</span>;
+                const locations = record.storage_locations || [];
+                return (
+                    <div style={{ lineHeight: 1.45 }}>
+                        <div>
+                            <Text type="secondary">Ост.:</Text>{' '}
+                            <span style={{ color, fontWeight: 600 }}>{qty}</span>
+                            <Text type="secondary"> / мин. {minBal}</Text>
+                            {record.min_balance_auto && (
+                                <Tooltip title="Минимальный остаток рассчитан автоматически">
+                                    <Tag color="cyan" style={{ marginLeft: 4, marginRight: 0 }}>A</Tag>
+                                </Tooltip>
+                            )}
+                        </div>
+                        <Tooltip title={locations.length ? locations.join(', ') : 'Место не указано'}>
+                            <Text type="secondary" ellipsis style={{ display: 'block', maxWidth: 132 }}>
+                                {locations.length ? locations.join(', ') : 'Без места'}
+                            </Text>
+                        </Tooltip>
+                    </div>
+                );
             },
         },
         {
-            title: 'Мин.остаток',
-            dataIndex: 'minimum_balance',
-            key: 'min_balance',
-            width: 95,
-            align: 'center',
-            render: (v, record) => (
-                <span>
-                    {v ?? 0}
-                    {record.min_balance_auto && (
-                        <Tooltip title="Авто-расчёт">
-                            <Tag color="cyan" style={{ marginLeft: 4, fontSize: 10 }}>A</Tag>
-                        </Tooltip>
-                    )}
-                </span>
-            ),
-        },
-        {
-            title: 'Место хранения',
-            dataIndex: 'storage_locations',
-            key: 'storage',
-            width: 130,
-            render: (locs) =>
-                (locs || []).map((l) => (
-                    <Tag key={l} style={{ marginBottom: 2, fontSize: 11 }}>{l}</Tag>
-                )),
-        },
-        {
-            title: 'Категории',
-            dataIndex: 'categories',
-            key: 'categories',
-            width: 130,
-            render: (cats) =>
-                (cats || []).map((c) => (
-                    <Tag key={c} style={{ marginBottom: 2, fontSize: 11 }}>{c}</Tag>
-                )),
-        },
-        {
-            title: 'ЧЗ',
-            dataIndex: 'honest_sign_category',
-            key: 'hz',
-            width: 80,
-            render: (v) => v ? <Tag color="purple" style={{ fontSize: 11 }}>{v}</Tag> : null,
-        },
-        {
-            title: 'Реквизиты',
-            key: 'regulatory',
+            title: 'Данные',
+            key: 'data',
             width: 150,
+            responsive: ['lg'],
             render: (_, record) => {
                 // Показываем, чего не хватает для выгрузки прайса: пустые
                 // реквизиты попадут в файл клиенту пустыми колонками.
@@ -579,15 +573,28 @@ const NomenclaturePage = () => {
                     && !record.eac_cert_number) {
                     missing.push('сертификат');
                 }
-                if (!missing.length) {
-                    return <Tag color="green" style={{ fontSize: 11 }}>заполнено</Tag>;
-                }
+                const categories = record.categories || [];
+                const honestSign = record.honest_sign_category;
                 return (
-                    <Tooltip title={`Не заполнено: ${missing.join(', ')}`}>
-                        <Tag color="orange" style={{ fontSize: 11 }}>
-                            нет {missing.length} из 3
-                        </Tag>
-                    </Tooltip>
+                    <div style={{ lineHeight: 1.45 }}>
+                        <Tooltip title={categories.length ? categories.join(', ') : 'Категория не указана'}>
+                            <Text ellipsis style={{ display: 'block', maxWidth: 138 }}>
+                                {categories.length ? categories.join(', ') : 'Без категории'}
+                            </Text>
+                        </Tooltip>
+                        <Space size={4} wrap={false}>
+                            {honestSign && <Tag color="purple" style={{ marginRight: 0 }}>ЧЗ</Tag>}
+                            <Tooltip
+                                title={missing.length
+                                    ? `Не заполнено: ${missing.join(', ')}`
+                                    : 'Реквизиты заполнены'}
+                            >
+                                <Tag color={missing.length ? 'orange' : 'green'} style={{ marginRight: 0 }}>
+                                    {missing.length ? `нет ${missing.length} из 3` : 'заполнено'}
+                                </Tag>
+                            </Tooltip>
+                        </Space>
+                    </div>
                 );
             },
         },
@@ -699,7 +706,7 @@ const NomenclaturePage = () => {
                 columns={columns}
                 loading={loading}
                 size="small"
-                scroll={{ x: 'max-content' }}
+                tableLayout="fixed"
                 rowClassName={(record) => record.id === selectedRow?.id ? 'ant-table-row-selected' : ''}
                 onRow={(record) => ({
                     onClick: () => handleRowSelect(record),

@@ -5381,6 +5381,167 @@ const AutopartOffers = () => {
             <Divider />
 
             <Space
+                id="autopart-order-history"
+                className="autopart-offers-section autopart-offers-history-section"
+                direction="vertical"
+                style={{ width: '100%' }}
+                size="small"
+            >
+                <div>
+                    <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                        Что уже заказывали через программу за 1 год
+                    </div>
+                    <div style={{ color: '#6b7280' }}>
+                        Здесь видно, где мы уже заказывали эту позицию, по какой цене,
+                        сколько заказали, сколько получили и какой статус сейчас.
+                        Для заказов с сайта статусы подтягиваются автоматически.
+                    </div>
+                    {summaryCrossItems.length ? (
+                        <div style={{ color: '#2563eb', marginTop: 8 }}>
+                            <div>В выборку также включены кросс-артикулы:</div>
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    flexWrap: 'wrap',
+                                    gap: 6,
+                                    marginTop: 6,
+                                }}
+                            >
+                                {visibleSummaryCrossItems.map((item) => (
+                                    <div
+                                        key={item.key}
+                                        style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: 4,
+                                            padding: '4px 8px',
+                                            borderRadius: 999,
+                                            background: item.isInvalid
+                                                ? '#fff1f2'
+                                                : '#eff6ff',
+                                            border: item.isInvalid
+                                                ? '1px solid #fecdd3'
+                                                : '1px solid #bfdbfe',
+                                            color: '#1e3a8a',
+                                            fontSize: 12,
+                                        }}
+                                    >
+                                        <span>
+                                            <strong>{item.brand_name || '—'}</strong>{' '}
+                                            {item.oem_number}
+                                        </span>
+                                        {item.isConfirmed ? (
+                                            <Tag color="green" style={{ marginInlineEnd: 0 }}>
+                                                подтвержден
+                                            </Tag>
+                                        ) : null}
+                                        {item.isInvalid ? (
+                                            <Tag color="red" style={{ marginInlineEnd: 0 }}>
+                                                исключён
+                                            </Tag>
+                                        ) : null}
+                                        {nomenclatureInfo?.in_nomenclature &&
+                                        !item.isInvalid ? (
+                                            <>
+                                                {item.isSiteSuggested &&
+                                                !item.isConfirmed ? (
+                                                    <Popconfirm
+                                                        title="Подтвердить кросс"
+                                                        description={`Подтверждаете кросс нашей позиции ${(nomenclatureInfo?.brand || selectedBrand || '—').trim()} ${(currentOem || '—').trim()} и позиции ${item.brand_name || '—'} ${item.oem_number || '—'}?`}
+                                                        okText="Подтвердить"
+                                                        cancelText="Отмена"
+                                                        onConfirm={() => handleApproveSiteCross(item)}
+                                                        okButtonProps={{
+                                                            loading:
+                                                                crossActionLoadingKey === `approve:${item.key}`,
+                                                        }}
+                                                    >
+                                                        <Tooltip title="Подтвердить кросс и сохранить в систему">
+                                                            <Button
+                                                                type="text"
+                                                                size="small"
+                                                                shape="circle"
+                                                                icon={<CheckOutlined />}
+                                                                loading={
+                                                                    crossActionLoadingKey === `approve:${item.key}`
+                                                                }
+                                                            />
+                                                        </Tooltip>
+                                                    </Popconfirm>
+                                                ) : null}
+                                                <Popconfirm
+                                                    title="Исключить неверный кросс"
+                                                    description={`Подтверждаете, что ${item.brand_name || '—'} ${item.oem_number || '—'} не является кроссом для позиции ${(nomenclatureInfo?.brand || selectedBrand || '—').trim()} ${(currentOem || '—').trim()}?`}
+                                                    okText="Исключить"
+                                                    cancelText="Отмена"
+                                                    okButtonProps={{
+                                                        danger: true,
+                                                        loading:
+                                                            crossActionLoadingKey === `reject:${item.key}`,
+                                                    }}
+                                                    onConfirm={() => handleRejectSiteCross(item)}
+                                                >
+                                                    <Tooltip title="Пометить как неверный кросс">
+                                                        <Button
+                                                            danger
+                                                            type="text"
+                                                            size="small"
+                                                            shape="circle"
+                                                            icon={<CloseOutlined />}
+                                                            loading={
+                                                                crossActionLoadingKey === `reject:${item.key}`
+                                                            }
+                                                        />
+                                                    </Tooltip>
+                                                </Popconfirm>
+                                            </>
+                                        ) : null}
+                                    </div>
+                                ))}
+                                {summaryCrossItems.length > visibleSummaryCrossItems.length ? (
+                                    <Button
+                                        type="link"
+                                        size="small"
+                                        style={{ paddingInline: 0 }}
+                                        onClick={() => setShowAllSummaryCrosses(true)}
+                                    >
+                                        Показать ещё {summaryCrossItems.length - visibleSummaryCrossItems.length}
+                                    </Button>
+                                ) : null}
+                                {showAllSummaryCrosses && summaryCrossItems.length > 8 ? (
+                                    <Button
+                                        type="link"
+                                        size="small"
+                                        style={{ paddingInline: 0 }}
+                                        onClick={() => setShowAllSummaryCrosses(false)}
+                                    >
+                                        Свернуть
+                                    </Button>
+                                ) : null}
+                            </div>
+                            {summaryCrossItems.length && !nomenclatureInfo?.in_nomenclature ? (
+                                <div style={{ color: '#64748b', fontSize: 12, marginTop: 6 }}>
+                                    Чтобы подтверждать или исключать кроссы, позиция должна быть в номенклатуре.
+                                </div>
+                            ) : null}
+                        </div>
+                    ) : null}
+                </div>
+                <TrackingOrderHistoryTable
+                    rows={trackingHistory}
+                    loading={trackingHistoryLoading}
+                    compact
+                    showOem
+                    allowEdit={isAdmin}
+                    allowStatusMappingSuggestion={isAdmin}
+                    onUpdated={reloadTrackingHistory}
+                    emptyText="По этой позиции за последний год заказов через программу не было"
+                />
+            </Space>
+
+            <Divider />
+
+            <Space
                 id="autopart-site-offers"
                 className="autopart-offers-section autopart-offers-site-section"
                 direction="vertical"
@@ -5825,7 +5986,6 @@ const AutopartOffers = () => {
                 </>
             ) : null}
             <Space
-                id="autopart-order-history"
                 className="autopart-offers-section autopart-offers-history-section"
                 direction="vertical"
                 style={{ width: '100%' }}
@@ -5833,8 +5993,8 @@ const AutopartOffers = () => {
             >
                 <div className="autopart-offers-section-heading">
                     <div>
-                        <h2>История заказов и итоговая сводка</h2>
-                        <p>Прошлые закупки, найденные кроссы и рекомендация для текущего заказа.</p>
+                        <h2>Дополнительный анализ для заказа</h2>
+                        <p>Предложения по кроссам и итоговая рекомендация для текущего заказа.</p>
                     </div>
                 </div>
                 {Array.isArray(trackingInsights?.cross_offer_rows) &&
@@ -5867,156 +6027,6 @@ const AutopartOffers = () => {
                         />
                     </Space>
                 ) : null}
-                <div>
-                    <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                        Что уже заказывали через программу за 1 год
-                    </div>
-                    <div style={{ color: '#6b7280' }}>
-                        Здесь видно, где мы уже заказывали эту позицию, по какой цене,
-                        сколько заказали, сколько получили и какой статус сейчас.
-                        Для заказов с сайта статусы подтягиваются автоматически.
-                    </div>
-                    {summaryCrossItems.length ? (
-                        <div style={{ color: '#2563eb', marginTop: 8 }}>
-                            <div>В выборку также включены кросс-артикулы:</div>
-                            <div
-                                style={{
-                                    display: 'flex',
-                                    flexWrap: 'wrap',
-                                    gap: 6,
-                                    marginTop: 6,
-                                }}
-                            >
-                                {visibleSummaryCrossItems.map((item) => (
-                                    <div
-                                        key={item.key}
-                                        style={{
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: 4,
-                                            padding: '4px 8px',
-                                            borderRadius: 999,
-                                            background: item.isInvalid
-                                                ? '#fff1f2'
-                                                : '#eff6ff',
-                                            border: item.isInvalid
-                                                ? '1px solid #fecdd3'
-                                                : '1px solid #bfdbfe',
-                                            color: '#1e3a8a',
-                                            fontSize: 12,
-                                        }}
-                                    >
-                                        <span>
-                                            <strong>{item.brand_name || '—'}</strong>{' '}
-                                            {item.oem_number}
-                                        </span>
-                                        {item.isConfirmed ? (
-                                            <Tag color="green" style={{ marginInlineEnd: 0 }}>
-                                                подтвержден
-                                            </Tag>
-                                        ) : null}
-                                        {item.isInvalid ? (
-                                            <Tag color="red" style={{ marginInlineEnd: 0 }}>
-                                                исключён
-                                            </Tag>
-                                        ) : null}
-                                        {nomenclatureInfo?.in_nomenclature &&
-                                        !item.isInvalid ? (
-                                            <>
-                                                {item.isSiteSuggested &&
-                                                !item.isConfirmed ? (
-                                                    <Popconfirm
-                                                        title="Подтвердить кросс"
-                                                        description={`Подтверждаете кросс нашей позиции ${(nomenclatureInfo?.brand || selectedBrand || '—').trim()} ${(currentOem || '—').trim()} и позиции ${item.brand_name || '—'} ${item.oem_number || '—'}?`}
-                                                        okText="Подтвердить"
-                                                        cancelText="Отмена"
-                                                        onConfirm={() => handleApproveSiteCross(item)}
-                                                        okButtonProps={{
-                                                            loading:
-                                                                crossActionLoadingKey === `approve:${item.key}`,
-                                                        }}
-                                                    >
-                                                        <Tooltip title="Подтвердить кросс и сохранить в систему">
-                                                            <Button
-                                                                type="text"
-                                                                size="small"
-                                                                shape="circle"
-                                                                icon={<CheckOutlined />}
-                                                                loading={
-                                                                    crossActionLoadingKey === `approve:${item.key}`
-                                                                }
-                                                            />
-                                                        </Tooltip>
-                                                    </Popconfirm>
-                                                ) : null}
-                                                <Popconfirm
-                                                    title="Исключить неверный кросс"
-                                                    description={`Подтверждаете, что ${item.brand_name || '—'} ${item.oem_number || '—'} не является кроссом для позиции ${(nomenclatureInfo?.brand || selectedBrand || '—').trim()} ${(currentOem || '—').trim()}?`}
-                                                    okText="Исключить"
-                                                    cancelText="Отмена"
-                                                    okButtonProps={{
-                                                        danger: true,
-                                                        loading:
-                                                            crossActionLoadingKey === `reject:${item.key}`,
-                                                    }}
-                                                    onConfirm={() => handleRejectSiteCross(item)}
-                                                >
-                                                    <Tooltip title="Пометить как неверный кросс">
-                                                        <Button
-                                                            danger
-                                                            type="text"
-                                                            size="small"
-                                                            shape="circle"
-                                                            icon={<CloseOutlined />}
-                                                            loading={
-                                                                crossActionLoadingKey === `reject:${item.key}`
-                                                            }
-                                                        />
-                                                    </Tooltip>
-                                                </Popconfirm>
-                                            </>
-                                        ) : null}
-                                    </div>
-                                ))}
-                                {summaryCrossItems.length > visibleSummaryCrossItems.length ? (
-                                    <Button
-                                        type="link"
-                                        size="small"
-                                        style={{ paddingInline: 0 }}
-                                        onClick={() => setShowAllSummaryCrosses(true)}
-                                    >
-                                        Показать ещё {summaryCrossItems.length - visibleSummaryCrossItems.length}
-                                    </Button>
-                                ) : null}
-                                {showAllSummaryCrosses && summaryCrossItems.length > 8 ? (
-                                    <Button
-                                        type="link"
-                                        size="small"
-                                        style={{ paddingInline: 0 }}
-                                        onClick={() => setShowAllSummaryCrosses(false)}
-                                    >
-                                        Свернуть
-                                    </Button>
-                                ) : null}
-                            </div>
-                            {summaryCrossItems.length && !nomenclatureInfo?.in_nomenclature ? (
-                                <div style={{ color: '#64748b', fontSize: 12, marginTop: 6 }}>
-                                    Чтобы подтверждать или исключать кроссы, позиция должна быть в номенклатуре.
-                                </div>
-                            ) : null}
-                        </div>
-                    ) : null}
-                </div>
-                <TrackingOrderHistoryTable
-                    rows={trackingHistory}
-                    loading={trackingHistoryLoading}
-                    compact
-                    showOem
-                    allowEdit={isAdmin}
-                    allowStatusMappingSuggestion={isAdmin}
-                    onUpdated={reloadTrackingHistory}
-                    emptyText="По этой позиции за последний год заказов через программу не было"
-                />
                 <Spin
                     id="autopart-order-summary"
                     className="autopart-offers-order-summary"

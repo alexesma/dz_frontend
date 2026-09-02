@@ -26,6 +26,7 @@ import {
     CloudDownloadOutlined,
     CheckCircleOutlined,
     DeleteOutlined,
+    EditOutlined,
     FileSearchOutlined,
     FilterOutlined,
     HolderOutlined,
@@ -887,6 +888,51 @@ const CustomerPricelistStudioPage = () => {
         }
     };
 
+    const handleEditRule = async (rule) => {
+        const existingTargets = rule.targets?.length
+            ? rule.targets
+            : rule.target_autopart_id
+                ? [{
+                    autopart_id: rule.target_autopart_id,
+                    brand: rule.target_brand,
+                    oem: rule.target_oem,
+                    name: rule.target_name,
+                }]
+                : [];
+        setCandidateOptions([{
+            autopart_id: rule.source_autopart_id,
+            brand: rule.source_brand,
+            oem: rule.source_oem,
+            name: rule.source_name,
+            quantity: 0,
+            price: null,
+        }]);
+        setCrossOptions(existingTargets);
+        ruleForm.setFieldsValue({
+            source_autopart_id: rule.source_autopart_id,
+            target_autopart_ids: existingTargets.map((item) => item.autopart_id),
+            fixed_price: rule.fixed_price == null ? null : Number(rule.fixed_price),
+            mode: rule.mode,
+            is_active: rule.is_active,
+        });
+        setRuleModalOpen(true);
+        try {
+            const { data } = await listCustomerPricelistPublicationCrosses(
+                customerId,
+                configId,
+                rule.source_autopart_id
+            );
+            const mergedTargets = [...existingTargets, ...(data || [])].filter(
+                (item, index, items) => items.findIndex(
+                    (candidate) => candidate.autopart_id === item.autopart_id
+                ) === index
+            );
+            setCrossOptions(mergedTargets);
+        } catch {
+            // Existing targets remain selectable if refreshing the cross list fails.
+        }
+    };
+
     const handleDeleteRule = async (ruleId) => {
         try {
             await deleteCustomerPricelistPublicationRule(
@@ -1635,6 +1681,20 @@ const CustomerPricelistStudioPage = () => {
             ),
         },
         {
+            title: 'Цена замены',
+            dataIndex: 'fixed_price',
+            width: 130,
+            align: 'right',
+            render: (value, row) => {
+                if (row.mode === 'hide') {
+                    return <Text type="secondary">Не применяется</Text>;
+                }
+                return value == null
+                    ? <Text type="secondary">По расчёту</Text>
+                    : <Text strong>{Number(value).toLocaleString('ru-RU')} ₽</Text>;
+            },
+        },
+        {
             title: 'Изменено',
             key: 'audit',
             width: 180,
@@ -1647,11 +1707,19 @@ const CustomerPricelistStudioPage = () => {
         },
         {
             title: '',
-            width: 60,
+            width: 96,
             render: (_, row) => (
-                <Popconfirm title="Удалить правило?" onConfirm={() => handleDeleteRule(row.id)}>
-                    <Button danger type="text" icon={<StopOutlined />} />
-                </Popconfirm>
+                <Space size={0}>
+                    <Button
+                        type="text"
+                        title="Изменить правило"
+                        icon={<EditOutlined />}
+                        onClick={() => handleEditRule(row)}
+                    />
+                    <Popconfirm title="Удалить правило?" onConfirm={() => handleDeleteRule(row.id)}>
+                        <Button danger type="text" icon={<StopOutlined />} />
+                    </Popconfirm>
+                </Space>
             ),
         },
     ];
@@ -1907,6 +1975,7 @@ const CustomerPricelistStudioPage = () => {
                                                 mode: 'only_cross',
                                                 is_active: true,
                                                 target_autopart_ids: [],
+                                                fixed_price: null,
                                             });
                                             setRuleModalOpen(true);
                                         }}
@@ -1919,7 +1988,7 @@ const CustomerPricelistStudioPage = () => {
                                         <Alert
                                             showIcon
                                             type="info"
-                                            message="Для замены предлагаются только подтверждённые двусторонние кроссы из номенклатуры. Цена и физический остаток остаются у исходной позиции."
+                                            message="Для замены предлагаются только подтверждённые двусторонние кроссы из номенклатуры. Остаток остаётся у исходной позиции, а цену можно оставить расчётной или указать вручную."
                                             style={{ marginBottom: 16 }}
                                         />
                                         <Card
@@ -1964,7 +2033,7 @@ const CustomerPricelistStudioPage = () => {
                                             dataSource={rules}
                                             pagination={{ pageSize: 20 }}
                                             tableLayout="fixed"
-                                            scroll={{ x: 1120 }}
+                                            scroll={{ x: 1250 }}
                                         />
                                     </>
                                 ),
@@ -2296,7 +2365,7 @@ const CustomerPricelistStudioPage = () => {
             </Modal>
 
             <Modal
-                title="Новое правило публикации"
+                title="Правило публикации позиции"
                 open={ruleModalOpen}
                 onCancel={() => {
                     setRuleModalOpen(false);
@@ -2339,22 +2408,38 @@ const CustomerPricelistStudioPage = () => {
                     </Form.Item>
                     <Form.Item noStyle shouldUpdate={(previous, current) => previous.mode !== current.mode}>
                         {({ getFieldValue }) => getFieldValue('mode') !== 'hide' && (
-                            <Form.Item
-                                name="target_autopart_ids"
-                                label="Подтверждённые кроссы"
-                                rules={[{ required: true }]}
-                            >
-                                <Select
-                                    mode="multiple"
-                                    showSearch
-                                    optionFilterProp="label"
-                                    placeholder={crossOptions.length ? 'Выберите один или несколько кроссов' : 'У позиции нет подтверждённых кроссов'}
-                                    options={crossOptions.map((item) => ({
-                                        value: item.autopart_id,
-                                        label: candidateLabel(item),
-                                    }))}
-                                />
-                            </Form.Item>
+                            <>
+                                <Form.Item
+                                    name="target_autopart_ids"
+                                    label="Подтверждённые кроссы"
+                                    rules={[{ required: true }]}
+                                >
+                                    <Select
+                                        mode="multiple"
+                                        showSearch
+                                        optionFilterProp="label"
+                                        placeholder={crossOptions.length ? 'Выберите один или несколько кроссов' : 'У позиции нет подтверждённых кроссов'}
+                                        options={crossOptions.map((item) => ({
+                                            value: item.autopart_id,
+                                            label: candidateLabel(item),
+                                        }))}
+                                    />
+                                </Form.Item>
+                                <Form.Item
+                                    name="fixed_price"
+                                    label="Фиксированная цена замены, ₽"
+                                    extra="Оставьте пустым, чтобы использовать обычный расчёт цены источника и наценок."
+                                >
+                                    <InputNumber
+                                        min={0.01}
+                                        max={99999999.99}
+                                        precision={2}
+                                        decimalSeparator=","
+                                        style={{ width: '100%' }}
+                                        placeholder="Цена по обычному расчёту"
+                                    />
+                                </Form.Item>
+                            </>
                         )}
                     </Form.Item>
                     <Form.Item name="is_active" label="Правило активно" valuePropName="checked">
