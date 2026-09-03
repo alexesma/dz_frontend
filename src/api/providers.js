@@ -297,8 +297,7 @@ export const approveProviderPricelistReview = async (
 ) => {
     return api.post(
         `/providers/${providerId}/pricelist-reviews/${reviewId}/approve`,
-        { reason },
-        { timeout: 900000 }
+        { reason }
     );
 };
 

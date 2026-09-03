@@ -716,7 +716,9 @@ const NotificationCenter = () => {
                 blockedPricelistReference.reviewId,
                 'Проверено и принято из центрального уведомления'
             );
-            message.success('Прайс принят и опубликован');
+            message.success(
+                'Прайс поставлен в очередь публикации. Можно продолжать работу'
+            );
             await finishBlockedPricelistAction();
         } catch (err) {
             message.error(

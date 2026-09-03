@@ -1651,8 +1651,8 @@ const CustomerPricelistStudioPage = () => {
             dataIndex: 'mode',
             width: 190,
             render: (value) => ({
-                only_cross: <Tag color="green">Только выбранный кросс</Tag>,
-                add_cross: <Tag color="blue">Добавить кросс</Tag>,
+                only_cross: <Tag color="green">Только выбранные кроссы</Tag>,
+                add_cross: <Tag color="blue">Исходная + кроссы</Tag>,
                 hide: <Tag color="red">Не публиковать</Tag>,
             }[value] || value),
         },
@@ -2400,8 +2400,14 @@ const CustomerPricelistStudioPage = () => {
                     <Form.Item name="mode" label="Режим публикации" rules={[{ required: true }]}>
                         <Select
                             options={[
-                                { value: 'only_cross', label: 'Только выбранный кросс' },
-                                { value: 'add_cross', label: 'Добавить выбранный кросс' },
+                                {
+                                    value: 'only_cross',
+                                    label: 'Заменить позицию выбранными кроссами',
+                                },
+                                {
+                                    value: 'add_cross',
+                                    label: 'Оставить позицию и добавить выбранные кроссы',
+                                },
                                 { value: 'hide', label: 'Не публиковать позицию' },
                             ]}
                         />
@@ -2412,6 +2418,7 @@ const CustomerPricelistStudioPage = () => {
                                 <Form.Item
                                     name="target_autopart_ids"
                                     label="Подтверждённые кроссы"
+                                    extra="Каждый выбранный кросс попадёт в прайс отдельной строкой с остатком исходной позиции."
                                     rules={[{ required: true }]}
                                 >
                                     <Select

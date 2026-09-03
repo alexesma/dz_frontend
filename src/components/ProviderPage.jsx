@@ -176,6 +176,9 @@ const ProviderPage = () => {
     const [autopartOptions, setAutopartOptions] = useState([]);
     const [autopartSearching, setAutopartSearching] = useState(false);
     const inventoryRuleSearchTimer = useRef(null);
+    const hasRunningPricelistReview = pricelistReviews.some(
+        (review) => ['queued', 'processing'].includes(review.status)
+    );
 
     const [configModalVisible, setConfigModalVisible] = useState(false);
     const [editingConfig, setEditingConfig] = useState(null);
@@ -507,6 +510,19 @@ const ProviderPage = () => {
         // Загрузка привязана к открытому поставщику и роли пользователя.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [providerId, isNew, user?.role]);
+
+    useEffect(() => {
+        if (!providerId || isNew || !hasRunningPricelistReview) return undefined;
+        const timer = window.setInterval(async () => {
+            try {
+                const { data } = await getProviderPricelistReviews(providerId);
+                setPricelistReviews(data || []);
+            } catch {
+                // Основная загрузка покажет ошибку; фоновый poll остаётся тихим.
+            }
+        }, 5000);
+        return () => window.clearInterval(timer);
+    }, [hasRunningPricelistReview, isNew, providerId]);
 
     useEffect(() => {
         const requestedReviewId = Number(
@@ -1554,12 +1570,9 @@ const ProviderPage = () => {
         try {
             await approveProviderPricelistReview(providerId, review.id);
             message.success(
-                'Прайс принят, опубликован и добавлен в историю решений'
+                'Прайс поставлен в очередь публикации. Можно продолжать работу'
             );
-            await Promise.all([
-                loadPricelistReviews(),
-                refreshProviderData(),
-            ]);
+            await loadPricelistReviews();
         } catch (err) {
             message.error(
                 err?.response?.data?.detail
@@ -1893,6 +1906,7 @@ const ProviderPage = () => {
 
     const pricelistReviewStatusMeta = {
         pending: { label: 'Ожидает решения', color: 'orange' },
+        queued: { label: 'В очереди', color: 'blue' },
         processing: { label: 'Публикуется', color: 'processing' },
         approved: { label: 'Принят', color: 'green' },
         rejected: { label: 'Отклонён', color: 'red' },
@@ -3122,6 +3136,11 @@ const ProviderPage = () => {
                                                     ).length}
                                                 </Tag>
                                             ) : null}
+                                        {hasRunningPricelistReview ? (
+                                            <Tag color="processing">
+                                                Фоновая публикация выполняется
+                                            </Tag>
+                                        ) : null}
                                     </Space>
                                 )}
                                 style={{ marginBottom: 20 }}
