@@ -1,7 +1,24 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, Button, Card, Col, message, Row, Statistic, Table, Tag, Typography } from 'antd';
+import {
+    Alert,
+    Button,
+    Card,
+    Col,
+    Input,
+    message,
+    Modal,
+    Row,
+    Statistic,
+    Table,
+    Tag,
+    Typography,
+} from 'antd';
 import dayjs from 'dayjs';
-import { reconcilePartsSoftOrders } from '../api/customerOrders';
+import {
+    getPartsSoftCustomerCandidates,
+    linkPartsSoftCustomer,
+    reconcilePartsSoftOrders,
+} from '../api/customerOrders';
 
 const { Paragraph, Text } = Typography;
 
@@ -19,18 +36,80 @@ const STATUS = {
 const PartsSoftOrderReconciliation = () => {
     const [loading, setLoading] = useState(false);
     const [report, setReport] = useState(null);
+    const [errorText, setErrorText] = useState('');
+    const [linkRow, setLinkRow] = useState(null);
+    const [candidates, setCandidates] = useState([]);
+    const [candidateLoading, setCandidateLoading] = useState(false);
+    const [linkLoading, setLinkLoading] = useState(false);
+    const [selectedCustomerId, setSelectedCustomerId] = useState(null);
 
     const runReconciliation = async () => {
         setLoading(true);
+        setErrorText('');
         try {
             const response = await reconcilePartsSoftOrders();
             setReport(response.data);
             message.success('Сверка Parts-Soft завершена');
         } catch (error) {
             const detail = error?.response?.data?.detail;
-            message.error(typeof detail === 'string' ? detail : 'Не удалось выполнить сверку Parts-Soft');
+            const text = typeof detail === 'string'
+                ? detail
+                : 'Не удалось выполнить сверку Parts-Soft';
+            setErrorText(text);
+            message.error(text);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const loadCandidates = async (row, search = '') => {
+        setCandidateLoading(true);
+        try {
+            const response = await getPartsSoftCustomerCandidates({
+                name: row.customer_name || '',
+                inn: row.customer_inn || '',
+                kpp: row.customer_kpp || '',
+                email: row.customer_email || '',
+                search,
+            });
+            setCandidates(response.data || []);
+        } catch {
+            message.error('Не удалось найти клиентов в нашей системе');
+            setCandidates([]);
+        } finally {
+            setCandidateLoading(false);
+        }
+    };
+
+    const openLink = (row) => {
+        setLinkRow(row);
+        setSelectedCustomerId(row.local_customer_id || row.suggested_local_customer_id || null);
+        setCandidates([]);
+        void loadCandidates(row);
+    };
+
+    const saveLink = async () => {
+        if (!linkRow || !selectedCustomerId) return;
+        setLinkLoading(true);
+        try {
+            const response = await linkPartsSoftCustomer(
+                linkRow.external_customer_id,
+                selectedCustomerId
+            );
+            const conflicts = response.data?.conflicting_fields || [];
+            if (conflicts.length) {
+                message.warning(`Связь сохранена. Проверьте расхождения: ${conflicts.join(', ')}`);
+            } else {
+                message.success('Клиент Parts-Soft привязан');
+            }
+            setLinkRow(null);
+            setSelectedCustomerId(null);
+            await runReconciliation();
+        } catch (error) {
+            const detail = error?.response?.data?.detail;
+            message.error(typeof detail === 'string' ? detail : 'Не удалось привязать клиента');
+        } finally {
+            setLinkLoading(false);
         }
     };
 
@@ -98,6 +177,50 @@ const PartsSoftOrderReconciliation = () => {
                 </div>
             ),
         },
+        {
+            title: 'Действия',
+            key: 'actions',
+            fixed: 'right',
+            width: 130,
+            render: (_, row) => (
+                !row.customer_linked
+                    ? (
+                        <Button size="small" onClick={() => openLink(row)}>
+                            {row.local_customer_id ? 'Закрепить' : 'Привязать'}
+                        </Button>
+                    )
+                    : <Text type="secondary">Связан</Text>
+            ),
+        },
+    ];
+
+    const candidateColumns = [
+        {
+            title: 'Клиент в нашей системе',
+            dataIndex: 'name',
+            render: (value, row) => (
+                <div>
+                    <div>{value}</div>
+                    <Text type="secondary">ID {row.id}</Text>
+                </div>
+            ),
+        },
+        {
+            title: 'Реквизиты',
+            key: 'details',
+            render: (_, row) => (
+                <div>
+                    <div>ИНН {row.inn || '—'} · КПП {row.kpp || '—'}</div>
+                    <Text type="secondary">{row.email || 'email не указан'}</Text>
+                </div>
+            ),
+        },
+        {
+            title: 'Почему найден',
+            dataIndex: 'match_basis',
+            width: 170,
+            render: (value) => (value || []).join(', ') || 'ручной поиск',
+        },
     ];
 
     return (
@@ -112,6 +235,16 @@ const PartsSoftOrderReconciliation = () => {
             <Button type="primary" loading={loading} onClick={runReconciliation}>
                 Проверить Parts-Soft за 7 дней
             </Button>
+
+            {errorText && (
+                <Alert
+                    type="error"
+                    showIcon
+                    message="Сверка не выполнена"
+                    description={errorText}
+                    style={{ marginTop: 16 }}
+                />
+            )}
 
             {report && (
                 <>
@@ -130,10 +263,56 @@ const PartsSoftOrderReconciliation = () => {
                         dataSource={rows}
                         columns={columns}
                         pagination={{ pageSize: 25, showSizeChanger: true }}
-                        scroll={{ x: 1150 }}
+                        scroll={{ x: 1280 }}
                     />
                 </>
             )}
+            <Modal
+                title="Привязать клиента Parts-Soft"
+                open={Boolean(linkRow)}
+                onCancel={() => setLinkRow(null)}
+                onOk={saveLink}
+                okText="Сохранить связь"
+                cancelText="Отмена"
+                okButtonProps={{ disabled: !selectedCustomerId }}
+                confirmLoading={linkLoading}
+                width={900}
+                destroyOnClose
+            >
+                {linkRow && (
+                    <Alert
+                        type="info"
+                        message={linkRow.customer_name}
+                        description={(
+                            <div>
+                                <div>Parts-Soft ID {linkRow.external_customer_id}; ИНН {linkRow.customer_inn || '—'}; КПП {linkRow.customer_kpp || '—'}</div>
+                                <div>Сохраняется постоянная связь. Пустые реквизиты клиента будут дополнены, существующие значения не перезаписываются.</div>
+                            </div>
+                        )}
+                        style={{ marginBottom: 12 }}
+                    />
+                )}
+                <Input.Search
+                    allowClear
+                    placeholder="Название, ИНН, КПП, email или ID клиента"
+                    enterButton="Найти"
+                    onSearch={(value) => linkRow && loadCandidates(linkRow, value)}
+                    style={{ marginBottom: 12 }}
+                />
+                <Table
+                    size="small"
+                    loading={candidateLoading}
+                    dataSource={candidates.map((row) => ({ ...row, key: row.id }))}
+                    columns={candidateColumns}
+                    rowSelection={{
+                        type: 'radio',
+                        selectedRowKeys: selectedCustomerId ? [selectedCustomerId] : [],
+                        onChange: (keys) => setSelectedCustomerId(keys[0] || null),
+                    }}
+                    onRow={(row) => ({ onClick: () => setSelectedCustomerId(row.id) })}
+                    pagination={{ pageSize: 10 }}
+                />
+            </Modal>
         </div>
     );
 };
