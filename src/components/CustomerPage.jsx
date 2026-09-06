@@ -453,6 +453,16 @@ const CustomerPage = () => {
         return days || times;
     };
 
+    const formatLastSentAt = (value) => {
+        if (!value) return 'Ещё не отправлялся';
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) return '—';
+        return new Intl.DateTimeFormat('ru-RU', {
+            dateStyle: 'short',
+            timeStyle: 'medium',
+        }).format(parsed);
+    };
+
     const buildFilterPayload = (group = {}) => {
         const payload = {};
         const minPrice = group.min_price;
@@ -1369,8 +1379,17 @@ const CustomerPage = () => {
         if (!customerId) return;
         setSendingConfigId(configId);
         try {
-            await sendCustomerPricelistNow(customerId, configId);
-            message.success('Прайс отправлен');
+            const { data: pricelist } = await sendCustomerPricelistNow(
+                customerId,
+                configId
+            );
+            const { data: configs } = await getCustomerPricelistConfigs(customerId);
+            setCustomerData((prev) => ({ ...prev, pricelist_configs: configs }));
+            message.success(
+                pricelist?.generation_status === 'queued'
+                    ? 'Прайс поставлен в очередь отправки'
+                    : 'Прайс отправлен'
+            );
         } catch (err) {
             console.error(err);
             message.error(await describeError(err, 'Ошибка отправки прайса'));
@@ -1443,6 +1462,12 @@ const CustomerPage = () => {
             render: (_, record) => (
                 <span>{formatSchedule(record)}</span>
             ),
+        },
+        {
+            title: 'Последняя успешная отправка',
+            dataIndex: 'last_sent_at',
+            key: 'last_sent_at',
+            render: (value) => <span>{formatLastSentAt(value)}</span>,
         },
         {
             title: 'Активна',
