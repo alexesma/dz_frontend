@@ -151,3 +151,6 @@ export const sendSupplierOrders = (orderIds) =>
 
 export const sendScheduledSupplierOrders = () =>
     api.post('/customer-orders/supplier/send-scheduled');
+
+export const reconcilePartsSoftOrders = () =>
+    api.post('/integrations/partssoft/orders/reconcile', null, { params: { days: 7 } });

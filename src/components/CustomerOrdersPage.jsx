@@ -24,6 +24,7 @@ import {
     retryCustomerOrder,
 } from '../api/customerOrders';
 import { getCustomersSummary } from '../api/customers';
+import PartsSoftOrderReconciliation from './PartsSoftOrderReconciliation';
 
 const { Title } = Typography;
 const { RangePicker } = DatePicker;
@@ -643,6 +644,7 @@ const CustomerOrdersPage = () => {
     return (
         <Card>
             <Title level={3}>Заказы клиентов</Title>
+            {activeTab !== 'partssoft' && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
                 <RangePicker
                     value={
@@ -712,6 +714,7 @@ const CustomerOrdersPage = () => {
                     Создать заказ
                 </Button>
             </div>
+            )}
             <Tabs
                 activeKey={activeTab}
                 onChange={handleTabChange}
@@ -763,6 +766,11 @@ const CustomerOrdersPage = () => {
                                 pagination={{ pageSize: 20 }}
                             />
                         ),
+                    },
+                    {
+                        key: 'partssoft',
+                        label: 'Parts-Soft: сверка',
+                        children: <PartsSoftOrderReconciliation />,
                     },
                 ]}
             />
