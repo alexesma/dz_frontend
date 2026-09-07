@@ -16,6 +16,7 @@ import {
     InputNumber,
     Popconfirm,
     Divider,
+    Descriptions,
     Tag,
     Switch,
     Typography,
@@ -767,6 +768,16 @@ const CustomerPage = () => {
                     kpp: customer.kpp,
                     legal_address: customer.legal_address,
                     postal_address: customer.postal_address,
+                    company_type: customer.company_type,
+                    phone: customer.phone,
+                    additional_phone: customer.additional_phone,
+                    vat_rate: customer.vat_rate,
+                    bank_bik: customer.bank_bik,
+                    bank_name: customer.bank_name,
+                    bank_city: customer.bank_city,
+                    bank_account: customer.bank_account,
+                    correspondent_account: customer.correspondent_account,
+                    registration_source: customer.registration_source,
                     type_prices: customer.type_prices,
                     description: customer.description,
                     comment: customer.comment,
@@ -1662,6 +1673,15 @@ const CustomerPage = () => {
                         <Input placeholder="contact@customer.com" />
                     </Form.Item>
 
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+                        <Form.Item name="phone" label="Телефон">
+                            <Input placeholder="+7 495 000-00-00" />
+                        </Form.Item>
+                        <Form.Item name="additional_phone" label="Дополнительный телефон">
+                            <Input placeholder="+7 999 000-00-00" />
+                        </Form.Item>
+                    </div>
+
                     <Form.Item
                         name="email_outgoing_price"
                         label="Email исходящих прайсов"
@@ -1686,6 +1706,12 @@ const CustomerPage = () => {
                         >
                             <Input placeholder="770101001" />
                         </Form.Item>
+                        <Form.Item name="company_type" label="Правовая форма">
+                            <Input placeholder="ООО" />
+                        </Form.Item>
+                        <Form.Item name="vat_rate" label="Ставка НДС, %">
+                            <InputNumber min={0} max={100} style={{ width: '100%' }} />
+                        </Form.Item>
                     </div>
 
                     <Form.Item name="legal_address" label="Юридический адрес">
@@ -1695,6 +1721,65 @@ const CustomerPage = () => {
                     <Form.Item name="postal_address" label="Почтовый адрес">
                         <Input.TextArea rows={2} placeholder="Почтовый адрес клиента" />
                     </Form.Item>
+
+                    <Divider orientation="left">Банковские реквизиты</Divider>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+                        <Form.Item name="bank_bik" label="БИК">
+                            <Input />
+                        </Form.Item>
+                        <Form.Item name="bank_name" label="Банк">
+                            <Input />
+                        </Form.Item>
+                        <Form.Item name="bank_city" label="Город банка">
+                            <Input />
+                        </Form.Item>
+                        <Form.Item name="bank_account" label="Расчётный счёт">
+                            <Input />
+                        </Form.Item>
+                        <Form.Item name="correspondent_account" label="Корреспондентский счёт">
+                            <Input />
+                        </Form.Item>
+                        <Form.Item name="registration_source" label="Источник клиента">
+                            <Input placeholder="dragonzap.ru или zap.ru" />
+                        </Form.Item>
+                    </div>
+
+                    {(customerData?.customer?.external_references || []).some(
+                        (reference) => reference.source_system === 'PARTS_SOFT'
+                    ) && (
+                        <>
+                            <Divider orientation="left">Классификация по Parts-Soft</Divider>
+                            {(() => {
+                                const reference = customerData.customer.external_references.find(
+                                    (item) => item.source_system === 'PARTS_SOFT'
+                                );
+                                const classification = reference?.external_classification || {};
+                                const labels = {
+                                    ur_type: 'Тип контрагента',
+                                    discount_type_id: 'Группа скидок',
+                                    region_id: 'Регион',
+                                    user_id: 'Менеджер',
+                                    send_sms: 'SMS разрешены',
+                                    send_email: 'Email разрешён',
+                                };
+                                return (
+                                    <Descriptions
+                                        bordered
+                                        size="small"
+                                        column={{ xs: 1, sm: 2, md: 3 }}
+                                        items={Object.entries(labels).map(([key, label]) => ({
+                                            key,
+                                            label,
+                                            children: classification[key] === undefined
+                                                ? '—'
+                                                : String(classification[key]),
+                                        }))}
+                                    />
+                                );
+                            })()}
+                        </>
+                    )}
 
                     <Divider orientation="left">Кредитная политика</Divider>
 
