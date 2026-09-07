@@ -70,7 +70,11 @@ import { getProviderConfigOptions } from '../api/providers';
 import { getEmailAccounts } from '../api/emailAccounts';
 import { testEmailAccount } from '../api/emailAccounts';
 import { getBrands, lookupBrands } from '../api/brands';
-import { searchAutopartsByOem } from '../api/autoparts';
+import {
+    getAllApplicabilityNodes,
+    getHonestSignCategories,
+    searchAutopartsByOem,
+} from '../api/autoparts';
 import {
     forwardLatestCustomerOrderForConfig,
     processCustomerOrderConfigNow,
@@ -78,6 +82,48 @@ import {
 } from '../api/customerOrders';
 import DiadocBindingCard from './DiadocBindingCard';
 import useAuth from '../context/useAuth';
+
+const FilterRuleValueSelect = ({
+    form,
+    watchPath,
+    brandOptions,
+    positionOptions,
+    applicabilityOptions,
+    honestSignOptions,
+    positionLoading,
+    onPositionSearch,
+}) => {
+    const fieldType = Form.useWatch(watchPath, form);
+    const settings = {
+        brand: { options: brandOptions, placeholder: 'Выберите бренды' },
+        position: { options: positionOptions, placeholder: 'Введите артикул OEM' },
+        applicability: {
+            options: applicabilityOptions,
+            placeholder: 'Выберите узлы применимости',
+        },
+        honest_sign: {
+            options: honestSignOptions,
+            placeholder: 'Выберите категории ЧЗ',
+        },
+    }[fieldType];
+    return (
+        <Select
+            mode="multiple"
+            showSearch
+            disabled={!settings}
+            optionFilterProp="label"
+            filterOption={fieldType === 'position' ? false : undefined}
+            onSearch={fieldType === 'position' ? onPositionSearch : undefined}
+            notFoundContent={
+                fieldType === 'position' && positionLoading
+                    ? <Spin size="small" />
+                    : null
+            }
+            options={settings?.options || []}
+            placeholder={settings?.placeholder || 'Сначала выберите тип фильтра'}
+        />
+    );
+};
 
 const CustomerPage = () => {
     const { user } = useAuth();
@@ -124,6 +170,8 @@ const CustomerPage = () => {
     const [brandFilterLoading, setBrandFilterLoading] = useState(false);
     const [autopartFilterOptions, setAutopartFilterOptions] = useState([]);
     const [autopartFilterLoading, setAutopartFilterLoading] = useState(false);
+    const [applicabilityFilterOptions, setApplicabilityFilterOptions] = useState([]);
+    const [honestSignFilterOptions, setHonestSignFilterOptions] = useState([]);
     const [orderInboxLoading, setOrderInboxLoading] = useState(false);
     const [orderInboxTestLoading, setOrderInboxTestLoading] = useState(false);
     const [orderProcessNowLoading, setOrderProcessNowLoading] = useState(false);
@@ -397,6 +445,48 @@ const CustomerPage = () => {
         };
     }, [mapBrandLookupOptions, mapMarkupBrandOptions]);
 
+    useEffect(() => {
+        let mounted = true;
+        const loadCatalogFilterOptions = async () => {
+            try {
+                const [applicabilityResponse, honestSignResponse] = await Promise.all([
+                    getAllApplicabilityNodes(),
+                    getHonestSignCategories(),
+                ]);
+                if (!mounted) return;
+                const nodes = applicabilityResponse.data || [];
+                const nodesById = new Map(nodes.map((node) => [Number(node.id), node]));
+                const labelForNode = (node) => {
+                    const labels = [node.name];
+                    const visited = new Set([Number(node.id)]);
+                    let parentId = node.parent_id;
+                    while (parentId && !visited.has(Number(parentId))) {
+                        visited.add(Number(parentId));
+                        const parent = nodesById.get(Number(parentId));
+                        if (!parent) break;
+                        labels.unshift(parent.name);
+                        parentId = parent.parent_id;
+                    }
+                    return labels.join(' → ');
+                };
+                setApplicabilityFilterOptions(nodes.map((node) => ({
+                    value: String(node.id),
+                    label: labelForNode(node),
+                })));
+                setHonestSignFilterOptions((honestSignResponse.data || []).map((item) => ({
+                    value: String(item.id),
+                    label: item.code ? `${item.name} (${item.code})` : item.name,
+                })));
+            } catch (err) {
+                console.error('Load catalog filter options failed:', err);
+            }
+        };
+        loadCatalogFilterOptions();
+        return () => {
+            mounted = false;
+        };
+    }, []);
+
     const brandSelectFilterOption = useCallback((input, option) => {
         const normalizedInput = String(input || '').trim().toLowerCase();
         const normalizedLabel = String(option?.label || '').toLowerCase();
@@ -484,18 +574,14 @@ const CustomerPage = () => {
             payload.max_quantity = Number(maxQty);
         }
 
-        if (group.brand_filter_type && (group.brand_ids || []).length) {
-            payload.brand_filters = {
-                type: group.brand_filter_type,
-                brands: toIntList(group.brand_ids),
-            };
-        }
-        if (group.position_filter_type && (group.position_ids || []).length) {
-            payload.position_filters = {
-                type: group.position_filter_type,
-                autoparts: toIntList(group.position_ids),
-            };
-        }
+        payload.rules = (group.rules || [])
+            .filter((rule) => rule?.field && rule?.mode && (rule.values || []).length)
+            .map((rule) => ({
+                field: rule.field,
+                mode: rule.mode,
+                values: toIntList(rule.values),
+            }))
+            .filter((rule) => rule.values.length);
 
         if (group.price_intervals && group.price_intervals.length) {
             payload.price_intervals = group.price_intervals
@@ -535,15 +621,30 @@ const CustomerPage = () => {
     const mapFilterToForm = (filters = {}) => {
         const brandFilters = filters.brand_filters || {};
         const positionFilters = filters.position_filters || {};
+        const legacyRules = [];
+        if (brandFilters.type && (brandFilters.brands || []).length) {
+            legacyRules.push({
+                field: 'brand',
+                mode: brandFilters.type,
+                values: brandFilters.brands,
+            });
+        }
+        if (positionFilters.type && (positionFilters.autoparts || []).length) {
+            legacyRules.push({
+                field: 'position',
+                mode: positionFilters.type,
+                values: positionFilters.autoparts,
+            });
+        }
         return {
             min_price: filters.min_price ?? null,
             max_price: filters.max_price ?? null,
             min_quantity: filters.min_quantity ?? null,
             max_quantity: filters.max_quantity ?? null,
-            brand_filter_type: brandFilters.type,
-            brand_ids: (brandFilters.brands || []).map((v) => String(v)),
-            position_filter_type: positionFilters.type,
-            position_ids: (positionFilters.autoparts || []).map((v) => String(v)),
+            rules: (filters.rules?.length ? filters.rules : legacyRules).map((rule) => ({
+                ...rule,
+                values: (rule.values || []).map((value) => String(value)),
+            })),
             price_intervals: filters.price_intervals || [],
             supplier_quantity_filters: filters.supplier_quantity_filters || [],
         };
@@ -561,6 +662,7 @@ const CustomerPage = () => {
 
     const renderFilterFields = (namePrefix, options = {}) => {
         const showSupplierQty = options.showSupplierQty ?? true;
+        const absolutePrefix = options.absolutePrefix || namePrefix;
         return (
             <>
                 <div className="responsive-form-grid-4">
@@ -578,65 +680,81 @@ const CustomerPage = () => {
                     </Form.Item>
                 </div>
 
-                <Divider>Фильтры по брендам</Divider>
-                <div className="responsive-form-grid-key">
-                    <Form.Item name={[...namePrefix, 'brand_filter_type']} label="Тип">
-                        <Select
-                            allowClear
-                            options={[
-                                { value: 'include', label: 'Только' },
-                                { value: 'exclude', label: 'Исключить' },
-                            ]}
-                        />
-                    </Form.Item>
-                    <Form.Item
-                        name={[...namePrefix, 'brand_ids']}
-                        label="Бренды"
-                        extra="Начните вводить название бренда"
-                    >
-                        <Select
-                            mode="multiple"
-                            showSearch
-                            optionFilterProp="label"
-                            filterOption={brandSelectFilterOption}
-                            notFoundContent={
-                                brandFilterLoading ? <Spin size="small" /> : null
-                            }
-                            placeholder="Например: TOYOTA"
-                            options={brandFilterOptions}
-                        />
-                    </Form.Item>
-                </div>
-
-                <Divider>Фильтры по позициям</Divider>
-                <div className="responsive-form-grid-key">
-                    <Form.Item name={[...namePrefix, 'position_filter_type']} label="Тип">
-                        <Select
-                            allowClear
-                            options={[
-                                { value: 'include', label: 'Только' },
-                                { value: 'exclude', label: 'Исключить' },
-                            ]}
-                        />
-                    </Form.Item>
-                    <Form.Item
-                        name={[...namePrefix, 'position_ids']}
-                        label="Позиции (артикул)"
-                        extra="Поиск по артикулу OEM. В подсказке: артикул • бренд • наименование"
-                    >
-                        <Select
-                            mode="multiple"
-                            showSearch
-                            filterOption={false}
-                            onSearch={handleAutopartFilterSearch}
-                            notFoundContent={
-                                autopartFilterLoading ? <Spin size="small" /> : null
-                            }
-                            placeholder="Например: 90915YZZN2"
-                            options={autopartFilterOptions}
-                        />
-                    </Form.Item>
-                </div>
+                <Divider>Правила отбора</Divider>
+                <Text type="secondary">
+                    Все правила применяются одновременно. В одном правиле можно выбрать несколько значений.
+                </Text>
+                <Form.List name={[...namePrefix, 'rules']}>
+                    {(fields, { add, remove }) => (
+                        <Space direction="vertical" style={{ width: '100%', marginTop: 12 }}>
+                            {fields.map((field) => (
+                                <Card key={field.key} size="small">
+                                    <div className="responsive-form-grid-key">
+                                        <Form.Item
+                                            name={[field.name, 'field']}
+                                            label="Что фильтровать"
+                                            rules={[{ required: true, message: 'Выберите тип' }]}
+                                        >
+                                            <Select
+                                                onChange={() => configForm.setFieldValue(
+                                                    [...absolutePrefix, 'rules', field.name, 'values'],
+                                                    []
+                                                )}
+                                                options={[
+                                                    { value: 'brand', label: 'Бренд' },
+                                                    { value: 'position', label: 'Позиция' },
+                                                    { value: 'applicability', label: 'Применимость' },
+                                                    { value: 'honest_sign', label: 'Честный знак' },
+                                                ]}
+                                            />
+                                        </Form.Item>
+                                        <Form.Item
+                                            name={[field.name, 'mode']}
+                                            label="Условие"
+                                            rules={[{ required: true, message: 'Выберите условие' }]}
+                                        >
+                                            <Select options={[
+                                                { value: 'include', label: 'Оставить только' },
+                                                { value: 'exclude', label: 'Исключить' },
+                                            ]} />
+                                        </Form.Item>
+                                        <Form.Item
+                                            name={[field.name, 'values']}
+                                            label="Значения"
+                                            rules={[{ required: true, message: 'Выберите значения' }]}
+                                        >
+                                            <FilterRuleValueSelect
+                                                form={configForm}
+                                                watchPath={[
+                                                    ...absolutePrefix,
+                                                    'rules',
+                                                    field.name,
+                                                    'field',
+                                                ]}
+                                                brandOptions={brandFilterOptions}
+                                                positionOptions={autopartFilterOptions}
+                                                applicabilityOptions={applicabilityFilterOptions}
+                                                honestSignOptions={honestSignFilterOptions}
+                                                positionLoading={autopartFilterLoading}
+                                                onPositionSearch={handleAutopartFilterSearch}
+                                            />
+                                        </Form.Item>
+                                        <Button danger onClick={() => remove(field.name)}>
+                                            Удалить правило
+                                        </Button>
+                                    </div>
+                                </Card>
+                            ))}
+                            <Button
+                                type="dashed"
+                                icon={<PlusOutlined />}
+                                onClick={() => add({ mode: 'exclude', values: [] })}
+                            >
+                                Добавить правило
+                            </Button>
+                        </Space>
+                    )}
+                </Form.List>
 
                 <Divider>Интервалы цен</Divider>
                 <Form.List name={[...namePrefix, 'price_intervals']}>
@@ -2141,7 +2259,15 @@ const CustomerPage = () => {
                                                     }))}
                                                 />
                                             </Form.Item>
-                                            {renderFilterFields([field.name])}
+                                            {renderFilterFields(
+                                                [field.name],
+                                                {
+                                                    absolutePrefix: [
+                                                        'supplier_filters',
+                                                        field.name,
+                                                    ],
+                                                }
+                                            )}
                                         </Card>
                                     ))}
                                     <Button type="dashed" onClick={() => add()}>
