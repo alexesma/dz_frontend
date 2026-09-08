@@ -2381,7 +2381,8 @@ const CustomerPricelistStudioPage = () => {
                 <Form form={ruleForm} layout="vertical">
                     <Form.Item
                         name="source_autopart_id"
-                        label="Фактическая позиция из собственного наличия"
+                        label="Исходная позиция из номенклатуры"
+                        extra="Можно выбрать любую позицию из каталога, даже если сейчас её нет в собственном прайсе. Правило начнёт действовать, когда позиция появится в выбранных источниках."
                         rules={[{ required: true }]}
                     >
                         <Select
@@ -2393,7 +2394,9 @@ const CustomerPricelistStudioPage = () => {
                             placeholder="Введите артикул, бренд или название"
                             options={candidateOptions.map((item) => ({
                                 value: item.autopart_id,
-                                label: `${candidateLabel(item)} · ${item.quantity} шт. · ${item.price ?? '—'} ₽`,
+                                label: item.in_current_price
+                                    ? `${candidateLabel(item)} · ${item.quantity} шт. · ${item.price ?? '—'} ₽`
+                                    : `${candidateLabel(item)} · нет в текущем собственном прайсе`,
                             }))}
                         />
                     </Form.Item>
