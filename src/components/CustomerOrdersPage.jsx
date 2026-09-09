@@ -10,6 +10,7 @@ import {
     Select,
     Switch,
     Table,
+    Tag,
     Tabs,
     Typography,
 } from 'antd';
@@ -455,7 +456,14 @@ const CustomerOrdersPage = () => {
             dataIndex: 'order_number',
             key: 'order_number',
             width: 140,
-            render: (value, record) => value || record.id,
+            render: (value, record) => (
+                <div>
+                    <div>{value || record.id}</div>
+                    {record.import_origin === 'partssoft_recovery' && (
+                        <Tag color="blue">Восстановлен из Parts-Soft</Tag>
+                    )}
+                </div>
+            ),
         },
         {
             title: 'Клиент',
@@ -769,7 +777,7 @@ const CustomerOrdersPage = () => {
                     },
                     {
                         key: 'partssoft',
-                        label: 'Parts-Soft: сверка',
+                        label: 'Сайт Dragonzap.ru',
                         children: <PartsSoftOrderReconciliation />,
                     },
                 ]}

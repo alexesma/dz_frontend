@@ -880,6 +880,7 @@ const CustomerPage = () => {
 
                 customerForm.setFieldsValue({
                     name: customer.name,
+                    legal_name: customer.legal_name,
                     email_contact: customer.email_contact,
                     email_outgoing_price: customer.email_outgoing_price,
                     inn: customer.inn,
@@ -1761,12 +1762,12 @@ const CustomerPage = () => {
                 >
                     <Form.Item
                         name="name"
-                        label="Название"
+                        label="Логин / название в системе"
                         rules={[
                             { required: true, whitespace: true, message: 'Введите название клиента' },
                         ]}
                     >
-                        <Input placeholder="Название клиента" />
+                        <Input placeholder="Логин или краткое название" />
                     </Form.Item>
 
                     <Form.Item
@@ -1809,6 +1810,10 @@ const CustomerPage = () => {
                     </Form.Item>
 
                     <Divider orientation="left">Юридические реквизиты</Divider>
+
+                    <Form.Item name="legal_name" label="Юридическое название">
+                        <Input placeholder="Полное название для документов" />
+                    </Form.Item>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
                         <Form.Item

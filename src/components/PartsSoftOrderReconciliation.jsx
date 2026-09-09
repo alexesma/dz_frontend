@@ -27,10 +27,35 @@ const STATUS = {
     existing_site_order: { label: 'Заказ с нашего сайта', color: 'green' },
     partial_site_match: { label: 'Частичное совпадение', color: 'orange' },
     order_conflict: { label: 'Конфликт заказов', color: 'red' },
-    probable_duplicate: { label: 'Вероятный дубль', color: 'orange' },
+    probable_duplicate: { label: 'Вероятный дубль заказа', color: 'orange' },
     customer_conflict: { label: 'Конфликт клиента', color: 'red' },
     customer_unmatched: { label: 'Клиент не связан', color: 'default' },
     new_order: { label: 'Новый заказ', color: 'blue' },
+};
+
+const MATCH_BASIS_LABELS = {
+    external_order_id: 'тот же ID заказа сайта',
+    tracking_uuid: 'точное совпадение по tracking ID',
+    partial_tracking_uuid: 'часть позиций совпала по tracking ID',
+    tracking_uuid_multiple_orders: 'позиции найдены в разных заказах',
+    customer_order_number: 'тот же клиент и номер заказа',
+    customer_date_items: 'тот же клиент, дата и состав заказа',
+    external_id: 'постоянная связь клиента',
+    inn_kpp: 'ИНН и КПП',
+    inn: 'ИНН',
+    email: 'email',
+    phone: 'телефон',
+    name: 'название',
+    none: 'совпадений нет',
+};
+
+const formatMatchBasis = (value) => {
+    const values = Array.isArray(value) ? value : String(value || '').split(',');
+    return values
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .map((item) => MATCH_BASIS_LABELS[item] || item)
+        .join(', ') || '—';
 };
 
 const PartsSoftOrderReconciliation = () => {
@@ -49,12 +74,12 @@ const PartsSoftOrderReconciliation = () => {
         try {
             const response = await reconcilePartsSoftOrders();
             setReport(response.data);
-            message.success('Сверка Parts-Soft завершена');
+            message.success('Сверка заказов сайта завершена');
         } catch (error) {
             const detail = error?.response?.data?.detail;
             const text = typeof detail === 'string'
                 ? detail
-                : 'Не удалось выполнить сверку Parts-Soft';
+                : 'Не удалось выполнить сверку заказов сайта';
             setErrorText(text);
             message.error(text);
         } finally {
@@ -164,7 +189,7 @@ const PartsSoftOrderReconciliation = () => {
             title: 'Основание',
             dataIndex: 'match_basis',
             width: 180,
-            render: (value) => value || '—',
+            render: formatMatchBasis,
         },
         {
             title: 'Связь у нас',
@@ -219,7 +244,7 @@ const PartsSoftOrderReconciliation = () => {
             title: 'Почему найден',
             dataIndex: 'match_basis',
             width: 170,
-            render: (value) => (value || []).join(', ') || 'ручной поиск',
+            render: (value) => formatMatchBasis(value) || 'ручной поиск',
         },
     ];
 
@@ -229,11 +254,11 @@ const PartsSoftOrderReconciliation = () => {
                 type="info"
                 showIcon
                 message="Проверка выполняется только за последние 7 дней"
-                description="Учитываются заказы региона Москва, у клиента должен быть заполнен ИНН. Запуск ничего не создаёт и не изменяет в обеих системах."
+                description="Показываются заказы всех регионов и всех типов клиентов. Дубли и конфликты остаются здесь и не загружаются в основной список заказов."
                 style={{ marginBottom: 16 }}
             />
             <Button type="primary" loading={loading} onClick={runReconciliation}>
-                Проверить Parts-Soft за 7 дней
+                Проверить сайт за 7 дней
             </Button>
 
             {errorText && (
@@ -252,10 +277,10 @@ const PartsSoftOrderReconciliation = () => {
                         Период: {dayjs(report.date_from).format('DD.MM.YYYY HH:mm')} — {dayjs(report.date_to).format('DD.MM.YYYY HH:mm')}
                     </Paragraph>
                     <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-                        <Col xs={12} md={6}><Card size="small"><Statistic title="Всего в Parts-Soft" value={report.remote_orders_total} /></Card></Col>
-                        <Col xs={12} md={6}><Card size="small"><Statistic title="С ИНН" value={report.qualified_orders} /></Card></Col>
+                        <Col xs={12} md={6}><Card size="small"><Statistic title="Всего на сайте" value={report.remote_orders_total} /></Card></Col>
+                        <Col xs={12} md={6}><Card size="small"><Statistic title="Заказов проверено" value={report.qualified_orders} /></Card></Col>
                         <Col xs={12} md={6}><Card size="small"><Statistic title="Позиций" value={report.items_total} /></Card></Col>
-                        <Col xs={12} md={6}><Card size="small"><Statistic title="Без ИНН" value={report.excluded_without_inn} /></Card></Col>
+                        <Col xs={12} md={6}><Card size="small"><Statistic title="Требуют проверки" value={(report.orders || []).filter((row) => row.review_required).length} /></Card></Col>
                     </Row>
                     <Table
                         size="small"

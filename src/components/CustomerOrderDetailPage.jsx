@@ -714,6 +714,38 @@ const CustomerOrderDetailPage = () => {
             ),
         },
         {
+            title: 'Источник предложения',
+            key: 'offer_source',
+            width: 220,
+            render: (_, record) => {
+                if (!record.external_provider_id && !record.external_offer_id) return '—';
+                const statusLabels = {
+                    api_ready: 'готово к автозаказу',
+                    api_ordered: 'автозаказ отправлен',
+                    api_order_error: 'ошибка автозаказа',
+                    unresolved: 'источник не определён',
+                };
+                const color = record.source_resolution_status === 'api_ordered'
+                    ? 'green'
+                    : record.source_resolution_status === 'api_order_error'
+                        ? 'red'
+                        : 'blue';
+                return (
+                    <div>
+                        <div>Поставщик: {record.external_provider_id || '—'}</div>
+                        {record.external_offer_id && (
+                            <div>Предложение: {record.external_offer_id}</div>
+                        )}
+                        <Tag color={color}>
+                            {statusLabels[record.source_resolution_status]
+                                || record.source_resolution_status
+                                || 'сохранено'}
+                        </Tag>
+                    </div>
+                );
+            },
+        },
+        {
             title: 'Действия',
             key: 'actions',
             width: 220,
@@ -836,6 +868,14 @@ const CustomerOrderDetailPage = () => {
                             <Descriptions.Item label="Клиент">
                                 {customerMap[order.customer_id] || order.customer_id}
                             </Descriptions.Item>
+                            {order.import_origin === 'partssoft_recovery' && (
+                                <Descriptions.Item label="Происхождение" span={2}>
+                                    <Tag color="blue">Восстановлен из Parts-Soft</Tag>
+                                    {order.external_order_id
+                                        ? ` Заказ сайта #${order.external_order_id}`
+                                        : ''}
+                                </Descriptions.Item>
+                            )}
                             <Descriptions.Item label="Сумма заказа">
                                 {formatMoney(summary.totalSum)}
                             </Descriptions.Item>
