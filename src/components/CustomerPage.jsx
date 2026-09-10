@@ -2128,6 +2128,8 @@ const CustomerPage = () => {
                         collapse_duplicates_by_min_price: true,
                         schedule_days: [],
                         schedule_times: [],
+                        max_source_age_business_days: 1,
+                        block_stale_sources: true,
                         emails: [],
                         is_active: true,
                     }}
@@ -2312,6 +2314,26 @@ const CustomerPage = () => {
                             placeholder="09:00"
                         />
                     </Form.Item>
+
+                    <div className="responsive-form-grid-3">
+                        <Form.Item
+                            name="max_source_age_business_days"
+                            label="Допустимый возраст источников"
+                            extra="В рабочих днях. Значение 1 разрешает сегодняшний и вчерашний прайс."
+                            rules={[{ required: true, message: 'Укажите допустимый возраст' }]}
+                        >
+                            <InputNumber min={0} max={30} style={{ width: '100%' }} />
+                        </Form.Item>
+
+                        <Form.Item
+                            name="block_stale_sources"
+                            label="Не отправлять устаревший прайс"
+                            valuePropName="checked"
+                            extra="Рассылка подождёт свежий прайс поставщика и запустится после его загрузки."
+                        >
+                            <Switch />
+                        </Form.Item>
+                    </div>
 
                     <Form.Item
                         name="emails"
