@@ -206,12 +206,12 @@ const PartsSoftOrderReconciliation = () => {
             title: 'Действия',
             key: 'actions',
             fixed: 'right',
-            width: 130,
+            width: 175,
             render: (_, row) => (
                 !row.customer_linked
                     ? (
                         <Button size="small" onClick={() => openLink(row)}>
-                            {row.local_customer_id ? 'Закрепить' : 'Привязать'}
+                            {row.local_customer_id ? 'Подтвердить связь' : 'Привязать'}
                         </Button>
                     )
                     : <Text type="secondary">Связан</Text>
