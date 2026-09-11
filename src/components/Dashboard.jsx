@@ -36,6 +36,7 @@ import {
     getOrderDynamics,
     getOrderMargin,
     getSupplierPriceTrends,
+    getSupplierPricelistHealth,
     getSupplierReliability,
 } from '../api/dashboard';
 import { getExecutionTraces } from '../api/settings';
@@ -49,6 +50,14 @@ const TRACE_STATUS_COLOR = {
     error: 'red',
     running: 'blue',
     needs_review: 'orange',
+};
+
+const PRICELIST_HEALTH_META = {
+    fresh: { label: 'Актуален', color: 'green' },
+    stale: { label: 'Устарел', color: 'red' },
+    extended: { label: 'Продлён вручную', color: 'gold' },
+    pending_review: { label: 'Ожидает проверки', color: 'orange' },
+    without_pricelist: { label: 'Прайс не загружен', color: 'default' },
 };
 
 const formatNumber = (value, digits = 0) => {
@@ -359,6 +368,8 @@ const Dashboard = () => {
     const [pointsLimit, setPointsLimit] = useState(8);
     const smoothWindow = 3;
     const [series, setSeries] = useState([]);
+    const [pricelistHealth, setPricelistHealth] = useState(null);
+    const [trendLoadError, setTrendLoadError] = useState('');
     const [orderDynamics, setOrderDynamics] = useState(null);
     const [orderCompareDaily, setOrderCompareDaily] = useState([]);
     const [marginChartMetric, setMarginChartMetric] = useState('revenue');
@@ -408,6 +419,7 @@ const Dashboard = () => {
                 getOrderMargin({ days: 60 }),
                 getInventoryControl(),
                 getSupplierReliability({ days: 90 }),
+                getSupplierPricelistHealth(),
             ]);
             const [
                 trendsResponse,
@@ -421,6 +433,7 @@ const Dashboard = () => {
                 orderMarginResponse,
                 inventoryResponse,
                 reliabilityResponse,
+                pricelistHealthResponse,
             ] = requests.map((result) => (
                 result.status === 'fulfilled' ? result.value : null
             ));
@@ -442,6 +455,16 @@ const Dashboard = () => {
                 ? customersResponse.data.items
                 : [];
             setSeries(nextSeries);
+            setPricelistHealth(pricelistHealthResponse?.data || null);
+            setTrendLoadError(
+                requests[0]?.status === 'rejected'
+                    ? (
+                        requests[0].reason?.response?.data?.detail
+                        || requests[0].reason?.message
+                        || 'Не удалось построить историю изменений'
+                    )
+                    : ''
+            );
             setOrderDynamics(orderDynamicsResponse?.data || null);
             setOrderCompareDaily(
                 Array.isArray(orderCompareResponse?.data?.daily)
@@ -550,6 +573,26 @@ const Dashboard = () => {
             value: item.provider_config_id,
             label: joinProviderLabel(item),
         })),
+        [series]
+    );
+
+    const pricelistAttentionRows = useMemo(
+        () => (pricelistHealth?.items || []).filter((item) => item.status !== 'fresh'),
+        [pricelistHealth]
+    );
+
+    const sharpPricelistJumps = useMemo(
+        () => series.filter((item) => {
+            const latest = item.points?.[item.points.length - 1];
+            const previous = item.points?.[item.points.length - 2];
+            const priceJump = Math.abs(Number(latest?.step_index_pct || 0)) >= 5;
+            const assortmentJump = latest && previous && Number(previous.total_sku_count) > 0
+                ? Math.abs(
+                    (Number(latest.total_sku_count) / Number(previous.total_sku_count) - 1) * 100
+                ) >= 20
+                : false;
+            return priceJump || assortmentJump || Number(latest?.coverage_pct ?? 100) < 70;
+        }).length,
         [series]
     );
 
@@ -2149,6 +2192,121 @@ const Dashboard = () => {
                     />
                 </Card>
 
+                <Card title="Состояние прайсов поставщиков">
+                    <Row gutter={[12, 12]}>
+                        <Col xs={12} md={8} xl={4}>
+                            <Card size="small">
+                                <Statistic
+                                    title="Активных источников"
+                                    value={Number(pricelistHealth?.summary?.total_active || 0)}
+                                />
+                            </Card>
+                        </Col>
+                        <Col xs={12} md={8} xl={4}>
+                            <Card size="small">
+                                <Statistic
+                                    title="Актуальны"
+                                    value={Number(pricelistHealth?.summary?.fresh || 0)}
+                                    valueStyle={{ color: '#16a34a' }}
+                                />
+                            </Card>
+                        </Col>
+                        <Col xs={12} md={8} xl={4}>
+                            <Card size="small">
+                                <Statistic
+                                    title="Устарели"
+                                    value={Number(pricelistHealth?.summary?.stale || 0)}
+                                    valueStyle={{ color: '#dc2626' }}
+                                />
+                            </Card>
+                        </Col>
+                        <Col xs={12} md={8} xl={4}>
+                            <Card size="small">
+                                <Statistic
+                                    title="Ждут проверки"
+                                    value={Number(pricelistHealth?.summary?.pending_review || 0)}
+                                    valueStyle={{ color: '#d97706' }}
+                                />
+                            </Card>
+                        </Col>
+                        <Col xs={12} md={8} xl={4}>
+                            <Card size="small">
+                                <Statistic
+                                    title="Продлены"
+                                    value={Number(pricelistHealth?.summary?.extended || 0)}
+                                />
+                            </Card>
+                        </Col>
+                        <Col xs={12} md={8} xl={4}>
+                            <Card size="small">
+                                <Statistic
+                                    title="Резкие скачки"
+                                    value={sharpPricelistJumps}
+                                    valueStyle={{ color: sharpPricelistJumps ? '#dc2626' : undefined }}
+                                />
+                            </Card>
+                        </Col>
+                    </Row>
+                    {pricelistAttentionRows.length > 0 ? (
+                        <Table
+                            style={{ marginTop: 16 }}
+                            rowKey="provider_config_id"
+                            size="small"
+                            pagination={{ pageSize: 8, showSizeChanger: false }}
+                            dataSource={pricelistAttentionRows}
+                            columns={[
+                                {
+                                    title: 'Поставщик / источник',
+                                    key: 'source',
+                                    render: (_, row) => (
+                                        <Space direction="vertical" size={0}>
+                                            <Text strong>{row.provider_name}</Text>
+                                            <Text type="secondary">
+                                                {row.provider_config_name || `Источник #${row.provider_config_id}`}
+                                            </Text>
+                                        </Space>
+                                    ),
+                                },
+                                {
+                                    title: 'Состояние',
+                                    dataIndex: 'status',
+                                    width: 180,
+                                    render: (value) => {
+                                        const meta = PRICELIST_HEALTH_META[value] || {};
+                                        return <Tag color={meta.color}>{meta.label || value}</Tag>;
+                                    },
+                                },
+                                {
+                                    title: 'Последний прайс',
+                                    key: 'latest',
+                                    width: 180,
+                                    render: (_, row) => (
+                                        row.latest_pricelist_date
+                                            ? `${formatShortDate(row.latest_pricelist_date)} · ${row.age_days} дн.`
+                                            : '—'
+                                    ),
+                                },
+                                {
+                                    title: 'Что ожидает',
+                                    key: 'pending',
+                                    render: (_, row) => row.pending_review_filename || (
+                                        row.stale_override_until
+                                            ? `Разрешён до ${formatDateTime(row.stale_override_until)}`
+                                            : 'Требуется решение администратора'
+                                    ),
+                                },
+                            ]}
+                        />
+                    ) : (
+                        <Alert
+                            style={{ marginTop: 16 }}
+                            type="success"
+                            showIcon
+                            message="Все активные источники прайсов в норме"
+                        />
+                    )}
+                </Card>
+
                 <Card
                     title="Динамика прайсов поставщиков"
                     extra={(
@@ -2159,6 +2317,20 @@ const Dashboard = () => {
                         </Space>
                     )}
                 >
+                    {trendLoadError ? (
+                        <Alert
+                            style={{ marginBottom: 16 }}
+                            type="error"
+                            showIcon
+                            message="История изменений не загрузилась"
+                            description={trendLoadError}
+                            action={(
+                                <Button size="small" onClick={() => void loadData()}>
+                                    Повторить
+                                </Button>
+                            )}
+                        />
+                    ) : null}
                     <Table
                         rowKey="provider_config_id"
                         size="small"

@@ -34,6 +34,7 @@ import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import useAuth from '../context/useAuth';
 import {
+    actOnStalePricelist,
     getNotifications,
     markAllNotificationsRead,
     markNotificationRead,
@@ -74,6 +75,12 @@ const levelLabelMap = {
 const WATCHLIST_PRICE_PREFIX = 'Подходящая цена:';
 const PRICELIST_BLOCKED_PREFIX = 'Прайс заблокирован:';
 const SHORTAGE_NOTIFICATION_TYPE = 'reclamation_shortage';
+const STALE_PRICELIST_NOTIFICATION_TYPE = 'pricelist_stale_action';
+
+const isStalePricelistNotification = (item) => (
+    Boolean(item)
+    && item.payload?.notification_type === STALE_PRICELIST_NOTIFICATION_TYPE
+);
 
 const supportsBrowserNotifications = () => (
     typeof window !== 'undefined' && 'Notification' in window
@@ -194,6 +201,7 @@ const NotificationCenter = () => {
     const [blockedDownloadLoading, setBlockedDownloadLoading] = useState(false);
     const [blockedRejectOpen, setBlockedRejectOpen] = useState(false);
     const [blockedRejectReason, setBlockedRejectReason] = useState('');
+    const [stalePricelistActionLoading, setStalePricelistActionLoading] = useState(false);
     const initializedRef = useRef(false);
     const seenIdsRef = useRef(new Set());
     const titleFlashIntervalRef = useRef(null);
@@ -315,6 +323,10 @@ const NotificationCenter = () => {
     }, [dndEnabled, importantOnlyEnabled]);
 
     const openNotificationItem = useCallback(async (item) => {
+        if (isStalePricelistNotification(item) && !item.read_at) {
+            setDrawerOpen(false);
+            return;
+        }
         if (!item.read_at) {
             try {
                 const result = await markNotificationRead(item.id);
@@ -448,11 +460,15 @@ const NotificationCenter = () => {
 
     const handleMarkAllRead = useCallback(async () => {
         try {
-            await markAllNotificationsRead();
+            const result = await markAllNotificationsRead();
             const readAt = new Date().toISOString();
-            setItems((current) => current.map((item) => ({ ...item, read_at: readAt })));
-            setUnreadCount(0);
-            message.success('Все уведомления отмечены как прочитанные.');
+            setItems((current) => current.map((item) => (
+                !item.read_at && isStalePricelistNotification(item)
+                    ? item
+                    : { ...item, read_at: item.read_at || readAt }
+            )));
+            setUnreadCount((current) => Math.max(0, current - Number(result.updated || 0)));
+            message.success('Обычные уведомления отмечены как прочитанные.');
         } catch (err) {
             console.error('Failed to mark all notifications as read', err);
             message.error('Не удалось отметить уведомления как прочитанные.');
@@ -586,6 +602,14 @@ const NotificationCenter = () => {
         () => getBlockedPricelistReference(blockedPricelistItem),
         [blockedPricelistItem]
     );
+    const stalePricelistItems = useMemo(
+        () => sortedItems.filter(
+            (item) => !item.read_at && isStalePricelistNotification(item)
+        ),
+        [sortedItems]
+    );
+    const stalePricelistItem = stalePricelistItems[0] || null;
+    const stalePricelistPayload = stalePricelistItem?.payload || {};
     const shortageNotificationItem = useMemo(
         () => sortedItems.find(
             (item) => (
@@ -611,6 +635,29 @@ const NotificationCenter = () => {
         setBlockedRejectOpen(false);
         setBlockedRejectReason('');
     }, [blockedPricelistItem?.id]);
+
+    const handleStalePricelistAction = useCallback(async (action) => {
+        if (!stalePricelistItem) return;
+        setStalePricelistActionLoading(true);
+        try {
+            const result = await actOnStalePricelist(stalePricelistItem.id, action);
+            updateReadState(stalePricelistItem.id);
+            if (action === 'extend_one_day') {
+                message.success(
+                    `Прайс разрешён до ${dayjs(result.override_until).format('DD.MM.YYYY HH:mm')}`
+                );
+            } else {
+                message.success('Вопрос отложен на 30 минут');
+            }
+            await fetchNotificationState({ silent: true });
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail || 'Не удалось сохранить решение по прайсу'
+            );
+        } finally {
+            setStalePricelistActionLoading(false);
+        }
+    }, [fetchNotificationState, stalePricelistItem, updateReadState]);
 
     const finishShortageNotification = useCallback(async () => {
         if (!shortageNotificationItem) {
@@ -905,6 +952,70 @@ const NotificationCenter = () => {
                 />
             </Modal>
             <Modal
+                open={Boolean(stalePricelistItem) && !blockedPricelistItem}
+                centered
+                width={680}
+                closable={false}
+                maskClosable={false}
+                keyboard={false}
+                title={`Требуется решение по прайсу${
+                    stalePricelistItems.length > 1
+                        ? ` · осталось ${stalePricelistItems.length}`
+                        : ''
+                }`}
+                footer={(
+                    <Space wrap>
+                        <Button
+                            icon={<ClockCircleOutlined />}
+                            loading={stalePricelistActionLoading}
+                            onClick={() => void handleStalePricelistAction('snooze_30_minutes')}
+                        >
+                            Отложить на 30 минут
+                        </Button>
+                        <Popconfirm
+                            title="Разрешить использовать этот прайс ещё 24 часа?"
+                            description="Исходная дата загрузки сохранится без изменений."
+                            okText="Продлить"
+                            cancelText="Отмена"
+                            onConfirm={() => handleStalePricelistAction('extend_one_day')}
+                        >
+                            <Button
+                                type="primary"
+                                loading={stalePricelistActionLoading}
+                            >
+                                Продлить на 1 день
+                            </Button>
+                        </Popconfirm>
+                    </Space>
+                )}
+            >
+                <Alert
+                    type="warning"
+                    showIcon
+                    message={`${stalePricelistPayload.provider_name || 'Поставщик'} · ${
+                        stalePricelistPayload.provider_config_name || 'источник прайса'
+                    }`}
+                    description={stalePricelistItem?.message}
+                />
+                <Descriptions bordered size="small" column={1} style={{ marginTop: 16 }}>
+                    <Descriptions.Item label="Последний прайс">
+                        {stalePricelistPayload.last_price_date
+                            ? dayjs(stalePricelistPayload.last_price_date).format('DD.MM.YYYY')
+                            : '—'}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Без обновления">
+                        {stalePricelistPayload.days_diff ?? '—'} дн.
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Допустимый срок">
+                        {stalePricelistPayload.max_days_without_update ?? '—'} дн.
+                    </Descriptions.Item>
+                </Descriptions>
+                <Typography.Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0 }}>
+                    Пока решение не выбрано, окно нельзя закрыть. Продление действует 24 часа и
+                    учитывается при формировании клиентских прайсов.
+                </Typography.Paragraph>
+            </Modal>
+            <Modal
                 open={Boolean(blockedPricelistItem) && blockedRejectOpen}
                 centered
                 title="Отклонить обновление прайса"
@@ -931,7 +1042,7 @@ const NotificationCenter = () => {
             </Modal>
             <Modal
                 open={Boolean(
-                    shortageNotificationItem && !blockedPricelistItem
+                    shortageNotificationItem && !blockedPricelistItem && !stalePricelistItem
                 )}
                 centered
                 width={920}

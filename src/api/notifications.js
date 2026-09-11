@@ -19,3 +19,11 @@ export const markAllNotificationsRead = async () => {
     const { data } = await api.post('/notifications/read-all');
     return data;
 };
+
+export const actOnStalePricelist = async (notificationId, action) => {
+    const { data } = await api.post(
+        `/notifications/${notificationId}/pricelist-stale-action`,
+        { action }
+    );
+    return data;
+};
