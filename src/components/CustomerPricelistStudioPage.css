@@ -1,12 +1,12 @@
 .customer-pricelist-studio {
     --studio-ink: #14213d;
-    --studio-copper: #c4622d;
-    --studio-sand: #f4eadc;
-    --studio-mint: #dfeee7;
-    padding: 18px;
+    --studio-copper: #2563eb;
+    --studio-sand: #e8eef9;
+    --studio-mint: #dff5ef;
+    padding: 20px;
     background:
-        radial-gradient(circle at 92% 4%, rgba(196, 98, 45, 0.16), transparent 26rem),
-        linear-gradient(145deg, #f7f3eb 0%, #eef3ef 48%, #f7f8f4 100%);
+        radial-gradient(circle at 94% 2%, rgba(37, 99, 235, 0.12), transparent 24rem),
+        linear-gradient(145deg, #f7f9fc 0%, #eef3f8 55%, #f8fafc 100%);
     min-height: calc(100vh - 32px);
 }
 
@@ -14,13 +14,13 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(360px, 0.7fr);
     gap: 28px;
-    align-items: end;
-    padding: 30px;
+    align-items: center;
+    padding: 22px 24px;
     border: 1px solid rgba(20, 33, 61, 0.12);
-    border-radius: 24px;
+    border-radius: 18px;
     color: var(--studio-ink);
     background:
-        linear-gradient(120deg, rgba(255, 255, 255, 0.92), rgba(244, 234, 220, 0.78)),
+        linear-gradient(120deg, rgba(255, 255, 255, 0.96), rgba(232, 238, 249, 0.88)),
         repeating-linear-gradient(90deg, transparent 0 36px, rgba(20, 33, 61, 0.035) 36px 37px);
     box-shadow: 0 20px 50px rgba(20, 33, 61, 0.08);
 }
@@ -29,8 +29,8 @@
     margin: 4px 0 6px;
     color: var(--studio-ink);
     font-family: Georgia, 'Times New Roman', serif;
-    font-size: clamp(32px, 4vw, 52px);
-    line-height: 1.02;
+    font-size: clamp(28px, 3vw, 38px);
+    line-height: 1.1;
 }
 
 .eyebrow {
@@ -49,9 +49,31 @@
 .hero-selector {
     display: grid;
     gap: 10px;
-    padding: 16px;
+    padding: 14px;
     border-radius: 16px;
     background: rgba(20, 33, 61, 0.92);
+}
+
+.hero-selector .ant-space {
+    width: 100%;
+}
+
+.studio-selection-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    align-items: center;
+    min-height: 34px;
+    padding: 8px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 10px;
+    color: rgba(255, 255, 255, 0.78);
+    background: rgba(255, 255, 255, 0.07);
+}
+
+.studio-selection-meta .ant-typography {
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 13px;
 }
 
 .hero-selector .ant-select {
@@ -124,6 +146,28 @@
 .pricelist-studio-form .ant-divider-inner-text {
     color: var(--studio-ink);
     font-weight: 700;
+}
+
+.settings-save-bar {
+    position: sticky;
+    z-index: 4;
+    top: 8px;
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0 0 18px;
+    padding: 12px 14px;
+    border: 1px solid #dbe4f0;
+    border-radius: 12px;
+    background: rgba(248, 250, 252, 0.96);
+    box-shadow: 0 8px 20px rgba(20, 33, 61, 0.07);
+    backdrop-filter: blur(12px);
+}
+
+.settings-save-bar.is-dirty {
+    border-color: #f0b429;
+    background: rgba(255, 251, 235, 0.97);
 }
 
 .zzap-settings-block {
@@ -391,6 +435,16 @@
     .preview-toolbar {
         align-items: flex-start;
         flex-direction: column;
+    }
+
+    .settings-save-bar {
+        position: static;
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .settings-save-bar .ant-btn {
+        width: 100%;
     }
 
     .row-filters {

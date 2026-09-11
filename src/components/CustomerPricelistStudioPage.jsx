@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
     Alert,
     Button,
@@ -39,7 +40,9 @@ import {
 import {
     approveCustomerPricelistDraft,
     buildCustomerPricelistDraft,
+    createCustomerPricelistConfig,
     createCustomerPricelistSource,
+    deleteCustomerPricelistConfig,
     deleteCustomerPricelistPublicationRule,
     deleteCustomerPricelistSource,
     diagnoseCustomerPricelistPosition,
@@ -200,7 +203,9 @@ const candidateLabel = (item) => (
 );
 
 const CustomerPricelistStudioPage = () => {
+    const navigate = useNavigate();
     const [settingsForm] = Form.useForm();
+    const [newConfigForm] = Form.useForm();
     const [ruleForm] = Form.useForm();
     const [sourceFilterForm] = Form.useForm();
     const pipelineV2Enabled = Form.useWatch('pipeline_v2_enabled', settingsForm);
@@ -221,6 +226,12 @@ const CustomerPricelistStudioPage = () => {
     const [sources, setSources] = useState([]);
     const [sourceToAdd, setSourceToAdd] = useState(null);
     const [addingSource, setAddingSource] = useState(false);
+    const [sourceSavingId, setSourceSavingId] = useState(null);
+    const [sourceDeletingId, setSourceDeletingId] = useState(null);
+    const [dirtySourceIds, setDirtySourceIds] = useState(() => new Set());
+    const [newConfigOpen, setNewConfigOpen] = useState(false);
+    const [creatingConfig, setCreatingConfig] = useState(false);
+    const [deletingConfig, setDeletingConfig] = useState(false);
     const [rules, setRules] = useState([]);
     const [drafts, setDrafts] = useState([]);
     const [selectedDraftId, setSelectedDraftId] = useState(null);
@@ -233,6 +244,7 @@ const CustomerPricelistStudioPage = () => {
     const [loading, setLoading] = useState(false);
     const [rowsLoading, setRowsLoading] = useState(false);
     const [savingSettings, setSavingSettings] = useState(false);
+    const [settingsDirty, setSettingsDirty] = useState(false);
     const [buildingDraft, setBuildingDraft] = useState(false);
     const [ruleModalOpen, setRuleModalOpen] = useState(false);
     const [candidateOptions, setCandidateOptions] = useState([]);
@@ -335,6 +347,15 @@ const CustomerPricelistStudioPage = () => {
         }
     }, []);
 
+    const reloadSources = useCallback(async () => {
+        if (!customerId || !configId) return [];
+        const { data } = await getCustomerPricelistSources(customerId, configId);
+        const nextSources = data || [];
+        setSources(nextSources);
+        setDirtySourceIds(new Set());
+        return nextSources;
+    }, [customerId, configId]);
+
     useEffect(() => {
         if (!activeConfig) {
             settingsForm.resetFields();
@@ -363,6 +384,9 @@ const CustomerPricelistStudioPage = () => {
                 activeConfig.outgoing_email_account_id || null,
             schedule_days: activeConfig.schedule_days || [],
             schedule_times: activeConfig.schedule_times || [],
+            max_source_age_business_days:
+                activeConfig.max_source_age_business_days ?? 1,
+            block_stale_sources: activeConfig.block_stale_sources !== false,
             zzap_enabled: Boolean(extra.ZZAP),
             zzap_benchmark_provider_config_id:
                 extra.ZZAP_BENCHMARK_PROVIDER_CONFIG_ID || null,
@@ -417,6 +441,7 @@ const CustomerPricelistStudioPage = () => {
             publication_rules_only_configured:
                 extra.PUBLICATION_RULES_ONLY_CONFIGURED !== false,
         });
+        setSettingsDirty(false);
     }, [activeConfig, settingsForm]);
 
     const loadDraftRows = useCallback(async () => {
@@ -481,6 +506,7 @@ const CustomerPricelistStudioPage = () => {
         setSourceToAdd(null);
         setConfigs([]);
         setSources([]);
+        setDirtySourceIds(new Set());
         setRules([]);
         setDrafts([]);
         setSelectedDraftId(null);
@@ -491,7 +517,63 @@ const CustomerPricelistStudioPage = () => {
         setConfigId(value);
         setSourceToAdd(null);
         setDraftRowsPage(1);
+        setDirtySourceIds(new Set());
         await loadWorkspace(customerId, value);
+    };
+
+    const handleCreateConfig = async () => {
+        if (!customerId) {
+            message.error('Сначала выберите клиента');
+            return;
+        }
+        setCreatingConfig(true);
+        try {
+            const values = await newConfigForm.validateFields();
+            const { data } = await createCustomerPricelistConfig(customerId, {
+                name: values.name.trim(),
+                general_markup: 1,
+                own_price_list_markup: 1,
+                third_party_markup: 1,
+                export_file_format: 'xlsx',
+                collapse_duplicates_by_min_price: true,
+                max_source_age_business_days: 1,
+                block_stale_sources: true,
+                is_active: true,
+            });
+            setConfigs((previous) => [...previous, data]);
+            setConfigId(data.id);
+            setNewConfigOpen(false);
+            newConfigForm.resetFields();
+            await loadWorkspace(customerId, data.id);
+            message.success(`Конфигурация «${data.name}» создана`);
+        } catch (error) {
+            if (!error?.errorFields) {
+                message.error(getErrorText(error, 'Не удалось создать конфигурацию'));
+            }
+        } finally {
+            setCreatingConfig(false);
+        }
+    };
+
+    const handleDeleteConfig = async () => {
+        if (!customerId || !configId || !activeConfig) return;
+        setDeletingConfig(true);
+        try {
+            const deletedName = activeConfig.name;
+            await deleteCustomerPricelistConfig(customerId, configId);
+            const { data } = await getCustomerPricelistConfigs(customerId);
+            setConfigs(data || []);
+            setConfigId(null);
+            setSources([]);
+            setRules([]);
+            setDrafts([]);
+            setSelectedDraftId(null);
+            message.success(`Конфигурация «${deletedName}» удалена`);
+        } catch (error) {
+            message.error(getErrorText(error, 'Не удалось удалить конфигурацию'));
+        } finally {
+            setDeletingConfig(false);
+        }
     };
 
     const handleSaveSettings = async () => {
@@ -573,6 +655,9 @@ const CustomerPricelistStudioPage = () => {
                         values.outgoing_email_account_id || null,
                     schedule_days: values.schedule_days || [],
                     schedule_times: values.schedule_times || [],
+                    max_source_age_business_days:
+                        values.max_source_age_business_days ?? 1,
+                    block_stale_sources: values.block_stale_sources !== false,
                     additional_filters: additionalFilters,
                 }
             );
@@ -584,6 +669,25 @@ const CustomerPricelistStudioPage = () => {
             if (requestedAccountId !== savedAccountId) {
                 throw new Error(
                     'Сервер не подтвердил сохранение почты отправителя. Обновите страницу и повторите.'
+                );
+            }
+            const markupFields = [
+                'general_markup',
+                'own_price_list_markup',
+                'third_party_markup',
+            ];
+            const markupWasSaved = markupFields.every((field) => (
+                Math.abs(Number(data[field]) - Number(values[field])) < 0.000001
+            ));
+            if (
+                !markupWasSaved
+                || Number(data.max_source_age_business_days)
+                    !== Number(values.max_source_age_business_days ?? 1)
+                || Boolean(data.block_stale_sources)
+                    !== Boolean(values.block_stale_sources !== false)
+            ) {
+                throw new Error(
+                    'Сервер не подтвердил сохранение наценок или контроля актуальности'
                 );
             }
             const requestedFinalRules = additionalFilters.FINAL_FILTER_RULES || [];
@@ -606,6 +710,7 @@ const CustomerPricelistStudioPage = () => {
             message.success(
                 `Настройки сохранены. Финальных правил: ${savedFinalRules.length}. ${deliveryText}`
             );
+            setSettingsDirty(false);
         } catch (error) {
             message.error(getErrorText(error, 'Не удалось сохранить настройки'));
         } finally {
@@ -635,11 +740,13 @@ const CustomerPricelistStudioPage = () => {
             quality_control_enabled: ZZAP_TEMPLATE.QUALITY_CONTROL_ENABLED,
             require_draft_approval: ZZAP_TEMPLATE.REQUIRE_DRAFT_APPROVAL,
         });
+        setSettingsDirty(true);
         message.info('Шаблон ZZap заполнен. Выберите контрольные прайсы и сохраните настройки.');
     };
 
     const handlePipelineDrop = (targetStep) => {
         if (!draggedPipelineStep || draggedPipelineStep === targetStep) return;
+        setSettingsDirty(true);
         setPipelineOrder((previous) => {
             const next = previous.filter((step) => step !== draggedPipelineStep);
             const targetIndex = next.indexOf(targetStep);
@@ -653,10 +760,14 @@ const CustomerPricelistStudioPage = () => {
         setSources((previous) => previous.map((source) => (
             source.id === sourceId ? { ...source, ...patch } : source
         )));
+        setDirtySourceIds((previous) => new Set(previous).add(sourceId));
     };
 
     const handleAddSource = async () => {
-        if (!customerId || !configId || !sourceToAdd) return;
+        if (!customerId || !configId || !sourceToAdd) {
+            message.error('Выберите прайс поставщика для подключения');
+            return;
+        }
         setAddingSource(true);
         try {
             const { data } = await createCustomerPricelistSource(
@@ -668,7 +779,7 @@ const CustomerPricelistStudioPage = () => {
                     markup: 1,
                 }
             );
-            setSources((previous) => [...previous, data]);
+            await reloadSources();
             setSourceToAdd(null);
             message.success(
                 `Источник «${data.provider_name} · ${data.provider_config_name || data.provider_config_id}» подключён`
@@ -681,20 +792,29 @@ const CustomerPricelistStudioPage = () => {
     };
 
     const handleDeleteSource = async (source) => {
+        setSourceDeletingId(source.id);
         try {
             await deleteCustomerPricelistSource(
                 customerId,
                 configId,
                 source.id
             );
-            setSources((previous) => previous.filter((item) => item.id !== source.id));
+            await reloadSources();
             message.success('Источник отключён от прайса клиента');
         } catch (error) {
             message.error(getErrorText(error, 'Не удалось удалить источник'));
+        } finally {
+            setSourceDeletingId(null);
         }
     };
 
     const handleSaveSource = async (source) => {
+        const requestedMarkup = Number(source.markup);
+        if (!Number.isFinite(requestedMarkup) || requestedMarkup <= 0) {
+            message.error('Коэффициент источника должен быть больше нуля');
+            return;
+        }
+        setSourceSavingId(source.id);
         try {
             const additionalFilters = {
                 ...(source.additional_filters || {}),
@@ -711,19 +831,23 @@ const CustomerPricelistStudioPage = () => {
                     additional_filters: additionalFilters,
                 }
             );
-            setSources((previous) => previous.map((item) => (
-                item.id === source.id
-                    ? {
-                        ...data,
-                        dz_expand_brands: Boolean(
-                            data.additional_filters?.DZ_EXPAND_BRANDS
-                        ),
-                    }
-                    : item
-            )));
+            const savedMarkup = Number(data.markup);
+            if (
+                !Number.isFinite(savedMarkup)
+                || Math.abs(requestedMarkup - savedMarkup) > 0.000001
+                || Boolean(data.enabled) !== Boolean(source.enabled)
+                || Boolean(data.mask_price_quantity) !== Boolean(source.mask_price_quantity)
+                || Boolean(data.additional_filters?.DZ_EXPAND_BRANDS)
+                    !== Boolean(source.dz_expand_brands)
+            ) {
+                throw new Error('Сервер не подтвердил сохранение параметров источника');
+            }
+            await reloadSources();
             message.success(`Источник «${source.provider_config_name || source.provider_name}» сохранён`);
         } catch (error) {
             message.error(getErrorText(error, 'Не удалось сохранить источник'));
+        } finally {
+            setSourceSavingId(null);
         }
     };
 
@@ -1071,8 +1195,33 @@ const CustomerPricelistStudioPage = () => {
     };
 
     const settingsPanel = (
-        <Form form={settingsForm} layout="vertical" className="pricelist-studio-form">
+        <Form
+            form={settingsForm}
+            layout="vertical"
+            className="pricelist-studio-form"
+            onValuesChange={() => setSettingsDirty(true)}
+        >
             <Form.Item name="profile_template" hidden><Input /></Form.Item>
+            <div className={`settings-save-bar${settingsDirty ? ' is-dirty' : ''}`}>
+                <div>
+                    <Text strong>
+                        {settingsDirty ? 'Есть несохранённые изменения' : 'Настройки синхронизированы'}
+                    </Text>
+                    <div className="muted-line">
+                        {settingsDirty
+                            ? 'Сохраните их перед переходом к другой конфигурации.'
+                            : 'Наценки, расписание и фильтры загружены с сервера.'}
+                    </div>
+                </div>
+                <Button
+                    type="primary"
+                    icon={<SaveOutlined />}
+                    loading={savingSettings}
+                    onClick={handleSaveSettings}
+                >
+                    Сохранить изменения
+                </Button>
+            </div>
             <Row gutter={[18, 0]}>
                 <Col xs={24} lg={12}>
                     <Form.Item name="name" label="Название конфигурации" rules={[{ required: true }]}>
@@ -1104,8 +1253,12 @@ const CustomerPricelistStudioPage = () => {
                     ['third_party_markup', 'Сторонние поставщики'],
                 ].map(([name, label]) => (
                     <Col xs={24} md={8} key={name}>
-                        <Form.Item name={name} label={label}>
-                            <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
+                        <Form.Item
+                            name={name}
+                            label={label}
+                            rules={[{ required: true, message: 'Укажите коэффициент' }]}
+                        >
+                            <InputNumber min={0.01} step={0.01} style={{ width: '100%' }} />
                         </Form.Item>
                     </Col>
                 ))}
@@ -1158,6 +1311,24 @@ const CustomerPricelistStudioPage = () => {
                 <Col xs={24} md={12}>
                     <Form.Item name="schedule_times" label="Время отправки">
                         <Select mode="tags" placeholder="09:00" />
+                    </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                    <Form.Item
+                        name="max_source_age_business_days"
+                        label="Допустимый возраст источников"
+                        extra="Количество рабочих дней. Значение 1 разрешает использовать вчерашний прайс."
+                    >
+                        <InputNumber min={0} max={30} precision={0} style={{ width: '100%' }} />
+                    </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                    <Form.Item
+                        name="block_stale_sources"
+                        label="Блокировать устаревшие источники"
+                        valuePropName="checked"
+                    >
+                        <Switch />
                     </Form.Item>
                 </Col>
             </Row>
@@ -1602,7 +1773,7 @@ const CustomerPricelistStudioPage = () => {
             width: 140,
             render: (value, row) => (
                 <InputNumber
-                    min={0}
+                    min={0.01}
                     step={0.01}
                     value={value}
                     onChange={(next) => handleSourceChange(row.id, { markup: next })}
@@ -1647,14 +1818,20 @@ const CustomerPricelistStudioPage = () => {
         },
         {
             title: '',
-            width: 110,
+            width: 230,
             render: (_, row) => (
                 <Space size={4}>
+                    {dirtySourceIds.has(row.id) && <Tag color="gold">Не сохранено</Tag>}
                     <Button
                         title="Сохранить источник"
                         icon={<SaveOutlined />}
+                        type={dirtySourceIds.has(row.id) ? 'primary' : 'default'}
+                        loading={sourceSavingId === row.id}
+                        disabled={sourceDeletingId === row.id}
                         onClick={() => handleSaveSource(row)}
-                    />
+                    >
+                        Сохранить
+                    </Button>
                     <Popconfirm
                         title="Отключить источник?"
                         description="Настройки фильтров этого источника будут удалены."
@@ -1666,6 +1843,8 @@ const CustomerPricelistStudioPage = () => {
                             danger
                             title="Отключить источник"
                             icon={<DeleteOutlined />}
+                            loading={sourceDeletingId === row.id}
+                            disabled={sourceSavingId === row.id}
                         />
                     </Popconfirm>
                 </Space>
@@ -1918,6 +2097,53 @@ const CustomerPricelistStudioPage = () => {
                         onChange={handleConfigChange}
                         options={configs.map((item) => ({ value: item.id, label: item.name }))}
                     />
+                    {activeConfig && (
+                        <div className="studio-selection-meta">
+                            <Tag color={activeConfig.is_active ? 'green' : 'default'}>
+                                {activeConfig.is_active ? 'Активна' : 'Выключена'}
+                            </Tag>
+                            <Text>
+                                Последняя отправка: {activeConfig.last_sent_at
+                                    ? formatMoscow(activeConfig.last_sent_at)
+                                    : 'ещё не было'}
+                            </Text>
+                            <Text>{sources.length} источников</Text>
+                        </div>
+                    )}
+                    <Space wrap>
+                        <Button
+                            type="primary"
+                            icon={<PlusOutlined />}
+                            disabled={!customerId}
+                            onClick={() => setNewConfigOpen(true)}
+                        >
+                            Новая конфигурация
+                        </Button>
+                        <Button
+                            icon={<EditOutlined />}
+                            disabled={!customerId}
+                            onClick={() => navigate(`/customers/${customerId}/edit`)}
+                        >
+                            Карточка клиента
+                        </Button>
+                        <Popconfirm
+                            title="Удалить конфигурацию?"
+                            description="Источники и настройки этой конфигурации будут удалены."
+                            okText="Удалить"
+                            cancelText="Отмена"
+                            okButtonProps={{ danger: true, loading: deletingConfig }}
+                            onConfirm={handleDeleteConfig}
+                        >
+                            <Button
+                                danger
+                                icon={<DeleteOutlined />}
+                                disabled={!activeConfig}
+                                loading={deletingConfig}
+                            >
+                                Удалить конфигурацию
+                            </Button>
+                        </Popconfirm>
+                    </Space>
                 </div>
             </section>
 
@@ -1938,7 +2164,7 @@ const CustomerPricelistStudioPage = () => {
 
                     <Collapse
                         className="studio-sections"
-                        defaultActiveKey={['settings', 'rules', 'preview']}
+                        defaultActiveKey={['settings', 'sources']}
                         items={[
                             {
                                 key: 'settings',
@@ -2274,6 +2500,37 @@ const CustomerPricelistStudioPage = () => {
                     />
                 </>
             )}
+
+            <Modal
+                title="Новая конфигурация прайс-листа"
+                open={newConfigOpen}
+                onCancel={() => {
+                    setNewConfigOpen(false);
+                    newConfigForm.resetFields();
+                }}
+                onOk={handleCreateConfig}
+                okText="Создать конфигурацию"
+                cancelText="Отмена"
+                confirmLoading={creatingConfig}
+            >
+                <Form form={newConfigForm} layout="vertical">
+                    <Form.Item
+                        name="name"
+                        label="Название конфигурации"
+                        rules={[
+                            { required: true, whitespace: true, message: 'Введите название' },
+                        ]}
+                    >
+                        <Input placeholder="Например, Основной прайс" autoFocus />
+                    </Form.Item>
+                    <Alert
+                        showIcon
+                        type="info"
+                        message="Будут установлены безопасные начальные настройки"
+                        description="Коэффициенты — 1, формат — XLSX, допустимый возраст источников — 1 рабочий день. После создания подключите нужные прайсы поставщиков."
+                    />
+                </Form>
+            </Modal>
 
             <Modal
                 title={`Фильтры источника${sourceFilterTarget ? ` · ${sourceFilterTarget.provider_name}` : ''}`}
