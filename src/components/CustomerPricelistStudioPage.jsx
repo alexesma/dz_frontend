@@ -183,9 +183,17 @@ const safeNumber = (value, fallback) => {
     return Number.isFinite(number) ? number : fallback;
 };
 
-const getErrorText = (error, fallback) => (
-    error?.response?.data?.detail || error?.message || fallback
-);
+const getErrorText = (error, fallback) => {
+    const detail = error?.response?.data?.detail;
+    if (Array.isArray(detail)) {
+        return detail
+            .map((item) => item?.msg || item?.message || JSON.stringify(item))
+            .filter(Boolean)
+            .join('; ') || fallback;
+    }
+    if (typeof detail === 'string' && detail.trim()) return detail;
+    return error?.message || fallback;
+};
 
 const candidateLabel = (item) => (
     `${item.brand} ${item.oem}${item.name ? ` · ${item.name}` : ''}`
@@ -487,7 +495,10 @@ const CustomerPricelistStudioPage = () => {
     };
 
     const handleSaveSettings = async () => {
-        if (!customerId || !configId || !activeConfig) return;
+        if (!customerId || !configId || !activeConfig) {
+            message.error('Сначала выберите клиента и конфигурацию прайс-листа');
+            return;
+        }
         setSavingSettings(true);
         try {
             const values = await settingsForm.validateFields();
@@ -575,12 +586,26 @@ const CustomerPricelistStudioPage = () => {
                     'Сервер не подтвердил сохранение почты отправителя. Обновите страницу и повторите.'
                 );
             }
+            const requestedFinalRules = additionalFilters.FINAL_FILTER_RULES || [];
+            const savedFinalRules = data.additional_filters?.FINAL_FILTER_RULES || [];
+            if (
+                Boolean(data.additional_filters?.FINAL_FILTER_ENABLED)
+                    !== additionalFilters.FINAL_FILTER_ENABLED
+                || savedFinalRules.length !== requestedFinalRules.length
+            ) {
+                throw new Error(
+                    'Сервер не подтвердил сохранение финальных фильтров. Обновите страницу и повторите.'
+                );
+            }
             const sender = outgoingEmailAccounts.find(
                 (account) => account.id === savedAccountId
             );
-            message.success(sender
-                ? `Настройки сохранены. Отправитель: ${sender.email}`
-                : 'Настройки сохранены. Используется почта отправителя по умолчанию');
+            const deliveryText = sender
+                ? `Отправитель: ${sender.email}`
+                : 'Используется почта отправителя по умолчанию';
+            message.success(
+                `Настройки сохранены. Финальных правил: ${savedFinalRules.length}. ${deliveryText}`
+            );
         } catch (error) {
             message.error(getErrorText(error, 'Не удалось сохранить настройки'));
         } finally {
@@ -1475,6 +1500,22 @@ const CustomerPricelistStudioPage = () => {
                     ),
                 }]}
             />
+
+            <Alert
+                showIcon
+                type="info"
+                message="Новое или изменённое правило ещё не действует"
+                description="Нажмите кнопку ниже, чтобы сохранить правила и применить их к готовому прайсу клиента."
+                style={{ marginTop: 12, marginBottom: 12 }}
+            />
+            <Button
+                type="primary"
+                icon={<SaveOutlined />}
+                loading={savingSettings}
+                onClick={handleSaveSettings}
+            >
+                Сохранить и применить фильтры
+            </Button>
 
             <Divider orientation="left">Совпадения и контроль</Divider>
             <Row gutter={[18, 0]}>

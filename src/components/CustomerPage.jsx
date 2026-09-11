@@ -1267,7 +1267,17 @@ const CustomerPage = () => {
                     editingConfig.id,
                     payload,
                 );
-                message.success('Конфигурация обновлена');
+                const filterRuleCount = [
+                    payload.default_filters,
+                    payload.own_filters,
+                    payload.other_filters,
+                    ...Object.values(payload.supplier_filters || {}),
+                ].reduce((total, filters) => total + (filters?.rules?.length || 0), 0);
+                message.success(
+                    filterRuleCount
+                        ? `Конфигурация обновлена. Применено правил: ${filterRuleCount}`
+                        : 'Конфигурация обновлена'
+                );
                 setEditingConfig(updatedConfig || editingConfig);
                 setSelectedPriceConfigId(updatedConfig?.id || editingConfig.id);
             } else {
@@ -1300,8 +1310,7 @@ const CustomerPage = () => {
             setCustomerData(prev => ({ ...prev, pricelist_configs: configs }));
         } catch (err) {
             console.error(err);
-            const detail = err?.response?.data?.detail;
-            message.error(detail || 'Ошибка сохранения конфигурации');
+            message.error(extractApiError(err, 'Ошибка сохранения конфигурации'));
         } finally {
             setConfigSaving(false);
         }
@@ -2187,6 +2196,14 @@ const CustomerPage = () => {
 
                     <ConfigSection title="Фильтры прайс-листа">
 
+                    <Alert
+                        showIcon
+                        type="info"
+                        message="Добавленные правила нужно сохранить"
+                        description="После настройки нажмите «Сохранить и применить фильтры». Кнопка сохраняет всю конфигурацию прайс-листа вместе с фильтрами."
+                        style={{ marginBottom: 16 }}
+                    />
+
                     <Card
                         size="small"
                         style={{
@@ -2284,6 +2301,15 @@ const CustomerPage = () => {
                             )}
                         </Form.List>
                     </Card>
+
+                    <Button
+                        type="primary"
+                        htmlType="submit"
+                        icon={<SaveOutlined />}
+                        loading={configSaving}
+                    >
+                        Сохранить и применить фильтры
+                    </Button>
 
                     </ConfigSection>
 
