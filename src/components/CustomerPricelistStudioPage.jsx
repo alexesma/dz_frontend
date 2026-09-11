@@ -1325,7 +1325,8 @@ const CustomerPricelistStudioPage = () => {
                 <Col xs={24} md={8}>
                     <Form.Item
                         name="block_stale_sources"
-                        label="Блокировать устаревшие источники"
+                        label="Исключать устаревшие источники"
+                        extra="Устаревший источник не попадёт в файл, но остальные прайсы продолжат рассылаться."
                         valuePropName="checked"
                     >
                         <Switch />
@@ -2378,6 +2379,23 @@ const CustomerPricelistStudioPage = () => {
                                                         showIcon
                                                         message="Предупреждения правил публикации"
                                                         description={selectedDraft.generation_summary.publication_rule_warnings.join('; ')}
+                                                        style={{ margin: '16px 0' }}
+                                                    />
+                                                )}
+                                                {(selectedDraft.generation_summary?.source_freshness || [])
+                                                    .some((item) => item.excluded_from_delivery) && (
+                                                    <Alert
+                                                        type="warning"
+                                                        showIcon
+                                                        message="Устаревшие источники исключены из этого файла"
+                                                        description={(selectedDraft.generation_summary.source_freshness || [])
+                                                            .filter((item) => item.excluded_from_delivery)
+                                                            .map((item) => (
+                                                                item.pending_review_filename
+                                                                    ? `${item.source_name}: файл ${item.pending_review_filename} ожидает проверки`
+                                                                    : `${item.source_name}: последний прайс ${item.pricelist_date || 'не загружался'}`
+                                                            ))
+                                                            .join('; ')}
                                                         style={{ margin: '16px 0' }}
                                                     />
                                                 )}
