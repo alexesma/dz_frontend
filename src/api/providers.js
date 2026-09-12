@@ -95,6 +95,12 @@ export const deleteProviderConfig = async (providerId, configId) => {
     return api.delete(`/providers/${providerId}/pricelist-config/${configId}/`);
 };
 
+// Почему конфигурации остались без прайса: причину собирает бэкенд из
+// журнала запусков, чтобы её не приходилось искать запросами к базе.
+export const getProviderIntakeProblems = async (providerId) => {
+    return api.get(`/providers/${providerId}/pricelist-intake-problems/`);
+};
+
 export const createSupplierResponseConfig = async (providerId, data) => {
     return api.post(`/providers/${providerId}/supplier-response-config/`, data);
 };

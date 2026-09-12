@@ -1,5 +1,5 @@
 // src/components/ProviderPage.jsx
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     useNavigate,
     useParams,
@@ -19,6 +19,7 @@ import {
     Typography,
     Table,
     Tag,
+    Tooltip,
     Modal,
     Popconfirm,
     Upload,
@@ -73,6 +74,7 @@ import {
     downloadProviderPricelistReview,
     approveProviderPricelistReview,
     rejectProviderPricelistReview,
+    getProviderIntakeProblems,
     getProviderInventoryRoleRules,
     createProviderInventoryRoleRule,
     updateProviderInventoryRoleRule,
@@ -97,6 +99,34 @@ const providerPriceTypeOptions = [
 ];
 
 const deriveVatPayerFromPriceType = (typePrice) => typePrice === "Wholesale";
+
+// Доля округлённых остатков, выше которой это уже не дробные остатки
+// поставщика, а перепутанные колонки цены и количества. Совпадает с
+// порогом на бэкенде (QUANTITY_ROUNDED_SHARE_LIMIT).
+const QUANTITY_ROUNDED_SHARE_LIMIT = 0.1;
+
+// Итог загрузки прайса. Массовое округление остатков показываем
+// предупреждением: раньше такая подмена колонок просто срывала загрузку
+// молча, и поставщик выпадал из обновлений на месяцы.
+const reportPricelistStats = (stats, prefix) => {
+    const summary =
+        `${prefix} Строк: ${stats.rows_total}, ` +
+        `после очистки: ${stats.rows_clean}, ` +
+        `после дедупликации: ${stats.rows_deduplicated}`;
+    const checked = Number(stats.quantity_rows_checked) || 0;
+    const rounded = Number(stats.rows_quantity_rounded) || 0;
+    if (checked > 0 && rounded / checked >= QUANTITY_ROUNDED_SHARE_LIMIT) {
+        message.warning({
+            content:
+                `${summary}. Дробных остатков ${rounded} из ${checked} ` +
+                `(${Math.round((rounded / checked) * 100)}%) — они округлены. ` +
+                `Проверьте колонки цены и количества в конфигурации.`,
+            duration: 12,
+        });
+        return;
+    }
+    message.success(summary);
+};
 
 const deliveryMethodOptions = [
     { value: "Delivered", label: "Привозят" },
@@ -168,6 +198,7 @@ const ProviderPage = () => {
     const [expandedPricelistReviewIds, setExpandedPricelistReviewIds] = useState([]);
     const [rejectReview, setRejectReview] = useState(null);
     const [rejectReason, setRejectReason] = useState("");
+    const [intakeProblems, setIntakeProblems] = useState([]);
     const [inventoryRules, setInventoryRules] = useState([]);
     const [inventoryRulesLoading, setInventoryRulesLoading] = useState(false);
     const [inventoryRuleModalOpen, setInventoryRuleModalOpen] = useState(false);
@@ -238,6 +269,30 @@ const ProviderPage = () => {
         refreshAnalytics();
         return data;
     };
+
+    // Причины, по которым конфигурации остались без прайса. Молчащую
+    // конфигурацию иначе не отличить от той, которой просто не пришло
+    // письмо: прайс Кунцево так не обновлялся четыре с половиной месяца.
+    const loadIntakeProblems = useCallback(async () => {
+        if (!providerId) {
+            setIntakeProblems([]);
+            return;
+        }
+        try {
+            const { data } = await getProviderIntakeProblems(providerId);
+            setIntakeProblems(data || []);
+        } catch (err) {
+            // Диагностика вспомогательная — из-за неё карточку не ломаем.
+            console.error("Не удалось загрузить причины загрузки прайсов", err);
+            setIntakeProblems([]);
+        }
+    }, [providerId]);
+
+    useEffect(() => {
+        if (!isNew && providerId) {
+            loadIntakeProblems();
+        }
+    }, [isNew, providerId, loadIntakeProblems]);
 
     const loadInventoryRules = useCallback(async () => {
         if (!providerId) return;
@@ -1518,12 +1573,9 @@ const ProviderPage = () => {
         try {
             const { data: downloadData } = await downloadProviderPricelist(providerId, configId);
             if (downloadData?.stats) {
-                const stats = downloadData.stats;
-                message.success(
-                    `Прайс-лист загружен из email. ` +
-                    `Строк: ${stats.rows_total}, ` +
-                    `после очистки: ${stats.rows_clean}, ` +
-                    `после дедупликации: ${stats.rows_deduplicated}`
+                reportPricelistStats(
+                    downloadData.stats,
+                    "Прайс-лист загружен из email."
                 );
             } else {
                 message.success("Прайс-лист успешно загружен из email и обработан");
@@ -1531,6 +1583,7 @@ const ProviderPage = () => {
 
             // обновляем данные после загрузки
             await refreshProviderData();
+            await loadIntakeProblems();
         } catch (err) {
             console.error(err);
             message.error(err?.response?.data?.detail || "Ошибка загрузки прайс-листа из email");
@@ -1670,13 +1723,7 @@ const ProviderPage = () => {
             });
 
             if (uploadData?.stats) {
-                const stats = uploadData.stats;
-                message.success(
-                    `Прайс-лист загружен. ` +
-                    `Строк: ${stats.rows_total}, ` +
-                    `после очистки: ${stats.rows_clean}, ` +
-                    `после дедупликации: ${stats.rows_deduplicated}`
-                );
+                reportPricelistStats(uploadData.stats, "Прайс-лист загружен.");
             } else {
                 message.success("Прайс-лист успешно загружен и обработан");
             }
@@ -1686,6 +1733,7 @@ const ProviderPage = () => {
 
             // обновляем данные после загрузки
             await refreshProviderData();
+            await loadIntakeProblems();
         } catch (err) {
             console.error(err);
             message.error(err?.response?.data?.detail || "Ошибка загрузки прайс-листа");
@@ -2133,12 +2181,38 @@ const ProviderPage = () => {
     );
 
     // ===== Table columns for configs =====
+    const intakeProblemByConfig = useMemo(() => {
+        const карта = new Map();
+        (intakeProblems || []).forEach((строка) => {
+            карта.set(строка.provider_config_id, строка);
+        });
+        return карта;
+    }, [intakeProblems]);
+
     const configColumns = [
         {
             title: "Название прайса",
             dataIndex: "name_price",
             key: "name_price",
-            render: (text) => text || <span style={{ color: "#ccc" }}>—</span>,
+            render: (text, record) => {
+                const проблема = intakeProblemByConfig.get(record.id);
+                return (
+                    <div>
+                        {text || <span style={{ color: "#ccc" }}>—</span>}
+                        {проблема && (
+                            <div style={{ marginTop: 4 }}>
+                                <Tooltip title={проблема.message}>
+                                    <Tag color="warning" style={{ margin: 0 }}>
+                                        {проблема.outcome === "quantity_rounded"
+                                            ? "остатки округлены"
+                                            : "прайс не загружен"}
+                                    </Tag>
+                                </Tooltip>
+                            </div>
+                        )}
+                    </div>
+                );
+            },
         },
         {
             title: "Название письма",
@@ -3199,6 +3273,67 @@ const ProviderPage = () => {
                             </Button>
                         }
                     >
+                        {intakeProblems.length > 0 && (
+                            <Alert
+                                showIcon
+                                type="warning"
+                                style={{ marginBottom: 16 }}
+                                message={
+                                    intakeProblems.length === 1
+                                        ? "Одна конфигурация требует внимания"
+                                        : `Конфигураций требует внимания: ${intakeProblems.length}`
+                                }
+                                description={
+                                    <div>
+                                        {intakeProblems.map((проблема) => (
+                                            <div
+                                                key={проблема.provider_config_id}
+                                                style={{ marginBottom: 8 }}
+                                            >
+                                                <Text strong>
+                                                    {проблема.config_name
+                                                        || `конфигурация ${проблема.provider_config_id}`}
+                                                </Text>
+                                                {проблема.detected_at && (
+                                                    <Text type="secondary">
+                                                        {" · "}
+                                                        {new Date(проблема.detected_at)
+                                                            .toLocaleString("ru-RU")}
+                                                    </Text>
+                                                )}
+                                                <div>{проблема.message}</div>
+                                                {проблема.outcome === "no_matching_email" && (
+                                                    <Text type="secondary">
+                                                        Писем от поставщика просмотрено:{" "}
+                                                        {проблема.emails_seen}, подошло:{" "}
+                                                        {проблема.emails_matched}. Шаблон имени
+                                                        файла: {проблема.filename_pattern || "не задан"}
+                                                        {проблема.subject_pattern
+                                                            ? `, тема письма: ${проблема.subject_pattern}`
+                                                            : ", тема письма не задана"}
+                                                        .
+                                                    </Text>
+                                                )}
+                                                {проблема.outcome === "only_already_loaded_emails" && (
+                                                    <Text type="secondary">
+                                                        Уже загружавшихся писем пропущено:{" "}
+                                                        {проблема.skipped_old_uid}.
+                                                    </Text>
+                                                )}
+                                                {проблема.rounding_warning
+                                                    && проблема.outcome !== "quantity_rounded" && (
+                                                    <div>
+                                                        <Text type="secondary">
+                                                            {проблема.rounding_warning}
+                                                        </Text>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                }
+                            />
+                        )}
                         <Table
                             rowKey="id"
                             columns={configColumns}
