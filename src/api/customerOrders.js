@@ -155,12 +155,16 @@ export const sendScheduledSupplierOrders = () =>
 export const reconcilePartsSoftOrders = () =>
     api.post('/integrations/partssoft/orders/reconcile', null, { params: { days: 7 } });
 
+export const getCachedPartsSoftOrders = () =>
+    api.get('/integrations/partssoft/orders/reconcile', { params: { days: 7 } });
+
 export const getPartsSoftCustomerCandidates = (params) =>
     api.get('/integrations/partssoft/customers/candidates', { params });
 
-export const linkPartsSoftCustomer = (externalCustomerId, localCustomerId) =>
+export const linkPartsSoftCustomer = (externalCustomerId, localCustomerId, mergeExistingCustomer = false) =>
     api.post(`/integrations/partssoft/customers/${externalCustomerId}/link`, {
         local_customer_id: localCustomerId,
+        merge_existing_customer: mergeExistingCustomer,
     });
 
 export const getPartsSoftProductSyncStatus = () =>

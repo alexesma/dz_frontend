@@ -3,6 +3,7 @@ import {
     Alert,
     Button,
     Card,
+    Checkbox,
     Col,
     Input,
     message,
@@ -16,6 +17,7 @@ import {
 import dayjs from 'dayjs';
 import {
     getPartsSoftCustomerCandidates,
+    getCachedPartsSoftOrders,
     getPartsSoftProductSyncStatus,
     linkPartsSoftCustomer,
     reconcilePartsSoftOrders,
@@ -69,6 +71,7 @@ const PartsSoftOrderReconciliation = () => {
     const [candidateLoading, setCandidateLoading] = useState(false);
     const [linkLoading, setLinkLoading] = useState(false);
     const [selectedCustomerId, setSelectedCustomerId] = useState(null);
+    const [mergeDuplicate, setMergeDuplicate] = useState(false);
     const [productStatus, setProductStatus] = useState(null);
     const [productSyncLoading, setProductSyncLoading] = useState(false);
 
@@ -83,7 +86,22 @@ const PartsSoftOrderReconciliation = () => {
 
     useEffect(() => {
         void loadProductStatus();
+        void loadCachedReport();
     }, []);
+
+    const loadCachedReport = async () => {
+        setLoading(true);
+        setErrorText('');
+        try {
+            const response = await getCachedPartsSoftOrders();
+            setReport(response.data);
+        } catch (error) {
+            const detail = error?.response?.data?.detail;
+            setErrorText(typeof detail === 'string' ? detail : 'Не удалось загрузить сохранённую сверку');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const runProductSync = async () => {
         setProductSyncLoading(true);
@@ -149,6 +167,7 @@ const PartsSoftOrderReconciliation = () => {
     const openLink = (row) => {
         setLinkRow(row);
         setSelectedCustomerId(row.local_customer_id || row.suggested_local_customer_id || null);
+        setMergeDuplicate(false);
         setCandidates([]);
         void loadCandidates(row);
     };
@@ -159,17 +178,20 @@ const PartsSoftOrderReconciliation = () => {
         try {
             const response = await linkPartsSoftCustomer(
                 linkRow.external_customer_id,
-                selectedCustomerId
+                selectedCustomerId,
+                mergeDuplicate,
             );
             const conflicts = response.data?.conflicting_fields || [];
             if (conflicts.length) {
                 message.warning(`Связь сохранена. Проверьте расхождения: ${conflicts.join(', ')}`);
             } else {
-                message.success('Клиент Parts-Soft привязан');
+                message.success(response.data?.merged_customer_id
+                    ? `Клиенты объединены, дубль ID ${response.data.merged_customer_id} удалён`
+                    : 'Клиент Parts-Soft привязан');
             }
             setLinkRow(null);
             setSelectedCustomerId(null);
-            await runReconciliation();
+            await loadCachedReport();
         } catch (error) {
             const detail = error?.response?.data?.detail;
             message.error(typeof detail === 'string' ? detail : 'Не удалось привязать клиента');
@@ -237,7 +259,7 @@ const PartsSoftOrderReconciliation = () => {
             width: 150,
             render: (_, row) => (
                 <div>
-                    <div>Клиент: {row.local_customer_id || '—'}</div>
+                    <div>Клиент: {row.is_own_site_order ? 'наш заказ' : (row.local_customer_id || '—')}</div>
                     <div>Заказ: {row.local_order_id || '—'}</div>
                 </div>
             ),
@@ -247,15 +269,13 @@ const PartsSoftOrderReconciliation = () => {
             key: 'actions',
             fixed: 'right',
             width: 175,
-            render: (_, row) => (
-                !row.customer_linked
-                    ? (
-                        <Button size="small" onClick={() => openLink(row)}>
-                            {row.local_customer_id ? 'Подтвердить связь' : 'Привязать'}
-                        </Button>
-                    )
-                    : <Text type="secondary">Связан</Text>
-            ),
+            render: (_, row) => row.is_own_site_order
+                ? <Text type="secondary">Отслеживается</Text>
+                : (
+                    <Button size="small" onClick={() => openLink(row)}>
+                        {row.customer_linked ? 'Изменить связь' : (row.local_customer_id ? 'Подтвердить связь' : 'Привязать')}
+                    </Button>
+                ),
         },
     ];
 
@@ -324,12 +344,12 @@ const PartsSoftOrderReconciliation = () => {
             <Alert
                 type="info"
                 showIcon
-                message="Проверка выполняется только за последние 7 дней"
-                description="Показываются заказы всех регионов и всех типов клиентов. Дубли и конфликты остаются здесь и не загружаются в основной список заказов."
+                message="Хранятся заказы сайта только за последние 7 дней"
+                description="Данные обновляет автоматическая синхронизация. Заказы, созданные нашей системой, отслеживаются по tracking ID. Дубли и конфликты остаются только в этой вкладке."
                 style={{ marginBottom: 16 }}
             />
             <Button type="primary" loading={loading} onClick={runReconciliation}>
-                Проверить сайт за 7 дней
+                Обновить с сайта сейчас
             </Button>
 
             {errorText && (
@@ -346,6 +366,7 @@ const PartsSoftOrderReconciliation = () => {
                 <>
                     <Paragraph style={{ marginTop: 12 }} type="secondary">
                         Период: {dayjs(report.date_from).format('DD.MM.YYYY HH:mm')} — {dayjs(report.date_to).format('DD.MM.YYYY HH:mm')}
+                        {report.cache_updated_at && ` · данные обновлены ${dayjs(report.cache_updated_at).format('DD.MM.YYYY HH:mm')}`}
                     </Paragraph>
                     <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
                         <Col xs={12} md={6}><Card size="small"><Statistic title="Всего на сайте" value={report.remote_orders_total} /></Card></Col>
@@ -408,6 +429,18 @@ const PartsSoftOrderReconciliation = () => {
                     onRow={(row) => ({ onClick: () => setSelectedCustomerId(row.id) })}
                     pagination={{ pageSize: 10 }}
                 />
+                {linkRow?.local_customer_id
+                    && selectedCustomerId
+                    && Number(linkRow.local_customer_id) !== Number(selectedCustomerId) && (
+                    <Checkbox
+                        checked={mergeDuplicate}
+                        onChange={(event) => setMergeDuplicate(event.target.checked)}
+                        style={{ marginTop: 12 }}
+                    >
+                        Перенести заказы и связанные данные из клиента ID {linkRow.local_customer_id}
+                        {' '}в выбранную карточку и удалить дубль
+                    </Checkbox>
+                )}
             </Modal>
         </div>
     );
