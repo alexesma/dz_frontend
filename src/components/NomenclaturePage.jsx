@@ -26,6 +26,10 @@ import {
     DeleteOutlined,
     SearchOutlined,
     InfoCircleOutlined,
+    FileTextOutlined,
+    PictureOutlined,
+    CarOutlined,
+    SwapOutlined,
 } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -101,6 +105,9 @@ const NomenclaturePage = () => {
     const [qOem, setQOem] = useState('');
     const [qName, setQName] = useState('');
     const [qBrand, setQBrand] = useState('');
+    const [sourceFilter, setSourceFilter] = useState('all');
+    const [contentFilter, setContentFilter] = useState('all');
+    const [linksFilter, setLinksFilter] = useState('all');
     const searchTimer = useRef(null);
 
     // ── selected row / detail panel ───────────────────────────────────────────
@@ -159,13 +166,17 @@ const NomenclaturePage = () => {
     }, []); // eslint-disable-line
 
     // ── fetch list ────────────────────────────────────────────────────────────
-    const fetchList = useCallback(async (oem, name, brand, pg) => {
+    const fetchList = useCallback(async (oem, name, brand, pg, source = 'all', content = 'all', links = 'all') => {
         setLoading(true);
         try {
             const params = { offset: (pg - 1) * pageSize, limit: pageSize };
             if (oem && oem.length >= 3) params.q_oem = oem;
             if (name && name.length >= 3) params.q_name = name;
             if (brand && brand.length >= 3) params.q_brand = brand;
+            if (source === 'partssoft') params.partssoft = true;
+            if (source === 'local') params.partssoft = false;
+            if (content !== 'all') params.content = content;
+            if (links !== 'all') params.links = links;
             const { data } = await getCatalog(params);
             setItems(data.items || []);
             setTotal(data.total || 0);
@@ -178,18 +189,38 @@ const NomenclaturePage = () => {
 
     // Initial fetch and page-change fetch
     useEffect(() => {
-        fetchList(qOem, qName, qBrand, page);
+        fetchList(qOem, qName, qBrand, page, sourceFilter, contentFilter, linksFilter);
     }, [page]); // eslint-disable-line
 
     const triggerSearch = (oem, name, brand) => {
         setPage(1);
         if (searchTimer.current) clearTimeout(searchTimer.current);
-        searchTimer.current = setTimeout(() => fetchList(oem, name, brand, 1), 400);
+        searchTimer.current = setTimeout(
+            () => fetchList(
+                oem, name, brand, 1, sourceFilter, contentFilter, linksFilter,
+            ),
+            400,
+        );
     };
 
     const handleOemChange = (val) => { setQOem(val); triggerSearch(val, qName, qBrand); };
     const handleNameChange = (val) => { setQName(val); triggerSearch(qOem, val, qBrand); };
     const handleBrandChange = (val) => { setQBrand(val); triggerSearch(qOem, qName, val); };
+    const handleSourceFilter = (value) => {
+        setSourceFilter(value);
+        setPage(1);
+        void fetchList(qOem, qName, qBrand, 1, value, contentFilter, linksFilter);
+    };
+    const handleContentFilter = (value) => {
+        setContentFilter(value);
+        setPage(1);
+        void fetchList(qOem, qName, qBrand, 1, sourceFilter, value, linksFilter);
+    };
+    const handleLinksFilter = (value) => {
+        setLinksFilter(value);
+        setPage(1);
+        void fetchList(qOem, qName, qBrand, 1, sourceFilter, contentFilter, value);
+    };
 
     // ── load reference data ───────────────────────────────────────────────────
     useEffect(() => {
@@ -513,6 +544,94 @@ const NomenclaturePage = () => {
             render: (v) => <Tooltip title={v}>{v || '—'}</Tooltip>,
         },
         {
+            title: 'Карточка',
+            key: 'card',
+            width: 165,
+            render: (_, record) => (
+                <Space size={6}>
+                    {record.primary_photo_url ? (
+                        <Image
+                            src={record.primary_photo_url}
+                            width={38}
+                            height={38}
+                            preview
+                            style={{ objectFit: 'cover', borderRadius: 6 }}
+                        />
+                    ) : (
+                        <div style={{ width: 38, height: 38, borderRadius: 6, background: '#f5f5f5', display: 'grid', placeItems: 'center' }}>
+                            <PictureOutlined style={{ color: '#bfbfbf' }} />
+                        </div>
+                    )}
+                    <div style={{ lineHeight: 1.45 }}>
+                        {record.partssoft_product_id ? (
+                            <Tooltip title={`ID Parts-Soft: ${record.partssoft_product_id}`}>
+                                <Tag color="geekblue" style={{ marginRight: 0 }}>Parts-Soft</Tag>
+                            </Tooltip>
+                        ) : <Tag style={{ marginRight: 0 }}>Наша</Tag>}
+                        <div>
+                            <Tooltip title={record.photo_count ? `Фотографий: ${record.photo_count}` : 'Фотографии отсутствуют'}>
+                                <Tag color={record.photo_count ? 'cyan' : 'default'} style={{ marginRight: 4 }}>
+                                    <PictureOutlined /> {record.photo_count || 0}
+                                </Tag>
+                            </Tooltip>
+                            <Tooltip title={record.has_description ? 'Описание заполнено' : 'Описание отсутствует'}>
+                                <Tag color={record.has_description ? 'green' : 'default'} style={{ marginRight: 0 }}>
+                                    <FileTextOutlined />
+                                </Tag>
+                            </Tooltip>
+                        </div>
+                    </div>
+                </Space>
+            ),
+        },
+        {
+            // Применимость и кроссы: без них наполненность карточки
+            // приходилось проверять, открывая каждый товар по очереди.
+            title: 'Связи',
+            key: 'links',
+            width: 124,
+            responsive: ['lg'],
+            render: (_, record) => {
+                const nodes = record.applicability_names || [];
+                const applicabilityCount = record.applicability_count || 0;
+                const crossCount = record.cross_count || 0;
+                const applicabilityHint = applicabilityCount
+                    ? [
+                        ...nodes,
+                        ...(applicabilityCount > nodes.length
+                            ? [`и ещё ${applicabilityCount - nodes.length}`]
+                            : []),
+                    ].join(', ')
+                    : (record.applicability
+                        ? `Только текстом: ${record.applicability}`
+                        : 'Применимость не указана');
+                return (
+                    <Space direction="vertical" size={2}>
+                        <Tooltip title={applicabilityHint}>
+                            <Tag
+                                color={applicabilityCount ? 'blue' : 'default'}
+                                style={{ marginRight: 0 }}
+                            >
+                                <CarOutlined /> {applicabilityCount}
+                            </Tag>
+                        </Tooltip>
+                        <Tooltip
+                            title={crossCount
+                                ? `Кроссов заведено: ${crossCount}`
+                                : 'Кроссов нет'}
+                        >
+                            <Tag
+                                color={crossCount ? 'gold' : 'default'}
+                                style={{ marginRight: 0 }}
+                            >
+                                <SwapOutlined /> {crossCount}
+                            </Tag>
+                        </Tooltip>
+                    </Space>
+                );
+            },
+        },
+        {
             title: 'Цены',
             key: 'prices',
             width: 132,
@@ -576,6 +695,8 @@ const NomenclaturePage = () => {
                 }
                 const categories = record.categories || [];
                 const honestSign = record.honest_sign_category;
+                const requiredCount = record.certification_required === false ? 2 : 3;
+                const filledCount = requiredCount - missing.length;
                 return (
                     <div style={{ lineHeight: 1.45 }}>
                         <Tooltip title={categories.length ? categories.join(', ') : 'Категория не указана'}>
@@ -591,7 +712,7 @@ const NomenclaturePage = () => {
                                     : 'Реквизиты заполнены'}
                             >
                                 <Tag color={missing.length ? 'orange' : 'green'} style={{ marginRight: 0 }}>
-                                    {missing.length ? `нет ${missing.length} из 3` : 'заполнено'}
+                                    {`Реквизиты ${filledCount}/${requiredCount}`}
                                 </Tag>
                             </Tooltip>
                         </Space>
@@ -681,6 +802,40 @@ const NomenclaturePage = () => {
                     value={qOem}
                     onChange={(e) => handleOemChange(e.target.value)}
                     style={{ width: 220 }}
+                />
+                <Select
+                    value={sourceFilter}
+                    onChange={handleSourceFilter}
+                    style={{ width: 180 }}
+                    options={[
+                        { value: 'all', label: 'Все источники' },
+                        { value: 'partssoft', label: 'Только Parts-Soft' },
+                        { value: 'local', label: 'Только наши' },
+                    ]}
+                />
+                <Select
+                    value={contentFilter}
+                    onChange={handleContentFilter}
+                    style={{ width: 210 }}
+                    options={[
+                        { value: 'all', label: 'Любое наполнение' },
+                        { value: 'with_photo', label: 'Есть фотографии' },
+                        { value: 'with_description', label: 'Есть описание' },
+                        { value: 'complete', label: 'Есть фото и описание' },
+                        { value: 'missing_content', label: 'Требует наполнения' },
+                    ]}
+                />
+                <Select
+                    value={linksFilter}
+                    onChange={handleLinksFilter}
+                    style={{ width: 210 }}
+                    options={[
+                        { value: 'all', label: 'Любые связи' },
+                        { value: 'with_applicability', label: 'Есть применимость' },
+                        { value: 'without_applicability', label: 'Без применимости' },
+                        { value: 'with_crosses', label: 'Есть кроссы' },
+                        { value: 'without_crosses', label: 'Без кроссов' },
+                    ]}
                 />
                 <Input
                     placeholder="Поиск по наименованию (от 3 симв.)"
