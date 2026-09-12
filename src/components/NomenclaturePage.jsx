@@ -3,6 +3,7 @@ import {
     Button,
     Drawer,
     Form,
+    Image,
     Input,
     InputNumber,
     Modal,
@@ -752,6 +753,11 @@ const NomenclaturePage = () => {
 
                             {/* Info row */}
                             <Space wrap style={{ marginBottom: 16 }}>
+                                {detail.partssoft_product_id && (
+                                    <Tag color="geekblue">
+                                        Parts-Soft #{detail.partssoft_product_id}
+                                    </Tag>
+                                )}
                                 {(detail.categories || []).length > 0 && (
                                     <div>
                                         <Text type="secondary" style={{ fontSize: 12 }}>Категории: </Text>
@@ -791,6 +797,31 @@ const NomenclaturePage = () => {
                                     </div>
                                 )}
                             </Space>
+
+                            {detail.description && (
+                                <div style={{ marginBottom: 16 }}>
+                                    <Text type="secondary" style={{ display: 'block', fontSize: 12 }}>
+                                        Описание
+                                    </Text>
+                                    <Text>{detail.description}</Text>
+                                </div>
+                            )}
+
+                            {(detail.photo_urls || []).length > 0 && (
+                                <Image.PreviewGroup>
+                                    <Space wrap style={{ marginBottom: 16 }}>
+                                        {detail.photo_urls.map((url) => (
+                                            <Image
+                                                key={url}
+                                                src={url}
+                                                width={112}
+                                                height={112}
+                                                style={{ objectFit: 'cover', borderRadius: 8 }}
+                                            />
+                                        ))}
+                                    </Space>
+                                </Image.PreviewGroup>
+                            )}
 
                             {/* Cross-numbers table */}
                             {(detail.crosses || []).length > 0 && (

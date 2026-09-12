@@ -162,3 +162,9 @@ export const linkPartsSoftCustomer = (externalCustomerId, localCustomerId) =>
     api.post(`/integrations/partssoft/customers/${externalCustomerId}/link`, {
         local_customer_id: localCustomerId,
     });
+
+export const getPartsSoftProductSyncStatus = () =>
+    api.get('/integrations/partssoft/products/status');
+
+export const syncPartsSoftProducts = () =>
+    api.post('/integrations/partssoft/products/sync', null, { timeout: 120000 });

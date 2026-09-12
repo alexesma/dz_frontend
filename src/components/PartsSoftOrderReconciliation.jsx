@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
     Alert,
     Button,
@@ -16,8 +16,10 @@ import {
 import dayjs from 'dayjs';
 import {
     getPartsSoftCustomerCandidates,
+    getPartsSoftProductSyncStatus,
     linkPartsSoftCustomer,
     reconcilePartsSoftOrders,
+    syncPartsSoftProducts,
 } from '../api/customerOrders';
 
 const { Paragraph, Text } = Typography;
@@ -67,6 +69,44 @@ const PartsSoftOrderReconciliation = () => {
     const [candidateLoading, setCandidateLoading] = useState(false);
     const [linkLoading, setLinkLoading] = useState(false);
     const [selectedCustomerId, setSelectedCustomerId] = useState(null);
+    const [productStatus, setProductStatus] = useState(null);
+    const [productSyncLoading, setProductSyncLoading] = useState(false);
+
+    const loadProductStatus = async () => {
+        try {
+            const response = await getPartsSoftProductSyncStatus();
+            setProductStatus(response.data || null);
+        } catch {
+            setProductStatus(null);
+        }
+    };
+
+    useEffect(() => {
+        void loadProductStatus();
+    }, []);
+
+    const runProductSync = async () => {
+        setProductSyncLoading(true);
+        try {
+            const response = await syncPartsSoftProducts();
+            const counts = response.data?.counts || {};
+            message.success(
+                `Карточки синхронизированы: создано ${counts.created || 0}, обновлено ${counts.updated || 0}, фото добавлено ${counts.photos_added || 0}`,
+            );
+            if ((response.data?.conflicts || []).length) {
+                message.warning(
+                    `Не объединено конфликтующих карточек: ${response.data.conflicts.length}. Одинаковые бренд и OEM относятся к разным ID Parts-Soft.`,
+                    8,
+                );
+            }
+            await loadProductStatus();
+        } catch (error) {
+            const detail = error?.response?.data?.detail;
+            message.error(typeof detail === 'string' ? detail : 'Не удалось загрузить карточки Parts-Soft');
+        } finally {
+            setProductSyncLoading(false);
+        }
+    };
 
     const runReconciliation = async () => {
         setLoading(true);
@@ -250,6 +290,37 @@ const PartsSoftOrderReconciliation = () => {
 
     return (
         <div>
+            <Card
+                title="Карточки товаров Parts-Soft"
+                extra={(
+                    <Button type="primary" loading={productSyncLoading} onClick={runProductSync}>
+                        Загрузить карточки сейчас
+                    </Button>
+                )}
+                style={{ marginBottom: 16 }}
+            >
+                <Row gutter={[16, 16]}>
+                    <Col xs={24} sm={8}>
+                        <Statistic title="Карточек сохранено" value={productStatus?.products || 0} />
+                    </Col>
+                    <Col xs={24} sm={8}>
+                        <Statistic title="Карточек с фото" value={productStatus?.products_with_photos || 0} />
+                    </Col>
+                    <Col xs={24} sm={8}>
+                        <Statistic
+                            title="Последняя синхронизация"
+                            value={productStatus?.last_synced_at
+                                ? dayjs(productStatus.last_synced_at).format('DD.MM.YYYY HH:mm')
+                                : 'Ещё не запускалась'}
+                        />
+                    </Col>
+                </Row>
+                <Paragraph type="secondary" style={{ margin: '12px 0 0' }}>
+                    Повторный запуск обновляет существующие карточки по ID Parts-Soft и связке бренд + OEM,
+                    не создавая дубли. Описание, размеры и фотографии доступны в нашей номенклатуре;
+                    исходные свойства карточки сохраняются полностью.
+                </Paragraph>
+            </Card>
             <Alert
                 type="info"
                 showIcon

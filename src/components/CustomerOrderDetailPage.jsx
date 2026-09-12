@@ -718,12 +718,18 @@ const CustomerOrderDetailPage = () => {
             key: 'offer_source',
             width: 220,
             render: (_, record) => {
-                if (!record.external_provider_id && !record.external_offer_id) return '—';
+                if (
+                    !record.external_provider_id
+                    && !record.external_offer_id
+                    && !record.source_resolution_status
+                ) return '—';
                 const statusLabels = {
                     api_ready: 'готово к автозаказу',
                     api_ordered: 'автозаказ отправлен',
                     api_order_error: 'ошибка автозаказа',
                     unresolved: 'источник не определён',
+                    partssoft_price: 'выбран прайс Parts-Soft',
+                    partssoft_managed: 'закупка ведётся в Parts-Soft',
                 };
                 const color = record.source_resolution_status === 'api_ordered'
                     ? 'green'
@@ -834,7 +840,9 @@ const CustomerOrderDetailPage = () => {
                             onClick={handleProcessOrder}
                             loading={processing}
                         >
-                            Автообработать
+                            {order.external_source === 'PARTS_SOFT'
+                                ? 'Принять заказ Parts-Soft'
+                                : 'Автообработать'}
                         </Button>
                     )}
                     {(order?.status === 'ERROR' || interruptedImport) && (
