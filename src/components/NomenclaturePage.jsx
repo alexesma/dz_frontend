@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     Button,
-    Drawer,
+    Descriptions,
     Form,
     Image,
     Input,
@@ -17,6 +17,7 @@ import {
     Tag,
     Tooltip,
     TreeSelect,
+    Upload,
     Typography,
     message,
 } from 'antd';
@@ -28,6 +29,7 @@ import {
     InfoCircleOutlined,
     FileTextOutlined,
     PictureOutlined,
+    UploadOutlined,
     CarOutlined,
     SwapOutlined,
 } from '@ant-design/icons';
@@ -46,6 +48,9 @@ import {
     getAllApplicabilityNodes,
     createApplicabilityNode,
     assignApplicabilityNodes,
+    uploadAutopartPhoto,
+    replaceAutopartPhoto,
+    deleteAutopartPhoto,
 } from '../api/autoparts';
 import { lookupBrands } from '../api/brands';
 import { getCategories } from '../api/categories';
@@ -120,6 +125,8 @@ const NomenclaturePage = () => {
     const [editingId, setEditingId] = useState(null);
     const [drawerLoading, setDrawerLoading] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [editingDetail, setEditingDetail] = useState(null);
+    const [editingPhotos, setEditingPhotos] = useState([]);
     const [form] = Form.useForm();
 
     // ── crosses state ─────────────────────────────────────────────────────────
@@ -271,6 +278,8 @@ const NomenclaturePage = () => {
         form.resetFields();
         crossForm.resetFields();
         setCrosses([]);
+        setEditingDetail(null);
+        setEditingPhotos([]);
         setSelectedHsIds([]);
         setSelectedApplicIds([]);
         setDrawerOpen(true);
@@ -279,6 +288,8 @@ const NomenclaturePage = () => {
     const openEdit = async (record, e) => {
         e?.stopPropagation();
         setEditingId(record.id);
+        setSelectedRow(null);
+        setDetail(null);
         setDrawerOpen(true);
         setDrawerLoading(true);
         form.resetFields();
@@ -312,6 +323,8 @@ const NomenclaturePage = () => {
                 eac_cert_url: data.eac_cert_url,
                 eac_cert_valid_until: data.eac_cert_valid_until,
                 regulatory_source: data.regulatory_source,
+                applicability: data.applicability,
+                honest_sign_category: data.honest_sign_category,
                 category_ids: (data.categories || []).map(
                     (c) => categories.find((opt) => opt.label === c)?.value
                 ).filter(Boolean),
@@ -320,6 +333,8 @@ const NomenclaturePage = () => {
                 ).filter(Boolean),
             });
             setCrosses(data.crosses || []);
+            setEditingDetail(data);
+            setEditingPhotos(data.photos || []);
             setSelectedHsIds((data.honest_sign_categories || []).map((h) => h.id));
             setSelectedApplicIds((data.applicability_nodes || []).map((n) => n.id));
         } catch {
@@ -360,7 +375,7 @@ const NomenclaturePage = () => {
             }
             message.success(editingId ? 'Сохранено' : 'Позиция создана');
             setDrawerOpen(false);
-            fetchList(qOem, qName, qBrand, page);
+            fetchList(qOem, qName, qBrand, page, sourceFilter, contentFilter);
             // Refresh detail panel if this was the selected row
             if (selectedRow?.id === partId) {
                 const { data } = await getAutopartDetail(partId);
@@ -371,6 +386,47 @@ const NomenclaturePage = () => {
             message.error(typeof detail === 'string' ? detail : JSON.stringify(detail));
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handlePhotoUpload = async ({ file, onSuccess, onError }) => {
+        if (!editingId) {
+            message.info('Сначала сохраните новую позицию');
+            onError?.(new Error('Position is not saved'));
+            return;
+        }
+        try {
+            const { data } = await uploadAutopartPhoto(editingId, file);
+            setEditingPhotos((current) => [...current, data]);
+            message.success('Фотография добавлена');
+            onSuccess?.(data);
+        } catch (error) {
+            message.error(error?.response?.data?.detail || 'Не удалось добавить фотографию');
+            onError?.(error);
+        }
+    };
+
+    const handlePhotoReplace = (photoId) => async ({ file, onSuccess, onError }) => {
+        try {
+            const { data } = await replaceAutopartPhoto(editingId, photoId, file);
+            setEditingPhotos((current) => current.map((photo) => (
+                photo.id === photoId ? data : photo
+            )));
+            message.success('Фотография заменена');
+            onSuccess?.(data);
+        } catch (error) {
+            message.error(error?.response?.data?.detail || 'Не удалось заменить фотографию');
+            onError?.(error);
+        }
+    };
+
+    const handlePhotoDelete = async (photoId) => {
+        try {
+            await deleteAutopartPhoto(editingId, photoId);
+            setEditingPhotos((current) => current.filter((photo) => photo.id !== photoId));
+            message.success('Фотография удалена');
+        } catch (error) {
+            message.error(error?.response?.data?.detail || 'Не удалось удалить фотографию');
         }
     };
 
@@ -877,15 +933,17 @@ const NomenclaturePage = () => {
                 }}
             />
 
-            {/* Detail panel */}
+            {/* Large centered product card */}
             {selectedRow && (
-                <div style={{
-                    marginTop: 16,
-                    padding: 20,
-                    background: '#fafafa',
-                    border: '1px solid #e8e8e8',
-                    borderRadius: 8,
-                }}>
+                <Modal
+                    open
+                    centered
+                    width={1120}
+                    title="Карточка номенклатуры"
+                    onCancel={() => { setSelectedRow(null); setDetail(null); }}
+                    footer={null}
+                    styles={{ body: { maxHeight: '78vh', overflowY: 'auto' } }}
+                >
                     {detailLoading ? (
                         <Spin tip="Загрузка..." style={{ display: 'block', textAlign: 'center', padding: 24 }} />
                     ) : detail ? (
@@ -953,6 +1011,24 @@ const NomenclaturePage = () => {
                                 )}
                             </Space>
 
+                            <Descriptions bordered size="small" column={{ xs: 1, sm: 2, lg: 3 }} style={{ marginBottom: 16 }}>
+                                <Descriptions.Item label="Закупочная цена">{fmtPrice(detail.purchase_price)} ₽</Descriptions.Item>
+                                <Descriptions.Item label="Розничная цена">{fmtPrice(detail.retail_price)} ₽</Descriptions.Item>
+                                <Descriptions.Item label="Оптовая цена">{fmtPrice(detail.wholesale_price)} ₽</Descriptions.Item>
+                                <Descriptions.Item label="Кратность">{detail.multiplicity ?? '—'}</Descriptions.Item>
+                                <Descriptions.Item label="Минимальный остаток">{detail.minimum_balance ?? '—'}</Descriptions.Item>
+                                <Descriptions.Item label="Места хранения">{(detail.storage_locations || []).join(', ') || '—'}</Descriptions.Item>
+                                <Descriptions.Item label="Размеры, мм">{[detail.length, detail.width, detail.height].filter((v) => v != null).join(' × ') || '—'}</Descriptions.Item>
+                                <Descriptions.Item label="Вес">{detail.weight != null ? `${detail.weight} кг` : '—'}</Descriptions.Item>
+                                <Descriptions.Item label="Штрих-код">{detail.barcode || '—'}</Descriptions.Item>
+                                <Descriptions.Item label="ТН ВЭД">{detail.tnved_code || '—'}</Descriptions.Item>
+                                <Descriptions.Item label="ОКПД 2">{detail.okpd2_code || '—'}</Descriptions.Item>
+                                <Descriptions.Item label="Сертификация">{detail.certification_required === false ? 'Не требуется' : (detail.eac_cert_number || 'Не заполнено')}</Descriptions.Item>
+                                <Descriptions.Item label="Сертификат действует до">{detail.eac_cert_valid_until || '—'}</Descriptions.Item>
+                                <Descriptions.Item label="Источник реквизитов">{detail.regulatory_source || '—'}</Descriptions.Item>
+                                <Descriptions.Item label="Применимость (текст)">{detail.applicability || '—'}</Descriptions.Item>
+                            </Descriptions>
+
                             {detail.description && (
                                 <div style={{ marginBottom: 16 }}>
                                     <Text type="secondary" style={{ display: 'block', fontSize: 12 }}>
@@ -999,17 +1075,18 @@ const NomenclaturePage = () => {
                             )}
                         </>
                     ) : null}
-                </div>
+                </Modal>
             )}
 
-            {/* ═══ Drawer ═══ */}
-            <Drawer
+            {/* ═══ Large edit modal ═══ */}
+            <Modal
                 open={drawerOpen}
-                onClose={() => setDrawerOpen(false)}
+                onCancel={() => setDrawerOpen(false)}
                 title={editingId ? 'Редактирование позиции' : 'Новая позиция'}
-                width={700}
+                centered
+                width={1180}
                 loading={drawerLoading}
-                extra={
+                footer={
                     <Space>
                         <Button onClick={() => setDrawerOpen(false)}>Отмена</Button>
                         <Button type="primary" onClick={handleSave} loading={saving}>
@@ -1017,6 +1094,7 @@ const NomenclaturePage = () => {
                         </Button>
                     </Space>
                 }
+                styles={{ body: { maxHeight: '78vh', overflowY: 'auto' } }}
                 destroyOnClose
             >
                 <Form form={form} layout="vertical">
@@ -1055,10 +1133,16 @@ const NomenclaturePage = () => {
                                             <Input placeholder="Например: Фильтр масляный" />
                                         </Form.Item>
                                         <Form.Item name="description" label="Описание">
-                                            <Input.TextArea rows={2} />
+                                            <Input.TextArea rows={5} />
                                         </Form.Item>
                                         <Form.Item name="comment" label="Комментарий">
                                             <Input.TextArea rows={2} />
+                                        </Form.Item>
+                                        <Form.Item name="applicability" label="Применимость (текстовое описание)">
+                                            <Input.TextArea rows={2} />
+                                        </Form.Item>
+                                        <Form.Item name="honest_sign_category" label="Категория ЧЗ (старое текстовое поле)">
+                                            <Input />
                                         </Form.Item>
                                         <Form.Item name="category_ids" label="Категории">
                                             <Select
@@ -1311,6 +1395,81 @@ const NomenclaturePage = () => {
                                     </div>
                                 ),
                             },
+                            {
+                                key: 'photos',
+                                label: `Фотографии (${editingPhotos.length})`,
+                                children: (
+                                    <div>
+                                        <Upload
+                                            accept="image/jpeg,image/png,image/webp"
+                                            multiple
+                                            showUploadList={false}
+                                            customRequest={handlePhotoUpload}
+                                            disabled={!editingId}
+                                        >
+                                            <Button type="primary" icon={<UploadOutlined />} disabled={!editingId}>
+                                                Добавить фотографии
+                                            </Button>
+                                        </Upload>
+                                        {!editingId && (
+                                            <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
+                                                Сначала сохраните новую позицию, затем откройте её для добавления фото.
+                                            </Text>
+                                        )}
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 16, marginTop: 16 }}>
+                                            {editingPhotos.map((photo) => (
+                                                <div key={photo.id} style={{ border: '1px solid #f0f0f0', borderRadius: 10, padding: 10 }}>
+                                                    <Image
+                                                        src={photo.url}
+                                                        width="100%"
+                                                        height={150}
+                                                        style={{ objectFit: 'contain', borderRadius: 6 }}
+                                                    />
+                                                    <Space style={{ marginTop: 8 }}>
+                                                        <Upload
+                                                            accept="image/jpeg,image/png,image/webp"
+                                                            showUploadList={false}
+                                                            customRequest={handlePhotoReplace(photo.id)}
+                                                        >
+                                                            <Button size="small">Заменить</Button>
+                                                        </Upload>
+                                                        <Popconfirm
+                                                            title="Удалить фотографию?"
+                                                            onConfirm={() => handlePhotoDelete(photo.id)}
+                                                            okText="Удалить"
+                                                            cancelText="Отмена"
+                                                        >
+                                                            <Button size="small" danger>Удалить</Button>
+                                                        </Popconfirm>
+                                                    </Space>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {!editingPhotos.length && editingId && (
+                                            <Text type="secondary" style={{ display: 'block', marginTop: 16 }}>
+                                                Фотографий пока нет.
+                                            </Text>
+                                        )}
+                                    </div>
+                                ),
+                            },
+                            ...(editingDetail?.partssoft_product_id ? [{
+                                key: 'partssoft',
+                                label: 'Parts-Soft',
+                                children: (
+                                    <div>
+                                        <Descriptions bordered size="small" column={2} style={{ marginBottom: 16 }}>
+                                            <Descriptions.Item label="ID">{editingDetail.partssoft_product_id}</Descriptions.Item>
+                                            <Descriptions.Item label="Обновлено в Parts-Soft">{editingDetail.partssoft_product_updated_at || '—'}</Descriptions.Item>
+                                            <Descriptions.Item label="Синхронизировано у нас">{editingDetail.partssoft_synced_at || '—'}</Descriptions.Item>
+                                        </Descriptions>
+                                        <Text strong>Все исходные поля Parts-Soft</Text>
+                                        <pre style={{ marginTop: 8, padding: 12, background: '#f6f8fa', borderRadius: 8, maxHeight: 420, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
+                                            {JSON.stringify(editingDetail.partssoft_payload || {}, null, 2)}
+                                        </pre>
+                                    </div>
+                                ),
+                            }] : []),
                             // ── Кросс-номера ──────────────────────────────────
                             {
                                 key: 'crosses',
@@ -1379,7 +1538,7 @@ const NomenclaturePage = () => {
                         ]}
                     />
                 </Form>
-            </Drawer>
+            </Modal>
 
             {/* ── Modal: новая категория ЧЗ ── */}
             <Modal

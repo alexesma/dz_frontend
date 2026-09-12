@@ -172,3 +172,9 @@ export const getPartsSoftProductSyncStatus = () =>
 
 export const syncPartsSoftProducts = () =>
     api.post('/integrations/partssoft/products/sync', null, { timeout: 120000 });
+
+export const getPartsSoftSupplierSyncStatus = () =>
+    api.get('/integrations/partssoft/suppliers/status');
+
+export const syncPartsSoftSuppliers = () =>
+    api.post('/integrations/partssoft/suppliers/sync', null, { timeout: 120000 });

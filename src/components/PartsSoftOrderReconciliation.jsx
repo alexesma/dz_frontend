@@ -19,9 +19,11 @@ import {
     getPartsSoftCustomerCandidates,
     getCachedPartsSoftOrders,
     getPartsSoftProductSyncStatus,
+    getPartsSoftSupplierSyncStatus,
     linkPartsSoftCustomer,
     reconcilePartsSoftOrders,
     syncPartsSoftProducts,
+    syncPartsSoftSuppliers,
 } from '../api/customerOrders';
 
 const { Paragraph, Text } = Typography;
@@ -74,6 +76,8 @@ const PartsSoftOrderReconciliation = () => {
     const [mergeDuplicate, setMergeDuplicate] = useState(false);
     const [productStatus, setProductStatus] = useState(null);
     const [productSyncLoading, setProductSyncLoading] = useState(false);
+    const [supplierStatus, setSupplierStatus] = useState(null);
+    const [supplierSyncLoading, setSupplierSyncLoading] = useState(false);
 
     const loadProductStatus = async () => {
         try {
@@ -84,8 +88,18 @@ const PartsSoftOrderReconciliation = () => {
         }
     };
 
+    const loadSupplierStatus = async () => {
+        try {
+            const response = await getPartsSoftSupplierSyncStatus();
+            setSupplierStatus(response.data || null);
+        } catch {
+            setSupplierStatus(null);
+        }
+    };
+
     useEffect(() => {
         void loadProductStatus();
+        void loadSupplierStatus();
         void loadCachedReport();
     }, []);
 
@@ -100,6 +114,23 @@ const PartsSoftOrderReconciliation = () => {
             setErrorText(typeof detail === 'string' ? detail : 'Не удалось загрузить сохранённую сверку');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const runSupplierSync = async () => {
+        setSupplierSyncLoading(true);
+        try {
+            const response = await syncPartsSoftSuppliers();
+            const counts = response.data?.counts || {};
+            message.success(
+                `Поставщики синхронизированы: создано ${counts.created || 0}, обновлено ${counts.updated || 0}, конфликтов ${counts.conflicts || 0}`,
+            );
+            await loadSupplierStatus();
+        } catch (error) {
+            const detail = error?.response?.data?.detail;
+            message.error(typeof detail === 'string' ? detail : 'Не удалось синхронизировать поставщиков Parts-Soft');
+        } finally {
+            setSupplierSyncLoading(false);
         }
     };
 
@@ -340,6 +371,28 @@ const PartsSoftOrderReconciliation = () => {
                     не создавая дубли. Описание, размеры и фотографии доступны в нашей номенклатуре;
                     исходные свойства карточки сохраняются полностью.
                 </Paragraph>
+            </Card>
+            <Card
+                title="Поставщики Parts-Soft"
+                extra={(
+                    <Button loading={supplierSyncLoading} onClick={runSupplierSync}>
+                        Синхронизировать поставщиков
+                    </Button>
+                )}
+                style={{ marginBottom: 16 }}
+            >
+                <Row gutter={[16, 16]} align="middle">
+                    <Col xs={24} sm={8}>
+                        <Statistic title="Связано поставщиков" value={supplierStatus?.suppliers || 0} />
+                    </Col>
+                    <Col xs={24} sm={16}>
+                        <Paragraph type="secondary" style={{ margin: 0 }}>
+                            Parts-Soft хранит поставщиков в общем справочнике контрагентов. Сверка использует
+                            постоянный ID Parts-Soft, затем ИНН, email и название. Неоднозначные совпадения
+                            остаются конфликтами и не создают дубли автоматически.
+                        </Paragraph>
+                    </Col>
+                </Row>
             </Card>
             <Alert
                 type="info"

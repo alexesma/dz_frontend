@@ -47,6 +47,21 @@ export const updateAutopart = (id, data) =>
 export const createAutopartCatalog = (data) =>
     api.post('/autoparts/', data);
 
+export const uploadAutopartPhoto = (id, file) => {
+    const data = new FormData();
+    data.append('file', file);
+    return api.post(`/autoparts/${id}/photos/`, data);
+};
+
+export const replaceAutopartPhoto = (id, photoId, file) => {
+    const data = new FormData();
+    data.append('file', file);
+    return api.put(`/autoparts/${id}/photos/${photoId}`, data);
+};
+
+export const deleteAutopartPhoto = (id, photoId) =>
+    api.delete(`/autoparts/${id}/photos/${photoId}`);
+
 // Cross-numbers
 export const getAutopartCrosses = (id) =>
     api.get(`/autoparts/${id}/crosses/`);
