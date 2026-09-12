@@ -437,13 +437,34 @@ const Dashboard = () => {
             ] = requests.map((result) => (
                 result.status === 'fulfilled' ? result.value : null
             ));
-            const failedSections = requests.filter(
-                (result) => result.status === 'rejected'
-            ).length;
-            if (failedSections) {
-                message.warning(
-                    `Часть сводки временно недоступна: ${failedSections} разд.`
-                );
+            // Названия в том же порядке, что и запросы выше. Прежде
+            // сообщение давало только счётчик («1 разд.»), и какой именно
+            // раздел не загрузился, приходилось выяснять по журналу
+            // сервера.
+            const sectionNames = [
+                'динамика прайсов поставщиков',
+                'динамика заказов',
+                'сравнение периодов заказов',
+                'журнал заданий',
+                'ошибки заданий',
+                'журнал загрузки прайсов',
+                'отслеживаемые позиции',
+                'клиенты',
+                'маржинальность заказов',
+                'контроль запасов',
+                'надёжность поставщиков',
+                'свежесть прайсов',
+            ];
+            const failedSections = requests
+                .map((result, index) => (
+                    result.status === 'rejected' ? sectionNames[index] : null
+                ))
+                .filter(Boolean);
+            if (failedSections.length) {
+                message.warning({
+                    content: `Не загрузилось: ${failedSections.join(', ')}.`,
+                    duration: 8,
+                });
             }
             const nextSeries = Array.isArray(trendsResponse?.data?.series)
                 ? trendsResponse.data.series
