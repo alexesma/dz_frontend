@@ -15,7 +15,7 @@ const DEFAULT_FILTERS = {
     hasPricelistConfig: 'all',
     isVirtual: 'all',
 };
-const DEFAULT_SORT = { sortBy: 'name', sortDir: 'asc' };
+const DEFAULT_SORT = { sortBy: 'price_activity', sortDir: 'asc' };
 
 const ProvidersList = () => {
     const [providers, setProviders] = useState([]);
@@ -138,6 +138,14 @@ const ProvidersList = () => {
         setFilters(nextFilters);
         setPagination(prev => ({ ...prev, current: 1 }));
         fetchProviders(1, pagination.pageSize, searchText, nextFilters, sortState);
+    };
+
+    const handleSortChange = (value) => {
+        const [sortBy, sortDir] = value.split(':');
+        const nextSort = { sortBy, sortDir };
+        setSortState(nextSort);
+        setPagination(prev => ({ ...prev, current: 1 }));
+        fetchProviders(1, pagination.pageSize, searchText, filters, nextSort);
     };
 
     const handleEdit = (id) => {
@@ -359,6 +367,21 @@ const ProvidersList = () => {
                                 { value: 'all', label: 'Все поставщики' },
                                 { value: 'yes', label: 'Виртуальные' },
                                 { value: 'no', label: 'Обычные' },
+                            ]}
+                        />
+                        <Select
+                            value={`${sortState.sortBy}:${sortState.sortDir}`}
+                            onChange={handleSortChange}
+                            style={{ width: 220 }}
+                            options={[
+                                {
+                                    value: 'price_activity:asc',
+                                    label: 'Сначала с прайсами',
+                                },
+                                { value: 'name:asc', label: 'По названию А–Я' },
+                                { value: 'name:desc', label: 'По названию Я–А' },
+                                { value: 'id:desc', label: 'Сначала новые' },
+                                { value: 'id:asc', label: 'Сначала старые' },
                             ]}
                         />
                     </div>
