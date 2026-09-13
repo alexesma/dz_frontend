@@ -7,6 +7,14 @@ export const getCustomers = (params) =>
 export const getCustomersSummary = (params) =>
     api.get('/customers/summary/', { params });
 
+// Объединение дублей: карточку заводят руками, и она же приезжает с
+// сайта. Связанные записи переносятся на основную карточку, её пустые
+// поля заполняются из дубля, дубль удаляется.
+export const mergeCustomerInto = (customerId, sourceCustomerId) =>
+    api.post(`/customers/${customerId}/merge`, {
+        source_customer_id: sourceCustomerId,
+    });
+
 export const getCustomerById = (customerId) =>
     api.get(`/customers/${customerId}/`);
 

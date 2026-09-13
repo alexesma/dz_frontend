@@ -24,7 +24,7 @@ import {
 import {
     SaveOutlined, ArrowLeftOutlined, PlusOutlined,
     EditOutlined, DeleteOutlined, SendOutlined, SettingOutlined,
-    DownloadOutlined
+    DownloadOutlined, SwapOutlined
 } from '@ant-design/icons';
 
 const { Text } = Typography;
@@ -45,6 +45,8 @@ const ConfigSection = ({ title, children }) => (
 
 import {
     getCustomerById,
+    getCustomers,
+    mergeCustomerInto,
     createCustomer,
     updateCustomer,
     deleteCustomer,
@@ -155,6 +157,13 @@ const CustomerPage = () => {
     const [sources, setSources] = useState([]);
     const [sourcesLoading, setSourcesLoading] = useState(false);
     const [configSaving, setConfigSaving] = useState(false);
+    // Объединение дублей: карточку заводят руками, и она же приезжает
+    // с сайта — получаются два лица одного клиента.
+    const [mergeModalVisible, setMergeModalVisible] = useState(false);
+    const [mergeCandidates, setMergeCandidates] = useState([]);
+    const [mergeCandidatesLoading, setMergeCandidatesLoading] = useState(false);
+    const [mergeSaving, setMergeSaving] = useState(false);
+    const [mergeForm] = Form.useForm();
     const [providerOptions, setProviderOptions] = useState([]);
     const [supplierFilterProviders, setSupplierFilterProviders] = useState([]);
     const [editingSource, setEditingSource] = useState(null);
@@ -1030,6 +1039,45 @@ const CustomerPage = () => {
         }
     };
 
+    const openMergeModal = async () => {
+        if (!customerId) return;
+        setMergeModalVisible(true);
+        mergeForm.resetFields();
+        setMergeCandidatesLoading(true);
+        try {
+            const { data } = await getCustomers({ page: 1, page_size: 500 });
+            const список = Array.isArray(data) ? data : (data?.items || []);
+            setMergeCandidates(
+                список.filter((item) => Number(item.id) !== Number(customerId))
+            );
+        } catch (err) {
+            console.error(err);
+            setMergeCandidates([]);
+            message.error('Не удалось загрузить список клиентов для объединения');
+        } finally {
+            setMergeCandidatesLoading(false);
+        }
+    };
+
+    const handleMergeSubmit = async (values) => {
+        if (!customerId) return;
+        setMergeSaving(true);
+        try {
+            await mergeCustomerInto(customerId, Number(values.source_customer_id));
+            message.success('Дубль клиента объединён с текущим');
+            setMergeModalVisible(false);
+            mergeForm.resetFields();
+            const { data: customer } = await getCustomerById(customerId);
+            const { data: configs } = await getCustomerPricelistConfigs(customerId);
+            setCustomerData({ customer, pricelist_configs: configs });
+        } catch (err) {
+            console.error(err);
+            message.error(extractApiError(err, 'Не удалось объединить клиентов'));
+        } finally {
+            setMergeSaving(false);
+        }
+    };
+
     // Удаление клиента
     const handleDeleteCustomer = async () => {
         if (!customerId) return;
@@ -1720,6 +1768,12 @@ const CustomerPage = () => {
                 </Button>
 
                 {!isNew && (
+                    <Button icon={<SwapOutlined />} onClick={openMergeModal}>
+                        Объединить дубль
+                    </Button>
+                )}
+
+                {!isNew && (
                     <Popconfirm
                         title="Удалить клиента?"
                         description="Это действие необратимо"
@@ -2089,6 +2143,70 @@ const CustomerPage = () => {
             )}
 
             {/* Конфигурации заказов теперь редактируются внутри конфигурации прайса */}
+
+            <Modal
+                title="Объединить дубль клиента"
+                open={mergeModalVisible}
+                onCancel={() => {
+                    setMergeModalVisible(false);
+                    mergeForm.resetFields();
+                }}
+                footer={null}
+                destroyOnClose
+            >
+                <Alert
+                    type="warning"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                    message="Проверьте, что это действительно один клиент"
+                    description="Заказы, прайсы, платежи, документы и почты для рекламаций перенесутся с дубля в текущую карточку. Пустые поля текущей карточки заполнятся данными дубля, заполненные останутся как есть. Дубль после объединения удаляется, и вернуть его нельзя."
+                />
+                <Form
+                    form={mergeForm}
+                    layout="vertical"
+                    onFinish={handleMergeSubmit}
+                    scrollToFirstError
+                >
+                    <Form.Item
+                        name="source_customer_id"
+                        label="Какого клиента объединяем в текущего"
+                        rules={[{ required: true, message: 'Выберите дубль клиента' }]}
+                    >
+                        <Select
+                            showSearch
+                            loading={mergeCandidatesLoading}
+                            placeholder="Выберите дубль клиента"
+                            optionFilterProp="label"
+                            options={mergeCandidates.map((item) => ({
+                                value: item.id,
+                                label: `${item.name} · ID ${item.id}${item.inn ? ` · ИНН ${item.inn}` : ''}`,
+                            }))}
+                        />
+                    </Form.Item>
+
+                    <Form.Item>
+                        <Space wrap>
+                            <Button
+                                type="primary"
+                                danger
+                                htmlType="submit"
+                                icon={<SwapOutlined />}
+                                loading={mergeSaving}
+                            >
+                                Объединить
+                            </Button>
+                            <Button
+                                onClick={() => {
+                                    setMergeModalVisible(false);
+                                    mergeForm.resetFields();
+                                }}
+                            >
+                                Отмена
+                            </Button>
+                        </Space>
+                    </Form.Item>
+                </Form>
+            </Modal>
 
             {/* Модалка конфигурации */}
             <Modal
