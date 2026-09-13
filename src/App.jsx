@@ -1,6 +1,12 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Button, Layout, Result, Spin } from 'antd';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import {
+    BrowserRouter as Router,
+    Routes,
+    Route,
+    Navigate,
+    useLocation,
+} from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import NotificationCenter from './components/NotificationCenter';
 import AppErrorBoundary from './components/AppErrorBoundary';
@@ -78,6 +84,16 @@ import useAuth from './context/useAuth';
 
 
 const { Content } = Layout;
+
+const ScrollToTop = () => {
+    const { pathname } = useLocation();
+
+    useEffect(() => {
+        window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    }, [pathname]);
+
+    return null;
+};
 
 const AuthUnavailableState = () => {
     const { retryAuthBootstrap } = useAuth();
@@ -252,6 +268,7 @@ const App = () => (
     <AuthProvider>
         <AppErrorBoundary>
             <Router>
+                <ScrollToTop />
                 <Layout className="app-shell">
                     <Sidebar />
                     <Layout className="app-main-layout">
