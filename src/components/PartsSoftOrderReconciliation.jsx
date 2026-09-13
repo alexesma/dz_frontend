@@ -192,7 +192,7 @@ const PartsSoftOrderReconciliation = () => {
             const response = await syncPartsSoftSuppliers();
             const counts = response.data?.counts || {};
             message.success(
-                `Поставщики синхронизированы: создано ${counts.created || 0}, обновлено ${counts.updated || 0}, конфликтов ${counts.conflicts || 0}`,
+                `Поставщики синхронизированы: создано ${counts.created || 0}, обновлено ${counts.updated || 0}, заполнено реквизитов ${counts.fields_filled || 0}, конфликтов ${counts.conflicts || 0}`,
             );
             await loadSupplierStatus();
         } catch (error) {
@@ -565,7 +565,8 @@ const PartsSoftOrderReconciliation = () => {
                         <Paragraph type="secondary" style={{ margin: 0 }}>
                             Parts-Soft хранит поставщиков в общем справочнике контрагентов. Сверка использует
                             постоянный ID Parts-Soft, затем ИНН, email и название. Неоднозначные совпадения
-                            остаются конфликтами и не создают дубли автоматически.
+                            остаются конфликтами и не создают дубли автоматически. Юридические, контактные и
+                            банковские реквизиты дополняют только пустые поля нашей карточки.
                         </Paragraph>
                     </Col>
                 </Row>

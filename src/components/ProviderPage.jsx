@@ -493,6 +493,19 @@ const ProviderPage = () => {
                     email_incoming_price: data.provider.email_incoming_price,
                     inn: data.provider.inn,
                     kpp: data.provider.kpp,
+                    legal_name: data.provider.legal_name,
+                    legal_address: data.provider.legal_address,
+                    postal_address: data.provider.postal_address,
+                    company_type: data.provider.company_type,
+                    phone: data.provider.phone,
+                    additional_phone: data.provider.additional_phone,
+                    vat_rate: data.provider.vat_rate,
+                    bank_bik: data.provider.bank_bik,
+                    bank_name: data.provider.bank_name,
+                    bank_city: data.provider.bank_city,
+                    bank_account: data.provider.bank_account,
+                    correspondent_account: data.provider.correspondent_account,
+                    credit_limit: data.provider.credit_limit,
                     type_prices: data.provider.type_prices,
                     description: data.provider.description,
                     comment: data.provider.comment,
@@ -2826,6 +2839,86 @@ const ProviderPage = () => {
                     <Form.Item name="kpp" label="КПП">
                         <Input placeholder="770101001" maxLength={32} />
                     </Form.Item>
+
+                    <Divider orientation="left">
+                        Юридические и банковские реквизиты
+                    </Divider>
+
+                    <Alert
+                        type="info"
+                        showIcon
+                        style={{ marginBottom: 16 }}
+                        message="Синхронизация с Parts-Soft дополняет только пустые поля"
+                        description="Название поставщика используется внутри системы. Юридическое название и реквизиты можно использовать в документах. Уже заполненные здесь значения Parts-Soft не перезаписывает."
+                    />
+
+                    <Form.Item name="legal_name" label="Юридическое название">
+                        <Input placeholder='Например: ООО «ФРОЗА МСК»' maxLength={512} />
+                    </Form.Item>
+
+                    <Form.Item name="company_type" label="Тип организации">
+                        <Input placeholder="ООО, АО, ИП" maxLength={128} />
+                    </Form.Item>
+
+                    <Form.Item name="legal_address" label="Юридический адрес">
+                        <Input.TextArea rows={2} />
+                    </Form.Item>
+
+                    <Form.Item name="postal_address" label="Адрес доставки / почтовый адрес">
+                        <Input.TextArea rows={2} />
+                    </Form.Item>
+
+                    <Space wrap size="middle" style={{ width: "100%" }}>
+                        <Form.Item name="phone" label="Телефон" style={{ minWidth: 280 }}>
+                            <Input maxLength={64} />
+                        </Form.Item>
+                        <Form.Item
+                            name="additional_phone"
+                            label="Дополнительный телефон"
+                            style={{ minWidth: 280 }}
+                        >
+                            <Input maxLength={64} />
+                        </Form.Item>
+                        <Form.Item name="vat_rate" label="Ставка НДС, %" style={{ minWidth: 180 }}>
+                            <InputNumber min={0} max={100} precision={3} style={{ width: "100%" }} />
+                        </Form.Item>
+                        <Form.Item
+                            name="credit_limit"
+                            label="Кредитный лимит"
+                            style={{ minWidth: 220 }}
+                        >
+                            <InputNumber min={0} precision={2} style={{ width: "100%" }} />
+                        </Form.Item>
+                    </Space>
+
+                    <Space wrap size="middle" style={{ width: "100%" }}>
+                        <Form.Item name="bank_bik" label="БИК" style={{ minWidth: 220 }}>
+                            <Input maxLength={32} />
+                        </Form.Item>
+                        <Form.Item name="bank_name" label="Банк" style={{ minWidth: 360 }}>
+                            <Input maxLength={255} />
+                        </Form.Item>
+                        <Form.Item name="bank_city" label="Город банка" style={{ minWidth: 240 }}>
+                            <Input maxLength={255} />
+                        </Form.Item>
+                    </Space>
+
+                    <Space wrap size="middle" style={{ width: "100%" }}>
+                        <Form.Item
+                            name="bank_account"
+                            label="Расчётный счёт"
+                            style={{ minWidth: 320 }}
+                        >
+                            <Input maxLength={64} />
+                        </Form.Item>
+                        <Form.Item
+                            name="correspondent_account"
+                            label="Корреспондентский счёт"
+                            style={{ minWidth: 320 }}
+                        >
+                            <Input maxLength={64} />
+                        </Form.Item>
+                    </Space>
 
                     <Divider orientation="left">Возвраты (рекламации)</Divider>
 
