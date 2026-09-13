@@ -38,6 +38,12 @@ export const clearDragonzapBasket = () =>
 export const getCatalog = (params = {}) =>
     api.get('/autoparts/catalog/', { params });
 
+// Наличие позиции и её аналогов: у нас и у поставщиков, одним запросом.
+// Прежде, чтобы понять, есть ли замена, приходилось открывать карточку
+// каждого аналога по очереди.
+export const getAutopartAvailability = (autopartId) =>
+    api.get(`/autoparts/${autopartId}/availability/`);
+
 export const getAutopartDetail = (id) =>
     api.get(`/autoparts/${id}/detail/`);
 

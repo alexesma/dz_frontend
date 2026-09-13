@@ -37,6 +37,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
     getCatalog,
     getAutopartDetail,
+    getAutopartAvailability,
     updateAutopart,
     createAutopartCatalog,
     addAutopartCross,
@@ -94,6 +95,128 @@ function buildTree(nodes) {
 const makePendingCrossId = () =>
     `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
+// ─── Раскрытая строка списка: где позиция есть и почём ────────────────────────
+// Прежде это можно было узнать, только открыв карточку и обойдя аналоги
+// по одному. Здесь сразу и предложения поставщиков, и наличие аналогов.
+const AvailabilityPanel = ({ data, loading, renderStock }) => {
+    if (loading) {
+        return (
+            <div style={{ padding: 12 }}>
+                <Spin size="small" /> <Text type="secondary">Загружаем наличие…</Text>
+            </div>
+        );
+    }
+    if (!data) return <Text type="secondary">Нет данных</Text>;
+
+    const offerColumns = [
+        { title: 'Поставщик', dataIndex: 'provider_name', key: 'provider' },
+        {
+            title: 'Прайс',
+            dataIndex: 'provider_config_name',
+            key: 'config',
+            render: (v) => v || <Text type="secondary">—</Text>,
+        },
+        {
+            title: 'Цена',
+            dataIndex: 'price',
+            key: 'price',
+            align: 'right',
+            width: 110,
+            render: (v) => fmtPrice(v),
+        },
+        {
+            title: 'Остаток',
+            dataIndex: 'quantity',
+            key: 'quantity',
+            align: 'right',
+            width: 90,
+        },
+        {
+            title: 'Срок, дн.',
+            key: 'delivery',
+            width: 90,
+            align: 'center',
+            render: (_, record) => (
+                record.min_delivery_day != null || record.max_delivery_day != null
+                    ? `${record.min_delivery_day ?? '—'}–${record.max_delivery_day ?? '—'}`
+                    : <Text type="secondary">—</Text>
+            ),
+        },
+        {
+            title: 'Прайс от',
+            dataIndex: 'pricelist_date',
+            key: 'date',
+            width: 110,
+            render: (v) => v || <Text type="secondary">—</Text>,
+        },
+    ];
+
+    const crossColumns = [
+        {
+            title: 'Бренд',
+            dataIndex: 'brand_name',
+            key: 'brand',
+            width: 120,
+            render: (v) => (v ? <Tag color="blue">{v}</Tag> : <Text type="secondary">—</Text>),
+        },
+        {
+            title: 'Артикул',
+            dataIndex: 'oem_number',
+            key: 'oem',
+            render: (v) => <Text code>{v}</Text>,
+        },
+        {
+            title: 'Наличие',
+            key: 'stock',
+            width: 230,
+            render: (_, record) => renderStock(record),
+        },
+        {
+            title: 'Лучшая цена',
+            dataIndex: 'best_price',
+            key: 'best_price',
+            align: 'right',
+            width: 110,
+            render: (v) => (v != null ? fmtPrice(v) : <Text type="secondary">—</Text>),
+        },
+        {
+            title: 'Место',
+            dataIndex: 'storage_locations',
+            key: 'storage',
+            width: 140,
+            ellipsis: true,
+            render: (v) => (v?.length
+                ? <Tooltip title={v.join(', ')}>{v.join(', ')}</Tooltip>
+                : <Text type="secondary">—</Text>),
+        },
+    ];
+
+    return (
+        <div style={{ padding: '4px 0 8px' }}>
+            <Text strong>Предложения поставщиков</Text>
+            <Table
+                rowKey={(row) => `${row.provider_id}-${row.provider_config_id ?? 0}-${row.price}`}
+                dataSource={data.offers || []}
+                columns={offerColumns}
+                size="small"
+                pagination={false}
+                style={{ marginTop: 6, marginBottom: 12 }}
+                locale={{ emptyText: 'Позиции нет ни в одном свежем прайсе' }}
+            />
+            <Text strong>Аналоги и их наличие</Text>
+            <Table
+                rowKey={(row) => row.cross_id ?? `${row.brand_name}-${row.oem_number}`}
+                dataSource={data.crosses || []}
+                columns={crossColumns}
+                size="small"
+                pagination={false}
+                style={{ marginTop: 6 }}
+                locale={{ emptyText: 'Аналоги не заведены' }}
+            />
+        </div>
+    );
+};
+
 // ─── NomenclaturePage ─────────────────────────────────────────────────────────
 
 const NomenclaturePage = () => {
@@ -119,6 +242,11 @@ const NomenclaturePage = () => {
     const [selectedRow, setSelectedRow] = useState(null);
     const [detail, setDetail] = useState(null);
     const [detailLoading, setDetailLoading] = useState(false);
+    // Наличие позиции и её аналогов. Ключ — id позиции: одно и то же
+    // нужно и раскрытой строке списка, и таблице аналогов в карточке.
+    const [availability, setAvailability] = useState({});
+    const [availabilityLoading, setAvailabilityLoading] = useState({});
+    const [expandedRowKeys, setExpandedRowKeys] = useState([]);
 
     // ── drawer state ──────────────────────────────────────────────────────────
     const [drawerOpen, setDrawerOpen] = useState(false);
@@ -252,6 +380,19 @@ const NomenclaturePage = () => {
         })();
     }, []);
 
+    const loadAvailability = useCallback(async (autopartId) => {
+        if (!autopartId || availability[autopartId]) return;
+        setAvailabilityLoading((prev) => ({ ...prev, [autopartId]: true }));
+        try {
+            const { data } = await getAutopartAvailability(autopartId);
+            setAvailability((prev) => ({ ...prev, [autopartId]: data }));
+        } catch {
+            message.error('Не удалось загрузить наличие');
+        } finally {
+            setAvailabilityLoading((prev) => ({ ...prev, [autopartId]: false }));
+        }
+    }, [availability]);
+
     // ── select row → load detail panel ───────────────────────────────────────
     const handleRowSelect = async (record) => {
         if (selectedRow?.id === record.id) {
@@ -265,6 +406,7 @@ const NomenclaturePage = () => {
         try {
             const { data } = await getAutopartDetail(record.id);
             setDetail(data);
+            void loadAvailability(record.id);
         } catch {
             message.error('Ошибка загрузки данных');
         } finally {
@@ -791,6 +933,46 @@ const NomenclaturePage = () => {
     ];
 
     // ── cross-numbers table ───────────────────────────────────────────────────
+    // Наличие аналога ищем по бренду и артикулу: у кросса без карточки в
+    // номенклатуре своего id нет, и связать иначе нечем.
+    const availabilityKey = (brand, oem) =>
+        `${(brand || '').trim().toUpperCase()}|${(oem || '').trim().toUpperCase()}`;
+
+    const crossAvailabilityMap = useMemo(() => {
+        const карта = new Map();
+        const свод = selectedRow ? availability[selectedRow.id] : null;
+        for (const строка of свод?.crosses || []) {
+            карта.set(
+                availabilityKey(строка.brand_name, строка.oem_number),
+                строка,
+            );
+        }
+        return карта;
+    }, [availability, selectedRow]);
+
+    const renderStock = (строка) => {
+        if (!строка) return <Text type="secondary">—</Text>;
+        const свои = строка.own_quantity || 0;
+        const чужие = строка.supplier_quantity || 0;
+        if (!свои && !чужие) return <Text type="secondary">нет</Text>;
+        return (
+            <Space size={4} wrap={false}>
+                {свои > 0 && (
+                    <Tooltip title="На нашем складе">
+                        <Tag color="green" style={{ marginRight: 0 }}>у нас {свои}</Tag>
+                    </Tooltip>
+                )}
+                {чужие > 0 && (
+                    <Tooltip title={`Поставщиков с наличием: ${строка.suppliers_count}`}>
+                        <Tag color="blue" style={{ marginRight: 0 }}>
+                            у поставщиков {чужие}
+                        </Tag>
+                    </Tooltip>
+                )}
+            </Space>
+        );
+    };
+
     const crossColumns = [
         {
             title: 'Бренд',
@@ -811,6 +993,44 @@ const NomenclaturePage = () => {
             key: 'priority',
             width: 70,
             align: 'center',
+        },
+        {
+            title: 'Наличие',
+            key: 'stock',
+            width: 210,
+            render: (_, record) => renderStock(
+                crossAvailabilityMap.get(
+                    availabilityKey(record.cross_brand_name, record.cross_oem_number),
+                ),
+            ),
+        },
+        {
+            title: 'Лучшая цена',
+            key: 'best_price',
+            width: 110,
+            align: 'right',
+            render: (_, record) => {
+                const строка = crossAvailabilityMap.get(
+                    availabilityKey(record.cross_brand_name, record.cross_oem_number),
+                );
+                return строка?.best_price != null
+                    ? fmtPrice(строка.best_price)
+                    : <Text type="secondary">—</Text>;
+            },
+        },
+        {
+            title: 'Место',
+            key: 'storage',
+            width: 130,
+            ellipsis: true,
+            render: (_, record) => {
+                const места = crossAvailabilityMap.get(
+                    availabilityKey(record.cross_brand_name, record.cross_oem_number),
+                )?.storage_locations || [];
+                return места.length
+                    ? <Tooltip title={места.join(', ')}>{места.join(', ')}</Tooltip>
+                    : <Text type="secondary">—</Text>;
+            },
         },
         {
             title: 'Комментарий',
@@ -924,6 +1144,22 @@ const NomenclaturePage = () => {
                     onClick: () => handleRowSelect(record),
                     style: { cursor: 'pointer' },
                 })}
+                expandable={{
+                    expandedRowKeys,
+                    // Раскрытие — отдельное действие: клик по строке уже
+                    // занят открытием карточки.
+                    onExpand: (expanded, record) => {
+                        setExpandedRowKeys(expanded ? [record.id] : []);
+                        if (expanded) void loadAvailability(record.id);
+                    },
+                    expandedRowRender: (record) => (
+                        <AvailabilityPanel
+                            data={availability[record.id]}
+                            loading={availabilityLoading[record.id]}
+                            renderStock={renderStock}
+                        />
+                    ),
+                }}
                 pagination={{
                     current: page,
                     pageSize,
