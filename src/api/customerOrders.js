@@ -178,3 +178,27 @@ export const getPartsSoftSupplierSyncStatus = () =>
 
 export const syncPartsSoftSuppliers = () =>
     api.post('/integrations/partssoft/suppliers/sync', null, { timeout: 120000 });
+
+export const getPartsSoftProductOutboxStatus = () =>
+    api.get('/integrations/partssoft/products/outbox/status');
+
+export const processPartsSoftProductOutbox = (limit = 25) =>
+    api.post('/integrations/partssoft/products/outbox/process', null, {
+        params: { limit },
+        timeout: 120000,
+    });
+
+export const enqueueAllPartsSoftProducts = () =>
+    api.post('/integrations/partssoft/products/outbox/enqueue-all');
+
+export const getPartsSoftDocumentSyncStatus = () =>
+    api.get('/integrations/partssoft/documents/status');
+
+export const getPartsSoftDocuments = (params = {}) =>
+    api.get('/integrations/partssoft/documents', { params });
+
+export const syncPartsSoftDocuments = (days = 30) =>
+    api.post('/integrations/partssoft/documents/sync', null, {
+        params: { days },
+        timeout: 120000,
+    });

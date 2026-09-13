@@ -8,6 +8,7 @@ import {
     Input,
     message,
     Modal,
+    Popconfirm,
     Row,
     Statistic,
     Table,
@@ -19,11 +20,17 @@ import {
     getPartsSoftCustomerCandidates,
     getCachedPartsSoftOrders,
     getPartsSoftProductSyncStatus,
+    getPartsSoftProductOutboxStatus,
+    getPartsSoftDocumentSyncStatus,
+    getPartsSoftDocuments,
     getPartsSoftSupplierSyncStatus,
     linkPartsSoftCustomer,
     reconcilePartsSoftOrders,
     syncPartsSoftProducts,
     syncPartsSoftSuppliers,
+    processPartsSoftProductOutbox,
+    enqueueAllPartsSoftProducts,
+    syncPartsSoftDocuments,
 } from '../api/customerOrders';
 
 const { Paragraph, Text } = Typography;
@@ -78,6 +85,11 @@ const PartsSoftOrderReconciliation = () => {
     const [productSyncLoading, setProductSyncLoading] = useState(false);
     const [supplierStatus, setSupplierStatus] = useState(null);
     const [supplierSyncLoading, setSupplierSyncLoading] = useState(false);
+    const [outboxStatus, setOutboxStatus] = useState(null);
+    const [outboxLoading, setOutboxLoading] = useState(false);
+    const [documentStatus, setDocumentStatus] = useState(null);
+    const [unmatchedDocuments, setUnmatchedDocuments] = useState([]);
+    const [documentLoading, setDocumentLoading] = useState(false);
 
     const loadProductStatus = async () => {
         try {
@@ -97,9 +109,21 @@ const PartsSoftOrderReconciliation = () => {
         }
     };
 
+    const loadExchangeStatus = async () => {
+        const [outbox, documents, unmatched] = await Promise.allSettled([
+            getPartsSoftProductOutboxStatus(),
+            getPartsSoftDocumentSyncStatus(),
+            getPartsSoftDocuments({ import_status: 'unmatched_counterparty', limit: 100 }),
+        ]);
+        setOutboxStatus(outbox.status === 'fulfilled' ? outbox.value.data : null);
+        setDocumentStatus(documents.status === 'fulfilled' ? documents.value.data : null);
+        setUnmatchedDocuments(unmatched.status === 'fulfilled' ? unmatched.value.data : []);
+    };
+
     useEffect(() => {
         void loadProductStatus();
         void loadSupplierStatus();
+        void loadExchangeStatus();
         void loadCachedReport();
     }, []);
 
@@ -114,6 +138,51 @@ const PartsSoftOrderReconciliation = () => {
             setErrorText(typeof detail === 'string' ? detail : 'Не удалось загрузить сохранённую сверку');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const processOutbox = async () => {
+        setOutboxLoading(true);
+        try {
+            const response = await processPartsSoftProductOutbox(100);
+            const counts = response.data?.counts || {};
+            message.success(
+                `Передано в Parts-Soft: ${counts.upserted || 0}; удалено: ${counts.deleted || 0}; ошибок: ${counts.errors || 0}`,
+            );
+            await loadExchangeStatus();
+        } catch (error) {
+            message.error(error?.response?.data?.detail || 'Не удалось передать изменения товаров');
+        } finally {
+            setOutboxLoading(false);
+        }
+    };
+
+    const enqueueAllProducts = async () => {
+        setOutboxLoading(true);
+        try {
+            const response = await enqueueAllPartsSoftProducts();
+            message.success(`В очередь поставлено карточек: ${response.data?.queued || 0}`);
+            await loadExchangeStatus();
+        } catch (error) {
+            message.error(error?.response?.data?.detail || 'Не удалось поставить карточки в очередь');
+        } finally {
+            setOutboxLoading(false);
+        }
+    };
+
+    const runDocumentSync = async () => {
+        setDocumentLoading(true);
+        try {
+            const response = await syncPartsSoftDocuments(30);
+            const counts = response.data?.counts || {};
+            message.success(
+                `Документы обновлены: импортировано ${counts.imported || 0}, требуют связи ${counts.unmatched || 0}, ошибок ${counts.errors || 0}`,
+            );
+            await loadExchangeStatus();
+        } catch (error) {
+            message.error(error?.response?.data?.detail || 'Не удалось импортировать документы');
+        } finally {
+            setDocumentLoading(false);
         }
     };
 
@@ -371,6 +440,113 @@ const PartsSoftOrderReconciliation = () => {
                     не создавая дубли. Описание, размеры и фотографии доступны в нашей номенклатуре;
                     исходные свойства карточки сохраняются полностью.
                 </Paragraph>
+            </Card>
+            <Card
+                title="Обмен товарными карточками"
+                extra={(
+                    <Space wrap>
+                        <Popconfirm
+                            title="Передать всю нашу номенклатуру в Parts-Soft?"
+                            description="Карточки с внешним ID будут обновлены, остальные будут созданы."
+                            onConfirm={enqueueAllProducts}
+                            okText="Поставить в очередь"
+                            cancelText="Отмена"
+                        >
+                            <Button loading={outboxLoading}>Вся номенклатура</Button>
+                        </Popconfirm>
+                        <Button type="primary" loading={outboxLoading} onClick={processOutbox}>
+                            Отправить изменения сейчас
+                        </Button>
+                    </Space>
+                )}
+                style={{ marginBottom: 16 }}
+            >
+                <Row gutter={[16, 16]}>
+                    <Col xs={12} sm={6}><Statistic title="Ожидают" value={outboxStatus?.pending || 0} /></Col>
+                    <Col xs={12} sm={6}><Statistic title="Передаются" value={outboxStatus?.processing || 0} /></Col>
+                    <Col xs={12} sm={6}><Statistic title="Передано" value={outboxStatus?.sent || 0} /></Col>
+                    <Col xs={12} sm={6}><Statistic title="Ошибки" value={outboxStatus?.error || 0} /></Col>
+                </Row>
+                <Paragraph type="secondary" style={{ margin: '12px 0 0' }}>
+                    Новые и изменённые у нас карточки отправляются автоматически каждые 5 минут.
+                    Если карточку удалили в Parts-Soft, она будет создана там заново. Удаление в Parts-Soft
+                    не удаляет данные из нашей базы.
+                </Paragraph>
+            </Card>
+            <Card
+                title="Накладные Parts-Soft"
+                extra={(
+                    <Button loading={documentLoading} onClick={runDocumentSync}>
+                        Импортировать за 30 дней
+                    </Button>
+                )}
+                style={{ marginBottom: 16 }}
+            >
+                <Row gutter={[16, 16]}>
+                    <Col xs={12} sm={6}>
+                        <Statistic
+                            title="Клиентские"
+                            value={Object.values(documentStatus?.documents?.invoice || {}).reduce((a, b) => a + b, 0)}
+                        />
+                    </Col>
+                    <Col xs={12} sm={6}>
+                        <Statistic
+                            title="Поставщиков"
+                            value={Object.values(documentStatus?.documents?.supplier_invoice || {}).reduce((a, b) => a + b, 0)}
+                        />
+                    </Col>
+                    <Col xs={12} sm={6}>
+                        <Statistic
+                            title="Требуют привязки"
+                            value={(documentStatus?.documents?.invoice?.unmatched_counterparty || 0)
+                                + (documentStatus?.documents?.supplier_invoice?.unmatched_counterparty || 0)}
+                        />
+                    </Col>
+                    <Col xs={12} sm={6}>
+                        <Statistic
+                            title="Последнее обновление"
+                            value={documentStatus?.last_synced_at
+                                ? dayjs(documentStatus.last_synced_at).format('DD.MM.YYYY HH:mm')
+                                : '—'}
+                        />
+                    </Col>
+                </Row>
+                <Paragraph type="secondary" style={{ margin: '12px 0 0' }}>
+                    Клиентские накладные появляются в финансовых документах, накладные поставщиков —
+                    в приходах как непроведённые документы. Если контрагент ещё не связан, исходный
+                    документ сохраняется и будет импортирован после привязки.
+                </Paragraph>
+                {unmatchedDocuments.length > 0 && (
+                    <Table
+                        style={{ marginTop: 12 }}
+                        size="small"
+                        pagination={{ pageSize: 10, hideOnSinglePage: true }}
+                        rowKey="id"
+                        dataSource={unmatchedDocuments}
+                        columns={[
+                            {
+                                title: 'Документ',
+                                key: 'document',
+                                render: (_, row) => row.document_type === 'invoice'
+                                    ? 'Клиентская накладная'
+                                    : 'Накладная поставщика',
+                            },
+                            { title: '№', dataIndex: 'document_number', key: 'document_number' },
+                            {
+                                title: 'Дата',
+                                dataIndex: 'document_date',
+                                key: 'document_date',
+                                render: (value) => value ? dayjs(value).format('DD.MM.YYYY') : '—',
+                            },
+                            {
+                                title: 'ID контрагента Parts-Soft',
+                                dataIndex: 'external_counterparty_id',
+                                key: 'external_counterparty_id',
+                            },
+                            { title: 'Сумма', dataIndex: 'total_amount', key: 'total_amount' },
+                        ]}
+                    />
+                )}
             </Card>
             <Card
                 title="Поставщики Parts-Soft"
