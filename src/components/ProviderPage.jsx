@@ -805,6 +805,7 @@ const ProviderPage = () => {
             configForm.setFieldsValue({
                 ...config,
                 exclude_positions: config.exclude_positions || [],
+                excluded_brands: config.excluded_brands || [],
                 max_days_without_update: config.max_days_without_update ?? 3,
                 is_active: config.is_active ?? true,
                 use_for_order_insights:
@@ -837,6 +838,7 @@ const ProviderPage = () => {
             setConfigNumberingFromOne(true);
             configForm.setFieldsValue({
                 exclude_positions: [],
+                excluded_brands: [],
                 max_days_without_update: 3,
                 is_active: true,
                 use_for_order_insights: false,
@@ -855,9 +857,17 @@ const ProviderPage = () => {
             const cleanedExcludePositions = (values.exclude_positions || [])
                 .map(normalizeExcludeItem)
                 .filter((item) => item.brand && item.oem);
+            const cleanedExcludedBrands = [
+                ...new Set(
+                    (values.excluded_brands || [])
+                        .map((brand) => String(brand || "").trim().toUpperCase())
+                        .filter(Boolean)
+                ),
+            ];
             const payload = {
                 ...values,
                 exclude_positions: cleanedExcludePositions,
+                excluded_brands: cleanedExcludedBrands,
                 start_row: adjustForPayload(values.start_row, configNumberingFromOne),
                 oem_col: adjustForPayload(values.oem_col, configNumberingFromOne),
                 brand_col: adjustForPayload(values.brand_col, configNumberingFromOne),
@@ -2278,6 +2288,20 @@ const ProviderPage = () => {
                 <span>
                     {record.min_delivery_day ?? 1} - {record.max_delivery_day ?? 3}
                 </span>
+            ),
+        },
+        {
+            title: "Исключения",
+            key: "exclusions",
+            render: (_, record) => (
+                <Space direction="vertical" size={0}>
+                    <Text>
+                        Бренды: {(record.excluded_brands || []).length}
+                    </Text>
+                    <Text type="secondary">
+                        Позиции: {(record.exclude_positions || []).length}
+                    </Text>
+                </Space>
             ),
         },
         {
@@ -3911,6 +3935,23 @@ const ProviderPage = () => {
                                 Загрузить файл
                             </Button>
                         </Upload>
+                    </Form.Item>
+
+                    <Form.Item
+                        name="excluded_brands"
+                        label="Не загружать бренды"
+                        extra="Можно выбрать или ввести несколько брендов. Все позиции этих брендов будут удалены из нового прайса до его сохранения. Требуется настроенная колонка бренда."
+                    >
+                        <Select
+                            mode="tags"
+                            allowClear
+                            showSearch
+                            optionFilterProp="label"
+                            placeholder="Выберите бренды"
+                            options={markupBrandOptions}
+                            loading={markupBrandLoading}
+                            tokenSeparators={[","]}
+                        />
                     </Form.Item>
 
                     <Form.List name="exclude_positions">
