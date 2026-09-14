@@ -37,11 +37,11 @@ import {
 const { Paragraph, Text } = Typography;
 
 const STATUS = {
-    existing_external: { label: 'Уже связан', color: 'green' },
+    existing_external: { label: 'Заказ связан по ID', color: 'green' },
     existing_site_order: { label: 'Заказ с нашего сайта', color: 'green' },
     partial_site_match: { label: 'Частичное совпадение', color: 'orange' },
     order_conflict: { label: 'Конфликт заказов', color: 'red' },
-    probable_duplicate: { label: 'Вероятный дубль заказа', color: 'orange' },
+    probable_duplicate: { label: 'Похожий заказ, связь не записана', color: 'orange' },
     customer_conflict: { label: 'Конфликт клиента', color: 'red' },
     customer_unmatched: { label: 'Клиент не связан', color: 'default' },
     new_order: { label: 'Новый заказ', color: 'blue' },
@@ -576,7 +576,7 @@ const PartsSoftOrderReconciliation = () => {
                 type="info"
                 showIcon
                 message="Хранятся заказы сайта только за последние 7 дней"
-                description="Данные обновляет автоматическая синхронизация. Заказы, созданные нашей системой, отслеживаются по tracking ID. Дубли и конфликты остаются только в этой вкладке."
+                description="«Заказ связан по ID» означает, что внешний ID Parts-Soft уже записан в заказе нашей системы. «Похожий заказ» означает совпадение клиента и номера либо даты и состава, но внешний ID ещё не был записан. Точные совпадения теперь связываются автоматически без создания второго заказа."
                 style={{ marginBottom: 16 }}
             />
             <Button type="primary" loading={loading} onClick={runReconciliation}>
@@ -595,6 +595,15 @@ const PartsSoftOrderReconciliation = () => {
 
             {report && (
                 <>
+                    {Object.values(report.maintenance_counts || {}).some((value) => value > 0) && (
+                        <Alert
+                            type="success"
+                            showIcon
+                            message="Автоматическая очистка выполнена"
+                            description={`Объединено дублей клиентов: ${report.maintenance_counts?.customers_merged || 0}; связано найденных дублей заказов: ${report.maintenance_counts?.linked_historical_order || 0}.`}
+                            style={{ marginTop: 16 }}
+                        />
+                    )}
                     <Paragraph style={{ marginTop: 12 }} type="secondary">
                         Период: {dayjs(report.date_from).format('DD.MM.YYYY HH:mm')} — {dayjs(report.date_to).format('DD.MM.YYYY HH:mm')}
                         {report.cache_updated_at && ` · данные обновлены ${dayjs(report.cache_updated_at).format('DD.MM.YYYY HH:mm')}`}
