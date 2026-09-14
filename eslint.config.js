@@ -24,6 +24,16 @@ export default defineConfig([
     },
     rules: {
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      // `Space` exists in the browser-globals catalogue, so no-undef does
+      // not catch a forgotten Ant Design import and the production bundle
+      // only fails at render time. An actual import shadows this global.
+      'no-restricted-globals': [
+        'error',
+        {
+          name: 'Space',
+          message: 'Import Space from antd before using it as a component.',
+        },
+      ],
     },
   },
 ])

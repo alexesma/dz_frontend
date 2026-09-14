@@ -60,6 +60,80 @@ const PRICELIST_HEALTH_META = {
     without_pricelist: { label: 'Прайс не загружен', color: 'default' },
 };
 
+const DASHBOARD_REQUEST_TIMEOUT = 120000;
+const DASHBOARD_REQUEST_CONCURRENCY = 4;
+
+const wait = (milliseconds) => new Promise((resolve) => {
+    window.setTimeout(resolve, milliseconds);
+});
+
+const isTransientLoadError = (error) => {
+    const status = Number(error?.response?.status);
+    return (
+        error?.code === 'ECONNABORTED'
+        || error?.code === 'ETIMEDOUT'
+        || error?.code === 'ERR_NETWORK'
+        || !error?.response
+        || status === 408
+        || status === 429
+        || status >= 500
+    );
+};
+
+const runDashboardRequest = async (requestFactory) => {
+    try {
+        return await requestFactory();
+    } catch (error) {
+        if (!isTransientLoadError(error)) throw error;
+        await wait(750);
+        return requestFactory();
+    }
+};
+
+const settleDashboardRequests = async (requestFactories) => {
+    const results = Array(requestFactories.length);
+    let nextIndex = 0;
+
+    const worker = async () => {
+        while (nextIndex < requestFactories.length) {
+            const index = nextIndex;
+            nextIndex += 1;
+            try {
+                results[index] = {
+                    status: 'fulfilled',
+                    value: await runDashboardRequest(requestFactories[index]),
+                };
+            } catch (reason) {
+                results[index] = { status: 'rejected', reason };
+            }
+        }
+    };
+
+    await Promise.all(
+        Array.from(
+            {
+                length: Math.min(
+                    DASHBOARD_REQUEST_CONCURRENCY,
+                    requestFactories.length,
+                ),
+            },
+            () => worker(),
+        ),
+    );
+    return results;
+};
+
+const formatLoadError = (error) => {
+    const status = error?.response?.status;
+    const detail = error?.response?.data?.detail;
+    if (detail) return `${status ? `HTTP ${status}: ` : ''}${detail}`;
+    if (error?.code === 'ECONNABORTED' || error?.code === 'ETIMEDOUT') {
+        return 'сервер не ответил за 2 минуты';
+    }
+    if (status) return `HTTP ${status}`;
+    return error?.message || 'сетевая ошибка';
+};
+
 const formatNumber = (value, digits = 0) => {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return '—';
@@ -397,29 +471,48 @@ const Dashboard = () => {
     const loadData = useCallback(async () => {
         setLoading(true);
         try {
-            const requests = await Promise.allSettled([
-                getSupplierPriceTrends({
+            const requestConfig = { timeout: DASHBOARD_REQUEST_TIMEOUT };
+            const requests = await settleDashboardRequests([
+                () => getSupplierPriceTrends({
                     days,
                     points_limit: pointsLimit,
                     smooth_window: smoothWindow,
-                }),
-                getOrderDynamics({ days: 14, partner_limit: 1000 }),
+                }, requestConfig),
+                () => getOrderDynamics(
+                    { days: 14, partner_limit: 1000 },
+                    requestConfig,
+                ),
                 // 28 дней без контрагентов — только для сравнения окон 14/14
-                getOrderDynamics({ days: 28, partner_limit: 1 }),
-                getExecutionTraces({ trace_type: 'scheduler_job', limit: 200 }),
-                getExecutionTraces({
+                () => getOrderDynamics(
+                    { days: 28, partner_limit: 1 },
+                    requestConfig,
+                ),
+                () => getExecutionTraces(
+                    { trace_type: 'scheduler_job', limit: 200 },
+                    requestConfig,
+                ),
+                () => getExecutionTraces({
                     trace_type: 'scheduler_job',
                     status: 'error',
                     limit: 50,
-                }),
-                getExecutionTraces({ trace_type: 'provider_pricelist', limit: 250 }),
-                getWatchItems({ page: 1, page_size: 10 }),
-                getCustomersSummary({ page: 1, page_size: 200 }),
+                }, requestConfig),
+                () => getExecutionTraces(
+                    { trace_type: 'provider_pricelist', limit: 250 },
+                    requestConfig,
+                ),
+                () => getWatchItems(
+                    { page: 1, page_size: 10 },
+                    requestConfig,
+                ),
+                () => getCustomersSummary(
+                    { page: 1, page_size: 200 },
+                    requestConfig,
+                ),
                 // 60 дней: текущее окно (последние 30) + предыдущее для сравнения
-                getOrderMargin({ days: 60 }),
-                getInventoryControl(),
-                getSupplierReliability({ days: 90 }),
-                getSupplierPricelistHealth(),
+                () => getOrderMargin({ days: 60 }, requestConfig),
+                () => getInventoryControl({}, requestConfig),
+                () => getSupplierReliability({ days: 90 }, requestConfig),
+                () => getSupplierPricelistHealth(requestConfig),
             ]);
             const [
                 trendsResponse,
@@ -461,9 +554,24 @@ const Dashboard = () => {
                 ))
                 .filter(Boolean);
             if (failedSections.length) {
+                const firstFailure = requests.find(
+                    (result) => result.status === 'rejected'
+                );
+                const reason = formatLoadError(firstFailure?.reason);
+                requests.forEach((result, index) => {
+                    if (result.status === 'rejected') {
+                        console.error(
+                            `Dashboard section failed: ${sectionNames[index]}`,
+                            result.reason,
+                        );
+                    }
+                });
                 message.warning({
-                    content: `Не загрузилось: ${failedSections.join(', ')}.`,
-                    duration: 8,
+                    content: (
+                        `Не загрузилось: ${failedSections.join(', ')}. `
+                        + `Причина: ${reason}.`
+                    ),
+                    duration: 12,
                 });
             }
             const nextSeries = Array.isArray(trendsResponse?.data?.series)

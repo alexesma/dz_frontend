@@ -4,8 +4,8 @@ import api from '../api.js';
 export const getCustomers = (params) =>
     api.get('/customers/', { params });
 
-export const getCustomersSummary = (params) =>
-    api.get('/customers/summary/', { params });
+export const getCustomersSummary = (params, config = {}) =>
+    api.get('/customers/summary/', { ...config, params });
 
 // Объединение дублей: карточку заводят руками, и она же приезжает с
 // сайта. Связанные записи переносятся на основную карточку, её пустые

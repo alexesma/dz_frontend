@@ -1,7 +1,7 @@
 import api from "../api.js";
 
-export const getWatchItems = (params = {}) =>
-    api.get("/watchlist", { params });
+export const getWatchItems = (params = {}, config = {}) =>
+    api.get("/watchlist", { ...config, params });
 
 export const createWatchItem = (data) =>
     api.post("/watchlist", data);
