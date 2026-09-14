@@ -85,6 +85,13 @@ import {
 import DiadocBindingCard from './DiadocBindingCard';
 import useAuth from '../context/useAuth';
 
+// Form.Item подсовывает дочернему элементу value и onChange — через них
+// значение и попадает в форму. Раньше компонент их не принимал и не
+// передавал дальше: Select оставался неуправляемым, значение виднелось
+// на экране, но в форму не шло. Проверка читала пустоту и писала
+// «Выберите значения» поверх выбранного, а правило отбора нельзя было
+// сохранить вовсе — ни по применимости, ни по бренду, ни по позиции.
+// Отсюда и пустые фильтры у клиентов, которым их заводили.
 const FilterRuleValueSelect = ({
     form,
     watchPath,
@@ -94,6 +101,7 @@ const FilterRuleValueSelect = ({
     honestSignOptions,
     positionLoading,
     onPositionSearch,
+    ...formProps
 }) => {
     const fieldType = Form.useWatch(watchPath, form);
     const settings = {
@@ -110,6 +118,7 @@ const FilterRuleValueSelect = ({
     }[fieldType];
     return (
         <Select
+            {...formProps}
             mode="multiple"
             showSearch
             disabled={!settings}
