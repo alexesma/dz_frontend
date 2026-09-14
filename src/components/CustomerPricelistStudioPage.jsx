@@ -330,18 +330,32 @@ const CustomerPricelistStudioPage = () => {
         if (!nextCustomerId || !nextConfigId) return;
         setLoading(true);
         try {
-            const [sourceResponse, ruleResponse, draftResponse] = await Promise.all([
+            const [sourceResult, ruleResult, draftResult] = await Promise.allSettled([
                 getCustomerPricelistSources(nextCustomerId, nextConfigId),
                 listCustomerPricelistPublicationRules(nextCustomerId, nextConfigId),
                 listCustomerPricelistDrafts(nextCustomerId, nextConfigId),
             ]);
-            setSources(sourceResponse.data || []);
-            setRules(ruleResponse.data || []);
-            const nextDrafts = draftResponse.data || [];
-            setDrafts(nextDrafts);
-            setSelectedDraftId(nextDrafts[0]?.id || null);
-        } catch (error) {
-            message.error(getErrorText(error, 'Не удалось загрузить управление прайсом'));
+            const failedSections = [];
+            if (sourceResult.status === 'fulfilled') {
+                setSources(sourceResult.value.data || []);
+            } else {
+                failedSections.push('источники');
+            }
+            if (ruleResult.status === 'fulfilled') {
+                setRules(ruleResult.value.data || []);
+            } else {
+                failedSections.push('правила публикации');
+            }
+            if (draftResult.status === 'fulfilled') {
+                const nextDrafts = draftResult.value.data || [];
+                setDrafts(nextDrafts);
+                setSelectedDraftId(nextDrafts[0]?.id || null);
+            } else {
+                failedSections.push('история файлов');
+            }
+            if (failedSections.length) {
+                message.warning(`Не удалось загрузить: ${failedSections.join(', ')}. Остальные данные доступны.`);
+            }
         } finally {
             setLoading(false);
         }
@@ -361,6 +375,10 @@ const CustomerPricelistStudioPage = () => {
             settingsForm.resetFields();
             return;
         }
+        // The configuration response already contains its sources. Keep them
+        // visible even if publication rules or draft history are temporarily
+        // unavailable and the detailed workspace request only partially loads.
+        setSources(activeConfig.sources || []);
         const extra = activeConfig.additional_filters || {};
         const finalFilterPolicy = extra.FINAL_FILTER_POLICY || {};
         setPipelineOrder(
