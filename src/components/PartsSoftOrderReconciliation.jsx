@@ -79,6 +79,7 @@ const PartsSoftOrderReconciliation = () => {
     const [linkRow, setLinkRow] = useState(null);
     const [candidates, setCandidates] = useState([]);
     const [candidateLoading, setCandidateLoading] = useState(false);
+    const [candidateError, setCandidateError] = useState('');
     const [linkLoading, setLinkLoading] = useState(false);
     const [selectedCustomerId, setSelectedCustomerId] = useState(null);
     const [mergeDuplicate, setMergeDuplicate] = useState(false);
@@ -248,6 +249,7 @@ const PartsSoftOrderReconciliation = () => {
 
     const loadCandidates = async (row, search = '') => {
         setCandidateLoading(true);
+        setCandidateError('');
         try {
             const response = await getPartsSoftCustomerCandidates({
                 name: row.customer_name || '',
@@ -255,10 +257,22 @@ const PartsSoftOrderReconciliation = () => {
                 kpp: row.customer_kpp || '',
                 email: row.customer_email || '',
                 search,
+                current_customer_id: row.local_customer_id || undefined,
+                suggested_customer_id: row.suggested_local_customer_id || undefined,
             });
-            setCandidates(response.data || []);
-        } catch {
-            message.error('Не удалось найти клиентов в нашей системе');
+            const found = Array.isArray(response.data) ? response.data : [];
+            setCandidates(found);
+            const preferredId = row.local_customer_id || row.suggested_local_customer_id;
+            if (!selectedCustomerId && preferredId && found.some((item) => Number(item.id) === Number(preferredId))) {
+                setSelectedCustomerId(preferredId);
+            }
+        } catch (error) {
+            const detail = error?.response?.data?.detail;
+            const text = typeof detail === 'string'
+                ? detail
+                : 'Не удалось загрузить клиентов. Повторите поиск.';
+            setCandidateError(text);
+            message.error(text);
             setCandidates([]);
         } finally {
             setCandidateLoading(false);
@@ -269,6 +283,7 @@ const PartsSoftOrderReconciliation = () => {
         setLinkRow(row);
         setSelectedCustomerId(row.local_customer_id || row.suggested_local_customer_id || null);
         setMergeDuplicate(false);
+        setCandidateError('');
         setCandidates([]);
         void loadCandidates(row);
     };
@@ -656,6 +671,15 @@ const PartsSoftOrderReconciliation = () => {
                     onSearch={(value) => linkRow && loadCandidates(linkRow, value)}
                     style={{ marginBottom: 12 }}
                 />
+                {candidateError && (
+                    <Alert
+                        type="error"
+                        showIcon
+                        message={candidateError}
+                        action={<Button size="small" onClick={() => linkRow && loadCandidates(linkRow)}>Повторить</Button>}
+                        style={{ marginBottom: 12 }}
+                    />
+                )}
                 <Table
                     size="small"
                     loading={candidateLoading}
@@ -666,8 +690,12 @@ const PartsSoftOrderReconciliation = () => {
                         selectedRowKeys: selectedCustomerId ? [selectedCustomerId] : [],
                         onChange: (keys) => setSelectedCustomerId(keys[0] || null),
                     }}
-                    onRow={(row) => ({ onClick: () => setSelectedCustomerId(row.id) })}
+                    onRow={(row) => ({
+                        onClick: () => setSelectedCustomerId(row.id),
+                        style: { cursor: 'pointer' },
+                    })}
                     pagination={{ pageSize: 10 }}
+                    locale={{ emptyText: candidateLoading ? 'Загрузка клиентов…' : 'Введите название, ИНН, email или ID и нажмите «Найти»' }}
                 />
                 {linkRow?.local_customer_id
                     && selectedCustomerId
