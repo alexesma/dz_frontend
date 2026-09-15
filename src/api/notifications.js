@@ -27,3 +27,11 @@ export const actOnStalePricelist = async (notificationId, action) => {
     );
     return data;
 };
+
+export const postponeRelayOffline = async (notificationId) => {
+    const { data } = await api.post(
+        `/notifications/${notificationId}/relay-offline-action`,
+        { action: 'snooze_30_minutes' }
+    );
+    return data;
+};

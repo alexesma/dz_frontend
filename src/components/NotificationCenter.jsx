@@ -38,6 +38,7 @@ import {
     getNotifications,
     markAllNotificationsRead,
     markNotificationRead,
+    postponeRelayOffline,
 } from '../api/notifications';
 import {
     confirmReclamationShortage,
@@ -76,10 +77,16 @@ const WATCHLIST_PRICE_PREFIX = 'Подходящая цена:';
 const PRICELIST_BLOCKED_PREFIX = 'Прайс заблокирован:';
 const SHORTAGE_NOTIFICATION_TYPE = 'reclamation_shortage';
 const STALE_PRICELIST_NOTIFICATION_TYPE = 'pricelist_stale_action';
+const RELAY_OFFLINE_NOTIFICATION_TYPE = 'email_relay_offline_action';
 
 const isStalePricelistNotification = (item) => (
     Boolean(item)
     && item.payload?.notification_type === STALE_PRICELIST_NOTIFICATION_TYPE
+);
+
+const isRelayOfflineNotification = (item) => (
+    Boolean(item)
+    && item.payload?.notification_type === RELAY_OFFLINE_NOTIFICATION_TYPE
 );
 
 const supportsBrowserNotifications = () => (
@@ -202,6 +209,7 @@ const NotificationCenter = () => {
     const [blockedRejectOpen, setBlockedRejectOpen] = useState(false);
     const [blockedRejectReason, setBlockedRejectReason] = useState('');
     const [stalePricelistActionLoading, setStalePricelistActionLoading] = useState(false);
+    const [relayOfflineActionLoading, setRelayOfflineActionLoading] = useState(false);
     const initializedRef = useRef(false);
     const seenIdsRef = useRef(new Set());
     const titleFlashIntervalRef = useRef(null);
@@ -323,7 +331,10 @@ const NotificationCenter = () => {
     }, [dndEnabled, importantOnlyEnabled]);
 
     const openNotificationItem = useCallback(async (item) => {
-        if (isStalePricelistNotification(item) && !item.read_at) {
+        if (
+            (isStalePricelistNotification(item) || isRelayOfflineNotification(item))
+            && !item.read_at
+        ) {
             setDrawerOpen(false);
             return;
         }
@@ -610,6 +621,14 @@ const NotificationCenter = () => {
     );
     const stalePricelistItem = stalePricelistItems[0] || null;
     const stalePricelistPayload = stalePricelistItem?.payload || {};
+    const relayOfflineItems = useMemo(
+        () => sortedItems.filter(
+            (item) => !item.read_at && isRelayOfflineNotification(item)
+        ),
+        [sortedItems]
+    );
+    const relayOfflineItem = relayOfflineItems[0] || null;
+    const relayOfflinePayload = relayOfflineItem?.payload || {};
     const shortageNotificationItem = useMemo(
         () => sortedItems.find(
             (item) => (
@@ -658,6 +677,23 @@ const NotificationCenter = () => {
             setStalePricelistActionLoading(false);
         }
     }, [fetchNotificationState, stalePricelistItem, updateReadState]);
+
+    const handleRelayOfflinePostpone = useCallback(async () => {
+        if (!relayOfflineItem) return;
+        setRelayOfflineActionLoading(true);
+        try {
+            await postponeRelayOffline(relayOfflineItem.id);
+            updateReadState(relayOfflineItem.id);
+            message.success('Проверка релея отложена на 30 минут');
+            await fetchNotificationState({ silent: true });
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail || 'Не удалось отложить проверку релея'
+            );
+        } finally {
+            setRelayOfflineActionLoading(false);
+        }
+    }, [fetchNotificationState, relayOfflineItem, updateReadState]);
 
     const finishShortageNotification = useCallback(async () => {
         if (!shortageNotificationItem) {
@@ -952,7 +988,51 @@ const NotificationCenter = () => {
                 />
             </Modal>
             <Modal
-                open={Boolean(stalePricelistItem) && !blockedPricelistItem}
+                open={Boolean(relayOfflineItem) && !blockedPricelistItem}
+                centered
+                width={620}
+                closable={false}
+                maskClosable={false}
+                keyboard={false}
+                title="Не работает почтовый релей"
+                footer={(
+                    <Button
+                        icon={<ClockCircleOutlined />}
+                        loading={relayOfflineActionLoading}
+                        onClick={() => void handleRelayOfflinePostpone()}
+                    >
+                        Отложить на 30 минут
+                    </Button>
+                )}
+            >
+                <Alert
+                    type="error"
+                    showIcon
+                    message="DZ Email Relay не отвечает"
+                    description={relayOfflineItem?.message}
+                />
+                <Descriptions bordered size="small" column={1} style={{ marginTop: 16 }}>
+                    <Descriptions.Item label="Писем ожидает отправки">
+                        {relayOfflinePayload.pending_count ?? '—'}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Последняя связь">
+                        {relayOfflinePayload.last_seen_at
+                            ? dayjs(relayOfflinePayload.last_seen_at).format('DD.MM.YYYY HH:mm:ss')
+                            : 'Связи ещё не было'}
+                    </Descriptions.Item>
+                </Descriptions>
+                <Typography.Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0 }}>
+                    Запустите DZEmailRelay.exe на рабочем компьютере. После восстановления
+                    связи окно закроется автоматически. Если отложить вопрос, сервер проверит
+                    состояние снова через 30 минут.
+                </Typography.Paragraph>
+            </Modal>
+            <Modal
+                open={(
+                    Boolean(stalePricelistItem)
+                    && !blockedPricelistItem
+                    && !relayOfflineItem
+                )}
                 centered
                 width={680}
                 closable={false}
@@ -1042,7 +1122,10 @@ const NotificationCenter = () => {
             </Modal>
             <Modal
                 open={Boolean(
-                    shortageNotificationItem && !blockedPricelistItem && !stalePricelistItem
+                    shortageNotificationItem
+                    && !blockedPricelistItem
+                    && !relayOfflineItem
+                    && !stalePricelistItem
                 )}
                 centered
                 width={920}
