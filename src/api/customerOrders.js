@@ -47,6 +47,12 @@ export const getCustomerOrders = (params) =>
 export const getCustomerOrder = (orderId) =>
     api.get(`/customer-orders/${orderId}`);
 
+export const updateCustomerOrder = (orderId, payload) =>
+    api.patch(`/customer-orders/${orderId}`, payload);
+
+export const deleteCustomerOrder = (orderId) =>
+    api.delete(`/customer-orders/${orderId}`);
+
 export const getCustomerOrderItemStats = (params) =>
     api.get('/customer-orders/item-stats', { params });
 

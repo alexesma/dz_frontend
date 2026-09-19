@@ -7,6 +7,7 @@ import {
     InputNumber,
     message,
     Modal,
+    Popconfirm,
     Select,
     Switch,
     Table,
@@ -19,13 +20,16 @@ import { useNavigate } from 'react-router-dom';
 import { getAutopartLookupByOem } from '../api/autoparts';
 import {
     createManualCustomerOrder,
+    deleteCustomerOrder,
     getCustomerOrderConfigs,
     getCustomerOrders,
     getCustomerOrdersSummary,
     retryCustomerOrder,
+    updateCustomerOrder,
 } from '../api/customerOrders';
 import { getCustomersSummary } from '../api/customers';
 import PartsSoftOrderReconciliation from './PartsSoftOrderReconciliation';
+import CustomerOrderEditModal from './CustomerOrderEditModal';
 
 const { Title } = Typography;
 const { RangePicker } = DatePicker;
@@ -54,6 +58,9 @@ const CustomerOrdersPage = () => {
     const [createOpen, setCreateOpen] = useState(false);
     const [creating, setCreating] = useState(false);
     const [orderConfigs, setOrderConfigs] = useState([]);
+    const [editingOrder, setEditingOrder] = useState(null);
+    const [savingOrder, setSavingOrder] = useState(false);
+    const [deletingOrderId, setDeletingOrderId] = useState(null);
 
     const formatApiDetail = (detail, fallback) => {
         if (typeof detail === 'string') return detail;
@@ -443,6 +450,34 @@ const CustomerOrdersPage = () => {
         }
     };
 
+    const handleSaveOrder = async (payload) => {
+        if (!editingOrder) return;
+        setSavingOrder(true);
+        try {
+            await updateCustomerOrder(editingOrder.id, payload);
+            message.success('Заказ обновлён');
+            setEditingOrder(null);
+            fetchOrders(filters);
+        } catch (err) {
+            message.error(formatApiDetail(err?.response?.data?.detail, 'Не удалось обновить заказ'));
+        } finally {
+            setSavingOrder(false);
+        }
+    };
+
+    const handleDeleteOrder = async (orderId) => {
+        setDeletingOrderId(orderId);
+        try {
+            await deleteCustomerOrder(orderId);
+            message.success('Заказ удалён из рабочего списка');
+            fetchOrders(filters);
+        } catch (err) {
+            message.error(formatApiDetail(err?.response?.data?.detail, 'Не удалось удалить заказ'));
+        } finally {
+            setDeletingOrderId(null);
+        }
+    };
+
     const columns = [
         {
             title: 'Дата заказа',
@@ -462,6 +497,12 @@ const CustomerOrdersPage = () => {
                     {record.import_origin === 'partssoft_recovery' && (
                         <Tag color="blue">Восстановлен из Parts-Soft</Tag>
                     )}
+                    {record.processing_owner === 'PARTS_SOFT_SITE' && (
+                        <Tag color="purple">Обработан сайтом</Tag>
+                    )}
+                    {record.processing_owner === 'LOCAL' && (
+                        <Tag color="green">Локальная обработка</Tag>
+                    )}
                 </div>
             ),
         },
@@ -470,7 +511,18 @@ const CustomerOrdersPage = () => {
             dataIndex: 'customer_id',
             key: 'customer_id',
             width: 200,
-            render: (value) => customerMap[value] || value,
+            render: (value) => (
+                <Button
+                    type="link"
+                    style={{ padding: 0, height: 'auto' }}
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        navigate(`/customers/${value}/edit`);
+                    }}
+                >
+                    {customerMap[value] || value}
+                </Button>
+            ),
         },
         {
             title: 'Статус',
@@ -522,7 +574,7 @@ const CustomerOrdersPage = () => {
         {
             title: 'Действия',
             key: 'actions',
-            width: 180,
+            width: 280,
             render: (_, record) => (
                 <div className="table-actions">
                     <Button
@@ -534,6 +586,32 @@ const CustomerOrdersPage = () => {
                     >
                         Открыть
                     </Button>
+                    <Button
+                        size="small"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            setEditingOrder(record);
+                        }}
+                    >
+                        Редактировать
+                    </Button>
+                    <Popconfirm
+                        title="Удалить заказ?"
+                        description="Заказ исчезнет из рабочего списка, история связанных операций сохранится."
+                        okText="Удалить"
+                        cancelText="Отмена"
+                        okButtonProps={{ danger: true }}
+                        onConfirm={() => handleDeleteOrder(record.id)}
+                    >
+                        <Button
+                            danger
+                            size="small"
+                            loading={deletingOrderId === record.id}
+                            onClick={(event) => event.stopPropagation()}
+                        >
+                            Удалить
+                        </Button>
+                    </Popconfirm>
                     {(record.status === 'ERROR' || (
                         record.status === 'NEW'
                         && record.source_filename
@@ -568,7 +646,18 @@ const CustomerOrdersPage = () => {
             dataIndex: 'customer_id',
             key: 'customer_id',
             width: 180,
-            render: (value) => customerMap[value] || value,
+            render: (value) => (
+                <Button
+                    type="link"
+                    style={{ padding: 0, height: 'auto' }}
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        navigate(`/customers/${value}/edit`);
+                    }}
+                >
+                    {customerMap[value] || value}
+                </Button>
+            ),
         },
         {
             title: 'Источник',
@@ -620,6 +709,32 @@ const CustomerOrdersPage = () => {
                     >
                         Открыть
                     </Button>
+                    <Button
+                        size="small"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            setEditingOrder(record);
+                        }}
+                    >
+                        Редактировать
+                    </Button>
+                    <Popconfirm
+                        title="Удалить заказ?"
+                        description="Заказ исчезнет из рабочего списка, история связанных операций сохранится."
+                        okText="Удалить"
+                        cancelText="Отмена"
+                        okButtonProps={{ danger: true }}
+                        onConfirm={() => handleDeleteOrder(record.id)}
+                    >
+                        <Button
+                            danger
+                            size="small"
+                            loading={deletingOrderId === record.id}
+                            onClick={(event) => event.stopPropagation()}
+                        >
+                            Удалить
+                        </Button>
+                    </Popconfirm>
                     <Button
                         size="small"
                         onClick={(event) => {
@@ -937,6 +1052,14 @@ const CustomerOrdersPage = () => {
                     <Button onClick={addItemRow}>Добавить позицию</Button>
                 </div>
             </Modal>
+            <CustomerOrderEditModal
+                open={!!editingOrder}
+                order={editingOrder}
+                customers={customers}
+                loading={savingOrder}
+                onCancel={() => setEditingOrder(null)}
+                onSave={handleSaveOrder}
+            />
         </Card>
     );
 };

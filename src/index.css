@@ -138,6 +138,56 @@ body {
   gap: 8px;
 }
 
+.field-label {
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.field-hint {
+  margin-top: 5px;
+  color: #8c8c8c;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.customer-order-items-table .ant-table-cell {
+  padding: 8px !important;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
+.customer-order-items-table .ant-tag {
+  max-width: 100%;
+  margin-top: 3px;
+  white-space: normal;
+}
+
+.customer-order-part-cell {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.customer-order-number-cell {
+  white-space: nowrap;
+}
+
+.customer-order-row-actions {
+  gap: 4px;
+}
+
+@media (max-width: 1100px) {
+  .customer-order-items-table .ant-table-cell {
+    padding: 6px !important;
+    font-size: 12px;
+  }
+
+  .customer-order-row-actions .ant-btn {
+    padding-inline: 6px;
+  }
+}
+
 .app-sider {
   position: sticky !important;
   top: 0;

@@ -6,6 +6,7 @@ import {
     Drawer,
     Empty,
     message,
+    Popconfirm,
     Select,
     Space,
     Table,
@@ -21,15 +22,18 @@ import {
 import dayjs from 'dayjs';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
+    deleteCustomerOrder,
     getCustomerOrder,
     getCustomerOrderItemStats,
     processManualCustomerOrder,
     retryCustomerOrder,
+    updateCustomerOrder,
     updateCustomerOrderItem,
 } from '../api/customerOrders';
 import { getCustomersSummary } from '../api/customers';
 import { getProviders } from '../api/providers';
 import useAuth from '../context/useAuth';
+import CustomerOrderEditModal from './CustomerOrderEditModal';
 
 const { Title, Text } = Typography;
 
@@ -65,6 +69,9 @@ const CustomerOrderDetailPage = () => {
     const [updatingItems, setUpdatingItems] = useState({});
     const [processing, setProcessing] = useState(false);
     const [retrying, setRetrying] = useState(false);
+    const [editOpen, setEditOpen] = useState(false);
+    const [savingOrder, setSavingOrder] = useState(false);
+    const [deletingOrder, setDeletingOrder] = useState(false);
     const [statsOpen, setStatsOpen] = useState(false);
     const [statsLoading, setStatsLoading] = useState(false);
     const [statsMeta, setStatsMeta] = useState({ kind: 'oem', value: '', label: '' });
@@ -237,6 +244,35 @@ const CustomerOrderDetailPage = () => {
             message.error(detail);
         } finally {
             setRetrying(false);
+        }
+    };
+
+    const handleSaveOrder = async (payload) => {
+        if (!order) return;
+        setSavingOrder(true);
+        try {
+            const response = await updateCustomerOrder(order.id, payload);
+            setOrder(response.data);
+            setEditOpen(false);
+            message.success('Заказ обновлён');
+        } catch (err) {
+            message.error(formatApiDetail(err?.response?.data?.detail, 'Не удалось обновить заказ'));
+        } finally {
+            setSavingOrder(false);
+        }
+    };
+
+    const handleDeleteOrder = async () => {
+        if (!order) return;
+        setDeletingOrder(true);
+        try {
+            await deleteCustomerOrder(order.id);
+            message.success('Заказ удалён из рабочего списка');
+            navigate('/customer-orders');
+        } catch (err) {
+            message.error(formatApiDetail(err?.response?.data?.detail, 'Не удалось удалить заказ'));
+        } finally {
+            setDeletingOrder(false);
         }
     };
 
@@ -573,205 +609,94 @@ const CustomerOrderDetailPage = () => {
 
     const columns = [
         {
-            title: 'OEM',
-            dataIndex: 'oem',
-            key: 'oem',
-            width: 190,
-            render: (value, record) => (
-                <Space size={4}>
-                    <Button
-                        type="link"
-                        size="small"
-                        style={{ padding: 0, height: 'auto' }}
-                        onClick={() => openAutopartSearch(record)}
-                    >
-                        {value}
+            title: 'Позиция клиента',
+            key: 'requested_part',
+            render: (_, record) => (
+                <div className="customer-order-part-cell">
+                    <Space size={4} wrap>
+                        <Button type="link" size="small" style={{ padding: 0, height: 'auto', fontWeight: 600 }} onClick={() => openAutopartSearch(record)}>
+                            {record.oem}
+                        </Button>
+                        <Tooltip title="Статистика по артикулу">
+                            <Button type="text" size="small" icon={<BarChartOutlined />} onClick={() => loadStats('oem', record.oem, record.oem)} />
+                        </Tooltip>
+                        <Tooltip title="Искать в прайсах и на сайте">
+                            <Button type="text" size="small" icon={<SearchOutlined />} onClick={() => openAutopartSearch(record)} />
+                        </Tooltip>
+                    </Space>
+                    <Button type="link" size="small" style={{ display: 'block', padding: 0, height: 'auto' }} onClick={() => loadStats('brand', record.brand, record.brand)}>
+                        {record.brand}
                     </Button>
-                    <Tooltip title="Статистика по артикулу">
-                        <Button
-                            type="text"
-                            size="small"
-                            icon={<BarChartOutlined />}
-                            onClick={() => loadStats('oem', value, value)}
-                        />
-                    </Tooltip>
-                    <Tooltip title="Искать в прайсах и на сайте">
-                        <Button
-                            type="text"
-                            size="small"
-                            icon={<SearchOutlined />}
-                            onClick={() => openAutopartSearch(record)}
-                        />
-                    </Tooltip>
-                </Space>
+                    <Text type="secondary">{record.name || '—'}</Text>
+                </div>
             ),
         },
         {
-            title: 'Бренд',
-            dataIndex: 'brand',
-            key: 'brand',
-            width: 180,
-            render: (value) => (
-                <Space size={4}>
-                    <Button
-                        type="link"
-                        size="small"
-                        style={{ padding: 0, height: 'auto' }}
-                        onClick={() => loadStats('brand', value, value)}
-                    >
-                        {value}
-                    </Button>
-                    <Tooltip title="Статистика по бренду">
-                        <Button
-                            type="text"
-                            size="small"
-                            icon={<BarChartOutlined />}
-                            onClick={() => loadStats('brand', value, value)}
-                        />
-                    </Tooltip>
-                </Space>
-            ),
-        },
-        {
-            title: 'Название',
-            dataIndex: 'name',
-            key: 'name',
-            width: 220,
-            render: (value) => value || '—',
-        },
-        {
-            title: 'Складская позиция',
+            title: 'Подобрано',
             key: 'actual_part',
-            width: 230,
-            render: (_, record) => {
-                if (!record.actual_oem) return '—';
-                const isCross = record.match_type === 'dragonzap_cross';
-                return (
-                    <div>
-                        <div>
-                            {record.actual_brand || '—'} {record.actual_oem}
-                        </div>
-                        {isCross ? <Tag color="blue">заказан кросс</Tag> : null}
-                    </div>
-                );
-            },
+            render: (_, record) => (
+                <div className="customer-order-part-cell">
+                    <div>{record.actual_oem ? `${record.actual_brand || ''} ${record.actual_oem}`.trim() : '—'}</div>
+                    {record.actual_name && <Text type="secondary">{record.actual_name}</Text>}
+                    {record.match_type === 'dragonzap_cross' && <Tag color="blue">кросс</Tag>}
+                    {record.source_resolution_status && (
+                        <Tooltip title={`Источник: ${record.external_provider_id || 'не указан'}; предложение: ${record.external_offer_id || 'не указано'}`}>
+                            <Tag color={record.source_resolution_status === 'api_order_error' ? 'red' : 'geekblue'}>
+                                {record.source_resolution_status === 'local_workflow'
+                                    ? 'локальная обработка'
+                                    : record.source_resolution_status === 'partssoft_processed'
+                                        ? 'обработано сайтом'
+                                        : record.source_resolution_status}
+                            </Tag>
+                        </Tooltip>
+                    )}
+                </div>
+            ),
         },
         {
             title: 'Кол-во',
-            dataIndex: 'requested_qty',
-            key: 'requested_qty',
-            width: 90,
+            key: 'quantities',
+            align: 'right',
+            render: (_, record) => (
+                <div className="customer-order-number-cell">
+                    <div><Text type="secondary">заказ:</Text> {record.requested_qty}</div>
+                    <div><Text type="secondary">отгр.:</Text> {record.ship_qty ?? '—'}</div>
+                    {!!record.reject_qty && <div><Text type="danger">отказ: {record.reject_qty}</Text></div>}
+                </div>
+            ),
         },
-        {
-            title: 'Цена',
-            dataIndex: 'requested_price',
-            key: 'requested_price',
-            width: 110,
-            render: formatMoney,
-        },
-        {
-            title: 'Отгрузка',
-            dataIndex: 'ship_qty',
-            key: 'ship_qty',
-            width: 100,
-            render: (value) => value ?? '—',
-        },
-        {
-            title: 'Отказ',
-            dataIndex: 'reject_qty',
-            key: 'reject_qty',
-            width: 90,
-            render: (value) => value ?? '—',
-        },
+        { title: 'Цена', dataIndex: 'requested_price', key: 'requested_price', align: 'right', render: formatMoney },
         {
             title: 'Статус',
             dataIndex: 'status',
             key: 'status',
-            width: 140,
-            render: (value) => (
-                <Tag color={ITEM_STATUS_COLORS[value] || 'default'}>
-                    {ITEM_STATUS_LABELS[value] || value || '—'}
-                </Tag>
-            ),
+            render: (value) => <Tag color={ITEM_STATUS_COLORS[value] || 'default'}>{ITEM_STATUS_LABELS[value] || value || '—'}</Tag>,
         },
         {
             title: 'Поставщик',
             dataIndex: 'supplier_id',
             key: 'supplier_id',
-            width: 220,
             render: (value, record) => (
                 <Select
                     showSearch
                     allowClear
-                    placeholder="Выберите поставщика"
+                    placeholder="Поставщик"
                     options={providerOptions}
                     value={value || undefined}
                     onChange={(val) => handleSetSupplier(record, val)}
                     optionFilterProp="label"
                     loading={!!updatingItems[record.id]}
-                    style={{ width: '100%' }}
+                    style={{ width: '100%', minWidth: 130 }}
                 />
             ),
         },
         {
-            title: 'Источник предложения',
-            key: 'offer_source',
-            width: 220,
-            render: (_, record) => {
-                if (
-                    !record.external_provider_id
-                    && !record.external_offer_id
-                    && !record.source_resolution_status
-                ) return '—';
-                const statusLabels = {
-                    api_ready: 'готово к автозаказу',
-                    api_ordered: 'автозаказ отправлен',
-                    api_order_error: 'ошибка автозаказа',
-                    unresolved: 'источник не определён',
-                    partssoft_price: 'выбран прайс Parts-Soft',
-                    partssoft_managed: 'закупка ведётся в Parts-Soft',
-                };
-                const color = record.source_resolution_status === 'api_ordered'
-                    ? 'green'
-                    : record.source_resolution_status === 'api_order_error'
-                        ? 'red'
-                        : 'blue';
-                return (
-                    <div>
-                        <div>Поставщик: {record.external_provider_id || '—'}</div>
-                        {record.external_offer_id && (
-                            <div>Предложение: {record.external_offer_id}</div>
-                        )}
-                        <Tag color={color}>
-                            {statusLabels[record.source_resolution_status]
-                                || record.source_resolution_status
-                                || 'сохранено'}
-                        </Tag>
-                    </div>
-                );
-            },
-        },
-        {
             title: 'Действия',
             key: 'actions',
-            width: 220,
             render: (_, record) => (
-                <div className="table-actions">
-                    <Button
-                        size="small"
-                        onClick={() => handleOwnStock(record)}
-                        loading={!!updatingItems[record.id]}
-                    >
-                        Наш склад
-                    </Button>
-                    <Button
-                        danger
-                        size="small"
-                        onClick={() => handleReject(record)}
-                        loading={!!updatingItems[record.id]}
-                    >
-                        Отказать
-                    </Button>
+                <div className="table-actions customer-order-row-actions">
+                    <Button size="small" onClick={() => handleOwnStock(record)} loading={!!updatingItems[record.id]}>Наш склад</Button>
+                    <Button danger size="small" onClick={() => handleReject(record)} loading={!!updatingItems[record.id]}>Отказать</Button>
                 </div>
             ),
         },
@@ -834,6 +759,25 @@ const CustomerOrderDetailPage = () => {
                     <Button onClick={() => navigate('/customer-orders')}>
                         Назад к списку
                     </Button>
+                    {order && (
+                        <Button onClick={() => setEditOpen(true)}>
+                            Редактировать заказ
+                        </Button>
+                    )}
+                    {order && (
+                        <Popconfirm
+                            title="Удалить заказ?"
+                            description="Заказ исчезнет из рабочего списка, история связанных операций сохранится."
+                            okText="Удалить"
+                            cancelText="Отмена"
+                            okButtonProps={{ danger: true }}
+                            onConfirm={handleDeleteOrder}
+                        >
+                            <Button danger loading={deletingOrder}>
+                                Удалить заказ
+                            </Button>
+                        </Popconfirm>
+                    )}
                     {order?.status === 'NEW' && !interruptedImport && (
                         <Button
                             type="primary"
@@ -874,11 +818,25 @@ const CustomerOrderDetailPage = () => {
                                 {order.order_number || order.id}
                             </Descriptions.Item>
                             <Descriptions.Item label="Клиент">
-                                {customerMap[order.customer_id] || order.customer_id}
+                                <Button
+                                    type="link"
+                                    style={{ padding: 0, height: 'auto' }}
+                                    onClick={() => navigate(`/customers/${order.customer_id}/edit`)}
+                                >
+                                    {customerMap[order.customer_id] || order.customer_id}
+                                </Button>
                             </Descriptions.Item>
-                            {order.import_origin === 'partssoft_recovery' && (
+                            {order.external_source === 'PARTS_SOFT' && (
                                 <Descriptions.Item label="Происхождение" span={2}>
-                                    <Tag color="blue">Восстановлен из Parts-Soft</Tag>
+                                    {order.import_origin === 'partssoft_recovery' && (
+                                        <Tag color="blue">Восстановлен из Parts-Soft</Tag>
+                                    )}
+                                    {order.processing_owner === 'PARTS_SOFT_SITE' && (
+                                        <Tag color="purple">Обработан сайтом</Tag>
+                                    )}
+                                    {order.processing_owner === 'LOCAL' && (
+                                        <Tag color="green">Локальная обработка</Tag>
+                                    )}
                                     {order.external_order_id
                                         ? ` Заказ сайта #${order.external_order_id}`
                                         : ''}
@@ -906,12 +864,13 @@ const CustomerOrderDetailPage = () => {
                             )}
                         </Descriptions>
                         <Table
+                            className="customer-order-items-table"
                             rowKey="id"
                             dataSource={order.items || []}
                             columns={columns}
                             pagination={false}
                             size="small"
-                            scroll={{ x: 'max-content' }}
+                            tableLayout="fixed"
                         />
                         {user?.role === 'admin' && rejectedItems.length > 0 && (
                             <Card
@@ -934,6 +893,14 @@ const CustomerOrderDetailPage = () => {
                     <div>Заказ не найден.</div>
                 )}
             </Card>
+            <CustomerOrderEditModal
+                open={editOpen}
+                order={order}
+                customers={customers}
+                loading={savingOrder}
+                onCancel={() => setEditOpen(false)}
+                onSave={handleSaveOrder}
+            />
             <Drawer
                 title={
                     <Space direction="vertical" size={0}>
