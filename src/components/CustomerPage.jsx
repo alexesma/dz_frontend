@@ -45,7 +45,7 @@ const ConfigSection = ({ title, children }) => (
 
 import {
     getCustomerById,
-    getCustomers,
+    getCustomersSummary,
     mergeCustomerInto,
     createCustomer,
     updateCustomer,
@@ -1054,10 +1054,24 @@ const CustomerPage = () => {
         mergeForm.resetFields();
         setMergeCandidatesLoading(true);
         try {
-            const { data } = await getCustomers({ page: 1, page_size: 500 });
-            const список = Array.isArray(data) ? data : (data?.items || []);
+            // Именно summary: обычный список клиентов тянет все их
+            // прайсы со всеми строками и карточками запчастей — сотни
+            // тысяч объектов. Браузер отваливался по таймауту, список
+            // оставался пустым, а сервер упирался в предел памяти.
+            // Здесь нужны только имя и ИНН, страницами по 200.
+            const страницы = [];
+            let страница = 1;
+            for (;;) {
+                const { data } = await getCustomersSummary({
+                    page: страница,
+                    page_size: 200,
+                });
+                страницы.push(...(data?.items || []));
+                if (страница >= (data?.pages || 1) || страница > 25) break;
+                страница += 1;
+            }
             setMergeCandidates(
-                список.filter((item) => Number(item.id) !== Number(customerId))
+                страницы.filter((item) => Number(item.id) !== Number(customerId))
             );
         } catch (err) {
             console.error(err);
