@@ -18,36 +18,16 @@ import {
     listProductionWaveLabels,
     markProductionWaveLabelsPrinted,
 } from '../api/inventory';
+import {
+    buildLabelPrintDocument,
+    escapeHtml,
+    openLabelPrintWindow,
+} from '../utils/labelPrint';
 
 const { Text, Title } = Typography;
-const LABEL_WIDTH_MM = 58;
-const LABEL_HEIGHT_MM = 40;
 
-const escapeHtml = (value) => String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
-
-const buildPrintHtml = (labels, barcodeHtml) => `
-<!doctype html>
-<html lang="ru">
-<head>
-  <meta charset="utf-8" />
-  <title>Этикетки волны DragonZap</title>
-  <style>
-    @page { size: ${LABEL_WIDTH_MM}mm ${LABEL_HEIGHT_MM}mm; margin: 0; }
-    * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; background: #fff; color: #111; }
-    body { font-family: Arial, Helvetica, sans-serif; }
-    .label {
-      width: ${LABEL_WIDTH_MM}mm; height: ${LABEL_HEIGHT_MM}mm;
-      padding: 2mm 2.5mm 1.5mm; overflow: hidden;
-      display: flex; flex-direction: column; break-after: page;
-      page-break-after: always;
-    }
-    .label:last-child { break-after: auto; page-break-after: auto; }
+const WAVE_LABEL_FIELDS_CSS = `
+    .label { padding: 2mm 2.5mm 1.5mm; }
     .top { display: flex; justify-content: space-between; gap: 2mm; }
     .brand { font-size: 9pt; font-weight: 900; text-transform: uppercase; }
     .seq { font-size: 6pt; white-space: nowrap; }
@@ -59,25 +39,25 @@ const buildPrintHtml = (labels, barcodeHtml) => `
     .barcode { height: 10mm; margin-top: .5mm; display: flex; justify-content: center; overflow: hidden; }
     .barcode svg { max-width: 100%; height: 9.5mm; }
     .code { font: 5.5pt "Courier New", monospace; text-align: center; margin-top: -.3mm; }
-    @media screen { body { background: #eef2f7; padding: 12px; }
-      .label { background: #fff; margin: 0 auto 12px; box-shadow: 0 8px 24px #0002; } }
-  </style>
-</head>
-<body>
-${labels.map((label) => `
-  <section class="label">
+`;
+
+const renderWaveLabel = (label) => `
     <div class="top"><div class="brand">${escapeHtml(label.requested_brand)}</div>
       <div class="seq">${label.sequence_number}/${label.total_labels}</div></div>
     <div class="oem">${escapeHtml(label.requested_oem)}</div>
     <div class="name">${escapeHtml(label.requested_name || '')}</div>
     <div class="meta"><span>Кол-во: ${label.quantity}</span><span>${escapeHtml(label.customer_name || '')}</span></div>
     <div class="order">Заказ ${escapeHtml(label.order_number || '—')}${label.order_date ? ` · ${dayjs(label.order_date).format('DD.MM.YYYY')}` : ''}</div>
-    <div class="barcode">${barcodeHtml[label.id] || ''}</div>
+    <div class="barcode">${label.barcodeHtml || ''}</div>
     <div class="code">${escapeHtml(label.barcode)}</div>
-  </section>`).join('\n')}
-  <script>window.onload = function () { window.focus(); window.print(); };</script>
-</body>
-</html>`;
+`;
+
+const buildPrintHtml = (labels, barcodeHtml) => buildLabelPrintDocument({
+    title: 'Этикетки волны DragonZap',
+    fieldsCss: WAVE_LABEL_FIELDS_CSS,
+    items: labels.map((label) => ({ ...label, barcodeHtml: barcodeHtml[label.id] || '' })),
+    renderLabel: renderWaveLabel,
+});
 
 const ProductionWaveLabels = ({ waveId, enabled, onSummaryChange }) => {
     const [labels, setLabels] = useState([]);
@@ -130,13 +110,10 @@ const ProductionWaveLabels = ({ waveId, enabled, onSummaryChange }) => {
         selected.forEach((label) => {
             barcodeHtml[label.id] = barcodeRefs.current[label.id]?.innerHTML || '';
         });
-        const printWindow = window.open('', '_blank', 'width=480,height=640');
-        if (!printWindow) {
+        if (!openLabelPrintWindow(buildPrintHtml(selected, barcodeHtml))) {
             message.error('Браузер заблокировал окно печати');
             return;
         }
-        printWindow.document.write(buildPrintHtml(selected, barcodeHtml));
-        printWindow.document.close();
         setPrinting(true);
         try {
             const response = await markProductionWaveLabelsPrinted(waveId, {

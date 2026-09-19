@@ -21,18 +21,16 @@ import {
 import Barcode from 'react-barcode';
 
 import { getAutopartDetail, searchAutopartsByOem } from '../api/autoparts';
+import { printProductLabels } from '../api/labelPrints';
+import {
+    DEFAULT_LABEL_HEIGHT_MM as LABEL_HEIGHT_MM,
+    DEFAULT_LABEL_WIDTH_MM as LABEL_WIDTH_MM,
+    buildLabelPrintDocument,
+    escapeHtml,
+    openLabelPrintWindow,
+} from '../utils/labelPrint';
 
 const { Text, Title } = Typography;
-
-const LABEL_WIDTH_MM = 58;
-const LABEL_HEIGHT_MM = 40;
-
-const escapeHtml = (value) => String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
 
 const normalizeLabelPart = (part = {}) => {
     const brand = part.brand_name || part.brand || '';
@@ -46,53 +44,12 @@ const normalizeLabelPart = (part = {}) => {
     };
 };
 
-const buildPrintHtml = (rows, barcodeHtmlByRowKey) => {
-    const labels = [];
-    rows.forEach((row) => {
-        const copies = Math.max(1, Number(row.copies || 1));
-        const barcodeHtml = barcodeHtmlByRowKey[row.key] || '';
-        for (let index = 0; index < copies; index += 1) {
-            labels.push(`
-                <section class="label">
-                    <div class="brand">${escapeHtml(row.brand_name || '—')}</div>
-                    <div class="oem">${escapeHtml(row.oem_number || '—')}</div>
-                    <div class="name">${escapeHtml(row.name || '')}</div>
-                    <div class="barcode">${barcodeHtml}</div>
-                    <div class="barcode-text">${escapeHtml(row.barcode || '')}</div>
-                </section>
-            `);
-        }
-    });
-
-    return `
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>Печать этикеток ${LABEL_WIDTH_MM}×${LABEL_HEIGHT_MM}</title>
-  <style>
-    @page { size: ${LABEL_WIDTH_MM}mm ${LABEL_HEIGHT_MM}mm; margin: 0; }
-    * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; background: #fff; }
-    body {
-      font-family: Arial, Helvetica, sans-serif;
-      color: #111827;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-    }
+const PRODUCT_LABEL_FIELDS_CSS = `
     .label {
-      width: ${LABEL_WIDTH_MM}mm;
-      height: ${LABEL_HEIGHT_MM}mm;
       padding: 2.5mm 3mm 2mm;
-      display: flex;
-      flex-direction: column;
       align-items: stretch;
       justify-content: flex-start;
-      overflow: hidden;
-      break-after: page;
-      page-break-after: always;
     }
-    .label:last-child { break-after: auto; page-break-after: auto; }
     .brand {
       font-size: 10pt;
       font-weight: 800;
@@ -141,22 +98,32 @@ const buildPrintHtml = (rows, barcodeHtmlByRowKey) => {
       text-overflow: ellipsis;
       margin-top: 0.5mm;
     }
-    @media screen {
-      body { background: #eef2f7; padding: 12px; }
-      .label { background: #fff; margin: 0 auto 12px; box-shadow: 0 8px 24px rgba(15,23,42,.16); }
-    }
-  </style>
-</head>
-<body>
-  ${labels.join('\n')}
-  <script>
-    window.onload = function () {
-      window.focus();
-      window.print();
-    };
-  </script>
-</body>
-</html>`;
+`;
+
+const renderProductLabel = (row) => `
+    <div class="brand">${escapeHtml(row.brand_name || '—')}</div>
+    <div class="oem">${escapeHtml(row.oem_number || '—')}</div>
+    <div class="name">${escapeHtml(row.name || '')}</div>
+    <div class="barcode">${row.barcodeHtml || ''}</div>
+    <div class="barcode-text">${escapeHtml(row.barcode || '')}</div>
+`;
+
+const buildPrintHtml = (rows, barcodeHtmlByRowKey) => {
+    const labels = [];
+    rows.forEach((row) => {
+        const copies = Math.max(1, Number(row.copies || 1));
+        const barcodeHtml = barcodeHtmlByRowKey[row.key] || '';
+        for (let index = 0; index < copies; index += 1) {
+            labels.push({ ...row, barcodeHtml });
+        }
+    });
+
+    return buildLabelPrintDocument({
+        title: `Печать этикеток ${LABEL_WIDTH_MM}×${LABEL_HEIGHT_MM}`,
+        fieldsCss: PRODUCT_LABEL_FIELDS_CSS,
+        items: labels,
+        renderLabel: renderProductLabel,
+    });
 };
 
 const ProductLabelsPage = () => {
@@ -258,7 +225,7 @@ const ProductLabelsPage = () => {
         delete barcodeRefs.current[key];
     };
 
-    const handlePrint = () => {
+    const handlePrint = async () => {
         if (!rows.length) {
             message.warning('Добавьте хотя бы одну этикетку');
             return;
@@ -267,13 +234,27 @@ const ProductLabelsPage = () => {
         rows.forEach((row) => {
             barcodeHtmlByRowKey[row.key] = barcodeRefs.current[row.key]?.innerHTML || '';
         });
-        const printWindow = window.open('', '_blank', 'width=480,height=640');
-        if (!printWindow) {
+        const opened = openLabelPrintWindow(buildPrintHtml(rows, barcodeHtmlByRowKey));
+        if (!opened) {
             message.error('Браузер заблокировал окно печати');
             return;
         }
-        printWindow.document.write(buildPrintHtml(rows, barcodeHtmlByRowKey));
-        printWindow.document.close();
+        // Печать уже ушла в браузер — запись истории не должна её
+        // задерживать и не должна пугать оператора, если журнал
+        // недоступен: сама печать важнее, чем её протокол.
+        try {
+            await printProductLabels({
+                items: rows.map((row) => ({
+                    brand_name: row.brand_name,
+                    oem_number: row.oem_number,
+                    name: row.name,
+                    barcode: row.barcode,
+                    copies: Math.max(1, Number(row.copies || 1)),
+                })),
+            });
+        } catch (err) {
+            console.error('Не удалось записать историю печати этикеток', err);
+        }
     };
 
     const columns = [

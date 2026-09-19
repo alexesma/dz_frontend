@@ -59,6 +59,11 @@ import {
     transferAutopart,
     upsertStockByLocation,
 } from '../api/inventory';
+import { printLocationLabel } from '../api/labelPrints';
+import {
+    buildLabelPrintDocument,
+    openLabelPrintWindow,
+} from '../utils/labelPrint';
 
 const { Title, Text } = Typography;
 const { Panel } = Collapse;
@@ -99,31 +104,43 @@ function groupByShelf(locations) {
 
 // ── Label print (58×40 mm) ────────────────────────────────────────────────────
 
-function LabelPrintPreview({ locationName, onClose }) {
-    const barcodeRef = useRef(null);
+const LOCATION_LABEL_FIELDS_CSS = `
+    .label { font-family: monospace; align-items: center; justify-content: center; }
+    .label-name { font-size: 20pt; font-weight: bold; letter-spacing: 3px; margin-bottom: 2mm; }
+`;
 
-    const handlePrint = () => {
-        const style = `
-            @page { size: 58mm 40mm; margin: 0; }
-            body  { margin: 0; font-family: monospace; }
-            .label { width: 58mm; height: 40mm; display: flex; flex-direction: column;
-                     align-items: center; justify-content: center; }
-            .label-name { font-size: 20pt; font-weight: bold; letter-spacing: 3px; margin-bottom: 2mm; }
-        `;
-        const win = window.open('', '_blank', 'width=420,height=320');
-        win.document.write(`
-            <html><head><title>Label</title><style>${style}</style></head>
-            <body>
-              <div class="label">
+function LabelPrintPreview({ locationId, locationName, onClose }) {
+    const barcodeRef = useRef(null);
+    const [printing, setPrinting] = useState(false);
+
+    const handlePrint = async () => {
+        const html = buildLabelPrintDocument({
+            title: `Бирка: ${locationName}`,
+            fieldsCss: LOCATION_LABEL_FIELDS_CSS,
+            items: [{}],
+            renderLabel: () => `
                 <div class="label-name">${locationName}</div>
                 <div>${barcodeRef.current?.innerHTML || ''}</div>
-              </div>
-            </body></html>
-        `);
-        win.document.close();
-        win.focus();
-        win.print();
-        win.close();
+            `,
+        });
+        if (!openLabelPrintWindow(html)) {
+            message.error('Браузер заблокировал окно печати');
+            return;
+        }
+        // Печать уже ушла в браузер — запись истории не должна её
+        // задерживать и не должна пугать оператора, если журнал
+        // недоступен.
+        setPrinting(true);
+        try {
+            await printLocationLabel({
+                storage_location_id: locationId,
+                items: [{ name: locationName, barcode: locationName, copies: 1 }],
+            });
+        } catch (err) {
+            console.error('Не удалось записать историю печати бирки', err);
+        } finally {
+            setPrinting(false);
+        }
     };
 
     return (
@@ -141,7 +158,7 @@ function LabelPrintPreview({ locationName, onClose }) {
                 </div>
             </div>
             <Space>
-                <Button icon={<PrinterOutlined />} type="primary" onClick={handlePrint}>
+                <Button icon={<PrinterOutlined />} type="primary" loading={printing} onClick={handlePrint}>
                     Печать
                 </Button>
                 <Button onClick={onClose}>Закрыть</Button>
@@ -1037,6 +1054,7 @@ export default function StorageLocationsPage() {
             >
                 {labelLocation && (
                     <LabelPrintPreview
+                        locationId={labelLocation.id}
                         locationName={labelLocation.name}
                         onClose={() => setLabelLocation(null)}
                     />
