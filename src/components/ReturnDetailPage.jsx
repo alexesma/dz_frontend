@@ -51,7 +51,7 @@ import {
     updateSupplierReturn,
 } from '../api/inventory';
 import { getSupplierReceipt } from '../api/customerOrders';
-import { getCustomers } from '../api/customers';
+import { fetchAllCustomersBrief } from '../api/customers';
 import {
     createDiadocOutboundDocumentFromCustomerReturn,
     createDiadocOutboundDocumentFromSupplierReturn,
@@ -132,9 +132,11 @@ const ReturnDetailPage = ({ kind }) => {
 
     const loadReferenceOptions = useCallback(async () => {
         try {
-            const [warehouseRes, customerRes, providerRes] = await Promise.all([
+            // Клиентов — кратким списком: обычная ручка тянет их прайсы
+            // целиком, а здесь нужны только имя и идентификатор.
+            const [warehouseRes, customerRows, providerRes] = await Promise.all([
                 getWarehouses({ limit: 200 }),
-                getCustomers({ page_size: 200 }),
+                fetchAllCustomersBrief(),
                 getProviders({ page_size: 200 }),
             ]);
             setWarehouses(
@@ -143,7 +145,7 @@ const ReturnDetailPage = ({ kind }) => {
                     label: item.name,
                 }))
             );
-            setCustomers(normalizePagedItems(customerRes.data).map((item) => ({
+            setCustomers(customerRows.map((item) => ({
                 value: item.id,
                 label: item.name,
             })));

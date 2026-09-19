@@ -23,7 +23,7 @@ import {
     listCustomerReturns,
     listSupplierReturns,
 } from '../api/inventory';
-import { getCustomers } from '../api/customers';
+import { fetchAllCustomersBrief } from '../api/customers';
 import { getProviders } from '../api/providers';
 import { getWarehouses } from '../api/storage';
 import useAuth from '../context/useAuth';
@@ -95,12 +95,14 @@ const ReturnsPage = () => {
 
     const loadReferenceOptions = useCallback(async () => {
         try {
-            const [customerRes, providerRes, warehouseRes] = await Promise.all([
-                getCustomers({ page_size: 200 }),
+            // Клиентов берём кратким списком: обычная ручка тянет их
+            // прайсы целиком, а здесь нужны только имя и идентификатор.
+            const [customerRows, providerRes, warehouseRes] = await Promise.all([
+                fetchAllCustomersBrief(),
                 getProviders({ page_size: 200 }),
                 getWarehouses({ limit: 200 }),
             ]);
-            setCustomers(toOptions(normalizePagedItems(customerRes.data)));
+            setCustomers(toOptions(customerRows));
             setProviders(toOptions(normalizePagedItems(providerRes.data)));
             setWarehouses(
                 (warehouseRes.data?.items || warehouseRes.data || []).map((item) => ({

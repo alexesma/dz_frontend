@@ -7,6 +7,31 @@ export const getCustomers = (params) =>
 export const getCustomersSummary = (params, config = {}) =>
     api.get('/customers/summary/', { ...config, params });
 
+// Краткий список всех клиентов, страницами.
+//
+// Обычный GET /customers/ тянет каждого клиента вместе со всеми его
+// прайсами, всеми строками и карточкой запчасти на каждую строку —
+// сотни тысяч объектов, приложение упиралось в предел памяти, а
+// браузер отваливался по таймауту. Здесь только имя, ИНН и счётчики.
+//
+// Страницы обходим до конца: summary отдаёт не больше двухсот записей
+// за раз, и без обхода список молча обрезался бы.
+export const fetchAllCustomersBrief = async ({
+    pageSize = 200,
+    maxPages = 25,
+} = {}) => {
+    const items = [];
+    for (let page = 1; page <= maxPages; page += 1) {
+        const { data } = await getCustomersSummary({
+            page,
+            page_size: pageSize,
+        });
+        items.push(...(data?.items || []));
+        if (page >= (data?.pages || 1)) break;
+    }
+    return items;
+};
+
 // Объединение дублей: карточку заводят руками, и она же приезжает с
 // сайта. Связанные записи переносятся на основную карточку, её пустые
 // поля заполняются из дубля, дубль удаляется.
