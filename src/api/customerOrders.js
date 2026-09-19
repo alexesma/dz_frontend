@@ -134,6 +134,9 @@ export const createManualCustomerOrder = (payload) =>
 export const processManualCustomerOrder = (orderId) =>
     api.post(`/customer-orders/${orderId}/process-manual`);
 
+export const processPartsSoftOrderLocally = (orderId) =>
+    api.post(`/customer-orders/${orderId}/process-partssoft-locally`);
+
 export const retryCustomerOrder = (orderId) =>
     api.post(`/customer-orders/${orderId}/retry`);
 

@@ -26,6 +26,7 @@ import {
     getCustomerOrder,
     getCustomerOrderItemStats,
     processManualCustomerOrder,
+    processPartsSoftOrderLocally,
     retryCustomerOrder,
     updateCustomerOrder,
     updateCustomerOrderItem,
@@ -72,6 +73,7 @@ const CustomerOrderDetailPage = () => {
     const [editOpen, setEditOpen] = useState(false);
     const [savingOrder, setSavingOrder] = useState(false);
     const [deletingOrder, setDeletingOrder] = useState(false);
+    const [processingPartsSoftLocally, setProcessingPartsSoftLocally] = useState(false);
     const [statsOpen, setStatsOpen] = useState(false);
     const [statsLoading, setStatsLoading] = useState(false);
     const [statsMeta, setStatsMeta] = useState({ kind: 'oem', value: '', label: '' });
@@ -244,6 +246,23 @@ const CustomerOrderDetailPage = () => {
             message.error(detail);
         } finally {
             setRetrying(false);
+        }
+    };
+
+    const handleProcessPartsSoftLocally = async () => {
+        if (!order) return;
+        setProcessingPartsSoftLocally(true);
+        try {
+            const response = await processPartsSoftOrderLocally(order.id);
+            if (response?.data?.credit_warning?.message) {
+                message.warning(response.data.credit_warning.message, 8);
+            }
+            message.success('Заказ передан в локальную обработку');
+            fetchData();
+        } catch (err) {
+            message.error(formatApiDetail(err?.response?.data?.detail, 'Не удалось обработать заказ у нас'));
+        } finally {
+            setProcessingPartsSoftLocally(false);
         }
     };
 
@@ -789,6 +808,19 @@ const CustomerOrderDetailPage = () => {
                                 : 'Автообработать'}
                         </Button>
                     )}
+                    {order?.processing_owner === 'PARTS_SOFT_SITE' && (
+                        <Popconfirm
+                            title="Обработать заказ в нашей системе?"
+                            description="Будут заново подобраны предложения и созданы локальные складские или поставщицкие заказы."
+                            okText="Обработать у нас"
+                            cancelText="Отмена"
+                            onConfirm={handleProcessPartsSoftLocally}
+                        >
+                            <Button type="primary" loading={processingPartsSoftLocally}>
+                                Обработать у нас
+                            </Button>
+                        </Popconfirm>
+                    )}
                     {(order?.status === 'ERROR' || interruptedImport) && (
                         <Button
                             type="primary"
@@ -830,12 +862,6 @@ const CustomerOrderDetailPage = () => {
                                 <Descriptions.Item label="Происхождение" span={2}>
                                     {order.import_origin === 'partssoft_recovery' && (
                                         <Tag color="blue">Восстановлен из Parts-Soft</Tag>
-                                    )}
-                                    {order.processing_owner === 'PARTS_SOFT_SITE' && (
-                                        <Tag color="purple">Обработан сайтом</Tag>
-                                    )}
-                                    {order.processing_owner === 'LOCAL' && (
-                                        <Tag color="green">Локальная обработка</Tag>
                                     )}
                                     {order.external_order_id
                                         ? ` Заказ сайта #${order.external_order_id}`

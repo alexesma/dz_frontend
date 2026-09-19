@@ -13,6 +13,7 @@ import {
     Table,
     Tag,
     Tabs,
+    Tooltip,
     Typography,
 } from 'antd';
 import dayjs from 'dayjs';
@@ -24,6 +25,7 @@ import {
     getCustomerOrderConfigs,
     getCustomerOrders,
     getCustomerOrdersSummary,
+    processPartsSoftOrderLocally,
     retryCustomerOrder,
     updateCustomerOrder,
 } from '../api/customerOrders';
@@ -61,6 +63,7 @@ const CustomerOrdersPage = () => {
     const [editingOrder, setEditingOrder] = useState(null);
     const [savingOrder, setSavingOrder] = useState(false);
     const [deletingOrderId, setDeletingOrderId] = useState(null);
+    const [processingPartsSoftOrderId, setProcessingPartsSoftOrderId] = useState(null);
 
     const formatApiDetail = (detail, fallback) => {
         if (typeof detail === 'string') return detail;
@@ -478,6 +481,19 @@ const CustomerOrdersPage = () => {
         }
     };
 
+    const handleProcessPartsSoftLocally = async (orderId) => {
+        setProcessingPartsSoftOrderId(orderId);
+        try {
+            await processPartsSoftOrderLocally(orderId);
+            message.success('Заказ передан в локальную обработку');
+            fetchOrders(filters);
+        } catch (err) {
+            message.error(formatApiDetail(err?.response?.data?.detail, 'Не удалось обработать заказ у нас'));
+        } finally {
+            setProcessingPartsSoftOrderId(null);
+        }
+    };
+
     const columns = [
         {
             title: 'Дата заказа',
@@ -491,20 +507,35 @@ const CustomerOrdersPage = () => {
             dataIndex: 'order_number',
             key: 'order_number',
             width: 140,
-            render: (value, record) => (
-                <div>
-                    <div>{value || record.id}</div>
+            render: (value, record) => {
+                const orderLabel = String(value || record.id);
+                return (
+                <div style={{ minWidth: 0 }}>
+                    <Tooltip title={orderLabel} placement="topLeft">
+                        <div
+                            style={{
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                maxWidth: '100%',
+                            }}
+                        >
+                            {orderLabel}
+                        </div>
+                    </Tooltip>
                     {record.import_origin === 'partssoft_recovery' && (
-                        <Tag color="blue">Восстановлен из Parts-Soft</Tag>
-                    )}
-                    {record.processing_owner === 'PARTS_SOFT_SITE' && (
-                        <Tag color="purple">Обработан сайтом</Tag>
-                    )}
-                    {record.processing_owner === 'LOCAL' && (
-                        <Tag color="green">Локальная обработка</Tag>
+                        <Tooltip title="Восстановлен из Parts-Soft">
+                            <Tag
+                                color="blue"
+                                style={{ marginTop: 4, marginInlineEnd: 0 }}
+                            >
+                                Parts-Soft
+                            </Tag>
+                        </Tooltip>
                     )}
                 </div>
-            ),
+                );
+            },
         },
         {
             title: 'Клиент',
@@ -612,6 +643,24 @@ const CustomerOrdersPage = () => {
                             Удалить
                         </Button>
                     </Popconfirm>
+                    {record.processing_owner === 'PARTS_SOFT_SITE' && (
+                        <Popconfirm
+                            title="Обработать заказ в нашей системе?"
+                            description="Будут заново подобраны предложения и созданы локальные складские или поставщицкие заказы."
+                            okText="Обработать у нас"
+                            cancelText="Отмена"
+                            onConfirm={() => handleProcessPartsSoftLocally(record.id)}
+                        >
+                            <Button
+                                type="primary"
+                                size="small"
+                                loading={processingPartsSoftOrderId === record.id}
+                                onClick={(event) => event.stopPropagation()}
+                            >
+                                Обработать у нас
+                            </Button>
+                        </Popconfirm>
+                    )}
                     {(record.status === 'ERROR' || (
                         record.status === 'NEW'
                         && record.source_filename
