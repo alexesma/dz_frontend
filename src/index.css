@@ -1557,3 +1557,49 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+.customer-order-actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.customer-order-actions .ant-btn {
+  flex: 0 0 26px;
+  width: 26px;
+  padding-inline: 0;
+}
+
+.customer-order-number-summary {
+  min-width: 0;
+}
+
+.customer-order-number-value {
+  display: block;
+  overflow: hidden;
+  color: #262626;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.customer-order-number-badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+  margin-top: 3px;
+}
+
+.customer-order-number-badges:empty {
+  display: none;
+}
+
+.customer-order-number-badges .ant-tag {
+  min-width: 24px;
+  margin: 0;
+  padding-inline: 4px;
+  text-align: center;
+}

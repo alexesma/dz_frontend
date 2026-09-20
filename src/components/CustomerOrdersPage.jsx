@@ -16,6 +16,14 @@ import {
     Tooltip,
     Typography,
 } from 'antd';
+import {
+    DeleteOutlined,
+    EditOutlined,
+    EyeOutlined,
+    PlayCircleOutlined,
+    ReloadOutlined,
+    WarningOutlined,
+} from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { getAutopartLookupByOem } from '../api/autoparts';
@@ -494,6 +502,56 @@ const CustomerOrdersPage = () => {
         }
     };
 
+    const renderOrderActions = (record, isImportError = false) => (
+        <div
+            className="customer-order-actions"
+            onClick={(event) => event.stopPropagation()}
+        >
+            <Tooltip title="Открыть заказ">
+                <Button size="small" aria-label="Открыть заказ" icon={<EyeOutlined />}
+                    onClick={() => navigate(`/customer-orders/${record.id}`)} />
+            </Tooltip>
+            <Tooltip title="Редактировать заказ">
+                <Button size="small" aria-label="Редактировать заказ" icon={<EditOutlined />}
+                    onClick={() => setEditingOrder(record)} />
+            </Tooltip>
+            <Popconfirm
+                title="Удалить заказ?"
+                description="Заказ исчезнет из рабочего списка, история связанных операций сохранится."
+                okText="Удалить" cancelText="Отмена" okButtonProps={{ danger: true }}
+                onConfirm={() => handleDeleteOrder(record.id)}
+            >
+                <Tooltip title="Удалить заказ">
+                    <Button danger size="small" aria-label="Удалить заказ" icon={<DeleteOutlined />}
+                        loading={deletingOrderId === record.id} />
+                </Tooltip>
+            </Popconfirm>
+            {['PARTS_SOFT_SITE', 'REVIEW_REQUIRED'].includes(record.processing_owner) && (
+                <Popconfirm
+                    title="Обработать заказ в нашей системе?"
+                    description="Будут заново подобраны предложения и созданы локальные складские или поставщицкие заказы."
+                    okText="Обработать у нас" cancelText="Отмена"
+                    onConfirm={() => handleProcessPartsSoftLocally(record.id)}
+                >
+                    <Tooltip title="Обработать у нас">
+                        <Button type="primary" size="small" aria-label="Обработать у нас"
+                            icon={<PlayCircleOutlined />}
+                            loading={processingPartsSoftOrderId === record.id} />
+                    </Tooltip>
+                </Popconfirm>
+            )}
+            {(isImportError || record.status === 'ERROR' || (
+                record.status === 'NEW' && record.source_filename && !(record.items || []).length
+            )) && (
+                <Tooltip title="Повторить обработку">
+                    <Button size="small" aria-label="Повторить обработку" icon={<ReloadOutlined />}
+                        onClick={() => handleRetryOrder(record.id)}
+                        loading={retryingOrderId === record.id} />
+                </Tooltip>
+            )}
+        </div>
+    );
+
     const columns = [
         {
             title: 'Дата заказа',
@@ -506,33 +564,34 @@ const CustomerOrdersPage = () => {
             title: '№ заказа',
             dataIndex: 'order_number',
             key: 'order_number',
-            width: 140,
+            width: 112,
             render: (value, record) => {
                 const orderLabel = String(value || record.id);
+                const compactOrderLabel = orderLabel.replace(
+                    /^(site-\d+)-.+$/i,
+                    '$1'
+                );
                 return (
-                <div style={{ minWidth: 0 }}>
+                <div className="customer-order-number-summary">
                     <Tooltip title={orderLabel} placement="topLeft">
-                        <div
-                            style={{
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                                maxWidth: '100%',
-                            }}
-                        >
-                            {orderLabel}
-                        </div>
+                        <span className="customer-order-number-value">
+                            {compactOrderLabel}
+                        </span>
                     </Tooltip>
-                    {record.import_origin === 'partssoft_recovery' && (
-                        <Tooltip title="Восстановлен из Parts-Soft">
-                            <Tag
-                                color="blue"
-                                style={{ marginTop: 4, marginInlineEnd: 0 }}
-                            >
-                                Parts-Soft
-                            </Tag>
-                        </Tooltip>
-                    )}
+                    <div className="customer-order-number-badges">
+                        {record.import_origin === 'partssoft_recovery' && (
+                            <Tooltip title="Восстановлен из Parts-Soft">
+                                <Tag color="blue">PS</Tag>
+                            </Tooltip>
+                        )}
+                        {record.processing_owner === 'REVIEW_REQUIRED' && (
+                            <Tooltip title={`Нужно проверить маршрут обработки: ${record.processing_state || 'причина не указана'}`}>
+                                <Tag color="red" aria-label="Проверить маршрут обработки">
+                                    <WarningOutlined />
+                                </Tag>
+                            </Tooltip>
+                        )}
+                    </div>
                 </div>
                 );
             },
@@ -605,80 +664,8 @@ const CustomerOrdersPage = () => {
         {
             title: 'Действия',
             key: 'actions',
-            width: 280,
-            render: (_, record) => (
-                <div className="table-actions">
-                    <Button
-                        size="small"
-                        onClick={(event) => {
-                            event.stopPropagation();
-                            navigate(`/customer-orders/${record.id}`);
-                        }}
-                    >
-                        Открыть
-                    </Button>
-                    <Button
-                        size="small"
-                        onClick={(event) => {
-                            event.stopPropagation();
-                            setEditingOrder(record);
-                        }}
-                    >
-                        Редактировать
-                    </Button>
-                    <Popconfirm
-                        title="Удалить заказ?"
-                        description="Заказ исчезнет из рабочего списка, история связанных операций сохранится."
-                        okText="Удалить"
-                        cancelText="Отмена"
-                        okButtonProps={{ danger: true }}
-                        onConfirm={() => handleDeleteOrder(record.id)}
-                    >
-                        <Button
-                            danger
-                            size="small"
-                            loading={deletingOrderId === record.id}
-                            onClick={(event) => event.stopPropagation()}
-                        >
-                            Удалить
-                        </Button>
-                    </Popconfirm>
-                    {record.processing_owner === 'PARTS_SOFT_SITE' && (
-                        <Popconfirm
-                            title="Обработать заказ в нашей системе?"
-                            description="Будут заново подобраны предложения и созданы локальные складские или поставщицкие заказы."
-                            okText="Обработать у нас"
-                            cancelText="Отмена"
-                            onConfirm={() => handleProcessPartsSoftLocally(record.id)}
-                        >
-                            <Button
-                                type="primary"
-                                size="small"
-                                loading={processingPartsSoftOrderId === record.id}
-                                onClick={(event) => event.stopPropagation()}
-                            >
-                                Обработать у нас
-                            </Button>
-                        </Popconfirm>
-                    )}
-                    {(record.status === 'ERROR' || (
-                        record.status === 'NEW'
-                        && record.source_filename
-                        && !(record.items || []).length
-                    )) && (
-                        <Button
-                            size="small"
-                            onClick={(event) => {
-                                event.stopPropagation();
-                                handleRetryOrder(record.id);
-                            }}
-                            loading={retryingOrderId === record.id}
-                        >
-                            Повторить
-                        </Button>
-                    )}
-                </div>
-            ),
+            width: 192,
+            render: (_, record) => renderOrderActions(record),
         },
     ];
 
@@ -746,56 +733,8 @@ const CustomerOrdersPage = () => {
         {
             title: 'Действия',
             key: 'actions',
-            width: 180,
-            render: (_, record) => (
-                <div className="table-actions">
-                    <Button
-                        size="small"
-                        onClick={(event) => {
-                            event.stopPropagation();
-                            navigate(`/customer-orders/${record.id}`);
-                        }}
-                    >
-                        Открыть
-                    </Button>
-                    <Button
-                        size="small"
-                        onClick={(event) => {
-                            event.stopPropagation();
-                            setEditingOrder(record);
-                        }}
-                    >
-                        Редактировать
-                    </Button>
-                    <Popconfirm
-                        title="Удалить заказ?"
-                        description="Заказ исчезнет из рабочего списка, история связанных операций сохранится."
-                        okText="Удалить"
-                        cancelText="Отмена"
-                        okButtonProps={{ danger: true }}
-                        onConfirm={() => handleDeleteOrder(record.id)}
-                    >
-                        <Button
-                            danger
-                            size="small"
-                            loading={deletingOrderId === record.id}
-                            onClick={(event) => event.stopPropagation()}
-                        >
-                            Удалить
-                        </Button>
-                    </Popconfirm>
-                    <Button
-                        size="small"
-                        onClick={(event) => {
-                            event.stopPropagation();
-                            handleRetryOrder(record.id);
-                        }}
-                        loading={retryingOrderId === record.id}
-                    >
-                        Повторить
-                    </Button>
-                </div>
-            ),
+            width: 192,
+            render: (_, record) => renderOrderActions(record, true),
         },
     ];
 
@@ -899,6 +838,8 @@ const CustomerOrdersPage = () => {
                                 loading={loading}
                                 dataSource={dataSource}
                                 columns={columns}
+                                tableLayout="fixed"
+                                scroll={{ x: 1380 }}
                                 onRow={(record) => ({
                                     onClick: (event) => {
                                         if (
