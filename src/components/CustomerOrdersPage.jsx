@@ -176,14 +176,17 @@ const CustomerOrdersPage = () => {
 
     const formatDateTime = (value) => {
         if (!value) return '—';
-        return dayjs(value).format('DD.MM.YYYY HH:mm');
+        return dayjs(value).format('DD.MM.YY, HH:mm');
     };
 
     const formatMoney = (value) => {
         if (value === null || value === undefined) return '—';
         const num = Number(value);
         if (Number.isNaN(num)) return '—';
-        return num.toFixed(2);
+        return num.toLocaleString('ru-RU', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 2,
+        });
     };
 
     const setItemFields = (index, fields) => {
@@ -552,19 +555,48 @@ const CustomerOrdersPage = () => {
         </div>
     );
 
+    const renderExecutionSummary = (record) => {
+        const rejectedPercent = record.rejected_pct === null
+            || record.rejected_pct === undefined
+            ? null
+            : Number(record.rejected_pct);
+        const rejectedLabel = Number.isFinite(rejectedPercent)
+            ? `${formatMoney(record.rejected_sum)} · ${rejectedPercent.toFixed(1)}%`
+            : formatMoney(record.rejected_sum);
+        const details = [
+            `Склад: ${formatMoney(record.stock_sum)}`,
+            `Поставщики: ${formatMoney(record.supplier_sum)}`,
+            `Отказ: ${rejectedLabel}`,
+        ].join('\n');
+
+        return (
+            <Tooltip title={<span style={{ whiteSpace: 'pre-line' }}>{details}</span>}>
+                <div className="customer-order-execution">
+                    <span><b>Склад</b> {formatMoney(record.stock_sum)}</span>
+                    <span><b>Пост.</b> {formatMoney(record.supplier_sum)}</span>
+                    <span className={Number.isFinite(rejectedPercent) && rejectedPercent > 0 ? 'has-rejection' : ''}>
+                        <b>Отказ</b> {rejectedLabel}
+                    </span>
+                </div>
+            </Tooltip>
+        );
+    };
+
     const columns = [
         {
-            title: 'Дата заказа',
+            title: 'Дата',
             dataIndex: 'received_at',
             key: 'received_at',
-            width: 170,
-            render: formatDateTime,
+            width: '11%',
+            render: (value) => (
+                <span className="customer-order-single-line">{formatDateTime(value)}</span>
+            ),
         },
         {
             title: '№ заказа',
             dataIndex: 'order_number',
             key: 'order_number',
-            width: 112,
+            width: '11%',
             render: (value, record) => {
                 const orderLabel = String(value || record.id);
                 const compactOrderLabel = orderLabel.replace(
@@ -600,11 +632,11 @@ const CustomerOrdersPage = () => {
             title: 'Клиент',
             dataIndex: 'customer_id',
             key: 'customer_id',
-            width: 200,
+            width: '18%',
             render: (value) => (
                 <Button
                     type="link"
-                    style={{ padding: 0, height: 'auto' }}
+                    className="customer-order-customer-link"
                     onClick={(event) => {
                         event.stopPropagation();
                         navigate(`/customers/${value}/edit`);
@@ -618,53 +650,36 @@ const CustomerOrdersPage = () => {
             title: 'Статус',
             dataIndex: 'status',
             key: 'status',
-            width: 140,
-            render: (value) => ORDER_STATUS_LABELS[value] || value || '—',
+            width: '10%',
+            render: (value) => (
+                <span className="customer-order-single-line">
+                    {ORDER_STATUS_LABELS[value] || value || '—'}
+                </span>
+            ),
         },
         {
-            title: 'Сумма заказа',
+            title: 'Сумма',
             dataIndex: 'total_sum',
             key: 'total_sum',
-            width: 140,
-            render: formatMoney,
+            width: '10%',
+            align: 'right',
+            render: (value) => (
+                <Tooltip title={formatMoney(value)}>
+                    <span className="customer-order-money">{formatMoney(value)}</span>
+                </Tooltip>
+            ),
         },
         {
-            title: 'Склад (мы)',
-            dataIndex: 'stock_sum',
-            key: 'stock_sum',
-            width: 120,
-            render: formatMoney,
-        },
-        {
-            title: 'Поставщики',
-            dataIndex: 'supplier_sum',
-            key: 'supplier_sum',
-            width: 120,
-            render: formatMoney,
-        },
-        {
-            title: 'Отказ, сумма',
-            dataIndex: 'rejected_sum',
-            key: 'rejected_sum',
-            width: 130,
-            render: formatMoney,
-        },
-        {
-            title: 'Отказ, %',
-            dataIndex: 'rejected_pct',
-            key: 'rejected_pct',
-            width: 110,
-            render: (value) => {
-                if (value === null || value === undefined) return '—';
-                const num = Number(value);
-                if (Number.isNaN(num)) return '—';
-                return `${num.toFixed(1)}%`;
-            },
+            title: 'Исполнение',
+            key: 'execution',
+            width: '26%',
+            render: (_, record) => renderExecutionSummary(record),
         },
         {
             title: 'Действия',
             key: 'actions',
-            width: 192,
+            width: '14%',
+            align: 'right',
             render: (_, record) => renderOrderActions(record),
         },
     ];
@@ -835,11 +850,12 @@ const CustomerOrdersPage = () => {
                         label: `Заказы (${dataSource.length})`,
                         children: (
                             <Table
+                                className="customer-orders-table"
                                 loading={loading}
                                 dataSource={dataSource}
                                 columns={columns}
+                                size="small"
                                 tableLayout="fixed"
-                                scroll={{ x: 1380 }}
                                 onRow={(record) => ({
                                     onClick: (event) => {
                                         if (
