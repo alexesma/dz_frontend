@@ -1585,7 +1585,7 @@ body {
   min-width: 0;
   overflow: hidden;
   color: #262626;
-  font-weight: 600;
+  font-weight: 400;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1627,6 +1627,7 @@ body {
 }
 
 .customer-order-money {
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
