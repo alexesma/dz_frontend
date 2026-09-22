@@ -237,6 +237,7 @@ const NomenclaturePage = () => {
     const [contentFilter, setContentFilter] = useState('all');
     const [linksFilter, setLinksFilter] = useState('all');
     const searchTimer = useRef(null);
+    const brandSearchTimer = useRef(null);
 
     // ── selected row / detail panel ───────────────────────────────────────────
     const [selectedRow, setSelectedRow] = useState(null);
@@ -282,6 +283,35 @@ const NomenclaturePage = () => {
     const [brands, setBrands] = useState([]);
     const [categories, setCategories] = useState([]);
     const [storageLocations, setStorageLocations] = useState([]);
+
+    const mergeBrandOptions = useCallback((incoming) => {
+        setBrands((current) => {
+            const byId = new Map(current.map((item) => [Number(item.value), item]));
+            (incoming || []).forEach((item) => {
+                const value = Number(item.value ?? item.id);
+                const label = String(item.label ?? item.name ?? '').trim();
+                if (Number.isFinite(value) && label) {
+                    byId.set(value, { value, label });
+                }
+            });
+            return Array.from(byId.values()).sort((a, b) => (
+                a.label.localeCompare(b.label, 'ru', { sensitivity: 'base' })
+            ));
+        });
+    }, []);
+
+    const searchBrandOptions = useCallback((query = '') => {
+        if (brandSearchTimer.current) clearTimeout(brandSearchTimer.current);
+        brandSearchTimer.current = setTimeout(async () => {
+            try {
+                const { data } = await lookupBrands(query.trim(), 100);
+                mergeBrandOptions(data);
+            } catch {
+                // Текущий выбранный бренд остаётся в options; сбой поиска
+                // не должен превращать его название обратно в числовой id.
+            }
+        }, 250);
+    }, [mergeBrandOptions]);
 
     const applicTreeData = useMemo(() => buildTree(allApplicNodes), [allApplicNodes]);
 
@@ -368,7 +398,7 @@ const NomenclaturePage = () => {
                     getHonestSignCategories(),
                     getAllApplicabilityNodes(),
                 ]);
-                setBrands((br.data || []).map((b) => ({ value: b.id, label: b.name })));
+                mergeBrandOptions(br.data);
                 const flatCats = flattenCategories(cat.data || []);
                 setCategories(flatCats.map((c) => ({ value: c.id, label: c.name })));
                 setStorageLocations((sl.data || []).map((s) => ({ value: s.id, label: s.name })));
@@ -378,7 +408,7 @@ const NomenclaturePage = () => {
                 // non-critical
             }
         })();
-    }, []);
+    }, [mergeBrandOptions]);
 
     const loadAvailability = useCallback(async (autopartId) => {
         if (!autopartId || availability[autopartId]) return;
@@ -438,6 +468,21 @@ const NomenclaturePage = () => {
         setCrosses([]);
         try {
             const { data } = await getAutopartDetail(record.id);
+            let selectedBrandName = String(data.brand_name || '').trim();
+            if (data.brand_id && !selectedBrandName) {
+                try {
+                    const response = await lookupBrands('', 1, [data.brand_id]);
+                    selectedBrandName = String(response.data?.[0]?.name || '').trim();
+                } catch {
+                    // Поле останется выбранным по id; при следующем поиске
+                    // подпись восстановится из справочника брендов.
+                }
+            }
+            if (data.brand_id && selectedBrandName) {
+                mergeBrandOptions([
+                    { value: data.brand_id, label: selectedBrandName },
+                ]);
+            }
             form.setFieldsValue({
                 brand_id: data.brand_id,
                 oem_number: data.oem_number,
@@ -1378,9 +1423,13 @@ const NomenclaturePage = () => {
                                         >
                                             <Select
                                                 showSearch
-                                                optionFilterProp="label"
+                                                filterOption={false}
+                                                onSearch={searchBrandOptions}
+                                                onOpenChange={(open) => {
+                                                    if (open) searchBrandOptions('');
+                                                }}
                                                 options={brands}
-                                                placeholder="Выберите бренд"
+                                                placeholder="Начните вводить название бренда"
                                             />
                                         </Form.Item>
                                         <Form.Item
