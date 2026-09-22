@@ -155,7 +155,9 @@ const RegulatoryPage = () => {
             if (data.aborted) {
                 message.warning('Реестр не отвечает — сверка остановлена');
             } else {
-                message.success(`Сверено документов: ${data.answered}`);
+                message.success(
+                    `Сверено документов: ${data.answered}; номеров SWIS заполнено: ${data.swis_cards_filled || 0}`
+                );
                 await loadCoverage();
             }
         } catch (error) {
@@ -422,8 +424,8 @@ const RegulatoryPage = () => {
                                 <Alert
                                     type="info"
                                     showIcon
-                                    message="Срок и состояние берутся из карточки ФГИС"
-                                    description="В прайсах поставщиков сроков нет вовсе, поэтому документ выгружается как действующий, пока его не сверили. Приостановленный или прекращённый документ после сверки уходит из карточек сам."
+                                    message="Номер, срок и состояние берутся из карточки реестра"
+                                    description="Если поставщик передал только ссылку SWIS, система восстановит по ней номер сертификата. Для документов ФГИС также заполняются срок и состояние. Приостановленный или прекращённый документ после сверки уходит из карточек сам."
                                 />
                                 <Button
                                     style={{ marginTop: 16 }}
@@ -437,7 +439,15 @@ const RegulatoryPage = () => {
                                     <>
                                         <Space size={32} wrap style={{ marginTop: 16 }}>
                                             <Statistic
-                                                title="Запрошено"
+                                                title="Номеров SWIS найдено"
+                                                value={registryResult.swis_numbers_found || 0}
+                                            />
+                                            <Statistic
+                                                title="Карточек SWIS заполнено"
+                                                value={registryResult.swis_cards_filled || 0}
+                                            />
+                                            <Statistic
+                                                title="Запрошено ФГИС"
                                                 value={registryResult.supported}
                                             />
                                             <Statistic

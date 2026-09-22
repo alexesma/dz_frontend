@@ -56,7 +56,7 @@ import {
 import { lookupBrands } from '../api/brands';
 import { getCategories } from '../api/categories';
 
-const { Text } = Typography;
+const { Link, Text } = Typography;
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -887,8 +887,11 @@ const NomenclaturePage = () => {
                 const missing = [];
                 if (!record.tnved_code) missing.push('ТН ВЭД');
                 if (!record.okpd2_code) missing.push('ОКПД 2');
+                const hasCertificate = Boolean(
+                    record.eac_cert_number || record.eac_cert_url
+                );
                 if (record.certification_required !== false
-                    && !record.eac_cert_number) {
+                    && !hasCertificate) {
                     missing.push('сертификат');
                 }
                 const categories = record.categories || [];
@@ -904,6 +907,14 @@ const NomenclaturePage = () => {
                         </Tooltip>
                         <Space size={4} wrap={false}>
                             {honestSign && <Tag color="purple" style={{ marginRight: 0 }}>ЧЗ</Tag>}
+                            {hasCertificate && (
+                                <Tooltip
+                                    title={record.eac_cert_number
+                                        || 'Есть ссылка на сертификат без номера'}
+                                >
+                                    <Tag color="blue" style={{ marginRight: 0 }}>EAC</Tag>
+                                </Tooltip>
+                            )}
                             <Tooltip
                                 title={missing.length
                                     ? `Не заполнено: ${missing.join(', ')}`
@@ -1259,7 +1270,25 @@ const NomenclaturePage = () => {
                                 <Descriptions.Item label="Штрих-код">{detail.barcode || '—'}</Descriptions.Item>
                                 <Descriptions.Item label="ТН ВЭД">{detail.tnved_code || '—'}</Descriptions.Item>
                                 <Descriptions.Item label="ОКПД 2">{detail.okpd2_code || '—'}</Descriptions.Item>
-                                <Descriptions.Item label="Сертификация">{detail.certification_required === false ? 'Не требуется' : (detail.eac_cert_number || 'Не заполнено')}</Descriptions.Item>
+                                <Descriptions.Item label="Сертификация">
+                                    {detail.certification_required === false
+                                        ? 'Не требуется'
+                                        : (detail.eac_cert_number
+                                            || (detail.eac_cert_url
+                                                ? 'Есть ссылка без номера'
+                                                : 'Не заполнено'))}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Ссылка на сертификат">
+                                    {detail.eac_cert_url ? (
+                                        <Link
+                                            href={detail.eac_cert_url}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                        >
+                                            Открыть документ
+                                        </Link>
+                                    ) : '—'}
+                                </Descriptions.Item>
                                 <Descriptions.Item label="Сертификат действует до">{detail.eac_cert_valid_until || '—'}</Descriptions.Item>
                                 <Descriptions.Item label="Источник реквизитов">{detail.regulatory_source || '—'}</Descriptions.Item>
                                 <Descriptions.Item label="Применимость (текст)">{detail.applicability || '—'}</Descriptions.Item>
@@ -1516,8 +1545,8 @@ const NomenclaturePage = () => {
                                         <Form.Item name="eac_cert_number" label="Номер сертификата ЕАС">
                                             <Input placeholder="ЕАЭС RU Д-CN.XXXX.XX.XXXXX/XX" />
                                         </Form.Item>
-                                        <Form.Item name="eac_cert_url" label="Ссылка ФГИС">
-                                            <Input placeholder="https://pub.fsa.gov.ru/..." />
+                                        <Form.Item name="eac_cert_url" label="Ссылка на сертификат">
+                                            <Input placeholder="https://pub.fsa.gov.ru/... или https://swis.trade.kg/..." />
                                         </Form.Item>
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                                             <Form.Item
