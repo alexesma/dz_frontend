@@ -145,6 +145,14 @@ const CustomerSupplierOrdersPage = () => {
             render: (value) => providerMap[value] || value,
         },
         {
+            title: 'Прайс',
+            dataIndex: 'provider_config_name',
+            key: 'provider_config_name',
+            width: 160,
+            render: (value, record) =>
+                value || (record.provider_config_id ? `#${record.provider_config_id}` : 'Общий'),
+        },
+        {
             title: 'Сумма заказа',
             dataIndex: 'total_sum',
             key: 'total_sum',

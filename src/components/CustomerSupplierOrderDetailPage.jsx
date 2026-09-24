@@ -190,6 +190,12 @@ const CustomerSupplierOrderDetailPage = () => {
                             <Descriptions.Item label="Поставщик">
                                 {order.provider_name || order.provider_id}
                             </Descriptions.Item>
+                            <Descriptions.Item label="Прайс">
+                                {order.provider_config_name
+                                    || (order.provider_config_id
+                                        ? `#${order.provider_config_id}`
+                                        : 'Общий заказ')}
+                            </Descriptions.Item>
                             <Descriptions.Item label="Статус">
                                 <Tag color={SUPPLIER_STATUS_COLORS[order.status] || 'default'}>
                                     {SUPPLIER_STATUS_LABELS[order.status] || order.status}

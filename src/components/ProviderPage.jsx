@@ -466,6 +466,7 @@ const ProviderPage = () => {
                 order_schedule_enabled: false,
                 order_schedule_days: [],
                 order_schedule_times: [],
+                split_orders_by_pricelist: false,
                 default_warehouse_id: undefined,
                 inventory_policy: "original_goods",
                 inventory_policy_note: "",
@@ -527,6 +528,8 @@ const ProviderPage = () => {
                     order_schedule_days: data.provider.order_schedule_days || [],
                     order_schedule_times: data.provider.order_schedule_times || [],
                     order_schedule_enabled: data.provider.order_schedule_enabled || false,
+                    split_orders_by_pricelist:
+                        data.provider.split_orders_by_pricelist || false,
                     return_allowed: data.provider.return_allowed ?? true,
                     return_window_days: data.provider.return_window_days ?? null,
                     return_blocked_brands:
@@ -3033,7 +3036,19 @@ const ProviderPage = () => {
                         />
                     </Form.Item>
 
-                    <Divider>Расписание отправки заказов</Divider>
+                    <Divider>Формирование и отправка заказов</Divider>
+                    <Form.Item
+                        name="split_orders_by_pricelist"
+                        label="Отдельный заказ по каждому прайсу"
+                        valuePropName="checked"
+                        extra={
+                            "Если включено, позиции из разных прайсов этого " +
+                            "поставщика попадут в разные заказы и будут " +
+                            "отправлены отдельными файлами."
+                        }
+                    >
+                        <Switch checkedChildren="Раздельно" unCheckedChildren="Общий" />
+                    </Form.Item>
                     <Form.Item
                         name="order_schedule_enabled"
                         label="Автоматическая отправка заказов"
