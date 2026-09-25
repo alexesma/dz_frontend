@@ -216,6 +216,65 @@ body {
   scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
 }
 
+.app-navigation-search {
+  position: relative;
+  flex: 0 0 auto;
+  padding: 14px 12px 4px;
+  background: #001529;
+}
+
+.app-navigation-search .ant-select {
+  width: 100%;
+}
+
+.app-navigation-search .ant-select-selector {
+  padding-left: 32px !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+  background: rgba(255, 255, 255, 0.09) !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
+}
+
+.app-navigation-search .ant-select-selection-placeholder {
+  color: rgba(255, 255, 255, 0.52) !important;
+}
+
+.app-navigation-search .ant-select-selection-search-input,
+.app-navigation-search .ant-select-selection-item {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.app-navigation-search .ant-select-focused .ant-select-selector {
+  border-color: #4096ff !important;
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.22) !important;
+}
+
+.app-navigation-search .ant-select-clear {
+  color: rgba(255, 255, 255, 0.65);
+  background: transparent;
+}
+
+.app-navigation-search-icon {
+  position: absolute;
+  z-index: 2;
+  top: 24px;
+  left: 23px;
+  color: rgba(255, 255, 255, 0.58);
+  pointer-events: none;
+}
+
+.app-navigation-search-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.app-navigation-search-option span:last-child {
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .app-sider-menu {
   flex: 1;
   min-height: auto;

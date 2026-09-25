@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Button, Drawer, Grid, Layout, Menu } from 'antd';
+import { AutoComplete, Button, Drawer, Grid, Layout, Menu } from 'antd';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
     TeamOutlined,
@@ -40,12 +40,77 @@ import useAuth from '../context/useAuth';
 const { Sider } = Layout;
 const { useBreakpoint } = Grid;
 
+const NAVIGATION_SEARCH_ITEMS = [
+    { path: '/', title: 'Dashboard', section: 'Главная', keywords: 'дашборд сводка показатели статистика' },
+    { path: '/autoparts/nomenclature', title: 'Номенклатура', section: 'Запчасти', keywords: 'товар карточка артикул oem фото описание parts soft' },
+    { path: '/autoparts/certificates', title: 'Сертификаты', section: 'Запчасти', keywords: 'еас декларация соответствие фгис ссылка документ' },
+    { path: '/autoparts/regulatory', title: 'Реквизиты прайса', section: 'Запчасти', keywords: 'тн вэд окпд честный знак сертификат маркировка автохимия масло ароматизатор' },
+    { path: '/autoparts/crosses', title: 'Кроссы', section: 'Запчасти', keywords: 'аналоги замены соответствия артикул' },
+    { path: '/autoparts/invalid-crosses', title: 'Неверные кроссы', section: 'Запчасти', keywords: 'ошибочные аналоги исключения' },
+    { path: '/autoparts/offers', title: 'Прайсы по артикулу', section: 'Запчасти', keywords: 'предложения цены остатки поставщики поиск' },
+    { path: '/autoparts/labels', title: 'Печать этикеток', section: 'Запчасти', keywords: 'штрихкод наклейка barcode' },
+    { path: '/orders/tracking', title: 'Отслеживание заказов', section: 'Запчасти', keywords: 'трек доставка статус' },
+    { path: '/watchlist', title: 'Отслеживаемые позиции', section: 'Запчасти', keywords: 'наблюдение мониторинг артикул' },
+    { path: '/orders/autopurchase', title: 'Автозаказ', section: 'Запчасти', keywords: 'автоматическая закупка обработка' },
+    { path: '/orders/autopurchase-top', title: 'Топ для автозаказа', section: 'Запчасти', keywords: 'рейтинг продажи закупка' },
+    { path: '/orders/customer-order-period-report', title: 'Отчёт по заказам', section: 'Запчасти', keywords: 'период аналитика продажи клиенты' },
+    { path: '/orders/inventory-control', title: 'Контроль запасов', section: 'Запчасти', keywords: 'остатки дефицит склад пополнение' },
+    { path: '/orders/exceptions', title: 'Очередь исключений', section: 'Запчасти', keywords: 'ошибки автозаказ проверка' },
+    { path: '/autoparts/price-history', title: 'График цен', section: 'Запчасти', keywords: 'история динамика прайс аналитика' },
+    { path: '/orders', title: 'Заказы поставщикам', section: 'Заказы', keywords: 'закупка поставщик отправка заказ' },
+    { path: '/customer-orders', title: 'Заказы клиентов', section: 'Заказы', keywords: 'продажи покупатели parts soft сайт dragonzap почта' },
+    { path: '/customer-orders/suppliers', title: 'Клиентские заказы → поставщики', section: 'Заказы', keywords: 'распределение закупка обработка' },
+    { path: '/customer-orders/stock', title: 'Наш склад: заказы', section: 'Заказы', keywords: 'резерв наличие выдача' },
+    { path: '/customer-orders/receipts', title: 'Поступления от поставщиков', section: 'Заказы', keywords: 'приемка приход накладная поставка' },
+    { path: '/documents/incoming', title: 'Входящие документы', section: 'Документы', keywords: 'упд накладная эдо получение' },
+    { path: '/documents/outgoing', title: 'Исходящие документы', section: 'Документы', keywords: 'упд накладная эдо отправка' },
+    { path: '/documents/diadoc', title: 'Диадок', section: 'Документы', keywords: 'эдо контур упд', roles: ['admin'] },
+    { path: '/documents/1c', title: 'Обмен с 1С', section: 'Документы', keywords: 'интеграция выгрузка загрузка синхронизация', roles: ['admin'] },
+    { path: '/providers', title: 'Поставщики', section: 'Контрагенты', keywords: 'прайсы закупки инн реквизиты объединение' },
+    { path: '/customers', title: 'Клиенты', section: 'Контрагенты', keywords: 'покупатели опт розница инн реквизиты объединение' },
+    { path: '/substitutions', title: 'Подмены', section: 'Контрагенты', keywords: 'замена клиент поставщик' },
+    { path: '/warehouse/storage', title: 'Склады и ячейки', section: 'Склад', keywords: 'места хранения адрес стеллаж' },
+    { path: '/warehouse/inventory', title: 'Инвентаризация', section: 'Склад', keywords: 'пересчет остатки ревизия' },
+    { path: '/warehouse/stock-documents', title: 'Оприходование / Списание', section: 'Склад', keywords: 'приход расход корректировка' },
+    { path: '/warehouse/overview', title: 'Остатки (обзор)', section: 'Склад', keywords: 'наличие запасы количество' },
+    { path: '/warehouse/movements', title: 'Движения товаров', section: 'Склад', keywords: 'история приход расход перемещение' },
+    { path: '/warehouse/marking', title: 'Маркировка', section: 'Склад', keywords: 'честный знак киз код data matrix гис мт автохимия масло ароматизатор' },
+    { path: '/warehouse/reserves', title: 'Резервы', section: 'Склад', keywords: 'бронь заказ наличие' },
+    { path: '/warehouse/shipments', title: 'Накладные на отгрузку', section: 'Склад', keywords: 'реализация выдача отправка клиенту' },
+    { path: '/warehouse/profit-report', title: 'Валовая прибыль', section: 'Склад', keywords: 'маржа рентабельность отчет' },
+    { path: '/warehouse/returns', title: 'Возвраты', section: 'Склад', keywords: 'возврат клиент поставщик' },
+    { path: '/reclamations', title: 'Рекламации', section: 'Склад', keywords: 'претензия брак возврат', roles: ['admin', 'reclamation'] },
+    { path: '/warehouse/lots', title: 'Партии / ГТД', section: 'Склад', keywords: 'таможня декларация страна происхождения' },
+    { path: '/warehouse/production-groups', title: 'Группы выпуска DragonZap', section: 'Склад', keywords: 'производство комплект сборка' },
+    { path: '/warehouse/production-waves', title: 'Волны выпуска DragonZap', section: 'Склад', keywords: 'производство план выпуск' },
+    { path: '/warehouse/transfer', title: 'Перемещение', section: 'Склад', keywords: 'между складами ячейками перенос' },
+    { path: '/inbox', title: 'Входящие письма', section: 'Почта', keywords: 'email почта вложения прайсы заказы' },
+    { path: '/finance', title: 'Финансы', section: 'Финансы', keywords: 'счета оплаты задолженность деньги' },
+    { path: '/process-architecture', title: 'Карта процессов', section: 'Система', keywords: 'схема интеграции архитектура обмен' },
+    { path: '/admin/users', title: 'Пользователи', section: 'Админ', keywords: 'сотрудники роли доступ', roles: ['admin'] },
+    { path: '/admin/email-accounts', title: 'Почты', section: 'Админ', keywords: 'email smtp imap relay аккаунты', roles: ['admin'] },
+    { path: '/admin/settings', title: 'Настройки', section: 'Админ', keywords: 'параметры система интеграции', roles: ['admin'] },
+    { path: '/admin/price-control', title: 'Контроль цен', section: 'Админ', keywords: 'прайс отклонения скачки проверка', roles: ['admin'] },
+    { path: '/admin/customer-pricelists', title: 'Прайсы клиентов', section: 'Админ', keywords: 'рассылка фильтры наценка публикация', roles: ['admin'] },
+    { path: '/admin/brands', title: 'Бренды', section: 'Админ', keywords: 'марки производители синонимы', roles: ['admin'] },
+    { path: '/admin/order-status-mappings', title: 'Статусы заказов', section: 'Админ', keywords: 'сопоставление состояния parts soft', roles: ['admin'] },
+    { path: '/admin/monitor', title: 'Мониторинг', section: 'Админ', keywords: 'задания ошибки журнал здоровье relay', roles: ['admin'] },
+    { path: '/admin/order-windows', title: 'Окна заказов', section: 'Админ', keywords: 'расписание время закупки', roles: ['admin'] },
+    { path: '/restock', title: 'Формирование заказов', section: 'Заказы', keywords: 'пополнение закупка предложение поставщик' },
+];
+
+const normalizeNavigationSearch = (value) => String(value || '')
+    .toLocaleLowerCase('ru-RU')
+    .replaceAll('ё', 'е')
+    .trim();
+
 const Sidebar = () => {
     const { user, loading, logout } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
     const screens = useBreakpoint();
     const [mobileOpen, setMobileOpen] = useState(false);
+    const [navigationQuery, setNavigationQuery] = useState('');
 
     if (loading || !user) {
         return null;
@@ -55,6 +120,36 @@ const Sidebar = () => {
         setMobileOpen(false);
         await logout();
         navigate('/login');
+    };
+
+    const navigationTokens = normalizeNavigationSearch(navigationQuery)
+        .split(/\s+/)
+        .filter(Boolean);
+    const navigationOptions = navigationTokens.length
+        ? NAVIGATION_SEARCH_ITEMS
+            .filter((item) => !item.roles || item.roles.includes(user.role))
+            .filter((item) => {
+                const searchText = normalizeNavigationSearch(
+                    `${item.title} ${item.section} ${item.keywords}`
+                );
+                return navigationTokens.every((token) => searchText.includes(token));
+            })
+            .slice(0, 12)
+            .map((item) => ({
+                value: item.path,
+                label: (
+                    <div className="app-navigation-search-option">
+                        <span>{item.title}</span>
+                        <span>{item.section}</span>
+                    </div>
+                ),
+            }))
+        : [];
+
+    const handleNavigationSelect = (path) => {
+        setNavigationQuery('');
+        setMobileOpen(false);
+        navigate(path);
     };
 
     const selectedKey = (() => {
@@ -82,6 +177,8 @@ const Sidebar = () => {
         if (path.startsWith('/autoparts/offers')) return 'autopart-offers';
         if (path.startsWith('/autoparts/invalid-crosses')) return 'autopart-invalid-crosses';
         if (path.startsWith('/autoparts/crosses')) return 'autopart-crosses';
+        if (path.startsWith('/autoparts/certificates')) return 'autoparts-certificates';
+        if (path.startsWith('/autoparts/regulatory')) return 'autoparts-regulatory';
         if (path.startsWith('/autoparts/nomenclature')) return 'autopart-nomenclature';
         if (path.startsWith('/watchlist')) return 'watchlist';
         if (path.startsWith('/autoparts/price-history')) return 'autopart-price-history';
@@ -96,6 +193,8 @@ const Sidebar = () => {
         if (path.startsWith('/admin/order-windows')) return 'admin-order-windows';
         if (path.startsWith('/inbox')) return 'inbox';
         if (path.startsWith('/warehouse/stock-documents')) return 'warehouse-stock-documents';
+        if (path.startsWith('/warehouse/storage')) return 'warehouse-storage';
+        if (path.startsWith('/warehouse/inventory')) return 'warehouse-inventory';
         if (path.startsWith('/warehouse/movements')) return 'warehouse-movements';
         if (path.startsWith('/warehouse/marking')) return 'warehouse-marking';
         if (path.startsWith('/warehouse/reserves')) return 'warehouse-reserves';
@@ -108,12 +207,28 @@ const Sidebar = () => {
         if (path.startsWith('/warehouse/production-waves')) return 'warehouse-production-waves';
         if (path.startsWith('/warehouse/transfer')) return 'warehouse-transfer';
         if (path.startsWith('/warehouse/overview')) return 'warehouse-overview';
+        if (path.startsWith('/finance')) return 'finance';
         if (path.startsWith('/process-architecture')) return 'process-architecture';
         return '1';
     })();
 
     const renderMenu = () => (
-        <Menu
+        <>
+            <div className="app-navigation-search">
+                <SearchOutlined className="app-navigation-search-icon" />
+                <AutoComplete
+                    allowClear
+                    value={navigationQuery}
+                    options={navigationOptions}
+                    placeholder="Найти раздел…"
+                    notFoundContent={navigationTokens.length ? 'Раздел не найден' : null}
+                    filterOption={false}
+                    onChange={setNavigationQuery}
+                    onSelect={handleNavigationSelect}
+                    aria-label="Поиск по разделам"
+                />
+            </div>
+            <Menu
             mode="inline"
             selectedKeys={[selectedKey]}
             defaultOpenKeys={['autopart-search']}
@@ -124,7 +239,7 @@ const Sidebar = () => {
                     setMobileOpen(false);
                 }
             }}
-        >
+            >
             <Menu.Item key="1">
                 <Link to="/">Dashboard</Link>
             </Menu.Item>
@@ -331,7 +446,8 @@ const Sidebar = () => {
             <Menu.Item key="logout" onClick={handleLogout}>
                 Выйти
             </Menu.Item>
-        </Menu>
+            </Menu>
+        </>
     );
 
     if (!screens.lg) {
