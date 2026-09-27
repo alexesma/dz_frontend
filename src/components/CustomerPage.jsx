@@ -207,12 +207,31 @@ const CustomerPage = () => {
         const detail = err?.response?.data?.detail;
         if (Array.isArray(detail)) {
             return detail
-                .map((item) => item?.msg || item?.message || JSON.stringify(item))
+                .map((item) => {
+                    const text = item?.msg || item?.message || JSON.stringify(item);
+                    const location = Array.isArray(item?.loc)
+                        ? item.loc.filter((part) => part !== 'body').join('.')
+                        : '';
+                    return location ? `${location}: ${text}` : text;
+                })
                 .filter(Boolean)
                 .join('; ') || fallback;
         }
         if (typeof detail === 'string' && detail.trim()) {
             return detail;
+        }
+        if (detail && typeof detail === 'object') {
+            if (typeof detail.message === 'string' && detail.message.trim()) {
+                return detail.message;
+            }
+            if (typeof detail.error === 'string' && detail.error.trim()) {
+                return detail.error;
+            }
+            try {
+                return JSON.stringify(detail);
+            } catch {
+                return fallback;
+            }
         }
         return err?.message || fallback;
     }, []);
@@ -992,8 +1011,20 @@ const CustomerPage = () => {
             }
         } catch (err) {
             console.error(err);
-            const detail = err?.response?.data?.detail;
-            message.error(detail || 'Ошибка сохранения клиента');
+            const apiDetail = err?.response?.data?.detail;
+            const detail = extractApiError(err, 'Ошибка сохранения клиента');
+            const field = apiDetail && typeof apiDetail === 'object'
+                ? apiDetail.field
+                : null;
+            if (field) {
+                customerForm.setFields([{ name: field, errors: [detail] }]);
+                customerForm.scrollToField(field);
+            }
+            Modal.error({
+                title: 'Не удалось сохранить клиента',
+                content: detail,
+                okText: 'Понятно',
+            });
         } finally {
             setSaving(false);
         }

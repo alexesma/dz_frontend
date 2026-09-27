@@ -47,6 +47,17 @@ export const getAutopartAvailability = (autopartId) =>
 export const getAutopartDetail = (id) =>
     api.get(`/autoparts/${id}/detail/`);
 
+// Сводка спроса: наши заказы + движение остатка у поставщиков.
+// Считается ночной задачей — тут только чтение готовой строки.
+export const getAutopartTurnoverSummary = (autopartId) =>
+    api.get(`/autoparts/${autopartId}/turnover-summary/`);
+
+export const getTurnoverReport = (params = {}) =>
+    api.get('/autoparts/turnover-report/', { params });
+
+export const refreshTurnoverReport = () =>
+    api.post('/autoparts/turnover-report/refresh/');
+
 export const updateAutopart = (id, data) =>
     api.patch(`/autoparts/${id}/update/`, data);
 

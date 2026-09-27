@@ -55,6 +55,7 @@ import {
 } from '../api/autoparts';
 import { lookupBrands } from '../api/brands';
 import { getCategories } from '../api/categories';
+import TurnoverTooltip from './TurnoverTooltip';
 
 const { Link, Text } = Typography;
 
@@ -236,6 +237,7 @@ const NomenclaturePage = () => {
     const [sourceFilter, setSourceFilter] = useState('all');
     const [contentFilter, setContentFilter] = useState('all');
     const [linksFilter, setLinksFilter] = useState('all');
+    const [turnoverFilter, setTurnoverFilter] = useState('all');
     const searchTimer = useRef(null);
     const brandSearchTimer = useRef(null);
 
@@ -331,7 +333,16 @@ const NomenclaturePage = () => {
     }, []); // eslint-disable-line
 
     // ── fetch list ────────────────────────────────────────────────────────────
-    const fetchList = useCallback(async (oem, name, brand, pg, source = 'all', content = 'all', links = 'all') => {
+    const fetchList = useCallback(async (
+        oem,
+        name,
+        brand,
+        pg,
+        source = 'all',
+        content = 'all',
+        links = 'all',
+        turnover = 'all',
+    ) => {
         setLoading(true);
         try {
             const params = { offset: (pg - 1) * pageSize, limit: pageSize };
@@ -342,6 +353,7 @@ const NomenclaturePage = () => {
             if (source === 'local') params.partssoft = false;
             if (content !== 'all') params.content = content;
             if (links !== 'all') params.links = links;
+            if (turnover !== 'all') params.turnover = turnover;
             const { data } = await getCatalog(params);
             setItems(data.items || []);
             setTotal(data.total || 0);
@@ -354,7 +366,10 @@ const NomenclaturePage = () => {
 
     // Initial fetch and page-change fetch
     useEffect(() => {
-        fetchList(qOem, qName, qBrand, page, sourceFilter, contentFilter, linksFilter);
+        fetchList(
+            qOem, qName, qBrand, page, sourceFilter, contentFilter,
+            linksFilter, turnoverFilter,
+        );
     }, [page]); // eslint-disable-line
 
     const triggerSearch = (oem, name, brand) => {
@@ -363,6 +378,7 @@ const NomenclaturePage = () => {
         searchTimer.current = setTimeout(
             () => fetchList(
                 oem, name, brand, 1, sourceFilter, contentFilter, linksFilter,
+                turnoverFilter,
             ),
             400,
         );
@@ -374,17 +390,34 @@ const NomenclaturePage = () => {
     const handleSourceFilter = (value) => {
         setSourceFilter(value);
         setPage(1);
-        void fetchList(qOem, qName, qBrand, 1, value, contentFilter, linksFilter);
+        void fetchList(
+            qOem, qName, qBrand, 1, value, contentFilter, linksFilter,
+            turnoverFilter,
+        );
     };
     const handleContentFilter = (value) => {
         setContentFilter(value);
         setPage(1);
-        void fetchList(qOem, qName, qBrand, 1, sourceFilter, value, linksFilter);
+        void fetchList(
+            qOem, qName, qBrand, 1, sourceFilter, value, linksFilter,
+            turnoverFilter,
+        );
     };
     const handleLinksFilter = (value) => {
         setLinksFilter(value);
         setPage(1);
-        void fetchList(qOem, qName, qBrand, 1, sourceFilter, contentFilter, value);
+        void fetchList(
+            qOem, qName, qBrand, 1, sourceFilter, contentFilter, value,
+            turnoverFilter,
+        );
+    };
+    const handleTurnoverFilter = (value) => {
+        setTurnoverFilter(value);
+        setPage(1);
+        void fetchList(
+            qOem, qName, qBrand, 1, sourceFilter, contentFilter, linksFilter,
+            value,
+        );
     };
 
     // ── load reference data ───────────────────────────────────────────────────
@@ -773,10 +806,15 @@ const NomenclaturePage = () => {
             key: 'oem',
             width: 155,
             ellipsis: true,
-            render: (v) => (
-                <Tooltip title={v}>
+            render: (v, record) => (
+                <TurnoverTooltip
+                    autopartId={record.id}
+                    label={v}
+                    isTop={record.is_turnover_top}
+                    isMarketOpportunity={record.is_market_opportunity}
+                >
                     <Text code style={{ whiteSpace: 'nowrap' }}>{v}</Text>
-                </Tooltip>
+                </TurnoverTooltip>
             ),
         },
         {
@@ -1167,6 +1205,17 @@ const NomenclaturePage = () => {
                         { value: 'without_applicability', label: 'Без применимости' },
                         { value: 'with_crosses', label: 'Есть кроссы' },
                         { value: 'without_crosses', label: 'Без кроссов' },
+                    ]}
+                />
+                <Select
+                    value={turnoverFilter}
+                    onChange={handleTurnoverFilter}
+                    style={{ width: 230 }}
+                    options={[
+                        { value: 'all', label: 'Любая оборачиваемость' },
+                        { value: 'top', label: 'Топ-рекомендации' },
+                        { value: 'market', label: 'Рыночные возможности' },
+                        { value: 'needs_order', label: 'Требуется заказать' },
                     ]}
                 />
                 <Input

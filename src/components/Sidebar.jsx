@@ -34,6 +34,7 @@ import {
     ApartmentOutlined,
     ExperimentOutlined,
     FileSearchOutlined,
+    RiseOutlined,
 } from '@ant-design/icons';
 import useAuth from '../context/useAuth';
 
@@ -48,6 +49,7 @@ const NAVIGATION_SEARCH_ITEMS = [
     { path: '/autoparts/crosses', title: 'Кроссы', section: 'Запчасти', keywords: 'аналоги замены соответствия артикул' },
     { path: '/autoparts/invalid-crosses', title: 'Неверные кроссы', section: 'Запчасти', keywords: 'ошибочные аналоги исключения' },
     { path: '/autoparts/offers', title: 'Прайсы по артикулу', section: 'Запчасти', keywords: 'предложения цены остатки поставщики поиск' },
+    { path: '/autoparts/turnover', title: 'Оборачиваемость и цена', section: 'Запчасти', keywords: 'оборот топ продажи склад заказ поставщик остаток тает' },
     { path: '/autoparts/labels', title: 'Печать этикеток', section: 'Запчасти', keywords: 'штрихкод наклейка barcode' },
     { path: '/orders/tracking', title: 'Отслеживание заказов', section: 'Запчасти', keywords: 'трек доставка статус' },
     { path: '/watchlist', title: 'Отслеживаемые позиции', section: 'Запчасти', keywords: 'наблюдение мониторинг артикул' },
@@ -265,6 +267,9 @@ const Sidebar = () => {
                 </Menu.Item>
                 <Menu.Item key="autopart-offers">
                     <Link to="/autoparts/offers">Прайсы по артикулу</Link>
+                </Menu.Item>
+                <Menu.Item key="autopart-turnover" icon={<RiseOutlined />}>
+                    <Link to="/autoparts/turnover">Оборачиваемость и цена</Link>
                 </Menu.Item>
                 <Menu.Item key="autopart-labels" icon={<BarcodeOutlined />}>
                     <Link to="/autoparts/labels">Печать этикеток</Link>

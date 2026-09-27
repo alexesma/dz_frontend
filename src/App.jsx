@@ -22,6 +22,7 @@ import CrossesPage from './components/CrossesPage';
 import CustomersList from './components/CustomersList';
 import CustomerPage from './components/CustomerPage';
 import AutopartOffers from './components/AutopartOffers';
+import TurnoverReportPage from './components/TurnoverReportPage';
 import InvalidCrossesPage from './components/InvalidCrossesPage';
 import NomenclaturePage from './components/NomenclaturePage';
 import CertificatesPage from './components/CertificatesPage';
@@ -207,6 +208,7 @@ const AppRoutes = () => (
 
         {/* Autoparts offers */}
         <Route path="/autoparts/offers" element={<RequireAuth><AutopartOffers /></RequireAuth>} />
+        <Route path="/autoparts/turnover" element={<RequireAuth><TurnoverReportPage /></RequireAuth>} />
 
         {/* Nomenclature catalog */}
         <Route path="/autoparts/nomenclature" element={<RequireAuth><NomenclaturePage /></RequireAuth>} />

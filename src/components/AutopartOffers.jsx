@@ -66,6 +66,7 @@ import {
     updateTrackingOrderItem,
 } from '../api/orderTracking';
 import TrackingOrderHistoryTable from './TrackingOrderHistoryTable';
+import TurnoverTooltip from './TurnoverTooltip';
 import useAuth from '../context/useAuth';
 
 const OEM_HISTORY_KEY = 'autopart_oem_history_v1';
@@ -153,12 +154,156 @@ const clampQty = (value, maxValue) => {
     return parsed;
 };
 
-const normalizePositiveQty = (value) => {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-        return 1;
+const normalizeMultiplicity = (value) => {
+    const parsed = Math.trunc(Number(value));
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+};
+
+const maxOrderQuantityForOffer = (availableQty, multiplicity) => {
+    const available = Math.trunc(Number(availableQty));
+    const lot = normalizeMultiplicity(multiplicity);
+    if (!Number.isFinite(available) || available <= 0) {
+        return 0;
     }
-    return parsed;
+    return Math.floor(available / lot) * lot;
+};
+
+const normalizeOrderQuantity = (
+    value,
+    multiplicity,
+    maxValue,
+    limitToAvailable = false
+) => {
+    const lot = normalizeMultiplicity(multiplicity);
+    const parsed = Number(value);
+    const requested = Number.isFinite(parsed) && parsed > 0 ? parsed : lot;
+    let normalized = Math.ceil(requested / lot) * lot;
+    if (limitToAvailable) {
+        const maxOrderQty = maxOrderQuantityForOffer(maxValue, lot);
+        if (maxOrderQty <= 0) {
+            return 0;
+        }
+        normalized = Math.min(normalized, maxOrderQty);
+    }
+    return normalized;
+};
+
+const OfferCartQuantityButton = ({
+    sourceType,
+    record,
+    currentQuantity,
+    onAdd,
+}) => {
+    const [open, setOpen] = useState(false);
+    const multiplicity = normalizeMultiplicity(
+        record?.multiplicity ?? record?.min_qnt ?? record?.min_quantity
+    );
+    const availableQty = Number(
+        sourceType === 'supplier' ? record?.quantity : record?.qnt
+    );
+    const limitToAvailable = sourceType !== 'supplier';
+    const maxOrderQty = limitToAvailable
+        ? maxOrderQuantityForOffer(availableQty, multiplicity)
+        : undefined;
+    const initialQuantity = normalizeOrderQuantity(
+        currentQuantity ?? multiplicity,
+        multiplicity,
+        availableQty,
+        limitToAvailable
+    );
+    const [quantity, setQuantity] = useState(initialQuantity || multiplicity);
+    const normalizedQuantity = normalizeOrderQuantity(
+        quantity,
+        multiplicity,
+        availableQty,
+        limitToAvailable
+    );
+    const unavailableForLot = limitToAvailable && maxOrderQty <= 0;
+    const quantityWasRounded =
+        normalizedQuantity > 0 && Number(quantity) !== normalizedQuantity;
+
+    const handleOpenChange = (nextOpen) => {
+        if (nextOpen) {
+            setQuantity(initialQuantity || multiplicity);
+        }
+        setOpen(nextOpen);
+    };
+
+    const handleAdd = () => {
+        if (unavailableForLot || normalizedQuantity <= 0) {
+            return;
+        }
+        onAdd(record, normalizedQuantity);
+        setOpen(false);
+    };
+
+    const content = (
+        <Space direction="vertical" size={6} style={{ width: 210 }}>
+            <div style={{ fontWeight: 600 }}>Количество для заказа</div>
+            <Space.Compact style={{ width: '100%' }}>
+                <InputNumber
+                    autoFocus
+                    min={multiplicity}
+                    max={maxOrderQty || undefined}
+                    step={multiplicity}
+                    precision={0}
+                    value={quantity}
+                    style={{ width: '100%' }}
+                    onChange={(value) => setQuantity(value ?? multiplicity)}
+                    onPressEnter={handleAdd}
+                />
+                <Button type="primary" onClick={handleAdd}>
+                    Добавить
+                </Button>
+            </Space.Compact>
+            <div style={{ color: '#64748b', fontSize: 12 }}>
+                Кратность: {multiplicity}
+                {limitToAvailable && maxOrderQty > 0
+                    ? ` · можно заказать до ${maxOrderQty}`
+                    : ''}
+            </div>
+            {quantityWasRounded ? (
+                <div style={{ color: '#b45309', fontSize: 12 }}>
+                    Будет добавлено: {normalizedQuantity}
+                </div>
+            ) : null}
+        </Space>
+    );
+
+    if (unavailableForLot) {
+        return (
+            <Tooltip title={`Остаток меньше кратности ${multiplicity}`}>
+                <span>
+                    <Button
+                        disabled
+                        size="small"
+                        type="text"
+                        shape="circle"
+                        icon={<ShoppingCartOutlined />}
+                    />
+                </span>
+            </Tooltip>
+        );
+    }
+
+    return (
+        <Popover
+            content={content}
+            trigger="click"
+            placement="leftTop"
+            open={open}
+            onOpenChange={handleOpenChange}
+        >
+            <Tooltip title="Указать количество и добавить в корзину">
+                <Button
+                    size="small"
+                    type="text"
+                    shape="circle"
+                    icon={<ShoppingCartOutlined />}
+                />
+            </Tooltip>
+        </Popover>
+    );
 };
 
 function normalizeSupplierName(value) {
@@ -723,6 +868,7 @@ const buildPersistedCartItems = (items) => {
         price: item.price ?? 0,
         available_qty: item.available_qty ?? 0,
         order_qty: item.order_qty ?? 1,
+        multiplicity: normalizeMultiplicity(item.multiplicity),
         min_delivery_day: item.min_delivery_day ?? null,
         max_delivery_day: item.max_delivery_day ?? null,
         is_own_price: Boolean(item.is_own_price),
@@ -2501,7 +2647,24 @@ const AutopartOffers = () => {
         );
         if (storedState && typeof storedState === 'object') {
             if (Array.isArray(storedState.cartItems)) {
-                setCartItems(storedState.cartItems);
+                setCartItems(
+                    storedState.cartItems.map((item) => {
+                        const multiplicity = normalizeMultiplicity(
+                            item?.multiplicity
+                        );
+                        const normalizedQuantity = normalizeOrderQuantity(
+                            item?.order_qty,
+                            multiplicity,
+                            Number(item?.available_qty),
+                            item?.source_type !== 'supplier'
+                        );
+                        return {
+                            ...item,
+                            multiplicity,
+                            order_qty: normalizedQuantity || multiplicity,
+                        };
+                    })
+                );
             }
             if (Array.isArray(storedState.selectedCartKeys)) {
                 setSelectedCartKeys(storedState.selectedCartKeys);
@@ -2663,27 +2826,24 @@ const AutopartOffers = () => {
             if (!existing) {
                 return [...prev, nextItem];
             }
-            const maxValue = Number(
-                nextItem.available_qty ?? existing.available_qty ?? Number.NaN
-            );
             return prev.map((item) => {
                 if (item.cart_key !== nextItem.cart_key) {
                     return item;
                 }
-                const nextQty =
-                    item.source_type === 'supplier'
-                        ? normalizePositiveQty(Number(item.order_qty || 1) + 1)
-                        : clampQty(Number(item.order_qty || 1) + 1, maxValue);
                 return {
                     ...item,
                     ...nextItem,
-                    order_qty: nextQty,
                 };
             });
         });
     };
 
-    const addLocalOfferToCart = (record) => {
+    const addLocalOfferToCart = (record, requestedQuantity) => {
+        const multiplicity = normalizeMultiplicity(record.multiplicity);
+        const orderQuantity = normalizeOrderQuantity(
+            requestedQuantity,
+            multiplicity
+        );
         upsertCartItem({
             cart_key: buildCartKey('supplier', record),
             source_type: 'supplier',
@@ -2697,7 +2857,8 @@ const AutopartOffers = () => {
             name: record.name,
             price: Number(record.price ?? 0),
             available_qty: Number(record.quantity ?? 0),
-            order_qty: 1,
+            order_qty: orderQuantity,
+            multiplicity,
             min_delivery_day: record.min_delivery_day,
             max_delivery_day: record.max_delivery_day,
             is_own_price: Boolean(record.is_own_price),
@@ -2708,9 +2869,24 @@ const AutopartOffers = () => {
         message.success('Позиция добавлена в корзину');
     };
 
-    const addDragonzapOfferToCart = (record) => {
+    const addDragonzapOfferToCart = (record, requestedQuantity) => {
         const supplierId = record.supplier_id || record.provider_id || null;
         const hashKey = record.hash_key || record.api_hash || null;
+        const multiplicity = normalizeMultiplicity(
+            record.min_qnt ?? record.min_quantity ?? record.multiplicity
+        );
+        const orderQuantity = normalizeOrderQuantity(
+            requestedQuantity,
+            multiplicity,
+            Number(record.qnt ?? 0),
+            true
+        );
+        if (orderQuantity <= 0) {
+            message.warning(
+                `Остаток меньше минимальной кратности ${multiplicity}`
+            );
+            return;
+        }
         const supplierName = normalizeSupplierName(
             record.supplier_name || record.sup_logo || record.provider_name
         );
@@ -2727,7 +2903,8 @@ const AutopartOffers = () => {
             name: record.detail_name || record.name,
             price: Number(record.price ?? 0),
             available_qty: Number(record.qnt ?? 0),
-            order_qty: 1,
+            order_qty: orderQuantity,
+            multiplicity,
             min_delivery_day: record.min_delivery_day,
             max_delivery_day: record.max_delivery_day,
             hash_key: hashKey,
@@ -2744,13 +2921,18 @@ const AutopartOffers = () => {
                 if (item.cart_key !== cartKey) {
                     return item;
                 }
-                const nextQty =
-                    item.source_type === 'supplier'
-                        ? normalizePositiveQty(value)
-                        : clampQty(value, Number(item.available_qty));
+                const nextQty = normalizeOrderQuantity(
+                    value,
+                    item.multiplicity,
+                    Number(item.available_qty),
+                    item.source_type !== 'supplier'
+                );
                 return {
                     ...item,
-                    order_qty: nextQty,
+                    order_qty:
+                        nextQty > 0
+                            ? nextQty
+                            : normalizeMultiplicity(item.multiplicity),
                 };
             })
         );
@@ -3118,6 +3300,11 @@ const AutopartOffers = () => {
                         item.api_hash ??
                         item.system_hash ??
                         null;
+                    const multiplicity = normalizeMultiplicity(
+                        item.min_qnt ??
+                            item.min_quantity ??
+                            item.multiplicity
+                    );
                     return {
                         ...item,
                         oem,
@@ -3130,6 +3317,7 @@ const AutopartOffers = () => {
                         min_delivery_day: minDelivery,
                         max_delivery_day: maxDelivery,
                         hash_key: hashKey,
+                        min_qnt: multiplicity,
                     };
                 });
                 const qtyFiltered = normalizedList.filter((item) => {
@@ -3895,6 +4083,9 @@ const AutopartOffers = () => {
                             brand: item.brand_name,
                             name: item.name,
                             quantity: Number(item.order_qty),
+                            multiplicity: normalizeMultiplicity(
+                                item.multiplicity
+                            ),
                             price: Number(item.price),
                             min_delivery_day: item.min_delivery_day,
                             max_delivery_day: item.max_delivery_day,
@@ -4017,6 +4208,9 @@ const AutopartOffers = () => {
                             item.supplier_name || item.provider_name
                         ),
                         quantity: Number(item.order_qty),
+                        multiplicity: normalizeMultiplicity(
+                            item.multiplicity
+                        ),
                         confirmed_price: Number(item.price),
                         min_delivery_day: item.min_delivery_day,
                         max_delivery_day: item.max_delivery_day,
@@ -4101,6 +4295,11 @@ const AutopartOffers = () => {
             key: 'oem_number',
             width: 112,
             ellipsis: true,
+            render: (value, record) => (
+                <TurnoverTooltip autopartId={record.autopart_id} label={value}>
+                    <code>{value || '—'}</code>
+                </TurnoverTooltip>
+            ),
         },
         {
             title: 'Бренд',
@@ -4157,6 +4356,16 @@ const AutopartOffers = () => {
                 const bQty = Number(b.quantity ?? Number.NEGATIVE_INFINITY);
                 return aQty - bQty;
             },
+            render: (value, record) => (
+                <div>
+                    <div>{value ?? '—'}</div>
+                    {normalizeMultiplicity(record.multiplicity) > 1 ? (
+                        <div style={{ color: '#64748b', fontSize: 10 }}>
+                            кр. {normalizeMultiplicity(record.multiplicity)}
+                        </div>
+                    ) : null}
+                </div>
+            ),
         },
         {
             title: 'Срок',
@@ -4203,17 +4412,20 @@ const AutopartOffers = () => {
             title: '',
             key: 'add_to_cart',
             width: 48,
-            render: (_, record) => (
-                <Tooltip title="Добавить в корзину">
-                    <Button
-                        size="small"
-                        type="text"
-                        shape="circle"
-                        icon={<ShoppingCartOutlined />}
-                        onClick={() => addLocalOfferToCart(record)}
+            render: (_, record) => {
+                const cartKey = buildCartKey('supplier', record);
+                const currentQuantity = cartItems.find(
+                    (item) => item.cart_key === cartKey
+                )?.order_qty;
+                return (
+                    <OfferCartQuantityButton
+                        sourceType="supplier"
+                        record={record}
+                        currentQuantity={currentQuantity}
+                        onAdd={addLocalOfferToCart}
                     />
-                </Tooltip>
-            ),
+                );
+            },
         },
     ];
 
@@ -4255,7 +4467,12 @@ const AutopartOffers = () => {
                             textOverflow: 'ellipsis',
                         }}
                     >
-                        {record.oem || record.oem_number || '—'}
+                        <TurnoverTooltip
+                            autopartId={record.autopart_id}
+                            label={record.oem || record.oem_number}
+                        >
+                            <span>{record.oem || record.oem_number || '—'}</span>
+                        </TurnoverTooltip>
                     </div>
                     <div
                         style={{
@@ -4379,7 +4596,18 @@ const AutopartOffers = () => {
             dataIndex: 'qnt',
             key: 'qnt',
             width: 56,
-            render: (value) => (value === null || value === undefined ? '—' : value),
+            render: (value, record) => (
+                <div>
+                    <div>
+                        {value === null || value === undefined ? '—' : value}
+                    </div>
+                    {normalizeMultiplicity(record.min_qnt) > 1 ? (
+                        <div style={{ color: '#64748b', fontSize: 10 }}>
+                            кр. {normalizeMultiplicity(record.min_qnt)}
+                        </div>
+                    ) : null}
+                </div>
+            ),
         },
         {
             title: 'Срок',
@@ -4448,17 +4676,20 @@ const AutopartOffers = () => {
             title: '',
             key: 'add_to_cart',
             width: 48,
-            render: (_, record) => (
-                <Tooltip title="Добавить в корзину">
-                    <Button
-                        size="small"
-                        type="text"
-                        shape="circle"
-                        icon={<ShoppingCartOutlined />}
-                        onClick={() => addDragonzapOfferToCart(record)}
+            render: (_, record) => {
+                const cartKey = buildCartKey('dragonzap', record);
+                const currentQuantity = cartItems.find(
+                    (item) => item.cart_key === cartKey
+                )?.order_qty;
+                return (
+                    <OfferCartQuantityButton
+                        sourceType="dragonzap"
+                        record={record}
+                        currentQuantity={currentQuantity}
+                        onAdd={addDragonzapOfferToCart}
                     />
-                </Tooltip>
-            ),
+                );
+            },
         },
     ];
 
@@ -4607,6 +4838,12 @@ const AutopartOffers = () => {
                 const isSupplier = record.source_type === 'supplier';
                 const available = Number(record.available_qty ?? 0);
                 const ordered = Number(value ?? 0);
+                const multiplicity = normalizeMultiplicity(
+                    record.multiplicity
+                );
+                const maxOrderQty = !isSupplier
+                    ? maxOrderQuantityForOffer(available, multiplicity)
+                    : undefined;
                 const overAvailable =
                     isSupplier &&
                     Number.isFinite(available) &&
@@ -4614,12 +4851,10 @@ const AutopartOffers = () => {
                 return (
                     <Space direction="vertical" size={2} style={{ width: '100%' }}>
                         <InputNumber
-                            min={1}
-                            max={
-                                !isSupplier && Number(record.available_qty) > 0
-                                    ? Number(record.available_qty)
-                                    : undefined
-                            }
+                            min={multiplicity}
+                            max={maxOrderQty || undefined}
+                            step={multiplicity}
+                            precision={0}
                             value={value}
                             size="small"
                             status={overAvailable ? 'error' : undefined}
@@ -4628,6 +4863,11 @@ const AutopartOffers = () => {
                                 updateCartQty(record.cart_key, nextValue)
                             }
                         />
+                        {multiplicity > 1 ? (
+                            <span style={{ color: '#64748b', fontSize: 11 }}>
+                                кратно {multiplicity}
+                            </span>
+                        ) : null}
                         {overAvailable ? (
                             <Tooltip title="В прайсе поставщика указано меньшее количество. Заказ всё равно будет отправлен с введённым количеством.">
                                 <span style={{ color: '#dc2626', fontSize: 11 }}>
@@ -4889,16 +5129,18 @@ const AutopartOffers = () => {
             dataIndex: 'oem_number',
             key: 'oem_number',
             width: 140,
-            render: (value) => (
-                <code
-                    style={{
-                        background: '#f5f5f5',
-                        padding: '1px 4px',
-                        borderRadius: 3,
-                    }}
-                >
-                    {value || '—'}
-                </code>
+            render: (value, record) => (
+                <TurnoverTooltip autopartId={record.autopart_id} label={value}>
+                    <code
+                        style={{
+                            background: '#f5f5f5',
+                            padding: '1px 4px',
+                            borderRadius: 3,
+                        }}
+                    >
+                        {value || '—'}
+                    </code>
+                </TurnoverTooltip>
             ),
         },
         {
@@ -6141,6 +6383,23 @@ const AutopartOffers = () => {
                                             const rowBrand =
                                                 row.make_name || row.brand_name || '—';
                                             const rowQty = Number(row.qnt ?? 0);
+                                            const rowMultiplicity = normalizeMultiplicity(
+                                                row.min_qnt ??
+                                                    row.min_quantity ??
+                                                    row.multiplicity
+                                            );
+                                            const rowMaxOrderQty =
+                                                maxOrderQuantityForOffer(
+                                                    rowQty,
+                                                    rowMultiplicity
+                                                );
+                                            const rowOrderQty =
+                                                normalizeOrderQuantity(
+                                                    bestSupplierQty,
+                                                    rowMultiplicity,
+                                                    rowQty,
+                                                    true
+                                                );
                                             const rowSupplier =
                                                 normalizeSupplierName(
                                                     row.supplier_name ||
@@ -6215,26 +6474,31 @@ const AutopartOffers = () => {
                                                     {row.price != null ? (
                                                         <Space>
                                                             <InputNumber
-                                                                min={1}
-                                                                max={rowQty > 0 ? rowQty : undefined}
-                                                                value={bestSupplierQty}
+                                                                min={rowMultiplicity}
+                                                                max={rowMaxOrderQty || undefined}
+                                                                step={rowMultiplicity}
+                                                                precision={0}
+                                                                value={
+                                                                    rowOrderQty || rowMultiplicity
+                                                                }
                                                                 size="small"
                                                                 style={{ width: 70 }}
-                                                                onChange={(v) => setBestSupplierQty(v || 1)}
+                                                                onChange={(v) =>
+                                                                    setBestSupplierQty(
+                                                                        v || rowMultiplicity
+                                                                    )
+                                                                }
                                                             />
                                                             <Button
                                                                 type="primary"
                                                                 size="small"
                                                                 icon={<ShoppingCartOutlined />}
+                                                                disabled={rowMaxOrderQty <= 0}
                                                                 onClick={() => {
-                                                                    addDragonzapOfferToCart(row);
-                                                                    if (bestSupplierQty > 1) {
-                                                                        const cartKey = buildCartKey(
-                                                                            'dragonzap',
-                                                                            row
-                                                                        );
-                                                                        updateCartQty(cartKey, bestSupplierQty);
-                                                                    }
+                                                                    addDragonzapOfferToCart(
+                                                                        row,
+                                                                        rowOrderQty
+                                                                    );
                                                                 }}
                                                             >
                                                                 В корзину
