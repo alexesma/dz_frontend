@@ -809,6 +809,8 @@ const ProviderPage = () => {
                 ...config,
                 exclude_positions: config.exclude_positions || [],
                 excluded_brands: config.excluded_brands || [],
+                mailing_included_brands:
+                    config.mailing_included_brands || [],
                 max_days_without_update: config.max_days_without_update ?? 3,
                 is_active: config.is_active ?? true,
                 use_for_order_insights:
@@ -842,6 +844,7 @@ const ProviderPage = () => {
             configForm.setFieldsValue({
                 exclude_positions: [],
                 excluded_brands: [],
+                mailing_included_brands: [],
                 max_days_without_update: 3,
                 is_active: true,
                 use_for_order_insights: false,
@@ -867,10 +870,18 @@ const ProviderPage = () => {
                         .filter(Boolean)
                 ),
             ];
+            const cleanedMailingIncludedBrands = [
+                ...new Set(
+                    (values.mailing_included_brands || [])
+                        .map((brand) => String(brand || "").trim().toUpperCase())
+                        .filter(Boolean)
+                ),
+            ];
             const payload = {
                 ...values,
                 exclude_positions: cleanedExcludePositions,
                 excluded_brands: cleanedExcludedBrands,
+                mailing_included_brands: cleanedMailingIncludedBrands,
                 start_row: adjustForPayload(values.start_row, configNumberingFromOne),
                 oem_col: adjustForPayload(values.oem_col, configNumberingFromOne),
                 brand_col: adjustForPayload(values.brand_col, configNumberingFromOne),
@@ -2303,6 +2314,11 @@ const ProviderPage = () => {
                     </Text>
                     <Text type="secondary">
                         Позиции: {(record.exclude_positions || []).length}
+                    </Text>
+                    <Text type="secondary">
+                        В рассылку: {(record.mailing_included_brands || []).length
+                            ? `${record.mailing_included_brands.length} брендов`
+                            : "все бренды"}
                     </Text>
                 </Space>
             ),
@@ -3963,6 +3979,23 @@ const ProviderPage = () => {
                             showSearch
                             optionFilterProp="label"
                             placeholder="Выберите бренды"
+                            options={markupBrandOptions}
+                            loading={markupBrandLoading}
+                            tokenSeparators={[","]}
+                        />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="mailing_included_brands"
+                        label="В рассылку только бренды"
+                        extra="Белый список действует только при формировании клиентских прайсов. Прайс поставщика загружается и хранится полностью. Если список пустой, в рассылку доступны все бренды."
+                    >
+                        <Select
+                            mode="tags"
+                            allowClear
+                            showSearch
+                            optionFilterProp="label"
+                            placeholder="Все бренды"
                             options={markupBrandOptions}
                             loading={markupBrandLoading}
                             tokenSeparators={[","]}
