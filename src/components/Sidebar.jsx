@@ -95,6 +95,7 @@ const NAVIGATION_SEARCH_ITEMS = [
     { path: '/admin/price-control', title: 'Контроль цен', section: 'Админ', keywords: 'прайс отклонения скачки проверка', roles: ['admin'] },
     { path: '/admin/customer-pricelists', title: 'Прайсы клиентов', section: 'Админ', keywords: 'рассылка фильтры наценка публикация', roles: ['admin'] },
     { path: '/admin/brands', title: 'Бренды', section: 'Админ', keywords: 'марки производители синонимы', roles: ['admin'] },
+    { path: '/admin/honest-sign-categories', title: 'Категории Честного знака', section: 'Админ', keywords: 'честный знак категории товарные группы маркировка чз autofluids tires', roles: ['admin'] },
     { path: '/admin/order-status-mappings', title: 'Статусы заказов', section: 'Админ', keywords: 'сопоставление состояния parts soft', roles: ['admin'] },
     { path: '/admin/monitor', title: 'Мониторинг', section: 'Админ', keywords: 'задания ошибки журнал здоровье relay', roles: ['admin'] },
     { path: '/admin/order-windows', title: 'Окна заказов', section: 'Админ', keywords: 'расписание время закупки', roles: ['admin'] },
@@ -190,6 +191,7 @@ const Sidebar = () => {
         if (path.startsWith('/admin/price-control')) return 'admin-price-control';
         if (path.startsWith('/admin/customer-pricelists')) return 'admin-customer-pricelists';
         if (path.startsWith('/admin/brands')) return 'admin-brands';
+        if (path.startsWith('/admin/honest-sign-categories')) return 'admin-honest-sign-categories';
         if (path.startsWith('/admin/order-status-mappings')) return 'admin-order-status-mappings';
         if (path.startsWith('/admin/monitor')) return 'admin-monitor';
         if (path.startsWith('/admin/order-windows')) return 'admin-order-windows';
@@ -433,6 +435,9 @@ const Sidebar = () => {
                     </Menu.Item>
                     <Menu.Item key="admin-brands" icon={<TagsOutlined />}>
                         <Link to="/admin/brands">Бренды</Link>
+                    </Menu.Item>
+                    <Menu.Item key="admin-honest-sign-categories" icon={<QrcodeOutlined />}>
+                        <Link to="/admin/honest-sign-categories">Категории ЧЗ</Link>
                     </Menu.Item>
                     <Menu.Item key="admin-order-status-mappings" icon={<TagsOutlined />}>
                         <Link to="/admin/order-status-mappings">Статусы заказов</Link>

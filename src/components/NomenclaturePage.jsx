@@ -238,6 +238,10 @@ const NomenclaturePage = () => {
     const [contentFilter, setContentFilter] = useState('all');
     const [linksFilter, setLinksFilter] = useState('all');
     const [turnoverFilter, setTurnoverFilter] = useState('all');
+    const [hsFilter, setHsFilter] = useState(() => {
+        const value = Number(searchParams.get('honest_sign_category_id'));
+        return Number.isInteger(value) && value > 0 ? value : 'all';
+    });
     const searchTimer = useRef(null);
     const brandSearchTimer = useRef(null);
 
@@ -324,7 +328,7 @@ const NomenclaturePage = () => {
         const oem = searchParams.get('oem');
         if (q) {
             setQOem(q);
-            fetchList(q, '', '', 1);
+            fetchList(q, '', '', 1, 'all', 'all', 'all', 'all', hsFilter);
         }
         if (create === '1') {
             openCreate();
@@ -342,6 +346,7 @@ const NomenclaturePage = () => {
         content = 'all',
         links = 'all',
         turnover = 'all',
+        honestSign = 'all',
     ) => {
         setLoading(true);
         try {
@@ -354,6 +359,7 @@ const NomenclaturePage = () => {
             if (content !== 'all') params.content = content;
             if (links !== 'all') params.links = links;
             if (turnover !== 'all') params.turnover = turnover;
+            if (honestSign !== 'all') params.honest_sign_category_id = honestSign;
             const { data } = await getCatalog(params);
             setItems(data.items || []);
             setTotal(data.total || 0);
@@ -368,7 +374,7 @@ const NomenclaturePage = () => {
     useEffect(() => {
         fetchList(
             qOem, qName, qBrand, page, sourceFilter, contentFilter,
-            linksFilter, turnoverFilter,
+            linksFilter, turnoverFilter, hsFilter,
         );
     }, [page]); // eslint-disable-line
 
@@ -378,7 +384,7 @@ const NomenclaturePage = () => {
         searchTimer.current = setTimeout(
             () => fetchList(
                 oem, name, brand, 1, sourceFilter, contentFilter, linksFilter,
-                turnoverFilter,
+                turnoverFilter, hsFilter,
             ),
             400,
         );
@@ -392,7 +398,7 @@ const NomenclaturePage = () => {
         setPage(1);
         void fetchList(
             qOem, qName, qBrand, 1, value, contentFilter, linksFilter,
-            turnoverFilter,
+            turnoverFilter, hsFilter,
         );
     };
     const handleContentFilter = (value) => {
@@ -400,7 +406,7 @@ const NomenclaturePage = () => {
         setPage(1);
         void fetchList(
             qOem, qName, qBrand, 1, sourceFilter, value, linksFilter,
-            turnoverFilter,
+            turnoverFilter, hsFilter,
         );
     };
     const handleLinksFilter = (value) => {
@@ -408,7 +414,7 @@ const NomenclaturePage = () => {
         setPage(1);
         void fetchList(
             qOem, qName, qBrand, 1, sourceFilter, contentFilter, value,
-            turnoverFilter,
+            turnoverFilter, hsFilter,
         );
     };
     const handleTurnoverFilter = (value) => {
@@ -416,7 +422,15 @@ const NomenclaturePage = () => {
         setPage(1);
         void fetchList(
             qOem, qName, qBrand, 1, sourceFilter, contentFilter, linksFilter,
-            value,
+            value, hsFilter,
+        );
+    };
+    const handleHsFilter = (value) => {
+        setHsFilter(value);
+        setPage(1);
+        void fetchList(
+            qOem, qName, qBrand, 1, sourceFilter, contentFilter, linksFilter,
+            turnoverFilter, value,
         );
     };
 
@@ -595,7 +609,10 @@ const NomenclaturePage = () => {
             }
             message.success(editingId ? 'Сохранено' : 'Позиция создана');
             setDrawerOpen(false);
-            fetchList(qOem, qName, qBrand, page, sourceFilter, contentFilter);
+            fetchList(
+                qOem, qName, qBrand, page, sourceFilter, contentFilter,
+                linksFilter, turnoverFilter, hsFilter,
+            );
             // Refresh detail panel if this was the selected row
             if (selectedRow?.id === partId) {
                 const { data } = await getAutopartDetail(partId);
@@ -1216,6 +1233,17 @@ const NomenclaturePage = () => {
                         { value: 'top', label: 'Топ-рекомендации' },
                         { value: 'market', label: 'Рыночные возможности' },
                         { value: 'needs_order', label: 'Требуется заказать' },
+                    ]}
+                />
+                <Select
+                    value={hsFilter}
+                    onChange={handleHsFilter}
+                    style={{ width: 250 }}
+                    showSearch
+                    optionFilterProp="label"
+                    options={[
+                        { value: 'all', label: 'Все категории ЧЗ' },
+                        ...hsCategories,
                     ]}
                 />
                 <Input

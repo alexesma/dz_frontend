@@ -52,6 +52,7 @@ import AdminMonitoringPage from './components/AdminMonitoringPage';
 import PriceControlPage from './components/PriceControlPage';
 import CustomerPricelistStudioPage from './components/CustomerPricelistStudioPage';
 import BrandManagementPage from './components/BrandManagementPage';
+import HonestSignCategoriesPage from './components/HonestSignCategoriesPage';
 import OrderStatusMappingsPage from './components/OrderStatusMappingsPage';
 import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
@@ -254,6 +255,7 @@ const AppRoutes = () => (
         <Route path="/admin/price-control" element={<RequireAdmin><PriceControlPage /></RequireAdmin>} />
         <Route path="/admin/customer-pricelists" element={<RequireAdmin><CustomerPricelistStudioPage /></RequireAdmin>} />
         <Route path="/admin/brands" element={<RequireAdmin><BrandManagementPage /></RequireAdmin>} />
+        <Route path="/admin/honest-sign-categories" element={<RequireAdmin><HonestSignCategoriesPage /></RequireAdmin>} />
         <Route path="/admin/order-status-mappings" element={<RequireAdmin><OrderStatusMappingsPage /></RequireAdmin>} />
         <Route path="/admin/order-windows" element={<RequireAdmin><OrderWindowsPage /></RequireAdmin>} />
         <Route path="/watchlist" element={<RequireAuth><WatchlistPage /></RequireAuth>} />

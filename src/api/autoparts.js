@@ -111,6 +111,12 @@ export const getHonestSignCategories = () =>
 export const createHonestSignCategory = (data) =>
     api.post('/honest-sign-categories/', data);
 
+export const updateHonestSignCategory = (categoryId, data) =>
+    api.patch(`/honest-sign-categories/${categoryId}/`, data);
+
+export const deleteHonestSignCategory = (categoryId) =>
+    api.delete(`/honest-sign-categories/${categoryId}/`);
+
 export const assignHonestSignCategories = (autopartId, categoryIds) =>
     api.post(`/autoparts/${autopartId}/honest-sign-categories/`, categoryIds);
 
