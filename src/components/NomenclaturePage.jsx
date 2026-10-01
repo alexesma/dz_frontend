@@ -578,6 +578,20 @@ const NomenclaturePage = () => {
         }
     };
 
+    // Прямой переход из связанных справочников сразу открывает нужную
+    // карточку на редактирование, даже если позиция находится не на первой
+    // странице текущего списка номенклатуры.
+    useEffect(() => {
+        const autopartId = Number(searchParams.get('autopart_id'));
+        if (
+            searchParams.get('edit') === '1'
+            && Number.isInteger(autopartId)
+            && autopartId > 0
+        ) {
+            void openEdit({ id: autopartId });
+        }
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
     // ── save main form ────────────────────────────────────────────────────────
     const handleSave = async () => {
         let values;

@@ -18,22 +18,26 @@ import {
     message,
 } from 'antd';
 import {
+    ArrowRightOutlined,
     DeleteOutlined,
     EditOutlined,
     PlusOutlined,
     ReloadOutlined,
     SafetyCertificateOutlined,
     SearchOutlined,
+    UnorderedListOutlined,
 } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
 import {
     createHonestSignCategory,
     deleteHonestSignCategory,
+    getCatalog,
     getHonestSignCategories,
     updateHonestSignCategory,
 } from '../api/autoparts';
 
 const { Paragraph, Text, Title } = Typography;
+const POSITIONS_PAGE_SIZE = 20;
 
 const errorText = (error, fallback) => {
     const detail = error?.response?.data?.detail;
@@ -53,6 +57,11 @@ const HonestSignCategoriesPage = () => {
     const [search, setSearch] = useState('');
     const [editorOpen, setEditorOpen] = useState(false);
     const [editingCategory, setEditingCategory] = useState(null);
+    const [positionsCategory, setPositionsCategory] = useState(null);
+    const [positions, setPositions] = useState([]);
+    const [positionsTotal, setPositionsTotal] = useState(0);
+    const [positionsPage, setPositionsPage] = useState(1);
+    const [positionsLoading, setPositionsLoading] = useState(false);
     const [form] = Form.useForm();
 
     const loadCategories = useCallback(async () => {
@@ -151,6 +160,85 @@ const HonestSignCategoriesPage = () => {
         }
     };
 
+    const loadCategoryPositions = async (category, page = 1) => {
+        if (!category?.id) return;
+        setPositionsCategory(category);
+        setPositionsPage(page);
+        setPositionsLoading(true);
+        try {
+            const { data } = await getCatalog({
+                honest_sign_category_id: category.id,
+                offset: (page - 1) * POSITIONS_PAGE_SIZE,
+                limit: POSITIONS_PAGE_SIZE,
+            });
+            setPositions(data?.items || []);
+            setPositionsTotal(Number(data?.total || 0));
+        } catch (error) {
+            message.error(errorText(error, 'Не удалось загрузить позиции категории'));
+        } finally {
+            setPositionsLoading(false);
+        }
+    };
+
+    const closeCategoryPositions = () => {
+        setPositionsCategory(null);
+        setPositions([]);
+        setPositionsTotal(0);
+        setPositionsPage(1);
+    };
+
+    const positionColumns = [
+        {
+            title: 'Бренд',
+            dataIndex: 'brand_name',
+            key: 'brand_name',
+            width: 150,
+            render: (value) => value || <Text type="secondary">—</Text>,
+        },
+        {
+            title: 'Артикул',
+            dataIndex: 'oem_number',
+            key: 'oem_number',
+            width: 180,
+            render: (value, position) => (
+                <Link
+                    to={`/autoparts/nomenclature?honest_sign_category_id=${positionsCategory?.id}&autopart_id=${position.id}&edit=1`}
+                >
+                    <Text code>{value}</Text>
+                </Link>
+            ),
+        },
+        {
+            title: 'Наименование',
+            dataIndex: 'name',
+            key: 'name',
+            ellipsis: true,
+            render: (value) => value || <Text type="secondary">Без наименования</Text>,
+        },
+        {
+            title: 'Остаток',
+            dataIndex: 'stock_quantity',
+            key: 'stock_quantity',
+            width: 100,
+            align: 'right',
+            render: (value) => Number(value || 0),
+        },
+        {
+            title: '',
+            key: 'open',
+            width: 130,
+            render: (_, position) => (
+                <Link
+                    to={`/autoparts/nomenclature?honest_sign_category_id=${positionsCategory?.id}&autopart_id=${position.id}&edit=1`}
+                >
+                    <Button type="primary" ghost size="small" icon={<EditOutlined />}>
+                        Открыть
+                    </Button>
+                </Link>
+            ),
+        },
+    ];
+
     const columns = [
         {
             title: 'Категория',
@@ -187,9 +275,13 @@ const HonestSignCategoriesPage = () => {
                 if (!count) return tag;
                 return (
                     <Tooltip title="Показать позиции этой категории в номенклатуре">
-                        <Link to={`/autoparts/nomenclature?honest_sign_category_id=${category.id}`}>
+                        <Button
+                            type="link"
+                            onClick={() => loadCategoryPositions(category, 1)}
+                            style={{ height: 'auto', padding: 0 }}
+                        >
                             {tag}
-                        </Link>
+                        </Button>
                     </Tooltip>
                 );
             },
@@ -197,11 +289,19 @@ const HonestSignCategoriesPage = () => {
         {
             title: 'Действия',
             key: 'actions',
-            width: 120,
+            width: 160,
             render: (_, category) => {
                 const count = Number(category.autopart_count || 0);
                 return (
                     <Space size={4}>
+                        <Tooltip title={count ? 'Показать позиции' : 'В категории нет позиций'}>
+                            <Button
+                                disabled={!count}
+                                aria-label={`Показать позиции ${category.name}`}
+                                icon={<UnorderedListOutlined />}
+                                onClick={() => loadCategoryPositions(category, 1)}
+                            />
+                        </Tooltip>
                         <Tooltip title="Редактировать">
                             <Button
                                 aria-label={`Редактировать ${category.name}`}
@@ -304,6 +404,51 @@ const HonestSignCategoriesPage = () => {
                     scroll={{ x: 680 }}
                 />
             </Card>
+
+            <Modal
+                open={Boolean(positionsCategory)}
+                centered
+                width={1050}
+                title={positionsCategory
+                    ? `Позиции категории «${positionsCategory.name}»`
+                    : 'Позиции категории'}
+                onCancel={closeCategoryPositions}
+                footer={positionsCategory ? (
+                    <Space>
+                        <Button onClick={closeCategoryPositions}>Закрыть</Button>
+                        <Link
+                            to={`/autoparts/nomenclature?honest_sign_category_id=${positionsCategory.id}`}
+                        >
+                            <Button type="primary" icon={<ArrowRightOutlined />}>
+                                Открыть все в Номенклатуре
+                            </Button>
+                        </Link>
+                    </Space>
+                ) : null}
+                destroyOnClose
+            >
+                <Paragraph type="secondary">
+                    Нажмите на артикул или «Открыть», чтобы перейти прямо к редактированию
+                    карточки товара.
+                </Paragraph>
+                <Table
+                    rowKey="id"
+                    size="small"
+                    columns={positionColumns}
+                    dataSource={positions}
+                    loading={positionsLoading}
+                    scroll={{ x: 760 }}
+                    pagination={{
+                        current: positionsPage,
+                        pageSize: POSITIONS_PAGE_SIZE,
+                        total: positionsTotal,
+                        showSizeChanger: false,
+                        showTotal: (total) => `Всего позиций: ${total}`,
+                        onChange: (page) => loadCategoryPositions(positionsCategory, page),
+                    }}
+                    locale={{ emptyText: 'В категории нет позиций' }}
+                />
+            </Modal>
 
             <Modal
                 open={editorOpen}
