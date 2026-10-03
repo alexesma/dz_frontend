@@ -287,6 +287,10 @@ const NomenclaturePage = () => {
 
     // ── reference data ────────────────────────────────────────────────────────
     const [brands, setBrands] = useState([]);
+    // Результат последнего поиска в выпадашке бренда. null — поиска ещё не было
+    // и показываем весь загруженный справочник.
+    const [brandSearchItems, setBrandSearchItems] = useState(null);
+    const brandSearchSeq = useRef(0);
     const [categories, setCategories] = useState([]);
     const [storageLocations, setStorageLocations] = useState([]);
 
@@ -308,16 +312,38 @@ const NomenclaturePage = () => {
 
     const searchBrandOptions = useCallback((query = '') => {
         if (brandSearchTimer.current) clearTimeout(brandSearchTimer.current);
+        const needle = query.trim();
         brandSearchTimer.current = setTimeout(async () => {
+            const seq = ++brandSearchSeq.current;
             try {
-                const { data } = await lookupBrands(query.trim(), 100);
-                mergeBrandOptions(data);
+                const { data } = await lookupBrands(needle, needle ? 100 : 300);
+                // Ответы могут прийти не по порядку — берём только последний запрос.
+                if (seq !== brandSearchSeq.current) return;
+                const items = (data || []).map((item) => ({
+                    value: Number(item.id ?? item.value),
+                    label: String(item.name ?? item.label ?? '').trim(),
+                })).filter((item) => Number.isFinite(item.value) && item.label);
+                mergeBrandOptions(items);
+                setBrandSearchItems(items);
             } catch {
                 // Текущий выбранный бренд остаётся в options; сбой поиска
                 // не должен превращать его название обратно в числовой id.
             }
         }, 250);
     }, [mergeBrandOptions]);
+
+    // В выпадашке — только найденное по запросу (плюс выбранный бренд, чтобы
+    // его название не превращалось в число); накопленный справочник нужен
+    // лишь для подписей.
+    const brandSelectOptions = useMemo(() => {
+        if (brandSearchItems === null) return brands;
+        const selectedId = Number(form.getFieldValue('brand_id'));
+        const selected = brands.find((item) => Number(item.value) === selectedId);
+        if (selected && !brandSearchItems.some((item) => item.value === selected.value)) {
+            return [selected, ...brandSearchItems];
+        }
+        return brandSearchItems;
+    }, [brands, brandSearchItems, form]);
 
     const applicTreeData = useMemo(() => buildTree(allApplicNodes), [allApplicNodes]);
 
@@ -1519,7 +1545,7 @@ const NomenclaturePage = () => {
                                                 onOpenChange={(open) => {
                                                     if (open) searchBrandOptions('');
                                                 }}
-                                                options={brands}
+                                                options={brandSelectOptions}
                                                 placeholder="Начните вводить название бренда"
                                             />
                                         </Form.Item>
