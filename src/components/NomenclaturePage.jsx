@@ -52,8 +52,11 @@ import {
     uploadAutopartPhoto,
     replaceAutopartPhoto,
     deleteAutopartPhoto,
+    checkAutopartDelete,
+    deleteAutopart,
 } from '../api/autoparts';
 import { lookupBrands } from '../api/brands';
+import useAuth from '../context/useAuth';
 import { getCategories } from '../api/categories';
 import TurnoverTooltip from './TurnoverTooltip';
 
@@ -257,7 +260,9 @@ const NomenclaturePage = () => {
 
     // ── drawer state ──────────────────────────────────────────────────────────
     const [drawerOpen, setDrawerOpen] = useState(false);
+    const { user } = useAuth();
     const [editingId, setEditingId] = useState(null);
+    const [deleting, setDeleting] = useState(false);
     const [drawerLoading, setDrawerLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [editingDetail, setEditingDetail] = useState(null);
@@ -528,6 +533,75 @@ const NomenclaturePage = () => {
         setSelectedHsIds([]);
         setSelectedApplicIds([]);
         setDrawerOpen(true);
+    };
+
+    const handleDeleteAutopart = async () => {
+        if (!editingId) return;
+        setDeleting(true);
+        try {
+            const { data: check } = await checkAutopartDelete(editingId);
+            const renderRows = (rows) => (
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                    {rows.map((row) => (
+                        <li key={row.label}>{row.label}: {row.count}</li>
+                    ))}
+                </ul>
+            );
+            if (!check.can_delete) {
+                Modal.warning({
+                    title: 'Позицию нельзя удалить',
+                    content: (
+                        <div>
+                            На неё есть документы или остатки:
+                            {renderRows(check.blockers)}
+                            <div style={{ marginTop: 8 }}>
+                                Вместо удаления можно перенести позицию в другой
+                                бренд или поправить данные в карточке.
+                            </div>
+                        </div>
+                    ),
+                });
+                return;
+            }
+            Modal.confirm({
+                title: 'Удалить позицию?',
+                okText: 'Удалить',
+                okButtonProps: { danger: true },
+                cancelText: 'Отмена',
+                content: (
+                    <div>
+                        Позиция будет удалена без возможности восстановления.
+                        {check.will_remove.length > 0 && (
+                            <>
+                                {' '}Вместе с ней удалятся:
+                                {renderRows(check.will_remove)}
+                            </>
+                        )}
+                    </div>
+                ),
+                onOk: async () => {
+                    try {
+                        await deleteAutopart(editingId);
+                        message.success('Позиция удалена');
+                        setDrawerOpen(false);
+                        setEditingId(null);
+                        fetchList(
+                            qOem, qName, qBrand, page, sourceFilter, contentFilter,
+                            linksFilter, turnoverFilter, hsFilter,
+                        );
+                    } catch (err) {
+                        const detail = err?.response?.data?.detail;
+                        message.error(
+                            typeof detail === 'string' ? detail : 'Не удалось удалить позицию'
+                        );
+                    }
+                },
+            });
+        } catch (err) {
+            message.error(err?.response?.data?.detail || 'Не удалось проверить позицию');
+        } finally {
+            setDeleting(false);
+        }
     };
 
     const openEdit = async (record, e) => {
@@ -1514,12 +1588,26 @@ const NomenclaturePage = () => {
                 width={1180}
                 loading={drawerLoading}
                 footer={
-                    <Space>
-                        <Button onClick={() => setDrawerOpen(false)}>Отмена</Button>
-                        <Button type="primary" onClick={handleSave} loading={saving}>
-                            Сохранить
-                        </Button>
-                    </Space>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <div>
+                            {editingId && user?.role === 'admin' && (
+                                <Button
+                                    danger
+                                    icon={<DeleteOutlined />}
+                                    onClick={handleDeleteAutopart}
+                                    loading={deleting}
+                                >
+                                    Удалить позицию
+                                </Button>
+                            )}
+                        </div>
+                        <Space>
+                            <Button onClick={() => setDrawerOpen(false)}>Отмена</Button>
+                            <Button type="primary" onClick={handleSave} loading={saving}>
+                                Сохранить
+                            </Button>
+                        </Space>
+                    </div>
                 }
                 styles={{ body: { maxHeight: '78vh', overflowY: 'auto' } }}
                 destroyOnClose

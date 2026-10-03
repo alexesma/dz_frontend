@@ -141,3 +141,10 @@ export const lookupPartPhotos = (items) =>
 // Флаги «топ-рекомендация» / «рыночная возможность» пачкой — значок виден без наведения
 export const getTurnoverFlags = (ids) =>
     api.post('/autoparts/turnover-flags/', { ids });
+
+// Удаление позиции: сначала проверка, что на неё нет документов и остатков
+export const checkAutopartDelete = (id) =>
+    api.get(`/autoparts/${id}/delete-check/`);
+
+export const deleteAutopart = (id) =>
+    api.delete(`/autoparts/${id}/`);
