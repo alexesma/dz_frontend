@@ -35,3 +35,16 @@ export const getMissingBrandsFromPricelists = () =>
 
 export const resolveMissingBrand = (payload) =>
     api.post('/brand/missing-from-pricelists/resolve', payload);
+
+export const deleteBrand = (brandId) => api.delete(`/brand/${brandId}`);
+
+export const getBrandUsage = (brandId) => api.get(`/brand/${brandId}/usage/`);
+
+export const getBrandAutoparts = (brandId, params = {}) =>
+    api.get(`/brand/${brandId}/autoparts/`, { params });
+
+export const moveBrandAutoparts = (brandId, autopartIds, targetBrandId) =>
+    api.post(`/brand/${brandId}/autoparts/move`, {
+        autopart_ids: autopartIds,
+        target_brand_id: targetBrandId,
+    });

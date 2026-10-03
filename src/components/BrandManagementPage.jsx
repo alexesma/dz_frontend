@@ -6,6 +6,7 @@ import {
     Form,
     Input,
     Modal,
+    Popconfirm,
     Select,
     Space,
     Spin,
@@ -15,12 +16,24 @@ import {
     Typography,
     message,
 } from 'antd';
-import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+    DeleteOutlined,
+    EditOutlined,
+    ExportOutlined,
+    PlusOutlined,
+    ReloadOutlined,
+    SwapOutlined,
+} from '@ant-design/icons';
+import { Link } from 'react-router-dom';
 import {
     addBrandSynonyms,
     createBrand,
+    deleteBrand,
+    getBrandAutoparts,
+    getBrandUsage,
     getBrands,
     getMissingBrandsFromPricelists,
+    moveBrandAutoparts,
     removeBrandSynonyms,
     resolveMissingBrand,
     updateBrand,
@@ -72,6 +85,16 @@ const BrandManagementPage = () => {
     const [missingLoading, setMissingLoading] = useState(false);
     const [resolveModalOpen, setResolveModalOpen] = useState(false);
     const [resolvingBrandRow, setResolvingBrandRow] = useState(null);
+    const [editModalOpen, setEditModalOpen] = useState(false);
+    const [usage, setUsage] = useState(null);
+    const [partsLoading, setPartsLoading] = useState(false);
+    const [parts, setParts] = useState({ total: 0, items: [] });
+    const [partsQuery, setPartsQuery] = useState('');
+    const [partsPage, setPartsPage] = useState(1);
+    const [selectedPartIds, setSelectedPartIds] = useState([]);
+    const [moveModalOpen, setMoveModalOpen] = useState(false);
+    const [moveTargetId, setMoveTargetId] = useState(null);
+    const [editForm] = Form.useForm();
     const [createForm] = Form.useForm();
     const [resolveForm] = Form.useForm();
 
@@ -164,6 +187,161 @@ const BrandManagementPage = () => {
                 label: `${item.name} (#${item.id})`,
             }));
     }, [brands, selectedBrand, selectedSynonyms]);
+
+    const PARTS_PAGE_SIZE = 10;
+
+    const loadBrandParts = useCallback(async () => {
+        if (!selectedBrandId) {
+            setParts({ total: 0, items: [] });
+            setUsage(null);
+            return;
+        }
+        setPartsLoading(true);
+        try {
+            const [usageResponse, partsResponse] = await Promise.all([
+                getBrandUsage(selectedBrandId),
+                getBrandAutoparts(selectedBrandId, {
+                    q: partsQuery || undefined,
+                    limit: PARTS_PAGE_SIZE,
+                    offset: (partsPage - 1) * PARTS_PAGE_SIZE,
+                }),
+            ]);
+            setUsage(usageResponse.data);
+            setParts(partsResponse.data);
+        } catch {
+            message.error('Не удалось загрузить позиции бренда');
+        } finally {
+            setPartsLoading(false);
+        }
+    }, [selectedBrandId, partsQuery, partsPage]);
+
+    useEffect(() => {
+        loadBrandParts();
+    }, [loadBrandParts]);
+
+    useEffect(() => {
+        setPartsQuery('');
+        setPartsPage(1);
+        setSelectedPartIds([]);
+    }, [selectedBrandId]);
+
+    const handleOpenEditModal = () => {
+        if (!selectedBrand) {
+            return;
+        }
+        editForm.setFieldsValue({
+            name: selectedBrand.name,
+            country_of_origin: selectedBrand.country_of_origin || undefined,
+            website: selectedBrand.website || undefined,
+            description: selectedBrand.description || undefined,
+            main_brand: Boolean(selectedBrand.main_brand),
+        });
+        setEditModalOpen(true);
+    };
+
+    const handleEditBrand = async () => {
+        try {
+            const values = await editForm.validateFields();
+            setSaving(true);
+            await updateBrand(selectedBrand.id, {
+                name: String(values.name || '').trim(),
+                country_of_origin: values.country_of_origin,
+                website: values.website || null,
+                description: values.description || null,
+                main_brand: Boolean(values.main_brand),
+            });
+            message.success('Бренд обновлён');
+            setEditModalOpen(false);
+            await loadBrands();
+        } catch (err) {
+            if (err?.errorFields) {
+                return;
+            }
+            message.error(
+                err?.response?.data?.detail || 'Не удалось обновить бренд'
+            );
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleDeleteBrand = async () => {
+        if (!selectedBrand) {
+            return;
+        }
+        setSaving(true);
+        try {
+            await deleteBrand(selectedBrand.id);
+            message.success(`Бренд ${selectedBrand.name} удалён`);
+            await loadBrands();
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail || 'Не удалось удалить бренд'
+            );
+            await loadBrandParts();
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleMoveParts = async () => {
+        if (!selectedBrand || !moveTargetId || !selectedPartIds.length) {
+            return;
+        }
+        setSaving(true);
+        try {
+            const { data } = await moveBrandAutoparts(
+                selectedBrand.id,
+                selectedPartIds,
+                moveTargetId
+            );
+            if (data.skipped?.length) {
+                Modal.warning({
+                    title: `Перенесено: ${data.moved}, пропущено: ${data.skipped.length}`,
+                    content: (
+                        <div>
+                            В целевом бренде уже есть такие артикулы:
+                            <div style={{ marginTop: 6 }}>
+                                {data.skipped.map((item) => (
+                                    <Tag key={item.id}>{item.oem_number}</Tag>
+                                ))}
+                            </div>
+                        </div>
+                    ),
+                });
+            } else {
+                message.success(`Перенесено позиций: ${data.moved}`);
+            }
+            setMoveModalOpen(false);
+            setMoveTargetId(null);
+            setSelectedPartIds([]);
+            await loadBrandParts();
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail || 'Не удалось перенести позиции'
+            );
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const partColumns = [
+        { title: 'Артикул', dataIndex: 'oem_number', width: 160 },
+        { title: 'Наименование', dataIndex: 'name', ellipsis: true },
+        {
+            title: '',
+            key: 'open',
+            width: 120,
+            render: (_, row) => (
+                <Link
+                    to={`/autoparts/nomenclature?autopart_id=${row.id}&edit=1`}
+                    target="_blank"
+                >
+                    <ExportOutlined /> Карточка
+                </Link>
+            ),
+        },
+    ];
 
     const handleMainBrandChange = async (checked) => {
         if (!selectedBrand) {
@@ -480,6 +658,38 @@ const BrandManagementPage = () => {
                                     <Tag>#{selectedBrand.id}</Tag>
                                 </Space>
                             )}
+                            extra={(
+                                <Space wrap>
+                                    <Button
+                                        icon={<EditOutlined />}
+                                        onClick={handleOpenEditModal}
+                                    >
+                                        Редактировать
+                                    </Button>
+                                    <Popconfirm
+                                        title={`Удалить бренд ${selectedBrand.name}?`}
+                                        description="Это действие нельзя отменить."
+                                        okText="Удалить"
+                                        cancelText="Отмена"
+                                        okButtonProps={{ danger: true }}
+                                        onConfirm={handleDeleteBrand}
+                                        disabled={!usage?.can_delete}
+                                    >
+                                        <Button
+                                            danger
+                                            icon={<DeleteOutlined />}
+                                            disabled={!usage?.can_delete}
+                                            title={
+                                                usage && !usage.can_delete
+                                                    ? 'Сначала перенесите позиции в другой бренд'
+                                                    : undefined
+                                            }
+                                        >
+                                            Удалить
+                                        </Button>
+                                    </Popconfirm>
+                                </Space>
+                            )}
                         >
                             <Space
                                 direction="vertical"
@@ -523,6 +733,67 @@ const BrandManagementPage = () => {
                                             </Typography.Text>
                                         )}
                                     </div>
+                                </div>
+
+                                <div>
+                                    <Space wrap style={{ marginBottom: 8 }}>
+                                        <Typography.Text strong>
+                                            Позиции бренда
+                                        </Typography.Text>
+                                        <Tag>{parts.total}</Tag>
+                                        {usage && (usage.crosses
+                                            || usage.substitutions
+                                            || usage.invalid_crosses) ? (
+                                            <Typography.Text type="secondary">
+                                                Используется как бренд кросса:
+                                                {' '}
+                                                {usage.crosses
+                                                    + usage.substitutions
+                                                    + usage.invalid_crosses}
+                                            </Typography.Text>
+                                        ) : null}
+                                    </Space>
+                                    <Space wrap style={{ marginBottom: 8, width: '100%' }}>
+                                        <Input.Search
+                                            placeholder="Артикул или наименование"
+                                            allowClear
+                                            style={{ width: 280 }}
+                                            onSearch={(value) => {
+                                                setPartsQuery(value.trim());
+                                                setPartsPage(1);
+                                            }}
+                                        />
+                                        <Button
+                                            icon={<SwapOutlined />}
+                                            disabled={!selectedPartIds.length}
+                                            onClick={() => setMoveModalOpen(true)}
+                                        >
+                                            Перенести в другой бренд
+                                            {selectedPartIds.length
+                                                ? ` (${selectedPartIds.length})`
+                                                : ''}
+                                        </Button>
+                                    </Space>
+                                    <Table
+                                        rowKey="id"
+                                        size="small"
+                                        columns={partColumns}
+                                        dataSource={parts.items}
+                                        loading={partsLoading}
+                                        rowSelection={{
+                                            selectedRowKeys: selectedPartIds,
+                                            onChange: setSelectedPartIds,
+                                            preserveSelectedRowKeys: true,
+                                        }}
+                                        pagination={{
+                                            current: partsPage,
+                                            pageSize: PARTS_PAGE_SIZE,
+                                            total: parts.total,
+                                            showSizeChanger: false,
+                                            onChange: setPartsPage,
+                                        }}
+                                        locale={{ emptyText: 'Позиций с этим брендом нет' }}
+                                    />
                                 </div>
 
                                 <div className="page-toolbar">
@@ -627,6 +898,82 @@ const BrandManagementPage = () => {
                         />
                     </Form.Item>
                 </Form>
+            </Modal>
+            <Modal
+                title="Редактировать бренд"
+                open={editModalOpen}
+                onCancel={() => setEditModalOpen(false)}
+                onOk={handleEditBrand}
+                okText="Сохранить"
+                cancelText="Отмена"
+                confirmLoading={saving}
+                destroyOnHidden
+            >
+                <Form form={editForm} layout="vertical">
+                    <Form.Item
+                        name="name"
+                        label="Название бренда"
+                        rules={[{ required: true, message: 'Введите название бренда' }]}
+                    >
+                        <Input />
+                    </Form.Item>
+                    <Form.Item
+                        name="country_of_origin"
+                        label="Страна"
+                        rules={[{ required: true, message: 'Выберите страну' }]}
+                    >
+                        <Select
+                            showSearch
+                            options={COUNTRY_OPTIONS}
+                            optionFilterProp="label"
+                        />
+                    </Form.Item>
+                    <Form.Item name="website" label="Сайт">
+                        <Input placeholder="https://example.com" />
+                    </Form.Item>
+                    <Form.Item name="description" label="Описание">
+                        <Input.TextArea rows={3} />
+                    </Form.Item>
+                    <Form.Item
+                        name="main_brand"
+                        label="Главный бренд"
+                        valuePropName="checked"
+                    >
+                        <Switch />
+                    </Form.Item>
+                </Form>
+            </Modal>
+            <Modal
+                title="Перенести позиции в другой бренд"
+                open={moveModalOpen}
+                onCancel={() => setMoveModalOpen(false)}
+                onOk={handleMoveParts}
+                okText="Перенести"
+                cancelText="Отмена"
+                okButtonProps={{ disabled: !moveTargetId }}
+                confirmLoading={saving}
+                destroyOnHidden
+            >
+                <Typography.Paragraph type="secondary">
+                    Позиций к переносу: <strong>{selectedPartIds.length}</strong>
+                    {' '}из бренда <strong>{selectedBrand?.name}</strong>.
+                    Если в целевом бренде уже есть такой артикул, позиция
+                    будет пропущена.
+                </Typography.Paragraph>
+                <Select
+                    showSearch
+                    style={{ width: '100%' }}
+                    placeholder="Выберите бренд"
+                    optionFilterProp="label"
+                    value={moveTargetId}
+                    onChange={setMoveTargetId}
+                    options={brands
+                        .filter((item) => item.id !== selectedBrandId)
+                        .map((item) => ({
+                            value: item.id,
+                            label: `${item.name} (#${item.id})`,
+                        }))}
+                />
             </Modal>
             <Modal
                 title="Новый бренд"
