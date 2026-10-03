@@ -42,6 +42,8 @@ import {
 import { getExecutionTraces } from '../api/settings';
 import { deleteWatchItem, getWatchItems } from '../api/watchlist';
 import MarginMonthChart from './MarginMonthChart';
+import { PartPhotoBadge } from './PartPhotos';
+import { usePartPhotos } from './usePartPhotos';
 
 const { Title, Text } = Typography;
 
@@ -270,6 +272,40 @@ const joinProviderLabel = (item) => {
     return `${provider} / ${config}`;
 };
 
+const sitePhotoOf = (row) => {
+    const url = row?.photo_url || row?.sys_info?.goods_img_url;
+    return typeof url === 'string' && url.includes('/thumbnails/') ? url : null;
+};
+
+// Заголовок отслеживаемой позиции: бренд, артикул, ярлычок фото и название.
+// Название берём из предложений, а если его там нет — из каталога.
+const WatchPositionTitle = ({ row, offers }) => {
+    const sitePhoto = (offers || []).map((offer) => offer.photo_url).find(Boolean) || null;
+    const { name: catalogName } = usePartPhotos(row.brand, row.oem, sitePhoto);
+    const bestName = (offers || [])
+        .map((offer) => getReadableAutopartName(offer.autopart_name, row))
+        .find(Boolean) || catalogName;
+    return (
+        <Space direction="vertical" size={0}>
+            <span>
+                <Text strong>{row.brand} {row.oem}</Text>
+                <PartPhotoBadge
+                    brand={row.brand}
+                    oem={row.oem}
+                    name={bestName}
+                    sitePhotoUrl={sitePhoto}
+                />
+            </span>
+            {bestName ? (
+                <Text type="secondary" ellipsis={{ tooltip: bestName }}>
+                    {bestName}
+                </Text>
+            ) : null}
+            <Text type="secondary">Контрольная цена: {formatMoney(row.max_price)}</Text>
+        </Space>
+    );
+};
+
 const normalizeSiteOffers = (payload, watchItem) => {
     const rawRows = Array.isArray(payload)
         ? payload
@@ -294,6 +330,7 @@ const normalizeSiteOffers = (payload, watchItem) => {
             max_delivery_day: row.max_delivery_day ?? null,
             hash_key: row.hash_key || null,
             system_hash: row.system_hash || null,
+            photo_url: sitePhotoOf(row),
         }))
         .filter((row) => row.price > 0 && row.quantity > 0)
         .sort((a, b) => (
@@ -1240,22 +1277,9 @@ const Dashboard = () => {
             title: 'Позиция',
             key: 'position',
             width: '32%',
-            render: (_, row) => {
-                const bestName = (watchOffers[row.id] || [])
-                    .map((offer) => getReadableAutopartName(offer.autopart_name, row))
-                    .find(Boolean);
-                return (
-                    <Space direction="vertical" size={0}>
-                        <Text strong>{row.brand} {row.oem}</Text>
-                        {bestName ? (
-                            <Text type="secondary" ellipsis={{ tooltip: bestName }}>
-                                {bestName}
-                            </Text>
-                        ) : null}
-                        <Text type="secondary">Контрольная цена: {formatMoney(row.max_price)}</Text>
-                    </Space>
-                );
-            },
+            render: (_, row) => (
+                <WatchPositionTitle row={row} offers={watchOffers[row.id]} />
+            ),
         },
         {
             title: 'Цены / склад',
@@ -1356,7 +1380,15 @@ const Dashboard = () => {
                                 {row.source_type === 'supplier' ? 'Прайс / email' : 'Сайт'}
                             </Tag>
                         </Space>
-                        <Text strong>{row.brand_name} {row.oem_number}</Text>
+                        <span>
+                            <Text strong>{row.brand_name} {row.oem_number}</Text>
+                            <PartPhotoBadge
+                                brand={row.brand_name}
+                                oem={row.oem_number}
+                                name={itemName}
+                                sitePhotoUrl={row.photo_url}
+                            />
+                        </span>
                         {itemName ? (
                             <Text type="secondary" ellipsis={{ tooltip: itemName }}>
                                 {itemName}

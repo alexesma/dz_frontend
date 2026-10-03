@@ -67,6 +67,12 @@ import {
 } from '../api/orderTracking';
 import TrackingOrderHistoryTable from './TrackingOrderHistoryTable';
 import TurnoverTooltip from './TurnoverTooltip';
+import { PartPhotoBadge } from './PartPhotos';
+
+const siteThumb = (record) => {
+    const url = record?.photo_url || record?.sys_info?.goods_img_url;
+    return typeof url === 'string' && url.includes('/thumbnails/') ? url : null;
+};
 import useAuth from '../context/useAuth';
 
 const OEM_HISTORY_KEY = 'autopart_oem_history_v1';
@@ -4296,9 +4302,17 @@ const AutopartOffers = () => {
             width: 112,
             ellipsis: true,
             render: (value, record) => (
-                <TurnoverTooltip autopartId={record.autopart_id} label={value}>
-                    <code>{value || '—'}</code>
-                </TurnoverTooltip>
+                <>
+                    <TurnoverTooltip autopartId={record.autopart_id} label={value}>
+                        <code>{value || '—'}</code>
+                    </TurnoverTooltip>
+                    <PartPhotoBadge
+                        brand={record.brand_name}
+                        oem={value}
+                        name={record.name}
+                        sitePhotoUrl={siteThumb(record)}
+                    />
+                </>
             ),
         },
         {
@@ -4473,6 +4487,12 @@ const AutopartOffers = () => {
                         >
                             <span>{record.oem || record.oem_number || '—'}</span>
                         </TurnoverTooltip>
+                        <PartPhotoBadge
+                            brand={record.make_name || record.brand_name}
+                            oem={record.oem || record.oem_number}
+                            name={record.detail_name || record.name}
+                            sitePhotoUrl={siteThumb(record)}
+                        />
                     </div>
                     <div
                         style={{
@@ -5130,17 +5150,25 @@ const AutopartOffers = () => {
             key: 'oem_number',
             width: 140,
             render: (value, record) => (
-                <TurnoverTooltip autopartId={record.autopart_id} label={value}>
-                    <code
-                        style={{
-                            background: '#f5f5f5',
-                            padding: '1px 4px',
-                            borderRadius: 3,
-                        }}
-                    >
-                        {value || '—'}
-                    </code>
-                </TurnoverTooltip>
+                <>
+                    <TurnoverTooltip autopartId={record.autopart_id} label={value}>
+                        <code
+                            style={{
+                                background: '#f5f5f5',
+                                padding: '1px 4px',
+                                borderRadius: 3,
+                            }}
+                        >
+                            {value || '—'}
+                        </code>
+                    </TurnoverTooltip>
+                    <PartPhotoBadge
+                        brand={record.brand_name}
+                        oem={value}
+                        name={record.name}
+                        sitePhotoUrl={siteThumb(record)}
+                    />
+                </>
             ),
         },
         {
