@@ -152,20 +152,36 @@ body {
 }
 
 .customer-order-items-table .ant-table-cell {
-  padding: 8px !important;
+  padding: 4px 8px !important;
   overflow-wrap: anywhere;
-  vertical-align: top;
+  vertical-align: middle;
+  line-height: 1.35;
+}
+
+.customer-order-items-table .ant-table-thead > tr > th {
+  padding: 6px 8px !important;
+}
+
+.customer-order-line {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.customer-order-row-actions {
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .customer-order-items-table .ant-tag {
   max-width: 100%;
-  margin-top: 3px;
+  margin: 2px 0 0;
   white-space: normal;
 }
 
 .customer-order-part-cell {
   display: grid;
-  gap: 3px;
+  gap: 1px;
   min-width: 0;
 }
 

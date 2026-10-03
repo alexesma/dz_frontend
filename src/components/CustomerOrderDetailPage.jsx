@@ -630,6 +630,7 @@ const CustomerOrderDetailPage = () => {
         {
             title: 'Позиция клиента',
             key: 'requested_part',
+            width: '24%',
             render: (_, record) => (
                 <div className="customer-order-part-cell">
                     <Space size={4} wrap>
@@ -643,21 +644,29 @@ const CustomerOrderDetailPage = () => {
                             <Button type="text" size="small" icon={<SearchOutlined />} onClick={() => openAutopartSearch(record)} />
                         </Tooltip>
                     </Space>
-                    <Button type="link" size="small" style={{ display: 'block', padding: 0, height: 'auto' }} onClick={() => loadStats('brand', record.brand, record.brand)}>
-                        {record.brand}
-                    </Button>
-                    <Text type="secondary">{record.name || '—'}</Text>
+                    <div className="customer-order-line" title={record.name || ''}>
+                        <Button type="link" size="small" style={{ padding: 0, height: 'auto' }} onClick={() => loadStats('brand', record.brand, record.brand)}>
+                            {record.brand}
+                        </Button>
+                        <Text type="secondary"> · {record.name || '—'}</Text>
+                    </div>
                 </div>
             ),
         },
         {
             title: 'Подобрано',
             key: 'actual_part',
+            width: '22%',
             render: (_, record) => (
                 <div className="customer-order-part-cell">
                     <div>{record.actual_oem ? `${record.actual_brand || ''} ${record.actual_oem}`.trim() : '—'}</div>
-                    {record.actual_name && <Text type="secondary">{record.actual_name}</Text>}
-                    {record.match_type === 'dragonzap_cross' && <Tag color="blue">кросс</Tag>}
+                    {record.actual_name && (
+                        <div className="customer-order-line" title={record.actual_name}>
+                            <Text type="secondary">{record.actual_name}</Text>
+                            {record.match_type === 'dragonzap_cross' && <Tag color="blue" style={{ marginLeft: 4 }}>кросс</Tag>}
+                        </div>
+                    )}
+                    {!record.actual_name && record.match_type === 'dragonzap_cross' && <Tag color="blue">кросс</Tag>}
                     {record.source_resolution_status && (
                         <Tooltip title={`Источник: ${record.external_provider_id || 'не указан'}; предложение: ${record.external_offer_id || 'не указано'}`}>
                             <Tag color={record.source_resolution_status === 'api_order_error' ? 'red' : 'geekblue'}>
@@ -675,6 +684,7 @@ const CustomerOrderDetailPage = () => {
         {
             title: 'Кол-во',
             key: 'quantities',
+            width: 92,
             align: 'right',
             render: (_, record) => (
                 <div className="customer-order-number-cell">
@@ -684,17 +694,19 @@ const CustomerOrderDetailPage = () => {
                 </div>
             ),
         },
-        { title: 'Цена', dataIndex: 'requested_price', key: 'requested_price', align: 'right', render: formatMoney },
+        { title: 'Цена', dataIndex: 'requested_price', key: 'requested_price', width: 90, align: 'right', render: formatMoney },
         {
             title: 'Статус',
             dataIndex: 'status',
             key: 'status',
+            width: 110,
             render: (value) => <Tag color={ITEM_STATUS_COLORS[value] || 'default'}>{ITEM_STATUS_LABELS[value] || value || '—'}</Tag>,
         },
         {
             title: 'Поставщик',
             dataIndex: 'supplier_id',
             key: 'supplier_id',
+            width: '16%',
             render: (value, record) => (
                 <Select
                     showSearch
@@ -705,13 +717,14 @@ const CustomerOrderDetailPage = () => {
                     onChange={(val) => handleSetSupplier(record, val)}
                     optionFilterProp="label"
                     loading={!!updatingItems[record.id]}
-                    style={{ width: '100%', minWidth: 130 }}
+                    style={{ width: '100%', minWidth: 110 }}
                 />
             ),
         },
         {
             title: 'Действия',
             key: 'actions',
+            width: 170,
             render: (_, record) => (
                 <div className="table-actions customer-order-row-actions">
                     <Button size="small" onClick={() => handleOwnStock(record)} loading={!!updatingItems[record.id]}>Наш склад</Button>
