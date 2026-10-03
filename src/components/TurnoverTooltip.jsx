@@ -7,6 +7,7 @@ import {
 } from '@ant-design/icons';
 
 import { getAutopartTurnoverSummary } from '../api/autoparts.js';
+import { useTurnoverFlags } from './useTurnoverFlags.js';
 
 const { Text } = Typography;
 const fmtPrice = (value) => (
@@ -127,6 +128,7 @@ const TurnoverTooltip = ({
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(false);
     const fetchedRef = useRef(false);
+    const flags = useTurnoverFlags(autopartId);
 
     useEffect(() => {
         fetchedRef.current = false;
@@ -153,8 +155,8 @@ const TurnoverTooltip = ({
     }, [load]);
 
     if (!autopartId) return children;
-    const showTop = Boolean(data?.is_top ?? isTop);
-    const showMarket = Boolean(data?.is_market_opportunity ?? isMarketOpportunity);
+    const showTop = Boolean(data?.is_top ?? flags?.is_top ?? isTop);
+    const showMarket = Boolean(data?.is_market_opportunity ?? flags?.is_market_opportunity ?? isMarketOpportunity);
 
     return (
         <Tooltip

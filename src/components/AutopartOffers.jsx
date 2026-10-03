@@ -4299,10 +4299,9 @@ const AutopartOffers = () => {
             title: 'OEM',
             dataIndex: 'oem_number',
             key: 'oem_number',
-            width: 112,
-            ellipsis: true,
+            width: 150,
             render: (value, record) => (
-                <>
+                <span style={{ whiteSpace: 'nowrap' }}>
                     <TurnoverTooltip autopartId={record.autopart_id} label={value}>
                         <code>{value || '—'}</code>
                     </TurnoverTooltip>
@@ -4312,7 +4311,7 @@ const AutopartOffers = () => {
                         name={record.name}
                         sitePhotoUrl={siteThumb(record)}
                     />
-                </>
+                </span>
             ),
         },
         {
