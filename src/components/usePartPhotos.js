@@ -1,68 +1,82 @@
 import { useEffect, useState } from 'react';
 import { lookupPartPhotos } from '../api/autoparts.js';
 
-// ── Пакетная подгрузка фото каталога ────────────────────────────────────────
+// ── Пакетная подгрузка фото ─────────────────────────────────────────────────
 // Ярлычков в таблице много: собираем их запросы в один POST и кэшируем.
+// Если у строки нет своей миниатюры с сайта, сервер сам спрашивает фото у
+// платформы Parts-Soft (через поиск сайта) и кэширует ответ.
 
 const cache = new Map();
 const waiters = new Map();
 let queue = new Map();
 let timer = null;
 
-const keyOf = (brand, oem) =>
+const baseKey = (brand, oem) =>
     `${String(brand || '').trim().toLowerCase()}|${String(oem || '')
         .toUpperCase()
         .replace(/[^0-9A-ZА-Я]/g, '')}`;
+const keyOf = (brand, oem, site) => `${baseKey(brand, oem)}${site ? '|site' : ''}`;
 
 const flush = async () => {
     timer = null;
     const batch = queue;
     queue = new Map();
-    const items = [...batch.values()];
-    try {
-        const { data } = await lookupPartPhotos(items);
+    const groups = { true: [], false: [] };
+    batch.forEach((entry, key) => groups[entry.site].push([key, entry]));
+    await Promise.all(Object.entries(groups).map(async ([site, entries]) => {
+        if (!entries.length) return;
         const byKey = new Map();
-        (data?.rows || []).forEach((row) => {
-            [keyOf(row.brand, row.oem), keyOf('', row.oem)].forEach((k) => {
-                const prev = byKey.get(k);
-                if (!prev || (row.photos?.length || 0) > (prev.photos?.length || 0)) {
-                    byKey.set(k, row);
-                }
+        try {
+            const { data } = await lookupPartPhotos(
+                entries.map(([, e]) => ({ brand: e.brand, oem: e.oem })),
+                site === 'true',
+            );
+            (data?.rows || []).forEach((row) => {
+                [baseKey(row.brand, row.oem), baseKey('', row.oem)].forEach((k) => {
+                    const prev = byKey.get(k);
+                    if (!prev || (row.photos?.length || 0) > (prev.photos?.length || 0)) {
+                        byKey.set(k, row);
+                    }
+                });
             });
+        } catch {
+            // без фото — ярлычок просто не появится
+        }
+        entries.forEach(([key, e]) => {
+            cache.set(key, byKey.get(baseKey(e.brand, e.oem)) || null);
         });
-        batch.forEach((_, key) => cache.set(key, byKey.get(key) || null));
-    } catch {
-        batch.forEach((_, key) => cache.set(key, null));
-    }
+    }));
     batch.forEach((_, key) => {
         (waiters.get(key) || []).forEach((fn) => fn(cache.get(key)));
         waiters.delete(key);
     });
 };
 
-const requestCatalog = (brand, oem) =>
+const requestPhotos = (brand, oem, site) =>
     new Promise((resolve) => {
-        const key = keyOf(brand, oem);
+        const key = keyOf(brand, oem, site);
         if (cache.has(key)) {
             resolve(cache.get(key));
             return;
         }
         waiters.set(key, [...(waiters.get(key) || []), resolve]);
-        queue.set(key, { brand: brand || null, oem: String(oem) });
+        queue.set(key, { brand: brand || null, oem: String(oem), site });
         if (!timer) timer = setTimeout(flush, 60);
     });
 
-// Фото из каталога + (необязательно) миниатюра, пришедшая с сайта.
+// Фото каталога + миниатюра с сайта. Если миниатюра уже пришла вместе со
+// строкой (sitePhotoUrl), сервер сайт не опрашивает.
 export const usePartPhotos = (brand, oem, sitePhotoUrl) => {
-    const [catalog, setCatalog] = useState(() => cache.get(keyOf(brand, oem)) || null);
+    const site = !sitePhotoUrl;
+    const [catalog, setCatalog] = useState(() => cache.get(keyOf(brand, oem, site)) || null);
     useEffect(() => {
         if (!oem) return undefined;
         let alive = true;
-        requestCatalog(brand, oem).then((row) => alive && setCatalog(row));
+        requestPhotos(brand, oem, site).then((row) => alive && setCatalog(row));
         return () => {
             alive = false;
         };
-    }, [brand, oem]);
+    }, [brand, oem, site]);
     const photos = [...(catalog?.photos || [])];
     if (sitePhotoUrl && !photos.includes(sitePhotoUrl)) photos.push(sitePhotoUrl);
     return { photos, name: catalog?.name || null };

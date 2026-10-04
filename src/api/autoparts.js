@@ -135,8 +135,8 @@ export const assignApplicabilityNodes = (autopartId, nodeIds) =>
     api.post(`/autoparts/${autopartId}/applicability-nodes/`, nodeIds);
 
 // Фото и названия каталога по парам (бренд, артикул) — для ярлычков «фото детали»
-export const lookupPartPhotos = (items) =>
-    api.post('/autoparts/photos/lookup/', { items });
+export const lookupPartPhotos = (items, site = false) =>
+    api.post('/autoparts/photos/lookup/', { items, site }, { timeout: 60000 });
 
 // Флаги «топ-рекомендация» / «рыночная возможность» пачкой — значок виден без наведения
 export const getTurnoverFlags = (ids) =>
