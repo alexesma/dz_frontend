@@ -362,7 +362,12 @@ const TurnoverReportPage = () => {
                 size="small"
                 scroll={{ x: 1190 }}
                 onRow={(row) => ({
-                    onClick: () => navigate(`/autoparts/nomenclature?q=${encodeURIComponent(row.oem_number)}`),
+                    // Сразу поиск по артикулу: сайт и наши прайсы одним запросом
+                    onClick: () => navigate(`/autoparts/offers?${new URLSearchParams({
+                        oem: row.oem_number || '',
+                        brand: row.brand_name || '',
+                        auto: '1',
+                    }).toString()}`),
                     style: { cursor: 'pointer' },
                 })}
                 pagination={{
