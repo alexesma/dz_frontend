@@ -3,6 +3,7 @@ import {
     Button,
     Card,
     Descriptions,
+    Popconfirm,
     Table,
     Tag,
     Typography,
@@ -81,8 +82,12 @@ const CustomerSupplierOrderDetailPage = () => {
         if (!order) return;
         setSending(true);
         try {
-            await sendSupplierOrders([order.id]);
-            message.success('Заказ отправлен');
+            const { data: result } = await sendSupplierOrders([order.id]);
+            if (Number(result?.sent || 0) < 1) {
+                message.error('Письмо не отправлено: проверьте адрес поставщика и настройки почты');
+            } else {
+                message.success(order.status === 'SENT' ? 'Заказ отправлен повторно' : 'Заказ отправлен');
+            }
             fetchData();
         } catch (err) {
             const detail =
@@ -168,7 +173,7 @@ const CustomerSupplierOrderDetailPage = () => {
                     <Button onClick={() => navigate('/customer-orders/suppliers')}>
                         Назад к списку
                     </Button>
-                    {order?.status !== 'SENT' && (
+                    {order?.status !== 'SENT' ? (
                         <Button
                             type="primary"
                             onClick={handleSendNow}
@@ -176,6 +181,16 @@ const CustomerSupplierOrderDetailPage = () => {
                         >
                             Отправить сейчас
                         </Button>
+                    ) : (
+                        <Popconfirm
+                            title="Отправить заказ повторно?"
+                            description="Письмо уйдёт на текущий адрес из карточки поставщика. Если поставщик уже получил первое письмо, у него будет дубль."
+                            okText="Отправить"
+                            cancelText="Отмена"
+                            onConfirm={handleSendNow}
+                        >
+                            <Button loading={sending}>Отправить повторно</Button>
+                        </Popconfirm>
                     )}
                 </div>
                 <Title level={3}>Заказ поставщику</Title>
