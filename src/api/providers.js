@@ -370,3 +370,8 @@ export const exportExplorerRows = (providerId, params = {}) =>
         responseType: 'blob',
         timeout: 120000,
     });
+
+export const getExplorerPriceHistory = (providerId, params = {}) =>
+    api.get(`/providers/${providerId}/pricelist-explorer/price-history/`, {
+        params: buildExplorerParams(params),
+    });

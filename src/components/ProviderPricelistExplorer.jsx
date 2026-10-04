@@ -10,6 +10,7 @@ import {
     Row,
     Select,
     Space,
+    Spin,
     Statistic,
     Switch,
     Table,
@@ -31,6 +32,7 @@ import { Link } from 'react-router-dom';
 import {
     exportExplorerRows,
     getExplorerBrands,
+    getExplorerPriceHistory,
     getExplorerPricelists,
     getExplorerRows,
 } from '../api/providers';
@@ -66,6 +68,102 @@ const PRESETS = [
 ];
 
 const EMPTY_FILTERS = {};
+
+// ── График цены при наведении ───────────────────────────────────────────────
+const SPARK_W = 280;
+const SPARK_H = 90;
+
+const PriceSparkline = ({ points }) => {
+    const prices = points.map((p) => p.price);
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
+    const span = max - min || 1;
+    const x = (i) => 8 + (i * (SPARK_W - 16)) / Math.max(points.length - 1, 1);
+    const y = (price) => 8 + (SPARK_H - 16) * (1 - (price - min) / span);
+    const path = points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.price).toFixed(1)}`).join(' ');
+    const last = points[points.length - 1];
+    const first = points[0];
+    const trendUp = last.price > first.price;
+    const color = last.price === first.price ? '#8c8c8c' : trendUp ? '#cf1322' : '#3f8600';
+    return (
+        <svg width={SPARK_W} height={SPARK_H} role="img" aria-label="График цены">
+            <path d={`${path} L${x(points.length - 1)},${SPARK_H - 4} L${x(0)},${SPARK_H - 4} Z`} fill={color} opacity="0.08" />
+            <path d={path} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" />
+            {points.map((p, i) => (
+                <circle key={p.date + i} cx={x(i)} cy={y(p.price)} r={i === points.length - 1 ? 4 : 2.2} fill={color}>
+                    <title>{`${p.date}: ${money(p.price)}`}</title>
+                </circle>
+            ))}
+        </svg>
+    );
+};
+
+const priceHistoryCache = new Map();
+
+const PriceHistoryTip = ({ providerId, configId, row, children }) => {
+    const [state, setState] = useState({ loading: false, points: null, error: false });
+    const cacheKey = `${providerId}:${configId}:${row.autopart_id}`;
+
+    const load = () => {
+        if (priceHistoryCache.has(cacheKey)) {
+            setState({ loading: false, points: priceHistoryCache.get(cacheKey), error: false });
+            return;
+        }
+        setState({ loading: true, points: null, error: false });
+        getExplorerPriceHistory(providerId, { autopart_id: row.autopart_id, config_id: configId })
+            .then(({ data: result }) => {
+                priceHistoryCache.set(cacheKey, result.points || []);
+                setState({ loading: false, points: result.points || [], error: false });
+            })
+            .catch(() => setState({ loading: false, points: null, error: true }));
+    };
+
+    const { loading, points, error } = state;
+    let body;
+    if (loading || (!points && !error)) {
+        body = <Spin size="small" />;
+    } else if (error) {
+        body = <Text type="danger">Не удалось загрузить историю цены</Text>;
+    } else if (!points.length) {
+        body = <Text type="secondary">История цены пока пуста</Text>;
+    } else {
+        const prices = points.map((p) => p.price);
+        body = (
+            <div style={{ width: SPARK_W }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>{row.oem_number} · {row.brand_name}</div>
+                {points.length > 1 ? <PriceSparkline points={points} /> : (
+                    <Text type="secondary">Пока одна точка: {money(points[0].price)}</Text>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                    <span>{points[0].date}</span>
+                    <span>{points[points.length - 1].date}</span>
+                </div>
+                <div style={{ fontSize: 12, marginTop: 4 }}>
+                    мин. <b>{money(Math.min(...prices))}</b> · макс. <b>{money(Math.max(...prices))}</b>
+                    {' '}· точек: {points.length}
+                </div>
+                <Link
+                    style={{ fontSize: 12 }}
+                    to={`/autoparts/price-history?oem=${encodeURIComponent(row.oem_number)}`}
+                >
+                    Подробный график и количество →
+                </Link>
+            </div>
+        );
+    }
+    return (
+        <Tooltip
+            color="#fff"
+            placement="left"
+            mouseEnterDelay={0.3}
+            overlayInnerStyle={{ color: 'rgba(0,0,0,0.88)' }}
+            title={body}
+            onOpenChange={(open) => open && load()}
+        >
+            <span style={{ cursor: 'help' }}>{children}</span>
+        </Tooltip>
+    );
+};
 
 const ProviderPricelistExplorer = ({ providerId, configs = [] }) => {
     const [pricelists, setPricelists] = useState([]);
@@ -239,12 +337,12 @@ const ProviderPricelistExplorer = ({ providerId, configs = [] }) => {
             sorter: true,
             sortOrder: sort[0] === 'price' ? (sort[1] === 'asc' ? 'ascend' : 'descend') : null,
             render: (_, row) => (
-                <div>
+                <PriceHistoryTip providerId={providerId} configId={configId} row={row}>
                     <div>{money(row.price)}</div>
                     {hasCompare && row.prev_price != null && (
                         <Text type="secondary" style={{ fontSize: 11 }}>было {money(row.prev_price)}</Text>
                     )}
-                </div>
+                </PriceHistoryTip>
             ),
         },
         ...(hasCompare ? [{
