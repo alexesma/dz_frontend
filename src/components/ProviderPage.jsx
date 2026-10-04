@@ -89,6 +89,7 @@ import { getWarehouses } from "../api/storage";
 import { formatMoscow } from '../utils/time';
 import useAuth from '../context/useAuth';
 import ProviderPricelistAnalyticsSection from "./ProviderPricelistAnalyticsSection";
+import ProviderPricelistExplorer from "./ProviderPricelistExplorer";
 import DiadocBindingCard from './DiadocBindingCard';
 
 const { Title, Text } = Typography;
@@ -3543,6 +3544,11 @@ const ProviderPage = () => {
                     <ProviderPricelistAnalyticsSection
                         providerId={providerId}
                         refreshKey={analyticsRefreshKey}
+                    />
+
+                    <ProviderPricelistExplorer
+                        providerId={providerId}
+                        configs={providerData.pricelist_configs || []}
                     />
 
                     <Card title="История оповещений о просрочке" style={{ marginTop: 16 }}>

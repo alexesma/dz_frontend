@@ -334,3 +334,39 @@ export const parseProviderExcludePositions = async (file) => {
         form
     );
 };
+
+// ── Просмотр и анализ загруженного прайса ───────────────────────────────────
+// Фильтры уходят как URLSearchParams: массивы (brand_ids) FastAPI ждёт
+// повторяющимся параметром, а не brand_ids[].
+export const buildExplorerParams = (params = {}) => {
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === '' || value === false) return;
+        if (Array.isArray(value)) {
+            value.forEach((item) => search.append(key, item));
+        } else {
+            search.append(key, value);
+        }
+    });
+    return search;
+};
+
+export const getExplorerPricelists = (providerId) =>
+    api.get(`/providers/${providerId}/pricelist-explorer/pricelists/`);
+
+export const getExplorerBrands = (providerId, params = {}) =>
+    api.get(`/providers/${providerId}/pricelist-explorer/brands/`, {
+        params: buildExplorerParams(params),
+    });
+
+export const getExplorerRows = (providerId, params = {}) =>
+    api.get(`/providers/${providerId}/pricelist-explorer/`, {
+        params: buildExplorerParams(params),
+    });
+
+export const exportExplorerRows = (providerId, params = {}) =>
+    api.get(`/providers/${providerId}/pricelist-explorer/export/`, {
+        params: buildExplorerParams(params),
+        responseType: 'blob',
+        timeout: 120000,
+    });
