@@ -89,12 +89,6 @@ const Gallery = ({ photos, title, subtitle, origin, onClose }) => {
                 <div className="pp-caption">
                     <div className="pp-title">{title}</div>
                     {subtitle && <div className="pp-subtitle">{subtitle}</div>}
-                    {isLowRes(photos[index]) && (
-                        <div className="pp-note">
-                            Миниатюра с платформы Parts-Soft (150×150): фото большего размера
-                            платформа не отдаёт
-                        </div>
-                    )}
                     {photos.length > 1 && (
                         <div className="pp-count">
                             {index + 1} / {photos.length}
