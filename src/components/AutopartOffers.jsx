@@ -68,10 +68,11 @@ import {
 import TrackingOrderHistoryTable from './TrackingOrderHistoryTable';
 import TurnoverTooltip from './TurnoverTooltip';
 import { PartPhotoBadge } from './PartPhotos';
+import { resolveDragonzapPhotoUrl } from '../api';
 
 const siteThumb = (record) => {
     const url = record?.photo_url || record?.sys_info?.goods_img_url;
-    return typeof url === 'string' && url.includes('/thumbnails/') ? url : null;
+    return resolveDragonzapPhotoUrl(url);
 };
 import useAuth from '../context/useAuth';
 

@@ -19,6 +19,20 @@ export const resolveBackendAssetUrl = (value) => {
     }
 };
 
+export const resolveDragonzapPhotoUrl = (value) => {
+    const rawUrl = String(value || '').trim();
+    if (!rawUrl) return null;
+    try {
+        const url = new URL(rawUrl, 'https://dragonzap.ru');
+        const path = url.pathname.toLowerCase();
+        if (!['http:', 'https:'].includes(url.protocol)) return null;
+        if (path.includes('/labels/') || path.endsWith('.svg')) return null;
+        return url.toString();
+    } catch {
+        return null;
+    }
+};
+
 import axios from 'axios';
 
 const api = axios.create({

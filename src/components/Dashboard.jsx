@@ -44,6 +44,7 @@ import { deleteWatchItem, getWatchItems } from '../api/watchlist';
 import MarginMonthChart from './MarginMonthChart';
 import { PartPhotoBadge } from './PartPhotos';
 import { usePartPhotos } from './usePartPhotos';
+import { resolveDragonzapPhotoUrl } from '../api';
 
 const { Title, Text } = Typography;
 
@@ -274,7 +275,7 @@ const joinProviderLabel = (item) => {
 
 const sitePhotoOf = (row) => {
     const url = row?.photo_url || row?.sys_info?.goods_img_url;
-    return typeof url === 'string' && url.includes('/thumbnails/') ? url : null;
+    return resolveDragonzapPhotoUrl(url);
 };
 
 // Заголовок отслеживаемой позиции: бренд, артикул, ярлычок фото и название.
