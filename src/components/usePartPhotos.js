@@ -17,6 +17,17 @@ const baseKey = (brand, oem) =>
         .replace(/[^0-9A-ZА-Я]/g, '')}`;
 const keyOf = (brand, oem, site) => `${baseKey(brand, oem)}${site ? '|site' : ''}`;
 
+const photoQuality = (value) => {
+    const url = String(value || '').toLowerCase();
+    if (url.includes('/uploads/autoparts/')) return 4;
+    if (url.includes('_original') || url.includes('/system/product_photo/')) return 3;
+    if (url.includes('/thumbnails/')) return 1;
+    return 2;
+};
+
+const sortPhotos = (values) => [...new Set(values.filter(Boolean))]
+    .sort((left, right) => photoQuality(right) - photoQuality(left));
+
 const flush = async () => {
     timer = null;
     const batch = queue;
@@ -64,10 +75,10 @@ const requestPhotos = (brand, oem, site) =>
         if (!timer) timer = setTimeout(flush, 60);
     });
 
-// Фото каталога + лучшее доступное фото с сайта. Если фото уже пришло вместе со
-// строкой (sitePhotoUrl), сервер сайт не опрашивает.
+// Фото каталога + лучшее доступное фото с сайта. Готовый оригинал повторно не
+// запрашиваем, а старую миниатюру пытаемся повысить до полноразмерной версии.
 export const usePartPhotos = (brand, oem, sitePhotoUrl) => {
-    const site = !sitePhotoUrl;
+    const site = !sitePhotoUrl || photoQuality(sitePhotoUrl) <= 1;
     const [catalog, setCatalog] = useState(() => cache.get(keyOf(brand, oem, site)) || null);
     useEffect(() => {
         if (!oem) return undefined;
@@ -77,7 +88,6 @@ export const usePartPhotos = (brand, oem, sitePhotoUrl) => {
             alive = false;
         };
     }, [brand, oem, site]);
-    const photos = [...(catalog?.photos || [])];
-    if (sitePhotoUrl && !photos.includes(sitePhotoUrl)) photos.push(sitePhotoUrl);
+    const photos = sortPhotos([...(catalog?.photos || []), sitePhotoUrl]);
     return { photos, name: catalog?.name || null };
 };
