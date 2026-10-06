@@ -34,6 +34,7 @@ import {
     SwapOutlined,
 } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
+import { resolveBackendAssetUrl } from '../api';
 import {
     getCatalog,
     getAutopartDetail,
@@ -963,7 +964,7 @@ const NomenclaturePage = () => {
                 <Space size={6}>
                     {record.primary_photo_url ? (
                         <Image
-                            src={record.primary_photo_url}
+                            src={resolveBackendAssetUrl(record.primary_photo_url)}
                             width={38}
                             height={38}
                             preview
@@ -1545,7 +1546,7 @@ const NomenclaturePage = () => {
                                         {detail.photo_urls.map((url) => (
                                             <Image
                                                 key={url}
-                                                src={url}
+                                                src={resolveBackendAssetUrl(url)}
                                                 width={112}
                                                 height={112}
                                                 style={{ objectFit: 'cover', borderRadius: 8 }}
@@ -1939,7 +1940,7 @@ const NomenclaturePage = () => {
                                             {editingPhotos.map((photo) => (
                                                 <div key={photo.id} style={{ border: '1px solid #f0f0f0', borderRadius: 10, padding: 10 }}>
                                                     <Image
-                                                        src={photo.url}
+                                                        src={resolveBackendAssetUrl(photo.url)}
                                                         width="100%"
                                                         height={150}
                                                         style={{ objectFit: 'contain', borderRadius: 6 }}
