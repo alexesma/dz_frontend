@@ -110,6 +110,19 @@
 .pp-img.pp-ready.pp-from-left {
     animation: pp-slide-l 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+.pp-img.pp-lowres {
+    inset: 50% auto auto 50%;
+    width: 260px;
+    height: 260px;
+    margin: -130px 0 0 -130px;
+    border-radius: 12px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+}
+.pp-note {
+    margin-top: 6px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+}
 .pp-shimmer {
     position: absolute;
     inset: 0;

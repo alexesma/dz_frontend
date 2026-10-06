@@ -6,6 +6,10 @@ import './PartPhotos.css';
 
 // ── Окно с фотографиями ─────────────────────────────────────────────────────
 
+// Миниатюры платформы Parts-Soft — 150×150 px; растягивать их на всё окно
+// значит делать мыло, поэтому показываем крупнее исходного, но не на весь кадр.
+const isLowRes = (url) => String(url || '').includes('/thumbnails/');
+
 const Gallery = ({ photos, title, subtitle, origin, onClose }) => {
     const [index, setIndex] = useState(0);
     const [closing, setClosing] = useState(false);
@@ -69,7 +73,7 @@ const Gallery = ({ photos, title, subtitle, origin, onClose }) => {
                             key={index}
                             className={`pp-img ${dir > 0 ? 'pp-from-right' : 'pp-from-left'}${
                                 loaded[index] ? ' pp-ready' : ''
-                            }`}
+                            }${isLowRes(photos[index]) ? ' pp-lowres' : ''}`}
                             src={photos[index]}
                             alt={title}
                             onLoad={() => setLoaded((l) => ({ ...l, [index]: true }))}
@@ -85,6 +89,12 @@ const Gallery = ({ photos, title, subtitle, origin, onClose }) => {
                 <div className="pp-caption">
                     <div className="pp-title">{title}</div>
                     {subtitle && <div className="pp-subtitle">{subtitle}</div>}
+                    {isLowRes(photos[index]) && (
+                        <div className="pp-note">
+                            Миниатюра с платформы Parts-Soft (150×150): фото большего размера
+                            платформа не отдаёт
+                        </div>
+                    )}
                     {photos.length > 1 && (
                         <div className="pp-count">
                             {index + 1} / {photos.length}
