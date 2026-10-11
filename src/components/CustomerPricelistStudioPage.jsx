@@ -60,7 +60,7 @@ import {
     updateCustomerPricelistConfig,
     updateCustomerPricelistSource,
 } from '../api/customers';
-import { getBrands } from '../api/brands';
+import { getCanonicalBrands } from '../api/brands';
 import { getEmailAccounts } from '../api/emailAccounts';
 import { getProviderConfigOptions } from '../api/providers';
 import { formatMoscow } from '../utils/time';
@@ -291,7 +291,7 @@ const CustomerPricelistStudioPage = () => {
                     sort_dir: 'asc',
                 }),
                 getProviderConfigOptions(),
-                getBrands(),
+                getCanonicalBrands(),
                 getEmailAccounts(),
             ]);
             setCustomers(customersResponse.data?.items || []);

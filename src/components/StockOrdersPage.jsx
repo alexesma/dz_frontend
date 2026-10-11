@@ -159,7 +159,7 @@ const StockOrdersPage = () => {
         try {
             const [customersResp, brandsResp, storagesResp] = await Promise.all([
                 getCustomersSummary({ page: 1, page_size: 200 }),
-                api.get('/brand/'),
+                api.get('/brand/', { params: { canonical_only: true } }),
                 api.get('/storage/'),
             ]);
             const customersData = customersResp.data?.items || customersResp.data || [];

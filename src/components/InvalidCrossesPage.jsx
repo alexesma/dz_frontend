@@ -77,7 +77,7 @@ const InvalidCrossesPage = () => {
     const loadBrandOptions = useCallback(async (search) => {
         const normalized = String(search || '').trim();
         try {
-            const { data } = await lookupBrands(normalized, 30);
+            const { data } = await lookupBrands(normalized, 30, [], true);
             setBrandOptions(
                 (Array.isArray(data) ? data : []).map((item) => ({
                     value: item.id,

@@ -23,7 +23,7 @@ import {
     PlusOutlined,
     ReloadOutlined,
 } from '@ant-design/icons';
-import { getBrands } from '../api/brands';
+import { getCanonicalBrands } from '../api/brands';
 import {
     applyCertificateToBrand,
     backfillCertificateBrands,
@@ -108,7 +108,7 @@ const CertificatesPage = () => {
     useEffect(() => { void load(); }, [load]);
 
     useEffect(() => {
-        getBrands()
+        getCanonicalBrands()
             .then(({ data }) => {
                 const rows = Array.isArray(data) ? data : data?.items || [];
                 setBrands(rows.map((b) => ({ value: b.id, label: b.name })));

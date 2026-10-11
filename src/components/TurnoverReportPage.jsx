@@ -76,7 +76,7 @@ const TurnoverReportPage = () => {
     const [pageSize, setPageSize] = useState(50);
 
     const searchBrands = useCallback((query) => {
-        lookupBrands(query, 50).then((response) => {
+        lookupBrands(query, 50, [], true).then((response) => {
             setBrands((response.data || []).map((item) => ({
                 value: item.id,
                 label: item.name,

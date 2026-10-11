@@ -73,7 +73,7 @@ import {
 import { getProviderConfigOptions } from '../api/providers';
 import { getEmailAccounts } from '../api/emailAccounts';
 import { testEmailAccount } from '../api/emailAccounts';
-import { getBrands, lookupBrands } from '../api/brands';
+import { getCanonicalBrands, lookupBrands } from '../api/brands';
 import {
     getAllApplicabilityNodes,
     getHonestSignCategories,
@@ -295,17 +295,12 @@ const CustomerPage = () => {
     ), []);
 
     const mapMarkupBrandOptions = useCallback((brands = []) => {
-        const prepared = (brands || [])
+        return (brands || [])
             .filter((brand) => brand?.name)
             .map((brand) => ({
                 value: String(brand.name).toUpperCase(),
                 label: brand.name,
-                main_brand: Boolean(brand.main_brand),
-            }));
-        const hasMainBrands = prepared.some((item) => item.main_brand);
-        return prepared
-            .filter((item) => (hasMainBrands ? item.main_brand : true))
-            .map(({ value, label }) => ({ value, label }))
+            }))
             .sort((a, b) => a.label.localeCompare(b.label, 'ru'));
     }, []);
 
@@ -470,7 +465,7 @@ const CustomerPage = () => {
             setMarkupBrandLoading(true);
             setBrandFilterLoading(true);
             try {
-                const { data } = await getBrands();
+                const { data } = await getCanonicalBrands();
                 if (!mounted) return;
                 const brands = data || [];
                 setMarkupBrandOptions(mapMarkupBrandOptions(brands));

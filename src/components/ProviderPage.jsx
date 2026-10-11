@@ -82,7 +82,7 @@ import {
 } from "../api/providers";
 import { searchAutopartsByOem } from "../api/autoparts";
 import { updateCustomerPricelistSource } from "../api/customers";
-import { getBrands } from "../api/brands";
+import { getCanonicalBrands } from "../api/brands";
 import { getEmailAccounts } from "../api/emailAccounts";
 import { getPriceStaleAlerts } from "../api/settings";
 import { getWarehouses } from "../api/storage";
@@ -649,7 +649,7 @@ const ProviderPage = () => {
         (async () => {
             setMarkupBrandLoading(true);
             try {
-                const { data } = await getBrands();
+                const { data } = await getCanonicalBrands();
                 if (!mounted) return;
                 setMarkupBrandOptions(mapMarkupBrandOptions(data || []));
             } catch {
@@ -1818,17 +1818,12 @@ const ProviderPage = () => {
     };
 
     const mapMarkupBrandOptions = (brands = []) => {
-        const prepared = (brands || [])
+        return (brands || [])
             .filter((brand) => brand?.name)
             .map((brand) => ({
                 value: String(brand.name).toUpperCase(),
                 label: brand.name,
-                main_brand: Boolean(brand.main_brand),
-            }));
-        const hasMainBrands = prepared.some((item) => item.main_brand);
-        return prepared
-            .filter((item) => (hasMainBrands ? item.main_brand : true))
-            .map(({ value, label }) => ({ value, label }))
+            }))
             .sort((a, b) => a.label.localeCompare(b.label, "ru"));
     };
 

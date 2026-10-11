@@ -322,7 +322,12 @@ const NomenclaturePage = () => {
         brandSearchTimer.current = setTimeout(async () => {
             const seq = ++brandSearchSeq.current;
             try {
-                const { data } = await lookupBrands(needle, needle ? 100 : 300);
+                const { data } = await lookupBrands(
+                    needle,
+                    needle ? 100 : 300,
+                    [],
+                    true
+                );
                 // Ответы могут прийти не по порядку — берём только последний запрос.
                 if (seq !== brandSearchSeq.current) return;
                 const items = (data || []).map((item) => ({
@@ -471,7 +476,7 @@ const NomenclaturePage = () => {
         (async () => {
             try {
                 const [br, cat, sl, hs, an] = await Promise.all([
-                    lookupBrands('', 300),
+                    lookupBrands('', 300, [], true),
                     getCategories(),
                     getStorageLocations(),
                     getHonestSignCategories(),

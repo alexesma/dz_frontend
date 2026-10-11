@@ -2,7 +2,16 @@ import api from '../api.js';
 
 export const getBrands = () => api.get('/brand/');
 
-export const lookupBrands = (q = '', limit = 100, ids = []) => {
+export const getCanonicalBrands = () => api.get('/brand/', {
+    params: { canonical_only: true },
+});
+
+export const lookupBrands = (
+    q = '',
+    limit = 100,
+    ids = [],
+    canonicalOnly = false
+) => {
     const normalizedIds = Array.isArray(ids)
         ? ids
             .map((value) => String(value || '').trim())
@@ -12,6 +21,7 @@ export const lookupBrands = (q = '', limit = 100, ids = []) => {
         params: {
             q,
             limit,
+            ...(canonicalOnly ? { canonical_only: true } : {}),
             ...(normalizedIds.length ? { ids: normalizedIds.join(',') } : {}),
         },
     });

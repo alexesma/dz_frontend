@@ -23,7 +23,7 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 
-import { getBrands } from '../api/brands';
+import { getCanonicalBrands } from '../api/brands';
 import {
     excludeAutoPurchaseTopItem,
     exportCustomerOrderPeriodReport,
@@ -170,11 +170,11 @@ const CustomerOrderPeriodReportPage = () => {
     const fetchBrands = useCallback(async () => {
         setBrandLoading(true);
         try {
-            const { data } = await getBrands();
+            const { data } = await getCanonicalBrands();
             const rows = Array.isArray(data) ? data : [];
             setBrandOptions(
                 rows
-                    .filter((brand) => brand?.main_brand !== false)
+                    .filter((brand) => brand?.name)
                     .map((brand) => ({
                         label: brand.name,
                         value: brand.name,

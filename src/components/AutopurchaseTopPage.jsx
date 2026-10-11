@@ -33,7 +33,7 @@ import {
     restoreAutoPurchaseTopItem,
     updateAutoPurchaseTopItem,
 } from '../api/orderTracking';
-import { getBrands } from '../api/brands';
+import { getCanonicalBrands } from '../api/brands';
 
 const { Title, Text } = Typography;
 
@@ -159,15 +159,9 @@ const AutopurchaseTopPage = () => {
         const loadBrands = async () => {
             setBrandOptionsLoading(true);
             try {
-                const { data } = await getBrands();
+                const { data } = await getCanonicalBrands();
                 const rows = Array.isArray(data) ? data : [];
-                const prepared = rows.map((item) => ({
-                    ...item,
-                    main_brand: Boolean(item?.main_brand),
-                }));
-                const hasMainBrands = prepared.some((item) => item.main_brand);
-                const options = prepared
-                    .filter((item) => (hasMainBrands ? item.main_brand : true))
+                const options = rows
                     .map((item) => String(item?.name || '').trim())
                     .filter(Boolean)
                     .sort((a, b) => a.localeCompare(b, 'ru'))
