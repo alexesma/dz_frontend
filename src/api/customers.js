@@ -65,6 +65,12 @@ export const updateCustomerPricelistConfig = (customerId, configId, data) =>
 export const deleteCustomerPricelistConfig = (customerId, configId) =>
     api.delete(`/customers/${customerId}/pricelist-configs/${configId}`);
 
+export const copyCustomerPricelistConfig = (customerId, configId, data) =>
+    api.post(
+        `/customers/${customerId}/pricelist-configs/${configId}/copy`,
+        data
+    );
+
 // ===== Customer Pricelist Sources =====
 export const getCustomerPricelistSources = (customerId, configId) =>
     api.get(`/customers/${customerId}/pricelist-configs/${configId}/sources/`);

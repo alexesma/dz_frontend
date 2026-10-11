@@ -24,7 +24,7 @@ import {
 import {
     SaveOutlined, ArrowLeftOutlined, PlusOutlined,
     EditOutlined, DeleteOutlined, SendOutlined, SettingOutlined,
-    DownloadOutlined, SwapOutlined
+    DownloadOutlined, SwapOutlined, CopyOutlined
 } from '@ant-design/icons';
 
 const { Text } = Typography;
@@ -46,6 +46,7 @@ const ConfigSection = ({ title, children }) => (
 import {
     getCustomerById,
     getCustomersSummary,
+    fetchAllCustomersBrief,
     mergeCustomerInto,
     createCustomer,
     updateCustomer,
@@ -54,6 +55,7 @@ import {
     createCustomerPricelistConfig,
     updateCustomerPricelistConfig,
     deleteCustomerPricelistConfig,
+    copyCustomerPricelistConfig,
     getCustomerPricelistSources,
     createCustomerPricelistSource,
     updateCustomerPricelistSource,
@@ -161,6 +163,11 @@ const CustomerPage = () => {
 
     const [configModalVisible, setConfigModalVisible] = useState(false);
     const [editingConfig, setEditingConfig] = useState(null);
+    const [copyConfigModalVisible, setCopyConfigModalVisible] = useState(false);
+    const [copyingConfig, setCopyingConfig] = useState(null);
+    const [copyCustomerOptions, setCopyCustomerOptions] = useState([]);
+    const [copyCustomersLoading, setCopyCustomersLoading] = useState(false);
+    const [copyConfigSaving, setCopyConfigSaving] = useState(false);
     const [sourcesModalVisible, setSourcesModalVisible] = useState(false);
     const [activeConfig, setActiveConfig] = useState(null);
     const [sources, setSources] = useState([]);
@@ -200,6 +207,7 @@ const CustomerPage = () => {
 
     const [customerForm] = Form.useForm();
     const [configForm] = Form.useForm();
+    const [copyConfigForm] = Form.useForm();
     const [sourceForm] = Form.useForm();
     const [orderConfigForm] = Form.useForm();
 
@@ -1434,6 +1442,116 @@ const CustomerPage = () => {
         }
     };
 
+    const closeCopyConfigModal = () => {
+        setCopyConfigModalVisible(false);
+        setCopyingConfig(null);
+        setCopyCustomerOptions([]);
+        copyConfigForm.resetFields();
+    };
+
+    const openCopyConfigModal = async (config) => {
+        if (!customerId || !config) return;
+
+        setCopyingConfig(config);
+        setCopyConfigModalVisible(true);
+        copyConfigForm.setFieldsValue({
+            target_customer_id: customerId,
+            name: `${config.name} — копия`,
+            is_active: false,
+        });
+
+        const currentCustomer = customerData?.customer;
+        setCopyCustomerOptions(currentCustomer ? [currentCustomer] : []);
+        setCopyCustomersLoading(true);
+        try {
+            const customers = await fetchAllCustomersBrief({
+                pageSize: 200,
+                maxPages: 100,
+            });
+            setCopyCustomerOptions(customers);
+        } catch (err) {
+            console.error(err);
+            message.error(
+                extractApiError(
+                    err,
+                    'Не удалось загрузить список клиентов для копирования'
+                )
+            );
+        } finally {
+            setCopyCustomersLoading(false);
+        }
+    };
+
+    const handleCopyConfig = async (values) => {
+        if (!customerId || !copyingConfig) return;
+
+        const targetCustomerId = Number(values.target_customer_id);
+        setCopyConfigSaving(true);
+        try {
+            const { data } = await copyCustomerPricelistConfig(
+                customerId,
+                copyingConfig.id,
+                {
+                    target_customer_id: targetCustomerId,
+                    name: values.name?.trim(),
+                    is_active: Boolean(values.is_active),
+                }
+            );
+            const copiedConfig = data?.config;
+            const targetCustomer = copyCustomerOptions.find(
+                (item) => Number(item.id) === targetCustomerId
+            );
+
+            if (targetCustomerId === customerId) {
+                const { data: configs } = await getCustomerPricelistConfigs(customerId);
+                setCustomerData((prev) => ({
+                    ...prev,
+                    pricelist_configs: configs,
+                }));
+            }
+            closeCopyConfigModal();
+
+            Modal.confirm({
+                title: 'Конфигурация скопирована',
+                content: (
+                    <Space direction="vertical" size={4}>
+                        <span>
+                            Новая конфигурация «{copiedConfig?.name || values.name}»
+                            {' '}привязана к клиенту «{targetCustomer?.name || targetCustomerId}».
+                        </span>
+                        <span>
+                            Источников: {data?.copied_sources ?? 0}; правил публикации:
+                            {' '}{data?.copied_publication_rules ?? 0}.
+                        </span>
+                        {!copiedConfig?.is_active && (
+                            <Text type="secondary">
+                                Копия выключена. Проверьте настройки и включите её перед первой рассылкой.
+                            </Text>
+                        )}
+                    </Space>
+                ),
+                okText: targetCustomerId === customerId
+                    ? 'Открыть копию'
+                    : 'Перейти к клиенту',
+                cancelText: 'Закрыть',
+                onOk: () => {
+                    if (targetCustomerId === customerId && copiedConfig) {
+                        return openConfigModal(copiedConfig);
+                    }
+                    navigate(`/customers/${targetCustomerId}/edit`);
+                    return undefined;
+                },
+            });
+        } catch (err) {
+            console.error(err);
+            message.error(
+                extractApiError(err, 'Не удалось скопировать конфигурацию')
+            );
+        } finally {
+            setCopyConfigSaving(false);
+        }
+    };
+
     const openSourcesModal = async (config) => {
         if (!customerId) return;
         setActiveConfig(config);
@@ -1723,7 +1841,7 @@ const CustomerPage = () => {
         {
             title: 'Действия',
             key: 'actions',
-            width: 220,
+            width: 260,
             render: (_, record) => (
                 <Space size="small" wrap className="table-actions">
                     <Button
@@ -1737,6 +1855,13 @@ const CustomerPage = () => {
                         size="small"
                         icon={<SettingOutlined />}
                         onClick={() => openSourcesModal(record)}
+                    />
+                    <Button
+                        type="default"
+                        size="small"
+                        icon={<CopyOutlined />}
+                        title="Копировать конфигурацию"
+                        onClick={() => openCopyConfigModal(record)}
                     />
                     <Button
                         type="default"
@@ -2259,6 +2384,99 @@ const CustomerPage = () => {
                             </Button>
                         </Space>
                     </Form.Item>
+                </Form>
+            </Modal>
+
+            <Modal
+                title={copyingConfig
+                    ? `Копирование «${copyingConfig.name}»`
+                    : 'Копирование конфигурации'}
+                open={copyConfigModalVisible}
+                onCancel={closeCopyConfigModal}
+                footer={null}
+                width={620}
+                destroyOnClose
+            >
+                <Alert
+                    showIcon
+                    type="info"
+                    style={{ marginBottom: 16 }}
+                    message="Будет создана независимая полная копия"
+                    description={(
+                        <span>
+                            Копируются наценки, формат файла, расписание, получатели,
+                            все фильтры, подключённые прайсы поставщиков с их настройками
+                            и правила публикации позиций. История отправок и ранее
+                            сформированные файлы не копируются.
+                        </span>
+                    )}
+                />
+                <Form
+                    form={copyConfigForm}
+                    layout="vertical"
+                    onFinish={handleCopyConfig}
+                    initialValues={{ is_active: false }}
+                >
+                    <Form.Item
+                        name="target_customer_id"
+                        label="Клиент для новой конфигурации"
+                        rules={[{ required: true, message: 'Выберите клиента' }]}
+                    >
+                        <Select
+                            showSearch
+                            loading={copyCustomersLoading}
+                            optionFilterProp="label"
+                            placeholder="Найдите клиента по имени или ИНН"
+                            options={copyCustomerOptions.map((item) => ({
+                                value: item.id,
+                                label: `${item.name} · ID ${item.id}${
+                                    item.inn ? ` · ИНН ${item.inn}` : ''
+                                }${Number(item.id) === customerId ? ' · текущий' : ''}`,
+                            }))}
+                        />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="name"
+                        label="Название новой конфигурации"
+                        rules={[
+                            { required: true, message: 'Введите название конфигурации' },
+                            {
+                                validator: (_, value) => value?.trim()
+                                    ? Promise.resolve()
+                                    : Promise.reject(new Error('Название не может быть пустым')),
+                            },
+                        ]}
+                    >
+                        <Input
+                            maxLength={255}
+                            showCount
+                            placeholder="Например: Основной прайс — копия"
+                        />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="is_active"
+                        label="Активировать копию сразу"
+                        valuePropName="checked"
+                        extra="По умолчанию копия выключена, чтобы не запустить двойную рассылку до проверки."
+                    >
+                        <Switch />
+                    </Form.Item>
+
+                    <Space>
+                        <Button
+                            type="primary"
+                            htmlType="submit"
+                            icon={<CopyOutlined />}
+                            loading={copyConfigSaving}
+                        >
+                            Создать копию
+                        </Button>
+                        <Button onClick={closeCopyConfigModal}>
+                            Отмена
+                        </Button>
+                    </Space>
                 </Form>
             </Modal>
 
