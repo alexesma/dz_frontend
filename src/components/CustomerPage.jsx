@@ -1338,6 +1338,12 @@ const CustomerPage = () => {
             await ensureBrandFilterOptionsByIds(collectConfigBrandIds(config));
             configForm.setFieldsValue({
                 ...config,
+                outgoing_email_account_ids:
+                    config.outgoing_email_account_ids?.length
+                        ? config.outgoing_email_account_ids
+                        : config.outgoing_email_account_id
+                            ? [config.outgoing_email_account_id]
+                            : [],
                 default_filters: mapFilterToForm(config.default_filters || {}),
                 own_filters: mapFilterToForm(config.own_filters || {}),
                 other_filters: mapFilterToForm(config.other_filters || {}),
@@ -1360,6 +1366,7 @@ const CustomerPage = () => {
         try {
             const payload = {
                 ...values,
+                outgoing_email_account_ids: values.outgoing_email_account_ids || [],
                 default_filters: buildFilterPayload(values.default_filters),
                 own_filters: buildFilterPayload(values.own_filters),
                 other_filters: buildFilterPayload(values.other_filters),
@@ -1397,6 +1404,12 @@ const CustomerPage = () => {
                     await ensureBrandFilterOptionsByIds(collectConfigBrandIds(createdConfig));
                     configForm.setFieldsValue({
                         ...createdConfig,
+                        outgoing_email_account_ids:
+                            createdConfig.outgoing_email_account_ids?.length
+                                ? createdConfig.outgoing_email_account_ids
+                                : createdConfig.outgoing_email_account_id
+                                    ? [createdConfig.outgoing_email_account_id]
+                                    : [],
                         default_filters: mapFilterToForm(createdConfig.default_filters || {}),
                         own_filters: mapFilterToForm(createdConfig.own_filters || {}),
                         other_filters: mapFilterToForm(createdConfig.other_filters || {}),
@@ -2757,13 +2770,15 @@ const CustomerPage = () => {
                     </Form.Item>
 
                     <Form.Item
-                        name="outgoing_email_account_id"
+                        name="outgoing_email_account_ids"
                         label="Почта отправителя прайсов"
-                        extra="Если не выбрано, используется первый активный ящик с назначением prices_out/orders_out/orders_in или .env."
+                        extra="Один и тот же прайс будет отправлен с каждого выбранного ящика. Если список пуст, используется ящик по умолчанию."
                     >
                         <Select
+                            mode="multiple"
                             allowClear
-                            placeholder="По умолчанию"
+                            maxTagCount="responsive"
+                            placeholder="Выберите один или несколько ящиков"
                             options={priceOutAccounts.map((account) => ({
                                 value: account.id,
                                 label: `${account.name} (${account.email})`,

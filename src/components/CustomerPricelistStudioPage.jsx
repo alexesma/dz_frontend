@@ -398,8 +398,12 @@ const CustomerPricelistStudioPage = () => {
             collapse_duplicates_by_min_price:
                 activeConfig.collapse_duplicates_by_min_price !== false,
             emails: activeConfig.emails || [],
-            outgoing_email_account_id:
-                activeConfig.outgoing_email_account_id || null,
+            outgoing_email_account_ids:
+                activeConfig.outgoing_email_account_ids?.length
+                    ? activeConfig.outgoing_email_account_ids
+                    : activeConfig.outgoing_email_account_id
+                        ? [activeConfig.outgoing_email_account_id]
+                        : [],
             schedule_days: activeConfig.schedule_days || [],
             schedule_times: activeConfig.schedule_times || [],
             max_source_age_business_days:
@@ -669,8 +673,8 @@ const CustomerPricelistStudioPage = () => {
                     collapse_duplicates_by_min_price:
                         values.collapse_duplicates_by_min_price,
                     emails: values.emails || [],
-                    outgoing_email_account_id:
-                        values.outgoing_email_account_id || null,
+                    outgoing_email_account_ids:
+                        values.outgoing_email_account_ids || [],
                     schedule_days: values.schedule_days || [],
                     schedule_times: values.schedule_times || [],
                     max_source_age_business_days:
@@ -682,9 +686,15 @@ const CustomerPricelistStudioPage = () => {
             setConfigs((previous) => previous.map((item) => (
                 item.id === configId ? data : item
             )));
-            const requestedAccountId = values.outgoing_email_account_id || null;
-            const savedAccountId = data.outgoing_email_account_id || null;
-            if (requestedAccountId !== savedAccountId) {
+            const requestedAccountIds = (values.outgoing_email_account_ids || [])
+                .map(Number);
+            const savedAccountIds = (data.outgoing_email_account_ids?.length
+                ? data.outgoing_email_account_ids
+                : data.outgoing_email_account_id
+                    ? [data.outgoing_email_account_id]
+                    : [])
+                .map(Number);
+            if (JSON.stringify(requestedAccountIds) !== JSON.stringify(savedAccountIds)) {
                 throw new Error(
                     'Сервер не подтвердил сохранение почты отправителя. Обновите страницу и повторите.'
                 );
@@ -719,11 +729,13 @@ const CustomerPricelistStudioPage = () => {
                     'Сервер не подтвердил сохранение финальных фильтров. Обновите страницу и повторите.'
                 );
             }
-            const sender = outgoingEmailAccounts.find(
-                (account) => account.id === savedAccountId
-            );
-            const deliveryText = sender
-                ? `Отправитель: ${sender.email}`
+            const senderEmails = savedAccountIds
+                .map((accountId) => outgoingEmailAccounts.find(
+                    (account) => Number(account.id) === accountId
+                )?.email)
+                .filter(Boolean);
+            const deliveryText = senderEmails.length
+                ? `Отправители: ${senderEmails.join(', ')}`
                 : 'Используется почта отправителя по умолчанию';
             message.success(
                 `Настройки сохранены. Финальных правил: ${savedFinalRules.length}. ${deliveryText}`
@@ -1305,15 +1317,17 @@ const CustomerPricelistStudioPage = () => {
                 </Col>
                 <Col xs={24} md={8}>
                     <Form.Item
-                        name="outgoing_email_account_id"
-                        label="Почта отправителя"
-                        extra="Письмо будет отправлено именно с выбранного ящика."
+                        name="outgoing_email_account_ids"
+                        label="Почта отправителя прайсов"
+                        extra="Один и тот же прайс будет отправлен с каждого выбранного ящика. Если список пуст, используется ящик по умолчанию."
                     >
                         <Select
+                            mode="multiple"
                             allowClear
+                            maxTagCount="responsive"
                             showSearch
                             optionFilterProp="label"
-                            placeholder="Использовать ящик по умолчанию"
+                            placeholder="Выберите один или несколько ящиков"
                             options={outgoingEmailAccounts.map((account) => ({
                                 value: account.id,
                                 label: `${account.name} (${account.email})`,
