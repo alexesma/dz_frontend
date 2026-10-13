@@ -140,6 +140,11 @@ export const processPartsSoftOrderLocally = (orderId) =>
 export const retryCustomerOrder = (orderId) =>
     api.post(`/customer-orders/${orderId}/retry`);
 
+export const selectCustomerOrderPricelist = (orderId, orderConfigId) =>
+    api.post(`/customer-orders/${orderId}/pricelist-routing`, {
+        order_config_id: orderConfigId,
+    });
+
 export const processCustomerOrderConfigNow = (configId) =>
     api.post(`/customer-orders/configs/${configId}/process`);
 

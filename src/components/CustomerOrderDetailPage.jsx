@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+    Alert,
     Button,
     Card,
     Descriptions,
@@ -28,6 +29,7 @@ import {
     processManualCustomerOrder,
     processPartsSoftOrderLocally,
     retryCustomerOrder,
+    selectCustomerOrderPricelist,
     updateCustomerOrder,
     updateCustomerOrderItem,
 } from '../api/customerOrders';
@@ -70,6 +72,8 @@ const CustomerOrderDetailPage = () => {
     const [updatingItems, setUpdatingItems] = useState({});
     const [processing, setProcessing] = useState(false);
     const [retrying, setRetrying] = useState(false);
+    const [routingChoice, setRoutingChoice] = useState(null);
+    const [routingSaving, setRoutingSaving] = useState(false);
     const [editOpen, setEditOpen] = useState(false);
     const [savingOrder, setSavingOrder] = useState(false);
     const [deletingOrder, setDeletingOrder] = useState(false);
@@ -246,6 +250,21 @@ const CustomerOrderDetailPage = () => {
             message.error(detail);
         } finally {
             setRetrying(false);
+        }
+    };
+
+    const handleRoutingChoice = async () => {
+        if (!order || !routingChoice) return;
+        setRoutingSaving(true);
+        try {
+            await selectCustomerOrderPricelist(order.id, routingChoice);
+            message.success('Конфигурация выбрана. Теперь можно повторить обработку.');
+            setRoutingChoice(null);
+            await fetchData();
+        } catch (err) {
+            message.error(formatApiDetail(err?.response?.data?.detail, 'Не удалось выбрать прайс'));
+        } finally {
+            setRoutingSaving(false);
         }
     };
 
@@ -834,7 +853,8 @@ const CustomerOrderDetailPage = () => {
                             </Button>
                         </Popconfirm>
                     )}
-                    {(order?.status === 'ERROR' || interruptedImport) && (
+                    {(order?.status === 'ERROR' || interruptedImport)
+                        && order?.pricelist_routing?.basis !== 'review_required' && (
                         <Button
                             type="primary"
                             onClick={handleRetryOrder}
@@ -845,6 +865,44 @@ const CustomerOrderDetailPage = () => {
                     )}
                 </div>
                 <Title level={3}>Заказ клиента</Title>
+                {order?.pricelist_routing?.basis === 'review_required' && (
+                    <Alert
+                        type="warning"
+                        showIcon
+                        style={{ marginBottom: 16 }}
+                        message="Выберите прайс для обработки заказа"
+                        description={(
+                            <Space direction="vertical" style={{ width: '100%' }}>
+                                <Text>
+                                    Сравниваются только последние прайсы подходящих конфигураций
+                                    и доступные сейчас предложения их поставщиков. Автоматически
+                                    выбирается вариант с наименьшим ожидаемым отказом: по сумме заказа,
+                                    а если цены заполнены не везде — по количеству штук.
+                                </Text>
+                                {order.pricelist_routing.review_reason && (
+                                    <Text strong>{order.pricelist_routing.review_reason}</Text>
+                                )}
+                                <Select
+                                    style={{ width: '100%' }}
+                                    placeholder="Выберите конфигурацию"
+                                    value={routingChoice}
+                                    onChange={setRoutingChoice}
+                                    options={(order.pricelist_routing.candidates || []).map((candidate) => ({
+                                        value: candidate.order_config_id,
+                                        disabled: Boolean(candidate.filename
+                                                && candidate.filename !== order.source_filename),
+                                        label: `${candidate.name}: ${candidate.rejected_pct != null
+                                            ? `ожидаемый отказ ${Number(candidate.rejected_pct).toLocaleString('ru-RU', { maximumFractionDigits: 2 })}% (${candidate.rejection_metric === 'amount' ? 'по сумме' : 'по количеству'})`
+                                            : `позиции ${candidate.positions}/${candidate.total}`}${candidate.parse_error || candidate.evaluation_error ? ` — ${candidate.parse_error || candidate.evaluation_error}` : ''}`,
+                                    }))}
+                                />
+                                <Button onClick={handleRoutingChoice} disabled={!routingChoice} loading={routingSaving}>
+                                    Сохранить выбор
+                                </Button>
+                            </Space>
+                        )}
+                    />
+                )}
                 {order ? (
                     <>
                         <Descriptions
@@ -862,6 +920,32 @@ const CustomerOrderDetailPage = () => {
                             <Descriptions.Item label="Номер">
                                 {order.order_number || order.id}
                             </Descriptions.Item>
+                            {order.pricelist_routing?.selected_order_config_id && (
+                                <Descriptions.Item label="Прайс заказа">
+                                    {order.pricelist_routing.candidates?.find((candidate) => (
+                                        candidate.order_config_id === order.pricelist_routing.selected_order_config_id
+                                    ))?.name}
+                                    {' · '}
+                                    {order.pricelist_routing.basis === 'manual'
+                                        ? 'Выбран вручную'
+                                        : order.pricelist_routing.basis === 'lowest_rejection'
+                                            ? 'Минимальный ожидаемый отказ'
+                                            : 'Определён по позициям и ценам'}
+                                </Descriptions.Item>
+                            )}
+                            {order.pricelist_routing?.comparison === 'latest_pricelists' && (
+                                <Descriptions.Item label="Ожидаемые отказы при выборе прайса">
+                                    <Space direction="vertical" size={0}>
+                                        {order.pricelist_routing.candidates?.map((candidate) => (
+                                            <Text key={candidate.order_config_id}>
+                                                {candidate.name}: {candidate.rejected_pct == null
+                                                    ? 'не удалось оценить'
+                                                    : `${Number(candidate.rejected_pct).toLocaleString('ru-RU', { maximumFractionDigits: 2 })}% ${candidate.rejection_metric === 'amount' ? 'по сумме' : 'по количеству'}`}
+                                            </Text>
+                                        ))}
+                                    </Space>
+                                </Descriptions.Item>
+                            )}
                             <Descriptions.Item label="Клиент">
                                 <Button
                                     type="link"
