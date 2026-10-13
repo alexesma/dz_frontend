@@ -1858,17 +1858,24 @@ const CustomerPage = () => {
     const describeError = async (err, fallback) => {
         const data = err?.response?.data;
         if (data instanceof Blob) {
+            const responseText = (await data.text()).trim();
             try {
-                const parsed = JSON.parse(await data.text());
+                const parsed = JSON.parse(responseText);
                 return parsed?.detail || fallback;
             } catch {
+                // При responseType=blob Axios превращает в Blob даже обычный
+                // текст ошибки от API или reverse proxy. Не прячем полезную
+                // причину за общим сообщением.
+                if (responseText && !/^\s*</.test(responseText)) {
+                    return responseText;
+                }
                 return fallback;
             }
         }
         if (err?.code === 'ECONNABORTED') {
             return 'Сборка прайса не уложилась во время ожидания';
         }
-        return data?.detail || fallback;
+        return data?.detail || err?.message || fallback;
     };
 
     const handleSendNow = async (configId) => {
