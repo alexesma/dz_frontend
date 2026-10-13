@@ -19,6 +19,7 @@ import {
     Descriptions,
     Tag,
     Switch,
+    Tooltip,
     Typography,
 } from 'antd';
 import {
@@ -29,7 +30,7 @@ import {
 
 const { Text } = Typography;
 
-const ConfigSection = ({ title, children }) => (
+const ConfigSection = ({ title, children, forceRender = false }) => (
     <Collapse
         defaultActiveKey={[]}
         style={{ marginBottom: 16, background: '#fff' }}
@@ -37,11 +38,132 @@ const ConfigSection = ({ title, children }) => (
             {
                 key: title,
                 label: <Text strong>{title}</Text>,
+                forceRender,
                 children,
             },
         ]}
     />
 );
+
+const hasFilterValue = (value) => value !== undefined
+    && value !== null
+    && value !== '';
+
+const FILTER_FIELD_LABELS = {
+    brand: 'бренд',
+    position: 'позиция',
+    applicability: 'применимость',
+    honest_sign: 'Честный знак',
+};
+
+const FILTER_MODE_LABELS = {
+    include: 'оставить только',
+    only: 'оставить только',
+    exclude: 'исключить',
+};
+
+const describeFilterBlock = (scope, filters = {}) => {
+    const details = [];
+    (filters.rules || []).forEach((rule) => {
+        const valuesCount = (rule.values || []).length;
+        if (rule.field && rule.mode && valuesCount) {
+            details.push(
+                `${scope}: ${FILTER_FIELD_LABELS[rule.field] || rule.field}, ${FILTER_MODE_LABELS[rule.mode] || rule.mode} (${valuesCount})`
+            );
+        }
+    });
+    const limits = [
+        ['min_price', 'цена от'],
+        ['max_price', 'цена до'],
+        ['min_quantity', 'количество от'],
+        ['max_quantity', 'количество до'],
+    ];
+    limits.forEach(([field, label]) => {
+        if (hasFilterValue(filters[field])) details.push(`${scope}: ${label} ${filters[field]}`);
+    });
+    (filters.price_intervals || []).forEach((interval) => {
+        details.push(
+            `${scope}: цена ${interval.min_price}–${interval.max_price}, коэффициент ${interval.coefficient}`
+        );
+    });
+    (filters.supplier_quantity_filters || []).forEach((filter) => {
+        details.push(
+            `${scope}: поставщик #${filter.provider_id}, количество ${filter.min_quantity}–${filter.max_quantity}`
+        );
+    });
+    const brandCount = (filters.brand_filters?.brands || []).length;
+    if (brandCount) {
+        details.push(
+            `${scope}: бренды ${filters.brand_filters.type || 'exclude'} (${brandCount})`
+        );
+    }
+    const positionCount = (filters.position_filters?.autoparts || []).length;
+    if (positionCount) {
+        details.push(
+            `${scope}: позиции ${filters.position_filters.type || 'exclude'} (${positionCount})`
+        );
+    }
+    return details;
+};
+
+const describeConfigFilters = (config = {}) => {
+    const details = [
+        ...describeFilterBlock('Общие', config.default_filters),
+        ...describeFilterBlock('Наш прайс', config.own_filters),
+        ...describeFilterBlock('Остальные прайсы', config.other_filters),
+        ...describeFilterBlock('Конфигурация', {
+            price_intervals: config.price_intervals,
+            supplier_quantity_filters: config.supplier_quantity_filters,
+        }),
+    ];
+    if ((config.brand_filters || []).length) {
+        details.push(`Бренды старого формата (${config.brand_filters.length})`);
+    }
+    if ((config.category_filter || []).length) {
+        details.push(`Категории (${config.category_filter.length})`);
+    }
+    if ((config.position_filters || []).length) {
+        details.push(`Позиции старого формата (${config.position_filters.length})`);
+    }
+    Object.entries(config.supplier_filters || {}).forEach(([providerId, filters]) => {
+        const source = (config.sources || []).find(
+            (item) => Number(item.provider_id) === Number(providerId)
+        );
+        details.push(...describeFilterBlock(
+            `Поставщик ${source?.provider_name || `#${providerId}`}`,
+            filters
+        ));
+    });
+    (config.sources || []).forEach((source) => {
+        const sourceName = source.provider_name || source.provider_config_name || `#${source.id}`;
+        details.push(...describeFilterBlock(`Источник ${sourceName}`, source));
+        (source.additional_filters?.BRAND_FILTER_RULES || []).forEach((rule) => {
+            details.push(
+                `Источник ${sourceName}: правило бренда ${rule.mode || rule.action || ''}`.trim()
+            );
+        });
+        if (['exclude', 'transform_only'].includes(source.additional_filters?.DRAGONZAP_MODE)) {
+            details.push(`Источник ${sourceName}: режим ${source.additional_filters.DRAGONZAP_MODE}`);
+        }
+    });
+    const extra = config.additional_filters || {};
+    (extra.FINAL_FILTER_RULES || []).filter((rule) => rule.enabled !== false).forEach((rule) => {
+        details.push(`Финальный фильтр: ${rule.field || 'правило'} ${rule.action || ''}`.trim());
+    });
+    if (extra.FINAL_FILTER_ENABLED) {
+        const policy = extra.FINAL_FILTER_POLICY || {};
+        if (policy.brand_mode && policy.brand_mode !== 'all') {
+            details.push(`Финальный фильтр брендов: ${policy.brand_mode}`);
+        }
+        if (policy.position_mode && policy.position_mode !== 'all') {
+            details.push(`Финальный фильтр позиций: ${policy.position_mode}`);
+        }
+        if (hasFilterValue(policy.min_quantity)) {
+            details.push(`Финальный фильтр: количество от ${policy.min_quantity}`);
+        }
+    }
+    return details;
+};
 
 import {
     getCustomerById,
@@ -1364,13 +1486,20 @@ const CustomerPage = () => {
 
         setConfigSaving(true);
         try {
+            const keepOrBuildFilter = (field) => (
+                values[field] === undefined && editingConfig
+                    ? (editingConfig[field] || {})
+                    : buildFilterPayload(values[field])
+            );
             const payload = {
                 ...values,
                 outgoing_email_account_ids: values.outgoing_email_account_ids || [],
-                default_filters: buildFilterPayload(values.default_filters),
-                own_filters: buildFilterPayload(values.own_filters),
-                other_filters: buildFilterPayload(values.other_filters),
-                supplier_filters: buildSupplierFilters(values.supplier_filters),
+                default_filters: keepOrBuildFilter('default_filters'),
+                own_filters: keepOrBuildFilter('own_filters'),
+                other_filters: keepOrBuildFilter('other_filters'),
+                supplier_filters: values.supplier_filters === undefined && editingConfig
+                    ? (editingConfig.supplier_filters || {})
+                    : buildSupplierFilters(values.supplier_filters),
             };
 
             if (editingConfig) {
@@ -1822,6 +1951,33 @@ const CustomerPage = () => {
                     {record.sources?.length ?? 0}
                 </Tag>
             ),
+        },
+        {
+            title: 'Фильтры',
+            key: 'filters',
+            render: (_, record) => {
+                const details = describeConfigFilters(record);
+                return (
+                    <Tooltip
+                        placement="top"
+                        styles={{ root: { maxWidth: 520 } }}
+                        title={details.length ? (
+                            <Space direction="vertical" size={2}>
+                                {details.map((detail, index) => (
+                                    <span key={`${index}-${detail}`}>{detail}</span>
+                                ))}
+                            </Space>
+                        ) : 'Фильтры не настроены'}
+                    >
+                        <Tag
+                            color={details.length ? 'orange' : 'default'}
+                            style={{ cursor: 'help' }}
+                        >
+                            {details.length}
+                        </Tag>
+                    </Tooltip>
+                );
+            },
         },
         {
             title: 'Расписание',
@@ -2592,7 +2748,7 @@ const CustomerPage = () => {
 
                     </ConfigSection>
 
-                    <ConfigSection title="Фильтры прайс-листа">
+                    <ConfigSection title="Фильтры прайс-листа" forceRender>
 
                     <Alert
                         showIcon
