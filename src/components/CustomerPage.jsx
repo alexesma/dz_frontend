@@ -106,23 +106,36 @@ const describeFilterBlock = (scope, filters = {}) => {
     return details;
 };
 
+const hasEffectiveFilterBlock = (filters = {}) => Object.values(filters || {}).some(
+    (value) => value !== undefined
+        && value !== null
+        && value !== ''
+        && (!Array.isArray(value) || value.length > 0)
+        && (typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length > 0)
+);
+
 const describeConfigFilters = (config = {}) => {
+    const usesStructuredDefaults = hasEffectiveFilterBlock(config.default_filters);
     const details = [
         ...describeFilterBlock('Общие', config.default_filters),
         ...describeFilterBlock('Наш прайс', config.own_filters),
         ...describeFilterBlock('Остальные прайсы', config.other_filters),
-        ...describeFilterBlock('Конфигурация', {
-            price_intervals: config.price_intervals,
-            supplier_quantity_filters: config.supplier_quantity_filters,
-        }),
+        ...(
+            usesStructuredDefaults
+                ? []
+                : describeFilterBlock('Конфигурация', {
+                    price_intervals: config.price_intervals,
+                    supplier_quantity_filters: config.supplier_quantity_filters,
+                })
+        ),
     ];
-    if ((config.brand_filters || []).length) {
+    if (!usesStructuredDefaults && (config.brand_filters || []).length) {
         details.push(`Бренды старого формата (${config.brand_filters.length})`);
     }
     if ((config.category_filter || []).length) {
         details.push(`Категории (${config.category_filter.length})`);
     }
-    if ((config.position_filters || []).length) {
+    if (!usesStructuredDefaults && (config.position_filters || []).length) {
         details.push(`Позиции старого формата (${config.position_filters.length})`);
     }
     Object.entries(config.supplier_filters || {}).forEach(([providerId, filters]) => {
@@ -137,6 +150,11 @@ const describeConfigFilters = (config = {}) => {
     (config.sources || []).forEach((source) => {
         const sourceName = source.provider_name || source.provider_config_name || `#${source.id}`;
         details.push(...describeFilterBlock(`Источник ${sourceName}`, source));
+        if ((source.provider_mailing_included_brands || []).length) {
+            details.push(
+                `Источник ${sourceName}: глобальный белый список поставщика (${source.provider_mailing_included_brands.length} брендов)`
+            );
+        }
         (source.additional_filters?.BRAND_FILTER_RULES || []).forEach((rule) => {
             details.push(
                 `Источник ${sourceName}: правило бренда ${rule.mode || rule.action || ''}`.trim()
@@ -324,6 +342,10 @@ const CustomerPage = () => {
     const [orderProcessNowLoading, setOrderProcessNowLoading] = useState(false);
     const [orderRetryErrorsLoading, setOrderRetryErrorsLoading] = useState(false);
     const [orderForwardLatestLoading, setOrderForwardLatestLoading] = useState(false);
+    const [referencePriceCustomers, setReferencePriceCustomers] = useState([]);
+    const [referencePriceCustomersLoading, setReferencePriceCustomersLoading] = useState(false);
+    const [referencePriceConfigs, setReferencePriceConfigs] = useState([]);
+    const [referencePriceConfigsLoading, setReferencePriceConfigsLoading] = useState(false);
     const autopartSearchRequestRef = useRef(0);
     const autopartSearchTimerRef = useRef(null);
 
@@ -332,6 +354,14 @@ const CustomerPage = () => {
     const [copyConfigForm] = Form.useForm();
     const [sourceForm] = Form.useForm();
     const [orderConfigForm] = Form.useForm();
+    const useReferencePricelist = Form.useWatch(
+        'use_reference_pricelist',
+        orderConfigForm
+    );
+    const referencePricelistCustomerId = Form.useWatch(
+        'reference_pricelist_customer_id',
+        orderConfigForm
+    );
 
     const extractApiError = useCallback((err, fallback) => {
         const detail = err?.response?.data?.detail;
@@ -499,6 +529,7 @@ const CustomerPage = () => {
             );
             orderConfigForm.setFieldsValue({
                 ...config,
+                use_reference_pricelist: Boolean(config.reference_pricelist_config_id),
                 order_emails: mergedOrderEmails.join(', '),
                 order_reply_emails: (config.order_reply_emails || []).join(', '),
             });
@@ -512,10 +543,58 @@ const CustomerPage = () => {
                 forward_customer_order_enabled: false,
                 forward_customer_order_email: null,
                 forward_customer_order_email_account_id: null,
+                use_reference_pricelist: false,
+                reference_pricelist_customer_id: null,
+                reference_pricelist_config_id: null,
                 is_active: true,
             });
         }
     }, [orderConfigForm]);
+
+    const loadReferencePriceCustomers = useCallback(async () => {
+        if (referencePriceCustomers.length || referencePriceCustomersLoading) return;
+        setReferencePriceCustomersLoading(true);
+        try {
+            setReferencePriceCustomers(await fetchAllCustomersBrief());
+        } catch (error) {
+            console.error(error);
+            message.error('Не удалось загрузить клиентов с прайсами');
+        } finally {
+            setReferencePriceCustomersLoading(false);
+        }
+    }, [referencePriceCustomers.length, referencePriceCustomersLoading]);
+
+    useEffect(() => {
+        if (useReferencePricelist) loadReferencePriceCustomers();
+    }, [loadReferencePriceCustomers, useReferencePricelist]);
+
+    useEffect(() => {
+        let active = true;
+        if (!useReferencePricelist || !referencePricelistCustomerId) {
+            setReferencePriceConfigs([]);
+            return () => {
+                active = false;
+            };
+        }
+        setReferencePriceConfigsLoading(true);
+        getCustomerPricelistConfigs(referencePricelistCustomerId)
+            .then(({ data }) => {
+                if (active) setReferencePriceConfigs(data || []);
+            })
+            .catch((error) => {
+                console.error(error);
+                if (active) {
+                    setReferencePriceConfigs([]);
+                    message.error('Не удалось загрузить прайсы выбранного клиента');
+                }
+            })
+            .finally(() => {
+                if (active) setReferencePriceConfigsLoading(false);
+            });
+        return () => {
+            active = false;
+        };
+    }, [referencePricelistCustomerId, useReferencePricelist]);
 
     const refreshOrderConfigs = useCallback(async (priceConfigId = selectedPriceConfigId) => {
         if (!customerId) {
@@ -767,13 +846,21 @@ const CustomerPage = () => {
                     (item) =>
                         item &&
                         item.provider_id &&
-                        item.min_quantity !== undefined &&
-                        item.max_quantity !== undefined
+                        (
+                            (item.min_quantity !== undefined && item.min_quantity !== null)
+                            || (item.max_quantity !== undefined && item.max_quantity !== null)
+                        )
                 )
                 .map((item) => ({
                     provider_id: Number(item.provider_id),
-                    min_quantity: Number(item.min_quantity),
-                    max_quantity: Number(item.max_quantity),
+                    min_quantity:
+                        item.min_quantity === undefined || item.min_quantity === null
+                            ? null
+                            : Number(item.min_quantity),
+                    max_quantity:
+                        item.max_quantity === undefined || item.max_quantity === null
+                            ? null
+                            : Number(item.max_quantity),
                 }));
         }
 
@@ -935,7 +1022,12 @@ const CustomerPage = () => {
                                         <InputNumber min={0} step={1} style={{ width: '100%' }} />
                                     </Form.Item>
                                     <Form.Item name={[field.name, 'coefficient']} label="Коэф.">
-                                        <InputNumber min={0} step={0.1} style={{ width: '100%' }} />
+                                        <InputNumber
+                                            min={0}
+                                            step={0.1}
+                                            style={{ width: '100%' }}
+                                            placeholder="1.3 или 30"
+                                        />
                                     </Form.Item>
                                     <Button danger onClick={() => remove(field.name)}>
                                         Удалить
@@ -1278,10 +1370,17 @@ const CustomerPage = () => {
         }
         setOrderConfigLoading(true);
         try {
+            const useSharedPrice = Boolean(values.use_reference_pricelist);
+            const storedValues = { ...values };
+            delete storedValues.use_reference_pricelist;
+            delete storedValues.reference_pricelist_customer_id;
             const payload = {
-                ...values,
+                ...storedValues,
                 customer_id: customerId,
                 pricelist_config_id: selectedPriceConfigId,
+                reference_pricelist_config_id: useSharedPrice
+                    ? values.reference_pricelist_config_id
+                    : null,
                 order_email: null,
                 order_emails: (values.order_emails || '')
                     .split(',')
@@ -2718,7 +2817,7 @@ const CustomerPage = () => {
                         <Form.Item
                             name="general_markup"
                             label="Общая наценка"
-                            tooltip="1.0 = без наценки, 1.2 = +20%"
+                            tooltip="1.0 = без наценки; 1.2 или 20 = +20%. Значения 2–5 считаются множителем: 3 означает ×3."
                         >
                             <InputNumber
                                 min={0}
@@ -2731,6 +2830,7 @@ const CustomerPage = () => {
                         <Form.Item
                             name="own_price_list_markup"
                             label="Наценка на свой прайс"
+                            tooltip="1.2 = +20%; 20 = +20%. Значения 2–5 считаются множителем: 3 означает ×3."
                         >
                             <InputNumber
                                 min={0}
@@ -2743,6 +2843,7 @@ const CustomerPage = () => {
                         <Form.Item
                             name="third_party_markup"
                             label="Наценка на сторонние"
+                            tooltip="1.2 = +20%; 20 = +20%. Значения 2–5 считаются множителем: 3 означает ×3."
                         >
                             <InputNumber
                                 min={0}
@@ -2985,7 +3086,7 @@ const CustomerPage = () => {
 
                     <Form.Item
                         name="collapse_duplicates_by_min_price"
-                        label="Сворачивать дубли по минимальной цене"
+                        label="Минимальная цена среди сторонних предложений"
                         valuePropName="checked"
                         extra={
                             "Если для одного бренда и артикула есть "
@@ -3275,6 +3376,78 @@ const CustomerPage = () => {
                                         />
                                     </Form.Item>
                                 </div>
+                            </div>
+
+                            <div>
+                                <Text strong>Прайс-эталон для обработки заказа</Text>
+                                <Alert
+                                    style={{ marginTop: 12, marginBottom: 12 }}
+                                    type="info"
+                                    showIcon
+                                    message="Для нескольких юрлиц можно использовать один опубликованный прайс"
+                                    description="Заказ и документы останутся у текущего клиента. Фильтры, наценки, состав позиций и допустимая цена будут взяты из последнего опубликованного прайса выбранного клиента."
+                                />
+                                <Form.Item
+                                    name="use_reference_pricelist"
+                                    label="Использовать прайс другого клиента"
+                                    valuePropName="checked"
+                                >
+                                    <Switch />
+                                </Form.Item>
+                                {useReferencePricelist ? (
+                                    <div className="responsive-form-grid-2">
+                                        <Form.Item
+                                            name="reference_pricelist_customer_id"
+                                            label="Клиент — владелец прайса"
+                                            rules={[{
+                                                required: true,
+                                                message: 'Выберите клиента — владельца прайса',
+                                            }]}
+                                        >
+                                            <Select
+                                                showSearch
+                                                optionFilterProp="label"
+                                                loading={referencePriceCustomersLoading}
+                                                placeholder="Например, Мотор"
+                                                onDropdownVisibleChange={(open) => {
+                                                    if (open) loadReferencePriceCustomers();
+                                                }}
+                                                onChange={() => {
+                                                    orderConfigForm.setFieldValue(
+                                                        'reference_pricelist_config_id',
+                                                        null
+                                                    );
+                                                }}
+                                                options={referencePriceCustomers.map((customer) => ({
+                                                    value: customer.id,
+                                                    label: customer.inn
+                                                        ? `${customer.name} • ИНН ${customer.inn}`
+                                                        : customer.name,
+                                                }))}
+                                            />
+                                        </Form.Item>
+                                        <Form.Item
+                                            name="reference_pricelist_config_id"
+                                            label="Опубликованный прайс-эталон"
+                                            rules={[{
+                                                required: true,
+                                                message: 'Выберите конфигурацию прайса',
+                                            }]}
+                                        >
+                                            <Select
+                                                showSearch
+                                                optionFilterProp="label"
+                                                loading={referencePriceConfigsLoading}
+                                                disabled={!referencePricelistCustomerId}
+                                                placeholder="Выберите конфигурацию"
+                                                options={referencePriceConfigs.map((config) => ({
+                                                    value: config.id,
+                                                    label: config.name,
+                                                }))}
+                                            />
+                                        </Form.Item>
+                                    </div>
+                                ) : null}
                             </div>
 
                             <div>
@@ -3576,6 +3749,7 @@ const CustomerPage = () => {
                                     <>
                                         <div>Как работает поле: `1` — цена без изменений.</div>
                                         <div>`1.55` или `55` — наценка +55% к цене поставщика.</div>
+                                        <div>`3` — именно ×3 (+200%). Для +3% укажите `1.03`.</div>
                                         <div>`0`, пустое значение или отрицательное число — тоже без изменений, цена не станет нулевой.</div>
                                     </>
                                 )}

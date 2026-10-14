@@ -176,7 +176,7 @@ const ZZAP_TEMPLATE = {
         min_quantity: null,
     },
     FINAL_FILTER_RULES: [],
-    PUBLICATION_RULES_ONLY_CONFIGURED: true,
+    PUBLICATION_RULES_ONLY_CONFIGURED: false,
     REQUIRE_DRAFT_APPROVAL: true,
     PIPELINE_ORDER: DEFAULT_PIPELINE_ORDER,
 };
@@ -461,7 +461,7 @@ const CustomerPricelistStudioPage = () => {
                 oem_match: rule.oem_match || 'exact',
             })),
             publication_rules_only_configured:
-                extra.PUBLICATION_RULES_ONLY_CONFIGURED !== false,
+                extra.PUBLICATION_RULES_ONLY_CONFIGURED === true,
         });
         setSettingsDirty(false);
     }, [activeConfig, settingsForm]);
@@ -656,7 +656,7 @@ const CustomerPricelistStudioPage = () => {
                     enabled: rule.enabled !== false,
                 })),
                 PUBLICATION_RULES_ONLY_CONFIGURED:
-                    values.publication_rules_only_configured !== false,
+                    values.publication_rules_only_configured === true,
             };
             const { data } = await updateCustomerPricelistConfig(
                 customerId,
@@ -1727,12 +1727,12 @@ const CustomerPricelistStudioPage = () => {
                     <Form.Item
                         name="duplicate_policy"
                         label="При совпадении Бренд + Артикул"
-                        extra="Сначала выбирается минимальная цена. При равной цене — больший остаток, затем исходное оригинальное предложение вместо преобразованного DragonZap."
+                        extra="Наше предложение всегда имеет приоритет. Если нашего предложения нет, выбирается минимальная цена; при равной цене — больший остаток."
                     >
                         <Select options={[
                             {
                                 value: 'cheapest_then_stock_then_original',
-                                label: 'Оставлять самое дешёвое предложение',
+                                label: 'Наше предложение; иначе самое дешёвое',
                             },
                         ]} />
                     </Form.Item>
@@ -2301,11 +2301,11 @@ const CustomerPricelistStudioPage = () => {
                                                         Если есть правила — публиковать только настроенные позиции
                                                     </Text>
                                                     <div className="muted-line">
-                                                        Включено по умолчанию. Позиции без отдельного правила не попадут в клиентский прайс. Правило «Не публиковать» исключит позицию полностью.
+                                                        По умолчанию правила изменяют только выбранные позиции. Включите режим, только если хотите публиковать исключительно позиции с отдельными правилами.
                                                     </div>
                                                 </div>
                                                 <Switch
-                                                    checked={publicationOnlyConfigured !== false}
+                                                    checked={publicationOnlyConfigured === true}
                                                     onChange={(checked) =>
                                                         settingsForm.setFieldValue(
                                                             'publication_rules_only_configured',
