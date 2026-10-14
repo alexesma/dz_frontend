@@ -1956,11 +1956,17 @@ const CustomerPage = () => {
     // иначе кнопка выглядит просто сломанной.
     const describeError = async (err, fallback) => {
         const data = err?.response?.data;
+        const status = err?.response?.status;
+        const gatewayMessage = {
+            502: 'Сервер прайсов перезапустился во время сборки. Уменьшите объём конфигурации или повторите после обновления.',
+            503: 'Сервис сборки прайсов временно недоступен. Повторите попытку позже.',
+            504: 'Сборка продолжается дольше допустимого времени ответа сервера.',
+        }[status];
         if (data instanceof Blob) {
             const responseText = (await data.text()).trim();
             try {
                 const parsed = JSON.parse(responseText);
-                return parsed?.detail || fallback;
+                return parsed?.detail || gatewayMessage || fallback;
             } catch {
                 // При responseType=blob Axios превращает в Blob даже обычный
                 // текст ошибки от API или reverse proxy. Не прячем полезную
@@ -1968,13 +1974,13 @@ const CustomerPage = () => {
                 if (responseText && !/^\s*</.test(responseText)) {
                     return responseText;
                 }
-                return fallback;
+                return gatewayMessage || fallback;
             }
         }
         if (err?.code === 'ECONNABORTED') {
             return 'Сборка прайса не уложилась во время ожидания';
         }
-        return data?.detail || err?.message || fallback;
+        return data?.detail || gatewayMessage || err?.message || fallback;
     };
 
     const handleSendNow = async (configId) => {
