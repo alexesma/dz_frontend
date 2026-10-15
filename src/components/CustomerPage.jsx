@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import CustomerPricelistProgressModal from './CustomerPricelistProgressModal';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     Alert,
@@ -200,8 +201,6 @@ import {
     createCustomerPricelistSource,
     updateCustomerPricelistSource,
     deleteCustomerPricelistSource,
-    sendCustomerPricelistNow,
-    buildCustomerPricelistFile,
     getCustomerOrderConfigs,
     createCustomerOrderConfig,
     updateCustomerOrderConfig,
@@ -287,11 +286,8 @@ const CustomerPage = () => {
     const customerId = !isNew ? Number(customerIdParam) : null;
 
     const [loading, setLoading] = useState(!isNew);
-    // Какая конфигурация сейчас собирается: сборка идёт минутами,
-    // и без индикатора кнопка выглядит не нажатой. Признаки раздельные —
-    // общий заставлял крутиться обе кнопки сразу.
-    const [sendingConfigId, setSendingConfigId] = useState(null);
-    const [downloadingConfigId, setDownloadingConfigId] = useState(null);
+    // Окно читает состояние фоновой задачи; закрытие не прерывает сборку.
+    const [pricelistTask, setPricelistTask] = useState(null);
     const [saving, setSaving] = useState(false);
     const [customerData, setCustomerData] = useState(null);
     const [loadError, setLoadError] = useState('');
@@ -1951,89 +1947,6 @@ const CustomerPage = () => {
         }
     };
 
-    // Ошибка приходит текстом от сервера: «не указан получатель» и
-    // «не прошёл контроль качества» человек должен видеть дословно,
-    // иначе кнопка выглядит просто сломанной.
-    const describeError = async (err, fallback) => {
-        const data = err?.response?.data;
-        const status = err?.response?.status;
-        const gatewayMessage = {
-            502: 'Сервер прайсов перезапустился во время сборки. Уменьшите объём конфигурации или повторите после обновления.',
-            503: 'Сервис сборки прайсов временно недоступен. Повторите попытку позже.',
-            504: 'Сборка продолжается дольше допустимого времени ответа сервера.',
-        }[status];
-        if (data instanceof Blob) {
-            const responseText = (await data.text()).trim();
-            try {
-                const parsed = JSON.parse(responseText);
-                return parsed?.detail || gatewayMessage || fallback;
-            } catch {
-                // При responseType=blob Axios превращает в Blob даже обычный
-                // текст ошибки от API или reverse proxy. Не прячем полезную
-                // причину за общим сообщением.
-                if (responseText && !/^\s*</.test(responseText)) {
-                    return responseText;
-                }
-                return gatewayMessage || fallback;
-            }
-        }
-        if (err?.code === 'ECONNABORTED') {
-            return 'Сборка прайса не уложилась во время ожидания';
-        }
-        return data?.detail || gatewayMessage || err?.message || fallback;
-    };
-
-    const handleSendNow = async (configId) => {
-        if (!customerId) return;
-        setSendingConfigId(configId);
-        try {
-            const { data: pricelist } = await sendCustomerPricelistNow(
-                customerId,
-                configId
-            );
-            const { data: configs } = await getCustomerPricelistConfigs(customerId);
-            setCustomerData((prev) => ({ ...prev, pricelist_configs: configs }));
-            message.success(
-                pricelist?.generation_status === 'queued'
-                    ? 'Прайс поставлен в очередь отправки'
-                    : 'Прайс отправлен'
-            );
-        } catch (err) {
-            console.error(err);
-            message.error(await describeError(err, 'Ошибка отправки прайса'));
-        } finally {
-            setSendingConfigId(null);
-        }
-    };
-
-    const handleDownloadPricelist = async (configId) => {
-        if (!customerId) return;
-        setDownloadingConfigId(configId);
-        try {
-            const response = await buildCustomerPricelistFile(
-                customerId,
-                configId
-            );
-            const disposition = response.headers?.['content-disposition'] || '';
-            const match = disposition.match(/filename="?([^";]+)"?/);
-            const url = window.URL.createObjectURL(response.data);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = match ? decodeURIComponent(match[1]) : 'price.xlsx';
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            window.URL.revokeObjectURL(url);
-            message.success('Файл прайса собран');
-        } catch (err) {
-            console.error(err);
-            message.error(await describeError(err, 'Ошибка сборки прайса'));
-        } finally {
-            setDownloadingConfigId(null);
-        }
-    };
-
-
     // Колонки таблицы конфигураций
     const configColumns = [
         {
@@ -2143,17 +2056,15 @@ const CustomerPage = () => {
                         type="default"
                         size="small"
                         icon={<DownloadOutlined />}
-                        title="Скачать прайс, не отправляя"
-                        loading={downloadingConfigId === record.id}
-                        onClick={() => handleDownloadPricelist(record.id)}
+                        title="Скачать готовый прайс или обновить"
+                        onClick={() => setPricelistTask({ config: record, intent: 'download' })}
                     />
                     <Button
                         type="primary"
                         size="small"
                         icon={<SendOutlined />}
                         title="Отправить прайс получателям"
-                        loading={sendingConfigId === record.id}
-                        onClick={() => handleSendNow(record.id)}
+                        onClick={() => setPricelistTask({ config: record, intent: 'send' })}
                     />
                     <Popconfirm
                         title="Удалить конфигурацию?"
@@ -2599,6 +2510,15 @@ const CustomerPage = () => {
 
             {/* Конфигурации заказов теперь редактируются внутри конфигурации прайса */}
 
+            {pricelistTask && (
+                <CustomerPricelistProgressModal
+                    key={`${customerId}-${pricelistTask.config.id}`}
+                    customerId={customerId}
+                    config={pricelistTask.config}
+                    intent={pricelistTask.intent}
+                    onClose={() => setPricelistTask(null)}
+                />
+            )}
             <Modal
                 title="Объединить дубль клиента"
                 open={mergeModalVisible}

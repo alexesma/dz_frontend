@@ -223,3 +223,16 @@ export const addCustomerReclamationEmail = (customerId, data) =>
 
 export const deleteCustomerReclamationEmail = (customerId, emailId) =>
     api.delete(`/customers/${customerId}/reclamation-emails/${emailId}`);
+
+// Fast endpoints: generation runs in the scheduler and is polled separately.
+export const getCustomerPricelistJobState = (customerId, configId) =>
+    api.get(`/customers/${customerId}/pricelist-configs/${configId}/jobs`);
+
+export const startCustomerPricelistJob = (customerId, configId, payload) =>
+    api.post(`/customers/${customerId}/pricelist-configs/${configId}/jobs`, payload);
+
+export const downloadCustomerPricelistArtifact = (customerId, configId, pricelistId) =>
+    api.get(
+        `/customers/${customerId}/pricelist-configs/${configId}/drafts/${pricelistId}/download`,
+        { responseType: 'blob', timeout: 120000 }
+    );
