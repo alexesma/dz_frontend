@@ -232,6 +232,10 @@ const CustomerOrderDetailPage = () => {
                 'Не удалось обработать заказ',
             );
             message.error(detail);
+            // Parts-Soft can persist a list of possible price routes while
+            // returning a conflict. Reload so the operator immediately sees
+            // the selector instead of being left with only the error toast.
+            await fetchData();
         } finally {
             setProcessing(false);
         }
@@ -258,7 +262,11 @@ const CustomerOrderDetailPage = () => {
         setRoutingSaving(true);
         try {
             await selectCustomerOrderPricelist(order.id, routingChoice);
-            message.success('Конфигурация выбрана. Теперь можно повторить обработку.');
+            message.success(
+                order.external_source === 'PARTS_SOFT'
+                    ? 'Конфигурация выбрана. Теперь можно принять заказ.'
+                    : 'Конфигурация выбрана. Теперь можно повторить обработку.',
+            );
             setRoutingChoice(null);
             await fetchData();
         } catch (err) {
