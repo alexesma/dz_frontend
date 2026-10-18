@@ -29,6 +29,26 @@ const SUPPLIER_STATUS_COLORS = {
     ERROR: 'red',
 };
 
+const RESPONSE_STATES = {
+    not_sent: { label: 'Не отправлен', color: 'default' },
+    awaiting_response: { label: 'Ожидаем ответ', color: 'blue' },
+    overdue: { label: 'Ответ просрочен', color: 'orange' },
+    confirmed: { label: 'Подтверждён', color: 'green' },
+    received: { label: 'Поступил', color: 'green' },
+    partially_received: { label: 'Частично поступил', color: 'cyan' },
+    partially_received_overdue: { label: 'Остаток просрочен', color: 'orange' },
+    rejected: { label: 'Подтверждённый отказ', color: 'red' },
+    partially_rejected: { label: 'Частичный отказ', color: 'volcano' },
+};
+
+const RESPONSE_SOURCES = {
+    supplier: 'Ответ поставщика',
+    manager: 'Отметка менеджера',
+    automatic: 'Автоматическое подтверждение',
+    document_timeout: 'Не вошло в документы за 24 часа',
+    recorded: 'Зафиксированное количество',
+};
+
 const CustomerSupplierOrderDetailPage = () => {
     const navigate = useNavigate();
     const { orderId } = useParams();
@@ -132,6 +152,12 @@ const CustomerSupplierOrderDetailPage = () => {
             render: formatMoney,
         },
         {
+            title: 'Отправлен',
+            key: 'sent_at',
+            width: 150,
+            render: () => formatDateTime(order?.sent_at),
+        },
+        {
             title: 'Заказано',
             dataIndex: 'requested_qty',
             key: 'requested_qty',
@@ -146,23 +172,77 @@ const CustomerSupplierOrderDetailPage = () => {
             render: (value) => value ?? '—',
         },
         {
-            title: 'Отказ',
-            dataIndex: 'reject_qty',
-            key: 'reject_qty',
+            title: 'Подтверждённый отказ',
+            dataIndex: 'explicit_rejected_quantity',
+            key: 'explicit_rejected_quantity',
             width: 90,
             render: (value) => value ?? '—',
         },
         {
-            title: 'Авто-отказ',
-            dataIndex: 'auto_refused_at',
-            key: 'auto_refused_at',
-            width: 140,
-            render: (value) =>
-                value ? (
-                    <Tag color="orange" title={`Авто-отказ: ${formatDateTime(value)}`}>
-                        Авто-отказ
-                    </Tag>
-                ) : null,
+            title: 'Состояние ответа',
+            dataIndex: 'response_state',
+            key: 'response_state',
+            width: 180,
+            render: (value) => {
+                const meta = RESPONSE_STATES[value] || RESPONSE_STATES.not_sent;
+                return <Tag color={meta.color}>{meta.label}</Tag>;
+            },
+        },
+        {
+            title: 'Основание',
+            key: 'response_basis',
+            width: 240,
+            render: (_, record) => (
+                <div>
+                    <div>{RESPONSE_SOURCES[record.response_source] || (
+                        ['overdue', 'partially_received_overdue'].includes(record.response_state)
+                            ? 'Нет ответа по остатку к сроку' : '—'
+                    )}</div>
+                    {record.response_status_raw && <div>{record.response_status_raw === 'автоотказ по документу'
+                        ? 'Строки нет в документе (историческая отметка)'
+                        : record.response_status_raw}</div>}
+                    {record.response_comment && !record.response_comment.startsWith('Авто-отказ: позиция отсутствует') && (
+                        <div>{record.response_comment}</div>
+                    )}
+                    {record.confirmed_quantity !== null && record.confirmed_quantity !== undefined && (
+                        <div>Подтверждено: {record.confirmed_quantity}</div>
+                    )}
+                    {Object.entries(record.refusal_sources || {}).map(([source, quantity]) => (
+                        <div key={source}>Отказ {RESPONSE_SOURCES[source] || source}: {quantity}</div>
+                    ))}
+                    {record.pending_quantity > 0 && <div>Ждём: {record.pending_quantity}</div>}
+                    {record.document_refusal_due_at && <div>Отказ по документу после: {dayjs(record.document_refusal_due_at).format('DD.MM.YYYY HH:mm')}</div>}
+                </div>
+            ),
+        },
+        {
+            title: 'Срок ответа',
+            dataIndex: 'response_due_at',
+            key: 'response_due_at',
+            width: 150,
+            render: formatDateTime,
+        },
+        {
+            title: 'Подтвердить без ответа',
+            dataIndex: 'auto_confirm_at',
+            key: 'auto_confirm_at',
+            width: 170,
+            render: formatDateTime,
+        },
+        {
+            title: 'Ответ получен',
+            dataIndex: 'response_at',
+            key: 'response_at',
+            width: 150,
+            render: formatDateTime,
+        },
+        {
+            title: 'Поступление',
+            key: 'receipt',
+            width: 170,
+            render: (_, record) => record.received_quantity
+                ? `${record.received_quantity} шт., ${formatDateTime(record.received_at)}`
+                : '—',
         },
     ];
 
@@ -225,6 +305,14 @@ const CustomerSupplierOrderDetailPage = () => {
                             <Descriptions.Item label="Отправлен">
                                 {formatDateTime(order.sent_at)}
                             </Descriptions.Item>
+                            <Descriptions.Item label="Последняя попытка отправки">
+                                {formatDateTime(order.last_send_attempt_at)}
+                            </Descriptions.Item>
+                            {order.last_send_error && (
+                                <Descriptions.Item label="Ошибка отправки" span={2}>
+                                    <Typography.Text type="danger">{order.last_send_error}</Typography.Text>
+                                </Descriptions.Item>
+                            )}
                             <Descriptions.Item label="Кол-во позиций">
                                 {totals.totalQty}
                             </Descriptions.Item>
@@ -240,7 +328,8 @@ const CustomerSupplierOrderDetailPage = () => {
                             size="small"
                             scroll={{ x: 'max-content' }}
                             rowClassName={(record) =>
-                                record.auto_refused_at ? 'row-auto-refused' : ''
+                                ['overdue', 'partially_received_overdue'].includes(record.response_state)
+                                    ? 'row-auto-refused' : ''
                             }
                         />
                     </>

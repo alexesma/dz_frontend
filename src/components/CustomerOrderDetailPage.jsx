@@ -7,6 +7,7 @@ import {
     Drawer,
     Empty,
     message,
+    Modal,
     Popconfirm,
     Select,
     Space,
@@ -24,7 +25,9 @@ import dayjs from 'dayjs';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
     deleteCustomerOrder,
+    forceCustomerOrderPriceOverride,
     getCustomerOrder,
+    getCustomerOrderPriceOverridePreview,
     getCustomerOrderItemStats,
     processManualCustomerOrder,
     processPartsSoftOrderLocally,
@@ -78,6 +81,13 @@ const CustomerOrderDetailPage = () => {
     const [savingOrder, setSavingOrder] = useState(false);
     const [deletingOrder, setDeletingOrder] = useState(false);
     const [processingPartsSoftLocally, setProcessingPartsSoftLocally] = useState(false);
+    const [priceOverride, setPriceOverride] = useState({
+        open: false,
+        item: null,
+        preview: null,
+        loading: false,
+        submitting: false,
+    });
     const [statsOpen, setStatsOpen] = useState(false);
     const [statsLoading, setStatsLoading] = useState(false);
     const [statsMeta, setStatsMeta] = useState({ kind: 'oem', value: '', label: '' });
@@ -213,6 +223,78 @@ const CustomerOrderDetailPage = () => {
             message.error(detail);
         } finally {
             setItemUpdating(item.id, false);
+        }
+    };
+
+    const closePriceOverride = () => {
+        if (priceOverride.submitting) return;
+        setPriceOverride({
+            open: false,
+            item: null,
+            preview: null,
+            loading: false,
+            submitting: false,
+        });
+    };
+
+    const handleOpenPriceOverride = async (item) => {
+        setPriceOverride({
+            open: true,
+            item,
+            preview: null,
+            loading: true,
+            submitting: false,
+        });
+        try {
+            const response = await getCustomerOrderPriceOverridePreview(item.id);
+            setPriceOverride((prev) => ({
+                ...prev,
+                preview: response.data,
+                loading: false,
+            }));
+        } catch (err) {
+            const detail = formatApiDetail(
+                err?.response?.data?.detail,
+                'Не удалось проверить актуальное предложение поставщика',
+            );
+            message.error(detail);
+            setPriceOverride({
+                open: false,
+                item: null,
+                preview: null,
+                loading: false,
+                submitting: false,
+            });
+        }
+    };
+
+    const handleConfirmPriceOverride = async () => {
+        const itemId = priceOverride.item?.id;
+        if (!itemId || !priceOverride.preview) return;
+        setPriceOverride((prev) => ({ ...prev, submitting: true }));
+        try {
+            const response = await forceCustomerOrderPriceOverride(itemId);
+            if (response?.data?.credit_warning?.message) {
+                message.warning(response.data.credit_warning.message, 8);
+            }
+            message.success(
+                `Заказ поставщику №${response.data.supplier_order_id} создан`,
+            );
+            setPriceOverride({
+                open: false,
+                item: null,
+                preview: null,
+                loading: false,
+                submitting: false,
+            });
+            fetchData();
+        } catch (err) {
+            const detail = formatApiDetail(
+                err?.response?.data?.detail,
+                'Не удалось создать заказ поставщику',
+            );
+            message.error(detail);
+            setPriceOverride((prev) => ({ ...prev, submitting: false }));
         }
     };
 
@@ -805,6 +887,25 @@ const CustomerOrderDetailPage = () => {
                         : 'Частичный отказ без сохраненной причины.'
                 ),
         },
+        {
+            title: 'Действие',
+            key: 'price_override_action',
+            width: 150,
+            render: (_, record) => (
+                record.status === 'REJECTED'
+                && record.reject_reason_code === 'PRICE_TOO_HIGH'
+                    ? (
+                        <Button
+                            type="primary"
+                            size="small"
+                            onClick={() => handleOpenPriceOverride(record)}
+                        >
+                            Принять цену
+                        </Button>
+                    )
+                    : '—'
+            ),
+        },
     ];
 
     const interruptedImport = order?.status === 'NEW'
@@ -1032,6 +1133,80 @@ const CustomerOrderDetailPage = () => {
                 onCancel={() => setEditOpen(false)}
                 onSave={handleSaveOrder}
             />
+            <Modal
+                title="Принять цену поставщика"
+                open={priceOverride.open}
+                onCancel={closePriceOverride}
+                onOk={handleConfirmPriceOverride}
+                okText="Создать заказ поставщику"
+                cancelText="Отмена"
+                confirmLoading={priceOverride.submitting}
+                okButtonProps={{
+                    danger: true,
+                    disabled: priceOverride.loading || !priceOverride.preview,
+                }}
+                maskClosable={!priceOverride.submitting}
+                closable={!priceOverride.submitting}
+                width={660}
+            >
+                {priceOverride.loading && (
+                    <Text type="secondary">
+                        Проверяем актуальное предложение и остаток поставщика…
+                    </Text>
+                )}
+                {priceOverride.preview && (
+                    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                        <Alert
+                            type="warning"
+                            showIcon
+                            message="Цена клиента ниже цены, рассчитанной по плановой наценке"
+                            description="После подтверждения позиция будет добавлена в заказ поставщику с фактической наценкой, указанной ниже. Действие и пользователь будут сохранены в истории позиции."
+                        />
+                        <Descriptions bordered size="small" column={2}>
+                            <Descriptions.Item label="Позиция" span={2}>
+                                {priceOverride.item?.brand} {priceOverride.item?.oem}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Поставщик" span={2}>
+                                {priceOverride.preview.provider_name}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Закупочная цена">
+                                {formatMoney(priceOverride.preview.supplier_price)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Цена клиента">
+                                {formatMoney(priceOverride.preview.customer_price)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Цена по плановой наценке">
+                                {formatMoney(priceOverride.preview.offer_price)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Отклонение цены">
+                                {Number(priceOverride.preview.price_diff_pct).toFixed(2)}%
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Фактическая наценка">
+                                {Number(priceOverride.preview.actual_markup_pct).toFixed(2)}%
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Плановая наценка">
+                                {Number(priceOverride.preview.planned_markup_pct).toFixed(2)}%
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Фактическая маржа" span={2}>
+                                {Number(priceOverride.preview.actual_margin_pct).toFixed(2)}%
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Запрошено / доступно">
+                                {priceOverride.preview.requested_qty} / {priceOverride.preview.available_qty}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Будет заказано">
+                                {priceOverride.preview.accepted_qty}
+                            </Descriptions.Item>
+                        </Descriptions>
+                        {priceOverride.preview.remaining_reject_qty > 0 && (
+                            <Alert
+                                type="warning"
+                                showIcon
+                                message={`Частичный заказ: ${priceOverride.preview.remaining_reject_qty} шт. останется в отказе из-за нехватки остатка.`}
+                            />
+                        )}
+                    </Space>
+                )}
+            </Modal>
             <Drawer
                 title={
                     <Space direction="vertical" size={0}>

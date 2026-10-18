@@ -351,9 +351,10 @@ const ProviderPage = () => {
         { label: 'Сб', value: 'sat' },
         { label: 'Вс', value: 'sun' },
     ];
-    const timeOptions = Array.from({ length: 24 }, (_, i) => {
-        const hour = String(i).padStart(2, '0');
-        return { label: `${hour}:00`, value: `${hour}:00` };
+    const timeOptions = Array.from({ length: 24 * 12 }, (_, i) => {
+        const hour = String(Math.floor(i / 12)).padStart(2, '0');
+        const minute = String((i % 12) * 5).padStart(2, '0');
+        return { label: `${hour}:${minute}`, value: `${hour}:${minute}` };
     });
 
     const adjustForDisplay = (value, useFromOne) => {
@@ -668,6 +669,10 @@ const ProviderPage = () => {
 
 
     const handleProviderSubmit = async (values) => {
+        if (values.order_schedule_enabled && !(values.order_schedule_times || []).length) {
+            message.error('Укажите время индивидуальной отправки по Москве');
+            return;
+        }
         const normalizedValues = {
             ...values,
             is_vat_payer: deriveVatPayerFromPriceType(values.type_prices),
@@ -1027,6 +1032,7 @@ const ProviderPage = () => {
                     file_payload_type: config.file_payload_type || "response",
                     auto_confirm_unmentioned_items: !!config.auto_confirm_unmentioned_items,
                     auto_confirm_after_minutes: config.auto_confirm_after_minutes ?? null,
+                    auto_confirm_grace_minutes: config.auto_confirm_grace_minutes ?? null,
                     sender_emails_text: (config.sender_emails || []).join(", "),
                     subject_pattern: config.subject_pattern || "",
                     confirm_keywords_text: (config.confirm_keywords || []).join(", "),
@@ -1050,6 +1056,7 @@ const ProviderPage = () => {
                     process_shipping_docs: true,
                     auto_confirm_unmentioned_items: false,
                     auto_confirm_after_minutes: null,
+                    auto_confirm_grace_minutes: 15,
                     file_format: null,
                     file_payload_type: "response",
                 start_row: 1,
@@ -1097,6 +1104,9 @@ const ProviderPage = () => {
             payload.file_payload_type = payload.file_payload_type || "response";
             payload.auto_confirm_after_minutes =
                 payload.auto_confirm_after_minutes || null;
+            payload.auto_confirm_grace_minutes = payload.auto_confirm_after_minutes
+                ? (payload.auto_confirm_grace_minutes ?? 0)
+                : null;
             payload.fixed_brand_name = payload.fixed_brand_name || null;
             payload.brand_from_name_regex = payload.brand_from_name_regex || null;
             payload.oem_col_regex = payload.oem_col_regex || null;
@@ -2493,7 +2503,9 @@ const ProviderPage = () => {
             title: "Таймер без ответа",
             dataIndex: "auto_confirm_after_minutes",
             key: "auto_confirm_after_minutes",
-            render: (value) => (value ? `${value} мин` : "—"),
+            render: (value, record) => value
+                ? `${value} + ${record.auto_confirm_grace_minutes ?? 0} мин`
+                : "—",
         },
         {
             title: "Режим файла",
@@ -3063,8 +3075,9 @@ const ProviderPage = () => {
                     </Form.Item>
                     <Form.Item
                         name="order_schedule_enabled"
-                        label="Автоматическая отправка заказов"
+                        label="Индивидуальное время отправки заказов"
                         valuePropName="checked"
+                        extra="Если включено, это расписание заменяет общее для данного поставщика. Укажите хотя бы одно время по Москве."
                     >
                         <Switch />
                     </Form.Item>
@@ -3075,7 +3088,7 @@ const ProviderPage = () => {
                             placeholder="Выберите дни"
                         />
                     </Form.Item>
-                    <Form.Item name="order_schedule_times" label="Время (HH:MM)">
+                    <Form.Item name="order_schedule_times" label="Время отсечки и отправки (МСК, HH:MM)">
                         <Select
                             mode="multiple"
                             options={timeOptions}
@@ -4172,19 +4185,27 @@ const ProviderPage = () => {
 
                     <Form.Item
                         name="auto_confirm_unmentioned_items"
-                        label="Режим исключений (остальные позиции подтверждать)"
+                        label="Неупомянутые позиции считать подтверждёнными"
                         valuePropName="checked"
-                        extra="Если в ответе распознаны позиции, изменения применяются только к ним, а остальные pending-позиции заказа автоматически подтверждаются."
+                        extra="Применяется после распознанного ответа: поставщик перечислил отдельные позиции, остальные позиции этого заказа считаются подтверждёнными. Отдельно от таймера 30 + 15."
                     >
                         <Switch />
                     </Form.Item>
 
                     <Form.Item
                         name="auto_confirm_after_minutes"
-                        label="Автоподтверждение при отсутствии ответа (мин)"
-                        extra="Если ответов по заказу нет дольше этого времени после отправки — позиции автоматически подтверждаются. Пусто = выключено."
+                        label="Ожидание ответа (мин)"
+                        extra="Через это время ответ считается просроченным. Пусто = автоподтверждение выключено."
                     >
                         <InputNumber min={1} style={{ width: "100%" }} placeholder="Например: 30" />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="auto_confirm_grace_minutes"
+                        label="Дополнительное ожидание (мин)"
+                        extra="После просрочки ждём ещё столько минут, затем подтверждаем заказ при отсутствии ответа. Например, 30 + 15."
+                    >
+                        <InputNumber min={0} style={{ width: "100%" }} placeholder="Например: 15" />
                     </Form.Item>
 
                     <Form.Item

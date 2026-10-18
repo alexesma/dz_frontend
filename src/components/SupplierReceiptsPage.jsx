@@ -12,6 +12,7 @@ import {
     Row,
     Select,
     Space,
+    Switch,
     Table,
     Tag,
     Tooltip,
@@ -57,7 +58,7 @@ const getRowState = (row, draft) => {
     const alreadyReceived = Number(row.already_received_quantity || 0);
     const currentDraft = draft?.touched ? Number(draft.received_quantity || 0) : 0;
     const totalAfter = alreadyReceived + currentDraft;
-    if (draft?.touched && currentDraft === 0 && alreadyReceived === 0) return 'rejected';
+    if (draft?.touched && currentDraft === 0) return 'rejected';
     if (totalAfter >= expected && expected > 0) return 'complete';
     if (totalAfter > 0) return 'partial';
     return 'idle';
@@ -74,6 +75,7 @@ const SupplierReceiptsPage = () => {
     const [filters, setFilters] = useState({
         providerId: null,
         dateRange: getDefaultDateRange(),
+        customerOnly: true,
     });
     const [drafts, setDrafts] = useState({});
     const [documentNumber, setDocumentNumber] = useState('');
@@ -85,7 +87,7 @@ const SupplierReceiptsPage = () => {
     const fetchProviders = useCallback(async () => {
         setProvidersLoading(true);
         try {
-            const params = {};
+            const params = { customer_only: filters.customerOnly };
             if (filters.dateRange?.length === 2) {
                 params.date_from = filters.dateRange[0].format('YYYY-MM-DD');
                 params.date_to = filters.dateRange[1].format('YYYY-MM-DD');
@@ -108,7 +110,7 @@ const SupplierReceiptsPage = () => {
         } finally {
             setProvidersLoading(false);
         }
-    }, [filters.dateRange]);
+    }, [filters.dateRange, filters.customerOnly]);
 
     useEffect(() => { fetchProviders(); }, [fetchProviders]);
 
@@ -116,7 +118,10 @@ const SupplierReceiptsPage = () => {
         if (!filters.providerId) { setRows([]); return; }
         setLoading(true);
         try {
-            const params = { provider_id: filters.providerId };
+            const params = {
+                provider_id: filters.providerId,
+                customer_only: filters.customerOnly,
+            };
             if (filters.dateRange?.length === 2) {
                 params.date_from = filters.dateRange[0].format('YYYY-MM-DD');
                 params.date_to = filters.dateRange[1].format('YYYY-MM-DD');
@@ -547,6 +552,13 @@ const SupplierReceiptsPage = () => {
                         </Space>
                     </Col>
                 </Row>
+                <Space style={{ marginBottom: 12 }}>
+                    <Switch
+                        checked={filters.customerOnly}
+                        onChange={(checked) => setFilters((prev) => ({ ...prev, customerOnly: checked }))}
+                    />
+                    <Text>Только позиции из заказов клиентов</Text>
+                </Space>
 
                 {/* Document header + create button */}
                 <Card

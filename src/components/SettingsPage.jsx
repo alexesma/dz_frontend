@@ -104,9 +104,9 @@ const SettingsPage = () => {
             description: 'Проверяет входящую почту с заказами клиентов.',
         },
         supplier_orders_send: {
-            title: 'Авто-отправка заказов поставщикам',
+            title: 'Общее время отправки заказов поставщикам',
             description:
-                'В выбранное время (МСК) отправляет новые заказы поставщикам из заказов клиентов. Укажите хотя бы одно время. Параллельно остается доступна ручная отправка.',
+                'Новые позиции собираются в партию до выбранной отсечки (МСК). После неё партия отправляется, а новые позиции образуют следующую. Укажите хотя бы одно время. Для поставщиков с включённым индивидуальным расписанием действует время из их карточки.',
         },
         dragonzap_production_waves: {
             title: 'Производственные волны DragonZap',
@@ -364,6 +364,10 @@ const SettingsPage = () => {
     const handleSchedulerSave = async (key) => {
         const setting = schedulerSettings.find((item) => item.key === key);
         if (!setting) return;
+        if (key === 'supplier_orders_send' && setting.enabled && !(setting.times || []).length) {
+            message.error('Укажите хотя бы одно общее время отправки по Москве');
+            return;
+        }
         setSchedulerSaving((prev) => ({ ...prev, [key]: true }));
         try {
             const payload = {
@@ -807,7 +811,7 @@ const SettingsPage = () => {
 
             {/* ── Календарь праздников ── */}
             <Card
-                title="Календарь нерабочих дней (авто-отказ поставщиков)"
+                title="Календарь нерабочих дней (срок ответа поставщиков)"
                 style={{ marginTop: 24 }}
                 extra={
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

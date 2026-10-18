@@ -10,6 +10,7 @@ import {
     Select,
     Tag,
     Table,
+    Tooltip,
     Typography,
 } from 'antd';
 import dayjs from 'dayjs';
@@ -23,7 +24,7 @@ import {
 import { getAutopartLookupByOem } from '../api/autoparts';
 import { getProviders } from '../api/providers';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
 const DEFAULT_FILTERS = {
@@ -171,16 +172,48 @@ const CustomerSupplierOrdersPage = () => {
             },
         },
         {
-            title: 'Отказ, %',
+            title: 'Ожидает отправки',
+            key: 'age',
+            width: 150,
+            render: (_, record) => {
+                if (!['NEW', 'SCHEDULED', 'ERROR'].includes(record.status)) return '—';
+                const hours = Math.max(0, dayjs().diff(dayjs(record.created_at), 'hour'));
+                return hours >= 24 ? `${Math.floor(hours / 24)} д ${hours % 24} ч` : `${hours} ч`;
+            },
+        },
+        {
+            title: 'Подтверждённый отказ, %',
             dataIndex: 'rejected_pct',
             key: 'rejected_pct',
             width: 100,
-            render: (value) => {
+            render: (value, record) => {
+                if (value === null || value === undefined) return '—';
                 const num = Number(value);
-                if (!num) return <span style={{ color: '#aaa' }}>—</span>;
+                if (!Number.isFinite(num)) return '—';
                 const color = num >= 50 ? '#cf1322' : num >= 20 ? '#d46b08' : '#595959';
-                return <span style={{ color, fontWeight: 600 }}>{num.toFixed(1)}%</span>;
+                const formatSum = (amount) => Number(amount || 0).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+                return <Tooltip title={
+                    <div>
+                        <div>Написал поставщик: {formatSum(record.rejected_by_supplier_sum)}</div>
+                        <div>Ввёл менеджер: {formatSum(record.rejected_by_manager_sum)}</div>
+                        <div>Не вошло в документы за 24 часа: {formatSum(record.rejected_by_document_timeout_sum)}</div>
+                        {Number(record.rejected_by_other_sum || 0) > 0 && <div>Без уточнённого источника: {formatSum(record.rejected_by_other_sum)}</div>}
+                    </div>
+                }><span style={{ color, fontWeight: 600, cursor: 'help' }}>{num.toFixed(1)}%</span></Tooltip>;
             },
+        },
+        {
+            title: 'Ждём / просрочено',
+            key: 'response_wait',
+            width: 155,
+            render: (_, record) => `${record.awaiting_count || 0} / ${record.overdue_count || 0}`,
+        },
+        {
+            title: 'Ошибка отправки',
+            dataIndex: 'last_send_error',
+            key: 'last_send_error',
+            width: 220,
+            render: (value) => value ? <Text type="danger" ellipsis={{ tooltip: value }}>{value}</Text> : '—',
         },
     ];
 
@@ -406,6 +439,11 @@ const CustomerSupplierOrdersPage = () => {
     return (
         <Card>
             <Title level={3}>Заказы поставщикам (из заказов клиентов)</Title>
+            <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+                Партии собираются до ближайшей отсечки. Общее время задаётся в «Администрирование → Настройки»,
+                индивидуальное — в карточке поставщика; индивидуальное имеет приоритет.
+                Отказ учитывается только после явного ответа или отметки менеджера.
+            </Text>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
                 <RangePicker
                     value={

@@ -65,6 +65,7 @@ const NAVIGATION_SEARCH_ITEMS = [
     { path: '/customer-orders/stock', title: 'Наш склад: заказы', section: 'Заказы', keywords: 'резерв наличие выдача' },
     { path: '/customer-orders/receipts', title: 'Поступления от поставщиков', section: 'Заказы', keywords: 'приемка приход накладная поставка' },
     { path: '/documents/incoming', title: 'Входящие документы', section: 'Документы', keywords: 'упд накладная эдо получение' },
+    { path: '/documents/corrections', title: 'КСФ поставщиков', section: 'Документы', keywords: 'корректировка укд ксф поставщик' },
     { path: '/documents/outgoing', title: 'Исходящие документы', section: 'Документы', keywords: 'упд накладная эдо отправка' },
     { path: '/documents/diadoc', title: 'Диадок', section: 'Документы', keywords: 'эдо контур упд', roles: ['admin'] },
     { path: '/documents/1c', title: 'Обмен с 1С', section: 'Документы', keywords: 'интеграция выгрузка загрузка синхронизация', roles: ['admin'] },
@@ -169,6 +170,7 @@ const Sidebar = () => {
         if (path.startsWith('/customer-orders/receipts')) return 'supplier-receipts';
         if (path.startsWith('/customer-orders/stock')) return 'stock-orders';
         if (path.startsWith('/documents/incoming')) return 'documents-incoming';
+        if (path.startsWith('/documents/corrections')) return 'documents-corrections';
         if (path.startsWith('/documents/outgoing')) return 'documents-outgoing';
         if (path.startsWith('/documents/diadoc')) return 'documents-diadoc';
         if (path.startsWith('/documents/1c')) return 'documents-1c';
@@ -326,6 +328,9 @@ const Sidebar = () => {
             >
                 <Menu.Item key="documents-incoming" icon={<InboxOutlined />}>
                     <Link to="/documents/incoming">Входящие</Link>
+                </Menu.Item>
+                <Menu.Item key="documents-corrections" icon={<InboxOutlined />}>
+                    <Link to="/documents/corrections">КСФ поставщиков</Link>
                 </Menu.Item>
                 <Menu.Item key="documents-outgoing" icon={<SendOutlined />}>
                     <Link to="/documents/outgoing">Исходящие</Link>

@@ -652,10 +652,13 @@ const DiadocPage = () => {
             });
             const result = response.data || {};
             message.success(
-                result.already_processed
+                result.correction_id
+                    ? `КСФ #${result.correction_id} ожидает сопоставления с приходом`
+                    : result.already_processed
                     ? 'Документ уже был обработан ранее'
                     : `Документ обработан, поступлений: ${result.receipt_ids?.length || 0}`
             );
+            if (result.correction_id) navigate('/documents/corrections');
             await loadInbound();
         } catch (err) {
             console.error('Failed to process inbound Diadoc doc', err);

@@ -86,6 +86,24 @@ export const getSupplierReceipts = (params) =>
 export const getSupplierReceipt = (receiptId) =>
     api.get(`/customer-orders/supplier-receipts/${receiptId}`);
 
+export const getSupplierReceiptCorrections = (params) =>
+    api.get('/customer-orders/supplier-receipts/corrections/list', { params });
+
+export const getSupplierReceiptCorrectionOptions = (params) =>
+    api.get('/customer-orders/supplier-receipts/corrections/receipt-options', { params });
+
+export const createSupplierReceiptCorrection = (payload) =>
+    api.post('/customer-orders/supplier-receipts/corrections', payload);
+
+export const updateSupplierReceiptCorrection = (correctionId, payload) =>
+    api.put(`/customer-orders/supplier-receipts/corrections/${correctionId}`, payload);
+
+export const postSupplierReceiptCorrection = (correctionId) =>
+    api.post(`/customer-orders/supplier-receipts/corrections/${correctionId}/post`);
+
+export const downloadSupplierReceiptCorrectionAttachment = (correctionId, attachmentId) =>
+    api.get(`/customer-orders/supplier-receipts/corrections/${correctionId}/attachments/${attachmentId}`, { responseType: 'blob' });
+
 export const getCrossDockingLabels = (receiptId) =>
     api.get(`/customer-orders/supplier-receipts/${receiptId}/cross-docking-labels`);
 
@@ -159,6 +177,12 @@ export const createManualSupplierOrder = (payload) =>
 
 export const updateCustomerOrderItem = (itemId, payload) =>
     api.patch(`/customer-orders/items/${itemId}`, payload);
+
+export const getCustomerOrderPriceOverridePreview = (itemId) =>
+    api.get(`/customer-orders/items/${itemId}/price-override-preview`);
+
+export const forceCustomerOrderPriceOverride = (itemId) =>
+    api.post(`/customer-orders/items/${itemId}/force-price-override`);
 
 export const sendSupplierOrders = (orderIds) =>
     api.post('/customer-orders/supplier/send', orderIds);
