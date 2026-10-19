@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     Button,
     Card,
+    AutoComplete,
+    ConfigProvider,
     DatePicker,
     Input,
     InputNumber,
@@ -25,29 +27,69 @@ import {
     WarningOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { useNavigate } from 'react-router-dom';
+import 'dayjs/locale/ru';
+import ruRU from 'antd/locale/ru_RU';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { getAutopartLookupByOem } from '../api/autoparts';
 import {
     createManualCustomerOrder,
     deleteCustomerOrder,
     getCustomerOrderConfigs,
     getCustomerOrders,
-    getCustomerOrdersSummary,
+    getCustomerOrdersCount,
+    getCustomerOrdersSummaryPage,
+    getCustomerOrderOemSuggestions,
     processPartsSoftOrderLocally,
     retryCustomerOrder,
     updateCustomerOrder,
 } from '../api/customerOrders';
 import { getCustomersSummary } from '../api/customers';
+import { getAllProviders } from '../api/providers';
 import PartsSoftOrderReconciliation from './PartsSoftOrderReconciliation';
 import CustomerOrderEditModal from './CustomerOrderEditModal';
 
 const { Title } = Typography;
 const { RangePicker } = DatePicker;
+dayjs.locale('ru');
+const displayOem = (value) => {
+    const original = String(value || '').trim();
+    return original.replace(/[^a-z0-9]/gi, '').toUpperCase() || original;
+};
 
 const DEFAULT_FILTERS = {
     customerId: null,
+    supplierIds: [],
     status: null,
     dateRange: null,
+    itemOem: '',
+};
+
+const readFilters = (searchParams) => {
+    const dateFrom = searchParams.get('date_from');
+    const dateTo = searchParams.get('date_to');
+    return {
+        customerId: Number(searchParams.get('customer_id')) || null,
+        supplierIds: (searchParams.get('supplier_ids') || '').split(',')
+            .map(Number).filter((id) => id > 0),
+        status: searchParams.get('status') || null,
+        dateRange: dateFrom && dateTo ? [dateFrom, dateTo] : null,
+        itemOem: searchParams.get('item_oem') || '',
+    };
+};
+
+const buildSearch = (filters, tab, page) => {
+    const params = new URLSearchParams();
+    if (filters.customerId) params.set('customer_id', filters.customerId);
+    if (filters.supplierIds?.length) params.set('supplier_ids', filters.supplierIds.join(','));
+    if (filters.status) params.set('status', filters.status);
+    if (filters.dateRange?.length === 2) {
+        params.set('date_from', filters.dateRange[0]);
+        params.set('date_to', filters.dateRange[1]);
+    }
+    if (filters.itemOem?.trim()) params.set('item_oem', filters.itemOem.trim());
+    if (tab !== 'orders') params.set('tab', tab);
+    if (page > 1) params.set('page', page);
+    return params;
 };
 
 const ORDER_STATUS_LABELS = {
@@ -59,12 +101,21 @@ const ORDER_STATUS_LABELS = {
 
 const CustomerOrdersPage = () => {
     const navigate = useNavigate();
+    const location = useLocation();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const appliedFilters = useMemo(() => readFilters(searchParams), [searchParams]);
+    const activeTab = ['orders', 'errors', 'partssoft'].includes(searchParams.get('tab'))
+        ? searchParams.get('tab') : 'orders';
+    const page = Math.max(1, parseInt(searchParams.get('page'), 10) || 1);
     const [orders, setOrders] = useState([]);
     const [errorOrders, setErrorOrders] = useState([]);
+    const [ordersTotal, setOrdersTotal] = useState(0);
+    const [errorOrdersTotal, setErrorOrdersTotal] = useState(0);
     const [customers, setCustomers] = useState([]);
+    const [providers, setProviders] = useState([]);
+    const [oemOptions, setOemOptions] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [filters, setFilters] = useState(DEFAULT_FILTERS);
-    const [activeTab, setActiveTab] = useState('orders');
+    const [filters, setFilters] = useState(appliedFilters);
     const [createOpen, setCreateOpen] = useState(false);
     const [creating, setCreating] = useState(false);
     const [orderConfigs, setOrderConfigs] = useState([]);
@@ -123,6 +174,12 @@ const CustomerOrdersPage = () => {
         if (activeFilters.customerId) {
             params.customer_id = activeFilters.customerId;
         }
+        if (activeFilters.supplierIds?.length) {
+            params.supplier_ids = activeFilters.supplierIds.join(',');
+        }
+        if (activeFilters.itemOem?.trim()) {
+            params.item_oem = activeFilters.itemOem.trim();
+        }
         if (activeFilters.dateRange?.length === 2) {
             params.date_from = activeFilters.dateRange[0];
             params.date_to = activeFilters.dateRange[1];
@@ -130,7 +187,7 @@ const CustomerOrdersPage = () => {
         return params;
     }, []);
 
-    const fetchOrders = useCallback(async (filtersState) => {
+    const fetchOrders = useCallback(async (filtersState, pageNumber = page) => {
         const activeFilters = filtersState || DEFAULT_FILTERS;
         setLoading(true);
         try {
@@ -139,26 +196,71 @@ const CustomerOrdersPage = () => {
             if (activeFilters.status && activeFilters.status !== 'ERROR') {
                 summaryParams.status = activeFilters.status;
             }
-            const [ordersResp, errorOrdersResp, customersResp] = await Promise.all([
-                getCustomerOrdersSummary(summaryParams),
-                getCustomerOrders({ ...baseParams, status: 'ERROR' }),
+            const pageParams = { skip: (pageNumber - 1) * 20, limit: 20 };
+            const [ordersResp, errorOrdersResp, errorCountResp, customersResp] = await Promise.all([
+                getCustomerOrdersSummaryPage({ ...summaryParams, ...pageParams }),
+                getCustomerOrders({ ...baseParams, status: 'ERROR', ...pageParams }),
+                getCustomerOrdersCount({ ...baseParams, status: 'ERROR' }),
                 getCustomersSummary({ page: 1, page_size: 200 }),
             ]);
-            setOrders(
-                (ordersResp.data || []).filter((order) => order.status !== 'ERROR')
-            );
+            setOrders((ordersResp.data?.items || []).filter((order) => order.status !== 'ERROR'));
+            setOrdersTotal(ordersResp.data?.total || 0);
             setErrorOrders(errorOrdersResp.data || []);
+            setErrorOrdersTotal(errorCountResp.data || 0);
             setCustomers(customersResp.data?.items || []);
         } catch {
             message.error('Не удалось загрузить заказы клиентов');
         } finally {
             setLoading(false);
         }
-    }, [buildBaseParams]);
+    }, [buildBaseParams, page]);
 
     useEffect(() => {
-        fetchOrders(DEFAULT_FILTERS);
-    }, [fetchOrders]);
+        setFilters(appliedFilters);
+        fetchOrders(appliedFilters, page);
+    }, [appliedFilters, fetchOrders, page]);
+
+    useEffect(() => {
+        getAllProviders().then(setProviders).catch(() => {
+            message.error('Не удалось загрузить поставщиков');
+        });
+    }, []);
+
+    useEffect(() => {
+        const query = filters.itemOem?.trim();
+        if (!query || query.length < 2) {
+            setOemOptions([]);
+            return undefined;
+        }
+        let cancelled = false;
+        const timer = setTimeout(() => {
+            getCustomerOrderOemSuggestions(query).then((response) => {
+                if (!cancelled) {
+                    setOemOptions((response.data || []).map((value) => ({ value })));
+                }
+            }).catch(() => {
+                if (!cancelled) setOemOptions([]);
+            });
+        }, 250);
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [filters.itemOem]);
+
+    const updateListSearch = (nextFilters, nextTab = activeTab, nextPage = 1) => {
+        const next = buildSearch(nextFilters, nextTab, nextPage);
+        if (next.toString() === searchParams.toString()) {
+            fetchOrders(nextFilters, nextPage);
+        } else {
+            setSearchParams(next);
+        }
+    };
+
+    const openOrder = (orderId) => {
+        const returnTo = `${location.pathname}${location.search}`;
+        navigate(`/customer-orders/${orderId}?returnTo=${encodeURIComponent(returnTo)}`);
+    };
 
     const dataSource = useMemo(() => {
         return (orders || []).map((order) => ({
@@ -512,7 +614,7 @@ const CustomerOrdersPage = () => {
         >
             <Tooltip title="Открыть заказ">
                 <Button size="small" aria-label="Открыть заказ" icon={<EyeOutlined />}
-                    onClick={() => navigate(`/customer-orders/${record.id}`)} />
+                    onClick={() => openOrder(record.id)} />
             </Tooltip>
             <Tooltip title="Редактировать заказ">
                 <Button size="small" aria-label="Редактировать заказ" icon={<EditOutlined />}
@@ -646,6 +748,25 @@ const CustomerOrdersPage = () => {
                 </Button>
             ),
         },
+        ...(appliedFilters.itemOem ? [{
+            title: 'Найденные позиции',
+            key: 'matching_items',
+            width: '23%',
+            render: (_, record) => (
+                <div>
+                    {(record.matching_items || []).slice(0, 3).map((item, index) => (
+                        <div key={`${item.oem}-${index}`}>
+                            <span title={`${item.brand} ${item.oem}`}>
+                                {item.brand?.toUpperCase()} {displayOem(item.oem)} × {item.requested_qty}
+                            </span>
+                        </div>
+                    ))}
+                    {(record.matching_items || []).length > 3 && (
+                        <span>Ещё {(record.matching_items || []).length - 3}</span>
+                    )}
+                </div>
+            ),
+        }] : []),
         {
             title: 'Статус',
             dataIndex: 'status',
@@ -761,13 +882,11 @@ const CustomerOrdersPage = () => {
     );
 
     const handleTabChange = (key) => {
-        setActiveTab(key);
-        if (key === 'orders' && filters.status === 'ERROR') {
-            setFilters((prev) => ({ ...prev, status: null }));
-        }
+        updateListSearch(appliedFilters, key, 1);
     };
 
     return (
+        <ConfigProvider locale={ruRU}>
         <Card>
             <Title level={3}>Заказы клиентов</Title>
             {activeTab !== 'partssoft' && (
@@ -809,6 +928,36 @@ const CustomerOrdersPage = () => {
                         label: customer.name,
                     }))}
                 />
+                <Select
+                    mode="multiple"
+                    allowClear
+                    showSearch
+                    optionFilterProp="label"
+                    maxTagCount="responsive"
+                    style={{ minWidth: 250 }}
+                    placeholder="Поставщики"
+                    value={filters.supplierIds}
+                    onChange={(values) =>
+                        setFilters((prev) => ({ ...prev, supplierIds: values }))
+                    }
+                    options={providers.map((provider) => ({
+                        value: provider.id,
+                        label: provider.name,
+                    }))}
+                />
+                <AutoComplete
+                    allowClear
+                    options={oemOptions}
+                    value={filters.itemOem}
+                    onChange={(value) =>
+                        setFilters((prev) => ({ ...prev, itemOem: value || '' }))
+                    }
+                    onSelect={(value) =>
+                        setFilters((prev) => ({ ...prev, itemOem: value }))
+                    }
+                    style={{ minWidth: 220 }}
+                    placeholder="Артикул позиции"
+                />
                 {activeTab === 'orders' && (
                     <Select
                         allowClear
@@ -823,7 +972,7 @@ const CustomerOrdersPage = () => {
                 )}
                 <Button
                     type="primary"
-                    onClick={() => fetchOrders(filters)}
+                    onClick={() => updateListSearch(filters)}
                 >
                     Применить
                 </Button>
@@ -831,7 +980,7 @@ const CustomerOrdersPage = () => {
                     onClick={() => {
                         const reset = { ...DEFAULT_FILTERS };
                         setFilters(reset);
-                        fetchOrders(reset);
+                        updateListSearch(reset);
                     }}
                 >
                     Сбросить
@@ -847,7 +996,7 @@ const CustomerOrdersPage = () => {
                 items={[
                     {
                         key: 'orders',
-                        label: `Заказы (${dataSource.length})`,
+                        label: `Заказы (${ordersTotal})`,
                         children: (
                             <Table
                                 className="customer-orders-table"
@@ -865,16 +1014,19 @@ const CustomerOrdersPage = () => {
                                         ) {
                                             return;
                                         }
-                                        navigate(`/customer-orders/${record.id}`);
+                                        openOrder(record.id);
                                     },
                                 })}
-                                pagination={{ pageSize: 20 }}
+                                pagination={{ current: page, pageSize: 20, total: ordersTotal }}
+                                onChange={(pagination) =>
+                                    updateListSearch(appliedFilters, activeTab, pagination.current)
+                                }
                             />
                         ),
                     },
                     {
                         key: 'errors',
-                        label: `Ошибки импорта (${errorDataSource.length})`,
+                        label: `Ошибки импорта (${errorOrdersTotal})`,
                         children: (
                             <Table
                                 loading={loading}
@@ -889,10 +1041,13 @@ const CustomerOrdersPage = () => {
                                         ) {
                                             return;
                                         }
-                                        navigate(`/customer-orders/${record.id}`);
+                                        openOrder(record.id);
                                     },
                                 })}
-                                pagination={{ pageSize: 20 }}
+                                pagination={{ current: page, pageSize: 20, total: errorOrdersTotal }}
+                                onChange={(pagination) =>
+                                    updateListSearch(appliedFilters, activeTab, pagination.current)
+                                }
                             />
                         ),
                     },
@@ -1067,6 +1222,7 @@ const CustomerOrdersPage = () => {
                 onSave={handleSaveOrder}
             />
         </Card>
+        </ConfigProvider>
     );
 };
 

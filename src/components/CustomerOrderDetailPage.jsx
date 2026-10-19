@@ -22,7 +22,7 @@ import {
     SearchOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
     deleteCustomerOrder,
     forceCustomerOrderPriceOverride,
@@ -64,9 +64,20 @@ const ITEM_STATUS_COLORS = {
     REJECTED: 'red',
 };
 
+const displayBrand = (value) => String(value || '').trim().toUpperCase();
+const displayOem = (value) => {
+    const original = String(value || '').trim();
+    return original.replace(/[^a-z0-9]/gi, '').toUpperCase() || original;
+};
+
 const CustomerOrderDetailPage = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
+    const location = useLocation();
+    const requestedReturnTo = new URLSearchParams(location.search).get('returnTo');
+    const returnTo = requestedReturnTo === '/customer-orders'
+        || requestedReturnTo?.startsWith('/customer-orders?')
+        ? requestedReturnTo : '/customer-orders';
     const { orderId } = useParams();
     const [order, setOrder] = useState(null);
     const [customers, setCustomers] = useState([]);
@@ -396,7 +407,7 @@ const CustomerOrderDetailPage = () => {
         try {
             await deleteCustomerOrder(order.id);
             message.success('Заказ удалён из рабочего списка');
-            navigate('/customer-orders');
+            navigate(returnTo);
         } catch (err) {
             message.error(formatApiDetail(err?.response?.data?.detail, 'Не удалось удалить заказ'));
         } finally {
@@ -744,7 +755,7 @@ const CustomerOrderDetailPage = () => {
                 <div className="customer-order-part-cell">
                     <Space size={4} wrap>
                         <Button type="link" size="small" style={{ padding: 0, height: 'auto', fontWeight: 600 }} onClick={() => openAutopartSearch(record)}>
-                            {record.oem}
+                            <span title={`В заказе: ${record.oem}`}>{displayOem(record.oem)}</span>
                         </Button>
                         <Tooltip title="Статистика по артикулу">
                             <Button type="text" size="small" icon={<BarChartOutlined />} onClick={() => loadStats('oem', record.oem, record.oem)} />
@@ -755,7 +766,7 @@ const CustomerOrderDetailPage = () => {
                     </Space>
                     <div className="customer-order-line" title={record.name || ''}>
                         <Button type="link" size="small" style={{ padding: 0, height: 'auto' }} onClick={() => loadStats('brand', record.brand, record.brand)}>
-                            {record.brand}
+                            <span title={`В заказе: ${record.brand}`}>{displayBrand(record.brand)}</span>
                         </Button>
                         <Text type="secondary"> · {record.name || '—'}</Text>
                     </div>
@@ -768,7 +779,9 @@ const CustomerOrderDetailPage = () => {
             width: '22%',
             render: (_, record) => (
                 <div className="customer-order-part-cell">
-                    <div>{record.actual_oem ? `${record.actual_brand || ''} ${record.actual_oem}`.trim() : '—'}</div>
+                    <div title={record.actual_oem ? `${record.actual_brand || ''} ${record.actual_oem}`.trim() : ''}>
+                        {record.actual_oem ? `${displayBrand(record.actual_brand)} ${displayOem(record.actual_oem)}`.trim() : '—'}
+                    </div>
                     {record.actual_name && (
                         <div className="customer-order-line" title={record.actual_name}>
                             <Text type="secondary">{record.actual_name}</Text>
@@ -849,12 +862,14 @@ const CustomerOrderDetailPage = () => {
             dataIndex: 'oem',
             key: 'oem',
             width: 140,
+            render: (value) => <span title={`В заказе: ${value}`}>{displayOem(value)}</span>,
         },
         {
             title: 'Бренд',
             dataIndex: 'brand',
             key: 'brand',
             width: 120,
+            render: (value) => <span title={`В заказе: ${value}`}>{displayBrand(value)}</span>,
         },
         {
             title: 'Запрошено',
@@ -916,7 +931,7 @@ const CustomerOrderDetailPage = () => {
         <div className="page-shell">
             <Card loading={loading}>
                 <div className="page-header-actions" style={{ marginBottom: 16 }}>
-                    <Button onClick={() => navigate('/customer-orders')}>
+                    <Button onClick={() => navigate(returnTo)}>
                         Назад к списку
                     </Button>
                     {order && (

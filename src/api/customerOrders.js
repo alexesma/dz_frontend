@@ -62,6 +62,15 @@ export const getCustomerOrderConfigs = (customerId) =>
 export const getCustomerOrdersSummary = (params) =>
     api.get('/customer-orders/summary', { params });
 
+export const getCustomerOrdersSummaryPage = (params) =>
+    api.get('/customer-orders/summary-page', { params });
+
+export const getCustomerOrdersCount = (params) =>
+    api.get('/customer-orders/count', { params });
+
+export const getCustomerOrderOemSuggestions = (q) =>
+    api.get('/customer-orders/oem-suggestions', { params: { q } });
+
 export const getSupplierOrderDetail = (orderId) =>
     api.get(`/customer-orders/supplier/${orderId}`);
 
