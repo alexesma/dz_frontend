@@ -6,6 +6,8 @@ import {
     Descriptions,
     Drawer,
     Empty,
+    Input,
+    InputNumber,
     message,
     Modal,
     Popconfirm,
@@ -37,7 +39,7 @@ import {
     updateCustomerOrderItem,
 } from '../api/customerOrders';
 import { getCustomersSummary } from '../api/customers';
-import { getProviders } from '../api/providers';
+import { getAllProviders } from '../api/providers';
 import useAuth from '../context/useAuth';
 import CustomerOrderEditModal from './CustomerOrderEditModal';
 
@@ -68,6 +70,28 @@ const displayBrand = (value) => String(value || '').trim().toUpperCase();
 const displayOem = (value) => {
     const original = String(value || '').trim();
     return original.replace(/[^a-z0-9]/gi, '').toUpperCase() || original;
+};
+
+const INITIAL_ITEM_VIEW = {
+    search: '',
+    supplierIds: [],
+    status: 'all',
+    minPrice: null,
+    maxPrice: null,
+    sortBy: 'original',
+    sortDirection: 'asc',
+};
+
+const compareValues = (left, right, direction) => {
+    const leftMissing = left === null || left === undefined || left === '';
+    const rightMissing = right === null || right === undefined || right === '';
+    if (leftMissing || rightMissing) {
+        return leftMissing === rightMissing ? 0 : leftMissing ? 1 : -1;
+    }
+    const comparison = typeof left === 'number' && typeof right === 'number'
+        ? left - right
+        : String(left).localeCompare(String(right), 'ru', { numeric: true });
+    return direction === 'desc' ? -comparison : comparison;
 };
 
 const CustomerOrderDetailPage = () => {
@@ -104,6 +128,7 @@ const CustomerOrderDetailPage = () => {
     const [statsMeta, setStatsMeta] = useState({ kind: 'oem', value: '', label: '' });
     const [statsData, setStatsData] = useState(null);
     const statsCacheRef = useRef(new Map());
+    const [itemView, setItemView] = useState(INITIAL_ITEM_VIEW);
 
     const customerMap = useMemo(() => {
         const map = {};
@@ -122,16 +147,82 @@ const CustomerOrderDetailPage = () => {
         [providers]
     );
 
+    const providerNames = useMemo(
+        () => new Map((providers || []).map((provider) => [provider.id, provider.name])),
+        [providers]
+    );
+
+    const orderProviderOptions = useMemo(() => {
+        const ids = [...new Set((order?.items || [])
+            .map((item) => item.supplier_id)
+            .filter((id) => id !== null && id !== undefined))];
+        return [
+            { value: 'unassigned', label: 'Без поставщика' },
+            ...ids.map((id) => ({
+                value: id,
+                label: providerNames.get(id) || `Поставщик #${id}`,
+            })).sort((a, b) => a.label.localeCompare(b.label, 'ru')),
+        ];
+    }, [order?.items, providerNames]);
+
+    const visibleItems = useMemo(() => {
+        const query = itemView.search.trim().toLocaleLowerCase('ru');
+        const articleQuery = displayOem(query);
+        const rows = (order?.items || []).map((item, index) => ({ item, index }))
+            .filter(({ item }) => {
+                if (itemView.supplierIds.length) {
+                    const supplierKey = item.supplier_id ?? 'unassigned';
+                    if (!itemView.supplierIds.includes(supplierKey)) return false;
+                }
+                if (itemView.status !== 'all' && item.status !== itemView.status) return false;
+                const price = item.requested_price == null ? null : Number(item.requested_price);
+                if (itemView.minPrice != null && (price == null || price < itemView.minPrice)) return false;
+                if (itemView.maxPrice != null && (price == null || price > itemView.maxPrice)) return false;
+                if (!query) return true;
+                const searchable = [
+                    item.oem, item.brand, item.name,
+                    item.actual_oem, item.actual_brand, item.actual_name,
+                    providerNames.get(item.supplier_id),
+                ].some((value) => String(value || '').toLocaleLowerCase('ru').includes(query));
+                return searchable || (articleQuery && [item.oem, item.actual_oem]
+                    .some((value) => displayOem(value).includes(articleQuery)));
+            });
+
+        if (itemView.sortBy === 'original') return rows.map(({ item }) => item);
+        const sortValue = (item) => {
+            switch (itemView.sortBy) {
+                case 'supplier': return item.supplier_id == null
+                    ? null : providerNames.get(item.supplier_id) || `Поставщик #${item.supplier_id}`;
+                case 'price': return item.requested_price == null ? null : Number(item.requested_price);
+                case 'oem': return displayOem(item.oem);
+                case 'brand': return displayBrand(item.brand);
+                case 'quantity': return Number(item.requested_qty ?? 0);
+                case 'shipped': return Number(item.ship_qty ?? 0);
+                case 'rejected': return Number(item.reject_qty ?? 0);
+                case 'status': return ITEM_STATUS_LABELS[item.status] || item.status || null;
+                default: return null;
+            }
+        };
+        rows.sort((left, right) => (
+            compareValues(sortValue(left.item), sortValue(right.item), itemView.sortDirection)
+            || left.index - right.index
+        ));
+        return rows.map(({ item }) => item);
+    }, [order?.items, itemView, providerNames]);
+
+    const updateItemView = (key, value) => {
+        setItemView((prev) => ({ ...prev, [key]: value }));
+    };
+
 
     const fetchData = useCallback(async () => {
         if (!orderId) return;
         setLoading(true);
         try {
-            const [orderResp, customersResp, providersResp] =
+            const [orderResp, customersResp] =
                 await Promise.allSettled([
                     getCustomerOrder(orderId),
                     getCustomersSummary({ page: 1, page_size: 200 }),
-                    getProviders({ page: 1, page_size: 100 }),
                 ]);
 
             if (orderResp.status === 'fulfilled') {
@@ -147,11 +238,6 @@ const CustomerOrderDetailPage = () => {
                 setCustomers([]);
             }
 
-            if (providersResp.status === 'fulfilled') {
-                setProviders(providersResp.value.data?.items || []);
-            } else {
-                setProviders([]);
-            }
         } catch {
             message.error('Не удалось загрузить заказ');
         } finally {
@@ -168,6 +254,12 @@ const CustomerOrderDetailPage = () => {
     useEffect(() => {
         fetchData();
     }, [fetchData]);
+
+    useEffect(() => {
+        getAllProviders({ sort_by: 'name', sort_dir: 'asc' })
+            .then(setProviders)
+            .catch(() => message.error('Не удалось загрузить поставщиков'));
+    }, []);
 
     const setItemUpdating = (itemId, value) => {
         setUpdatingItems((prev) => ({
@@ -1110,14 +1202,100 @@ const CustomerOrderDetailPage = () => {
                                 </Descriptions.Item>
                             )}
                         </Descriptions>
+                        <Card size="small" style={{ marginBottom: 12 }}>
+                            <Space wrap size={8}>
+                                <Input
+                                    allowClear
+                                    aria-label="Поиск позиции в заказе"
+                                    placeholder="Артикул, бренд, название"
+                                    value={itemView.search}
+                                    onChange={(event) => updateItemView('search', event.target.value)}
+                                    style={{ width: 230 }}
+                                />
+                                <Select
+                                    mode="multiple"
+                                    allowClear
+                                    showSearch
+                                    aria-label="Фильтр по поставщикам"
+                                    placeholder="Поставщики"
+                                    optionFilterProp="label"
+                                    maxTagCount="responsive"
+                                    options={orderProviderOptions}
+                                    value={itemView.supplierIds}
+                                    onChange={(value) => updateItemView('supplierIds', value)}
+                                    style={{ minWidth: 190, maxWidth: 330 }}
+                                />
+                                <Select
+                                    aria-label="Фильтр по статусу"
+                                    value={itemView.status}
+                                    onChange={(value) => updateItemView('status', value)}
+                                    options={[
+                                        { value: 'all', label: 'Все статусы' },
+                                        ...Object.entries(ITEM_STATUS_LABELS).map(([value, label]) => ({ value, label })),
+                                    ]}
+                                    style={{ width: 150 }}
+                                />
+                                <InputNumber
+                                    min={0}
+                                    aria-label="Цена от"
+                                    placeholder="Цена от"
+                                    value={itemView.minPrice}
+                                    onChange={(value) => updateItemView('minPrice', value)}
+                                    style={{ width: 110 }}
+                                />
+                                <InputNumber
+                                    min={0}
+                                    aria-label="Цена до"
+                                    placeholder="Цена до"
+                                    value={itemView.maxPrice}
+                                    onChange={(value) => updateItemView('maxPrice', value)}
+                                    style={{ width: 110 }}
+                                />
+                                <Select
+                                    aria-label="Сортировать позиции по"
+                                    value={itemView.sortBy}
+                                    onChange={(value) => updateItemView('sortBy', value)}
+                                    options={[
+                                        { value: 'original', label: 'Исходный порядок' },
+                                        { value: 'supplier', label: 'Поставщик' },
+                                        { value: 'price', label: 'Цена' },
+                                        { value: 'oem', label: 'Артикул' },
+                                        { value: 'brand', label: 'Бренд' },
+                                        { value: 'quantity', label: 'Заказано' },
+                                        { value: 'shipped', label: 'Отгружено' },
+                                        { value: 'rejected', label: 'Отказано' },
+                                        { value: 'status', label: 'Статус' },
+                                    ]}
+                                    style={{ width: 175 }}
+                                />
+                                <Select
+                                    aria-label="Направление сортировки"
+                                    value={itemView.sortDirection}
+                                    disabled={itemView.sortBy === 'original'}
+                                    onChange={(value) => updateItemView('sortDirection', value)}
+                                    options={[
+                                        { value: 'asc', label: 'По возрастанию' },
+                                        { value: 'desc', label: 'По убыванию' },
+                                    ]}
+                                    style={{ width: 170 }}
+                                />
+                                <Button onClick={() => setItemView(INITIAL_ITEM_VIEW)}>
+                                    Сбросить
+                                </Button>
+                                <Text type="secondary">
+                                    Показано {visibleItems.length} из {order.items?.length || 0}
+                                </Text>
+                            </Space>
+                        </Card>
                         <Table
                             className="customer-order-items-table"
                             rowKey="id"
-                            dataSource={order.items || []}
+                            dataSource={visibleItems}
                             columns={columns}
                             pagination={false}
                             size="small"
                             tableLayout="fixed"
+                            locale={{ emptyText: 'Нет позиций по выбранным фильтрам' }}
                         />
                         {user?.role === 'admin' && rejectedItems.length > 0 && (
                             <Card
