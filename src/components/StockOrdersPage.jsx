@@ -8,6 +8,7 @@ import {
     Empty,
     Grid,
     Input,
+    InputNumber,
     List,
     Modal,
     Row,
@@ -115,6 +116,7 @@ const StockOrdersPage = () => {
         dateRange: getDefaultDateRange(),
         brandId: null,
         customerId: null,
+        customerOrderId: null,
         storageLocationId: null,
         pickState: 'all',
     });
@@ -197,6 +199,7 @@ const StockOrdersPage = () => {
         try {
             const params = {};
             if (filters.customerId) params.customer_id = filters.customerId;
+            if (filters.customerOrderId) params.customer_order_id = filters.customerOrderId;
             if (filters.brandId) params.brand_id = filters.brandId;
             if (filters.storageLocationId) params.storage_location_id = filters.storageLocationId;
             if (filters.dateRange && filters.dateRange.length === 2) {
@@ -258,6 +261,8 @@ const StockOrdersPage = () => {
                     sourceType: item.source_type || 'own_stock',
                     providerName: item.provider_name || '',
                     customerId: order.customer_id,
+                    customerOrderId: item.customer_order_id,
+                    customerOrderNumber: item.customer_order_number,
                     customerName: order.customer_name || customerMap[order.customer_id] || '—',
                     createdAt: order.created_at,
                     quantity: item.quantity,
@@ -279,10 +284,12 @@ const StockOrdersPage = () => {
             });
         });
         return rows.filter((row) => {
+            if (filters.customerOrderId &&
+                row.customerOrderId !== filters.customerOrderId) return false;
             if (filters.pickState === 'all') return true;
             return row.pickState === filters.pickState;
         });
-    }, [orders, customerMap, filters.pickState]);
+    }, [orders, customerMap, filters.customerOrderId, filters.pickState]);
 
     const handlePickUpdate = useCallback(async (row, payload, successMessage = null) => {
         try {
@@ -892,11 +899,16 @@ const StockOrdersPage = () => {
             render: (_, row) => (
                 <div className="stock-compact-cell">
                     <Text strong>
-                        #{row.orderId} · {formatCreatedAt(row.createdAt)}
+                        Сборка #{row.orderId} · {formatCreatedAt(row.createdAt)}
                     </Text>
                     <Text ellipsis={{ tooltip: row.customerName }}>
                         {row.customerName || '—'}
                     </Text>
+                    {row.customerOrderId && (
+                        <Link to={`/customer-orders/${row.customerOrderId}`}>
+                            Заказ клиента #{row.customerOrderId}
+                        </Link>
+                    )}
                 </div>
             ),
         },
@@ -1027,7 +1039,7 @@ const StockOrdersPage = () => {
                             value={filters.dateRange}
                             onChange={(value) => setFilters((prev) => ({
                                 ...prev,
-                                dateRange: value || getDefaultDateRange(),
+                                dateRange: value,
                             }))}
                             format="DD.MM.YY"
                         />
@@ -1040,6 +1052,19 @@ const StockOrdersPage = () => {
                             value={filters.customerId}
                             onChange={(value) => setFilters((prev) => ({ ...prev, customerId: value }))}
                             options={customers.map((c) => ({ label: c.name, value: c.id }))}
+                        />
+                    </Col>
+                    <Col xs={24} md={4}>
+                        <InputNumber
+                            min={1}
+                            precision={0}
+                            placeholder="Заказ клиента №"
+                            style={{ width: '100%' }}
+                            value={filters.customerOrderId}
+                            onChange={(value) => setFilters((prev) => ({
+                                ...prev,
+                                customerOrderId: value,
+                            }))}
                         />
                     </Col>
                     <Col xs={24} md={4}>

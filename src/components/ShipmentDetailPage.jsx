@@ -55,6 +55,8 @@ import {
 import { searchAutopartsByOem } from '../api/autoparts';
 import { getStorageLocations, getWarehouses } from '../api/storage';
 import useAuth from '../context/useAuth';
+import ShipmentBoxes from './ShipmentBoxes';
+import { Link } from 'react-router-dom';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -183,7 +185,7 @@ const AddItemModal = ({ open, onClose, onAdd }) => {
                             rules={[{ required: true, message: 'Укажите количество' }]}
                             initialValue={1}
                         >
-                            <InputNumber min={1} style={{ width: '100%' }} />
+                            <InputNumber min={1} precision={0} style={{ width: '100%' }} />
                         </Form.Item>
                     </Col>
                     <Col span={8}>
@@ -272,7 +274,7 @@ const EditItemModal = ({ open, item, onClose, onSave }) => {
                             label="Количество"
                             rules={[{ required: true, message: 'Укажите количество' }]}
                         >
-                            <InputNumber min={1} style={{ width: '100%' }} />
+                            <InputNumber min={1} precision={0} style={{ width: '100%' }} />
                         </Form.Item>
                     </Col>
                     <Col span={12}>
@@ -324,7 +326,7 @@ const EditHeaderModal = ({ open, shipment, onClose, onSave }) => {
         try {
             await onSave({
                 doc_number:  values.doc_number  || null,
-                warehouse_id: values.warehouse_id || null,
+                ...(!shipment.assembly_managed ? { warehouse_id: values.warehouse_id || null } : {}),
                 reason:      values.reason       || null,
                 notes:       values.notes        || null,
             });
@@ -351,11 +353,11 @@ const EditHeaderModal = ({ open, shipment, onClose, onSave }) => {
                             <Input />
                         </Form.Item>
                     </Col>
-                    <Col span={12}>
+                    {!shipment?.assembly_managed && <Col span={12}>
                         <Form.Item name="warehouse_id" label="Склад">
                             <Select allowClear placeholder="Выберите склад" options={warehouses} />
                         </Form.Item>
-                    </Col>
+                    </Col>}
                 </Row>
                 <Form.Item name="reason" label="Причина отгрузки">
                     <Input />
@@ -688,6 +690,13 @@ const ShipmentDetailPage = () => {
                 </Space>
             ),
         },
+        ...(shipment?.assembly_managed ? [{
+            title: 'Заказ клиента',
+            width: 110,
+            render: (_, row) => row.source_customer_order_id
+                ? <Link to={`/customer-orders/${row.source_customer_order_id}`}>#{row.source_customer_order_id}</Link>
+                : '—',
+        }] : []),
         {
             title: 'Кол-во',
             dataIndex: 'quantity',
@@ -791,12 +800,14 @@ const ShipmentDetailPage = () => {
                     <Space>
                         <Button
                             icon={<ArrowLeftOutlined />}
-                            onClick={() => navigate('/warehouse/shipments')}
+                            onClick={() => navigate(shipment.assembly_managed
+                                ? '/customer-orders/stock' : '/warehouse/shipments')}
                         >
                             Назад
                         </Button>
                         <Title level={4} style={{ margin: 0 }}>
-                            Накладная {shipment.doc_number || `#${shipment.id}`}
+                            {shipment.assembly_managed ? 'Реализация' : 'Накладная'}{' '}
+                            {shipment.doc_number || `#${shipment.id}`}
                         </Title>
                         <Tag color={STATUS_COLORS[shipment.status] || 'default'} style={{ fontSize: 14 }}>
                             {STATUS_LABELS[shipment.status] || shipment.status}
@@ -1080,7 +1091,7 @@ const ShipmentDetailPage = () => {
                     </Space>
                 }
                 extra={
-                    isDraft && (
+                    isDraft && !shipment.assembly_managed && (
                         <Button
                             type="primary"
                             size="small"
@@ -1118,26 +1129,29 @@ const ShipmentDetailPage = () => {
                     summary={() =>
                         items.length > 0 ? (
                             <Table.Summary.Row>
-                                <Table.Summary.Cell index={0} colSpan={2}>
+                                <Table.Summary.Cell index={0} colSpan={shipment.assembly_managed ? 3 : 2}>
                                     <Text strong>Итого</Text>
                                 </Table.Summary.Cell>
-                                <Table.Summary.Cell index={2} align="right">
+                                <Table.Summary.Cell index={shipment.assembly_managed ? 3 : 2} align="right">
                                     <Text strong>{totalQty}</Text>
                                 </Table.Summary.Cell>
-                                <Table.Summary.Cell index={3} />
-                                <Table.Summary.Cell index={4} align="right">
+                                <Table.Summary.Cell index={shipment.assembly_managed ? 4 : 3} />
+                                <Table.Summary.Cell index={shipment.assembly_managed ? 5 : 4} align="right">
                                     <Text strong>
                                         {totalSum > 0
                                             ? totalSum.toLocaleString('ru-RU', { minimumFractionDigits: 2 })
                                             : '—'}
                                     </Text>
                                 </Table.Summary.Cell>
-                                <Table.Summary.Cell index={5} colSpan={isDraft ? 4 : 3} />
+                                <Table.Summary.Cell index={shipment.assembly_managed ? 6 : 5}
+                                    colSpan={isDraft ? 4 : 3} />
                             </Table.Summary.Row>
                         ) : null
                     }
                 />
             </Card>
+
+            {shipment.assembly_managed && <ShipmentBoxes shipment={shipment} />}
 
             {/* Modals */}
             <AddItemModal

@@ -62,7 +62,7 @@ const NAVIGATION_SEARCH_ITEMS = [
     { path: '/orders', title: 'Заказы поставщикам', section: 'Заказы', keywords: 'закупка поставщик отправка заказ' },
     { path: '/customer-orders', title: 'Заказы клиентов', section: 'Заказы', keywords: 'продажи покупатели parts soft сайт dragonzap почта' },
     { path: '/customer-orders/suppliers', title: 'Клиентские заказы → поставщики', section: 'Заказы', keywords: 'распределение закупка обработка' },
-    { path: '/customer-orders/stock', title: 'Наш склад: заказы', section: 'Заказы', keywords: 'резерв наличие выдача' },
+    { path: '/customer-orders/stock', title: 'Комплектация заказов клиентов', section: 'Заказы', keywords: 'резерв наличие выдача' },
     { path: '/customer-orders/receipts', title: 'Поступления от поставщиков', section: 'Заказы', keywords: 'приемка приход накладная поставка' },
     { path: '/documents/incoming', title: 'Входящие документы', section: 'Документы', keywords: 'упд накладная эдо получение' },
     { path: '/documents/corrections', title: 'КСФ поставщиков', section: 'Документы', keywords: 'корректировка укд ксф поставщик' },
@@ -316,7 +316,7 @@ const Sidebar = () => {
                 <Link to="/customer-orders/suppliers">Клиентские заказы → поставщики</Link>
             </Menu.Item>
             <Menu.Item key="stock-orders" icon={<InboxOutlined />}>
-                <Link to="/customer-orders/stock">Наш склад: заказы</Link>
+                <Link to="/customer-orders/stock">Комплектация заказов клиентов</Link>
             </Menu.Item>
             <Menu.Item key="supplier-receipts" icon={<InboxOutlined />}>
                 <Link to="/customer-orders/receipts">Поступления от поставщиков</Link>

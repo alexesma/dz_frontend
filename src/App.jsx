@@ -37,6 +37,7 @@ import AutopurchaseTopPage from './components/AutopurchaseTopPage';
 import CustomerOrderPeriodReportPage from './components/CustomerOrderPeriodReportPage';
 import InventoryControlPage from './components/InventoryControlPage';
 import StockOrdersPage from './components/StockOrdersPage';
+import CustomerOrderAssemblyPage from './components/CustomerOrderAssemblyPage';
 import SupplierReceiptsPage from './components/SupplierReceiptsPage';
 import IncomingSupplierDocumentsPage from './components/IncomingSupplierDocumentsPage';
 import SupplierReceiptCorrectionsPage from './components/SupplierReceiptCorrectionsPage';
@@ -181,7 +182,8 @@ const AppRoutes = () => (
         <Route path="/orders/inventory-control" element={<RequireAuth><InventoryControlPage /></RequireAuth>} />
         <Route path="/customer-orders" element={<RequireAuth><CustomerOrdersPage /></RequireAuth>} />
         <Route path="/customer-orders/:orderId" element={<RequireAuth><CustomerOrderDetailPage /></RequireAuth>} />
-        <Route path="/customer-orders/stock" element={<RequireAuth><StockOrdersPage /></RequireAuth>} />
+        <Route path="/customer-orders/stock" element={<RequireAuth><CustomerOrderAssemblyPage /></RequireAuth>} />
+        <Route path="/customer-orders/stock/scan" element={<RequireAuth><StockOrdersPage /></RequireAuth>} />
         <Route path="/customer-orders/receipts" element={<RequireAuth><SupplierReceiptsPage /></RequireAuth>} />
         <Route path="/customer-orders/suppliers" element={<RequireAuth><CustomerSupplierOrdersPage /></RequireAuth>} />
         <Route path="/customer-orders/suppliers/:orderId" element={<RequireAuth><CustomerSupplierOrderDetailPage /></RequireAuth>} />

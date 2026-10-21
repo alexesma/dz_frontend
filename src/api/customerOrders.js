@@ -3,6 +3,45 @@ import api from '../api.js';
 export const getStockOrders = (params) =>
     api.get('/customer-orders/stock/list', { params });
 
+export const getCustomerAssembly = (params = {}) =>
+    api.get('/customer-orders/assembly', { params });
+
+export const printOwnStockLabels = (stockItemIds, storageLocationId = null) =>
+    api.post('/customer-orders/assembly/own-labels/print', {
+        stock_item_ids: stockItemIds,
+        storage_location_id: storageLocationId,
+    });
+
+export const getOwnStockLabels = (stockItemId) =>
+    api.get('/customer-orders/assembly/own-labels', { params: { stock_item_id: stockItemId } });
+
+export const reprintOwnStockLabel = (labelId) =>
+    api.post(`/customer-orders/assembly/own-labels/${labelId}/reprint`);
+
+export const cancelOwnStockLabel = (labelId) =>
+    api.post(`/customer-orders/assembly/own-labels/${labelId}/cancel`);
+
+export const createAssemblyRealization = (orderIds) =>
+    api.post('/customer-orders/assembly/realizations', { order_ids: orderIds });
+
+export const listAssemblyBoxes = (documentId) =>
+    api.get(`/customer-orders/assembly/realizations/${documentId}/boxes`);
+
+export const createAssemblyBox = (documentId) =>
+    api.post(`/customer-orders/assembly/realizations/${documentId}/boxes`);
+
+export const updateAssemblyBox = (documentId, boxId, items) =>
+    api.put(`/customer-orders/assembly/realizations/${documentId}/boxes/${boxId}`, { items });
+
+export const sealAssemblyBox = (documentId, boxId) =>
+    api.post(`/customer-orders/assembly/realizations/${documentId}/boxes/${boxId}/seal`);
+
+export const openAssemblyBox = (documentId, boxId) =>
+    api.post(`/customer-orders/assembly/realizations/${documentId}/boxes/${boxId}/open`);
+
+export const deleteAssemblyBox = (documentId, boxId) =>
+    api.delete(`/customer-orders/assembly/realizations/${documentId}/boxes/${boxId}`);
+
 export const updateStockOrderItemPick = (itemId, payload) =>
     api.patch(`/customer-orders/stock/items/${itemId}/pick`, payload);
 
@@ -38,8 +77,10 @@ export const printStockOrderPackageLabel = (packageId, reason = null) =>
 export const deleteStockOrderPackage = (packageId) =>
     api.delete(`/customer-orders/stock/packages/${packageId}`);
 
-export const syncCrossDockingStockOrders = () =>
-    api.post('/customer-orders/stock/sync-cross-docking');
+export const syncCrossDockingStockOrders = (receiptId = null) =>
+    api.post('/customer-orders/stock/sync-cross-docking', null, {
+        params: receiptId == null ? undefined : { receipt_id: receiptId },
+    });
 
 export const getCustomerOrders = (params) =>
     api.get('/customer-orders/', { params });
