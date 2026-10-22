@@ -149,7 +149,7 @@ const SYNC_LABELS = { pending: 'Ожидает', synced: 'Синхр.', error: '
 const DIADOC_COLORS = { draft: 'default', sent: 'success', error: 'error' };
 const DIADOC_LABELS = { draft: 'Черновик', sent: 'Отправлен', error: 'Ошибка' };
 
-const ShipmentsPage = () => {
+const ShipmentsPage = ({ title = 'Накладные на отгрузку' }) => {
     const { user } = useAuth();
     const navigate                         = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
@@ -289,7 +289,7 @@ const ShipmentsPage = () => {
         setLoading(true);
         try {
             const params = {
-                skip:  (pg - 1) * ps,
+                offset:  (pg - 1) * ps,
                 limit: ps,
                 ...Object.fromEntries(
                     Object.entries(flt).filter(([, v]) => v !== undefined && v !== null && v !== '')
@@ -301,7 +301,9 @@ const ShipmentsPage = () => {
             setData(items);
             loadDiadocStatuses(items);
             loadDiadocReadiness(items);
-            setTotal(Array.isArray(payload) ? payload.length : (payload.total || 0));
+            setTotal(Number(res.headers?.['x-total-count'] ?? (
+                Array.isArray(payload) ? payload.length : (payload.total || 0)
+            )));
         } catch {
             message.error('Ошибка загрузки накладных');
         } finally {
@@ -456,9 +458,16 @@ const ShipmentsPage = () => {
         },
         {
             title: 'Заказ клиента',
-            dataIndex: 'customer_order_id',
+            dataIndex: 'customer_order_ids',
             width: 120,
-            render: (v) => v ? <Tag>#{v}</Tag> : <Text type="secondary">—</Text>,
+            render: (values, row) => {
+                const ids = values?.length ? values : (
+                    row.customer_order_id ? [row.customer_order_id] : []
+                );
+                return ids.length
+                    ? <Space wrap size={0}>{ids.map((id) => <Tag key={id}>#{id}</Tag>)}</Space>
+                    : <Text type="secondary">—</Text>;
+            },
         },
         {
             title: 'Склад',
@@ -591,7 +600,7 @@ const ShipmentsPage = () => {
             <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
                 <Col>
                     <Title level={4} style={{ margin: 0 }}>
-                        Накладные на отгрузку
+                        {title}
                         {pendingSync > 0 && (
                             <Badge count={pendingSync} style={{ marginLeft: 8 }} />
                         )}
@@ -740,7 +749,6 @@ const ShipmentsPage = () => {
                     onChange: (p, ps) => {
                         setPage(p);
                         setPageSize(ps);
-                        fetchData(p, ps, filters);
                     },
                 }}
                 scroll={{ x: 1200 }}

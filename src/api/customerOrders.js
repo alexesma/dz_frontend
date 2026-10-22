@@ -228,6 +228,9 @@ export const createManualSupplierOrder = (payload) =>
 export const updateCustomerOrderItem = (itemId, payload) =>
     api.patch(`/customer-orders/items/${itemId}`, payload);
 
+export const recheckCustomerOrderItemOffer = (itemId) =>
+    api.post(`/customer-orders/items/${itemId}/recheck-offer`);
+
 export const getCustomerOrderPriceOverridePreview = (itemId) =>
     api.get(`/customer-orders/items/${itemId}/price-override-preview`);
 

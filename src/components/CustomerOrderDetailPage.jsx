@@ -33,6 +33,7 @@ import {
     getCustomerOrderItemStats,
     processManualCustomerOrder,
     processPartsSoftOrderLocally,
+    recheckCustomerOrderItemOffer,
     retryCustomerOrder,
     selectCustomerOrderPricelist,
     updateCustomerOrder,
@@ -65,6 +66,12 @@ const ITEM_STATUS_COLORS = {
     SUPPLIER: 'green',
     REJECTED: 'red',
 };
+
+const RECHECKABLE_REASONS = new Set([
+    'NO_OFFER', 'NO_TARGET_PRICE', 'OFFER_MATCH_DIAGNOSTIC', 'ZERO_STOCK',
+    'NONPOSITIVE_OFFER', 'FILTERED_BY_SOURCE_RULE',
+    'FILTERED_BY_PRICE_CONFIG', 'PRICE_TOO_HIGH',
+]);
 
 const displayBrand = (value) => String(value || '').trim().toUpperCase();
 const displayOem = (value) => {
@@ -324,6 +331,29 @@ const CustomerOrderDetailPage = () => {
                 'Не удалось обновить позицию',
             );
             message.error(detail);
+        } finally {
+            setItemUpdating(item.id, false);
+        }
+    };
+
+    const handleRecheckOffer = async (item) => {
+        setItemUpdating(item.id, true);
+        try {
+            const response = await recheckCustomerOrderItemOffer(item.id);
+            if (response?.data?.credit_warning?.message) {
+                message.warning(response.data.credit_warning.message, 8);
+            }
+            message.success(
+                response.data?.status === 'OWN_STOCK'
+                    ? 'Позиция добавлена в сборку с нашего склада'
+                    : 'Позиция добавлена в заказ поставщику',
+            );
+            fetchData();
+        } catch (err) {
+            message.error(formatApiDetail(
+                err?.response?.data?.detail,
+                'Не удалось подобрать текущее предложение',
+            ));
         } finally {
             setItemUpdating(item.id, false);
         }
@@ -997,21 +1027,35 @@ const CustomerOrderDetailPage = () => {
         {
             title: 'Действие',
             key: 'price_override_action',
-            width: 150,
-            render: (_, record) => (
-                record.status === 'REJECTED'
-                && record.reject_reason_code === 'PRICE_TOO_HIGH'
-                    ? (
-                        <Button
-                            type="primary"
-                            size="small"
-                            onClick={() => handleOpenPriceOverride(record)}
+            width: 230,
+            render: (_, record) => {
+                if (record.status !== 'REJECTED'
+                    || !RECHECKABLE_REASONS.has(record.reject_reason_code)) return '—';
+                return (
+                    <Space size="small">
+                        <Popconfirm
+                            title="Проверить предложение сейчас?"
+                            description="Если цена и остаток подходят, позиция будет добавлена в заказ на поставку или сборку."
+                            onConfirm={() => handleRecheckOffer(record)}
+                            okText="Проверить"
+                            cancelText="Отмена"
                         >
-                            Принять цену
-                        </Button>
-                    )
-                    : '—'
-            ),
+                            <Button size="small" loading={updatingItems[record.id]}>
+                                Проверить сейчас
+                            </Button>
+                        </Popconfirm>
+                        {record.reject_reason_code === 'PRICE_TOO_HIGH' && (
+                            <Button
+                                type="primary"
+                                size="small"
+                                onClick={() => handleOpenPriceOverride(record)}
+                            >
+                                Принять цену
+                            </Button>
+                        )}
+                    </Space>
+                );
+            },
         },
     ];
 
