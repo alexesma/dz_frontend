@@ -649,13 +649,34 @@ const CustomerOrderDetailPage = () => {
         };
     }, [order?.items]);
 
-    const rejectedItems = useMemo(
-        () =>
-            (order?.items || []).filter(
-                (item) => Number(item.reject_qty ?? 0) > 0
-            ),
-        [order?.items]
-    );
+    const rejectedItems = useMemo(() => {
+        const orderItems = order?.items || [];
+        return orderItems
+            .filter((item) => Number(item.reject_qty ?? 0) > 0)
+            .map((item) => {
+                if (item.row_index == null) return item;
+                const parts = orderItems.filter((part) => part.row_index === item.row_index);
+                const rejectedParts = parts.filter((part) => Number(part.reject_qty ?? 0) > 0);
+                if (rejectedParts.length !== 1) return item;
+                return {
+                    ...item,
+                    requested_qty: parts.reduce((sum, part) => sum + Number(part.requested_qty || 0), 0),
+                    ship_qty: parts.reduce((sum, part) => sum + Number(part.ship_qty || 0), 0),
+                };
+            });
+    }, [order?.items]);
+
+    const splitRowTotals = useMemo(() => {
+        const totals = new Map();
+        (order?.items || []).forEach((item) => {
+            if (item.row_index == null) return;
+            const current = totals.get(item.row_index) || { count: 0, quantity: 0 };
+            current.count += 1;
+            current.quantity += Number(item.requested_qty || 0);
+            totals.set(item.row_index, current);
+        });
+        return totals;
+    }, [order?.items]);
 
     const statsMonthlyColumns = useMemo(() => ([
         {
@@ -933,6 +954,9 @@ const CustomerOrderDetailPage = () => {
             render: (_, record) => (
                 <div className="customer-order-number-cell">
                     <div><Text type="secondary">заказ:</Text> {record.requested_qty}</div>
+                    {splitRowTotals.get(record.row_index)?.count > 1 && (
+                        <div><Text type="secondary">из строки:</Text> {splitRowTotals.get(record.row_index).quantity}</div>
+                    )}
                     <div><Text type="secondary">отгр.:</Text> {record.ship_qty ?? '—'}</div>
                     {!!record.reject_qty && <div><Text type="danger">отказ: {record.reject_qty}</Text></div>}
                 </div>
