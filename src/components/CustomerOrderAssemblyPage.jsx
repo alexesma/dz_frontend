@@ -464,7 +464,7 @@ const CustomerOrderAssemblyPage = () => {
     );
 
     const orderColumns = [
-        { title: 'Заказ клиента', key: 'order', width: 150, render: (_, row) => (
+        { title: 'Заказ клиента', key: 'order', width: 140, render: (_, row) => (
             <div>
                 <a href={`/customer-orders/${row.id}`} onClick={(event) => {
                     event.preventDefault();
@@ -474,23 +474,24 @@ const CustomerOrderAssemblyPage = () => {
                 <div><Text type="secondary">{row.received_at ? dayjs(row.received_at).format('DD.MM.YY HH:mm') : '—'}</Text></div>
             </div>
         ) },
-        { title: 'Клиент', dataIndex: 'customer_name', ellipsis: true },
-        { title: hint('Сумма', 'Сумма заказа и из чего она состоит'), key: 'amounts', width: 170, render: (_, row) => (
+        { title: 'Клиент', dataIndex: 'customer_name', width: 230 },
+        { title: hint('Сумма', 'Сумма заказа и из чего она состоит'), key: 'amounts', width: 160, render: (_, row) => (
             <div>
                 <Text strong>{money(row.amounts.order)}</Text>
                 {stat('Наш склад', money(row.amounts.own))}
                 {stat('Кросс-докинг', money(row.amounts.cross))}
             </div>
         ) },
-        { title: hint('Состав', 'Сколько позиций и штук в заказе'), key: 'size', width: 130, render: (_, row) => (
+        { title: hint('Состав заказа', 'Позиций в заказе, сколько штук уже пришло, отказано и сколько ещё ждём от поставщика'), key: 'size', width: 170, render: (_, row) => (
             <div>
                 {stat('Позиций', row.counts.lines || 0)}
-                {stat('Заказано', `${row.counts.ordered || 0} шт.`)}
+                {stat('Пришло', `${row.counts.received || 0} шт.`)}
+                {stat('Отказ', `${row.counts.rejected || 0} шт.`)}
+                {stat('Ждём', `${row.counts.awaiting_receipt || 0} шт.`)}
             </div>
         ) },
-        { title: hint('Комплектация, шт.', 'Поступило от поставщика; этикетки поставщика; собрано с нашего склада; уже в реализациях'), key: 'progress', width: 230, render: (_, row) => (
+        { title: hint('Комплектация, шт.', 'Этикетки поставщика; собрано с нашего склада; уже в реализациях'), key: 'progress', width: 200, render: (_, row) => (
             <div>
-                {stat('Поступило', row.counts.received || 0)}
                 {stat('Этикетки поставщика', row.counts.cross_labeled || 0)}
                 {stat('Собрано с нашего', row.counts.own_labeled || 0)}
                 {stat('В реализациях', row.counts.committed || 0)}
@@ -499,7 +500,7 @@ const CustomerOrderAssemblyPage = () => {
         { title: hint('К реализации', 'Сколько штук готово попасть в реализацию прямо сейчас'), key: 'ready', width: 110, render: (_, row) => (
             <Tag color={row.counts.ready ? 'green' : 'default'}>{row.counts.ready || 0}</Tag>
         ) },
-        { title: 'Следующий шаг', key: 'actions', width: 190, render: (_, row) => (row.actions || []).length
+        { title: 'Следующий шаг', key: 'actions', width: 170, render: (_, row) => (row.actions || []).length
             ? row.actions.map((action) => <Tag key={action} color={action === 'create_realization' ? 'green' : 'blue'}>
                 {ACTION_LABELS[action] || action}
             </Tag>) : <Text type="secondary">Действий нет</Text> },
@@ -630,7 +631,7 @@ const CustomerOrderAssemblyPage = () => {
                 <Card size="small" title="Заказы клиентов" extra={<Button type="primary" disabled={busy || !selectedOrderIds.length && !focused}
                     onClick={openPreview}>Создать черновик реализации</Button>}>
                     <Table rowKey="id" size="small" loading={loading} dataSource={visibleOrders} columns={orderColumns}
-                        scroll={{ x: 1000, y: 300 }} pagination={{ current: page, pageSize: 50, total,
+                        scroll={{ x: 1150, y: 300 }} pagination={{ current: page, pageSize: 50, total,
                             showTotal: (count) => `${count} заказов` }}
                         onChange={(pagination) => setPage(pagination.current)}
                         onRow={(row) => ({ onClick: () => setFocusedOrderId(row.id) })}
