@@ -10,10 +10,12 @@ import JsBarcode from 'jsbarcode';
 import { fetchAllCustomersBrief } from '../api/customers';
 
 import {
+    approveExactStockSwitch,
     cancelOwnStockLabel,
     createAssemblyRealization,
     getCustomerAssembly,
     getOwnStockLabels,
+    keepCrossSource,
     printOwnStockLabels,
     reprintOwnStockLabel,
     updateStockOrderItemPick,
@@ -293,6 +295,22 @@ const CustomerOrderAssemblyPage = () => {
         } finally { setBusy(false); }
     };
 
+    const decideSourceSwitch = async (row, useExact) => {
+        setBusy(true);
+        try {
+            if (useExact) {
+                await approveExactStockSwitch(row.id);
+                message.success('Для заказа выбран поступивший товар');
+            } else {
+                await keepCrossSource(row.id);
+                message.info('В заказе оставлен выбранный товар');
+            }
+            await load();
+        } catch (error) {
+            message.error(error?.response?.data?.detail || 'Не удалось изменить источник');
+        } finally { setBusy(false); }
+    };
+
     const orderColumns = [
         { title: 'Заказ клиента', dataIndex: 'number', render: (value, row) => (
             <a href={`/customer-orders/${row.id}`} onClick={(event) => {
@@ -316,7 +334,22 @@ const CustomerOrderAssemblyPage = () => {
 
     const detailColumns = [
         { title: 'Заказ', dataIndex: 'order_number', width: 110 },
-        { title: 'Позиция', render: (_, row) => <><Text strong>{row.brand} {row.oem}</Text><br /><Text type="secondary">{row.name}</Text></> },
+        { title: 'Позиция', render: (_, row) => <><Text strong>{row.brand} {row.oem}</Text><br /><Text type="secondary">{row.name}</Text>
+            {row.actual_oem && row.actual_oem !== row.oem && <div><Text type="secondary">Подобрано: {row.actual_brand} {row.actual_oem}</Text></div>}
+            {row.source_switch?.status === 'switched' && <div><Tag color="green">
+                {row.source_switch.basis === 'exact' ? 'После прихода выбран исходный артикул'
+                    : row.source_switch.basis === 'published_dragonzap_cross'
+                        ? 'После прихода выбран кросс из прайса клиента'
+                        : 'После прихода выбран подтверждённый кросс Dragonzap'}
+            </Tag></div>}
+            {row.source_switch?.status === 'blocked' && <div>
+                <Tag color="orange">Проверьте источник: {row.source_switch.reason}</Tag>
+                <Space size="small">
+                    <Button size="small" disabled={busy} onClick={() => decideSourceSwitch(row, true)}>Выбрать поступивший</Button>
+                    <Button size="small" disabled={busy} onClick={() => decideSourceSwitch(row, false)}>Оставить выбранный</Button>
+                </Space>
+            </div>}
+        </> },
         { title: 'Цена', dataIndex: 'price', render: money },
         { title: 'Заказано', dataIndex: 'ordered' },
         { title: 'Наш склад', render: (_, row) => `${row.own_labeled}/${row.own_ordered}` },

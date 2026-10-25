@@ -937,6 +937,10 @@ const CustomerOrderDetailPage = () => {
                             <Tag color={record.source_resolution_status === 'api_order_error' ? 'red' : 'geekblue'}>
                                 {record.source_resolution_status === 'local_workflow'
                                     ? 'локальная обработка'
+                                    : record.source_resolution_status === 'receipt_exact_stock'
+                                        ? 'исходный артикул после прихода'
+                                    : record.source_resolution_status === 'receipt_dragonzap_cross'
+                                        ? 'кросс Dragonzap после прихода'
                                     : record.source_resolution_status === 'partssoft_processed'
                                         ? 'обработано сайтом'
                                         : record.source_resolution_status}

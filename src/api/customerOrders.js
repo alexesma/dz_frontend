@@ -6,6 +6,12 @@ export const getStockOrders = (params) =>
 export const getCustomerAssembly = (params = {}) =>
     api.get('/customer-orders/assembly', { params });
 
+export const approveExactStockSwitch = (itemId) =>
+    api.post(`/customer-orders/assembly/source-switch/${itemId}/approve`);
+
+export const keepCrossSource = (itemId) =>
+    api.post(`/customer-orders/assembly/source-switch/${itemId}/keep-cross`);
+
 export const printOwnStockLabels = (stockItemIds, storageLocationId = null) =>
     api.post('/customer-orders/assembly/own-labels/print', {
         stock_item_ids: stockItemIds,

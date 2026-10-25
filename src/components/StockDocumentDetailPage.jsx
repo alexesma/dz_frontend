@@ -334,8 +334,17 @@ const StockDocumentDetailPage = () => {
     const handlePost = async () => {
         setActionLoading(true);
         try {
-            await postStockDocument(id);
+            const response = await postStockDocument(id);
             message.success('Документ проведён — остатки обновлены');
+            const sourceSwitches = response.data?.source_switches || [];
+            const switched = sourceSwitches.filter((row) => row.status === 'switched');
+            const blocked = sourceSwitches.filter((row) => row.status === 'blocked');
+            if (switched.length) {
+                message.info(`На поступивший товар переключено позиций заказов: ${switched.length}`);
+            }
+            if (blocked.length) {
+                message.warning(`Требуют проверки источника в комплектации: ${blocked.length}`);
+            }
             fetchDoc();
         } catch (e) {
             message.error(e?.response?.data?.detail || 'Ошибка проведения');
