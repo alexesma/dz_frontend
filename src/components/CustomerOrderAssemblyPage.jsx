@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Card, ConfigProvider, DatePicker, Input, InputNumber, Modal, Segmented, Select, Space, Table, Tabs, Tag, Typography, message } from 'antd';
+import { Alert, Button, Card, ConfigProvider, DatePicker, Input, InputNumber, Modal, Segmented, Select, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd';
 import ruRU from 'antd/locale/ru_RU';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
@@ -452,35 +452,62 @@ const CustomerOrderAssemblyPage = () => {
         } finally { setBusy(false); }
     };
 
+    // Подпись «название: значение» в одну строку — так в одной ячейке
+    // умещается несколько показателей и видно, что к чему относится.
+    const stat = (label, value) => (
+        <div style={{ whiteSpace: 'nowrap' }}>
+            <Text type="secondary">{label}: </Text>{value}
+        </div>
+    );
+    const hint = (label, text) => (
+        <Tooltip title={text}><span style={{ borderBottom: '1px dotted' }}>{label}</span></Tooltip>
+    );
+
     const orderColumns = [
-        { title: 'Заказ клиента', dataIndex: 'number', render: (value, row) => (
-            <a href={`/customer-orders/${row.id}`} onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                openCustomerOrder(row.id);
-            }}>{value}</a>
+        { title: 'Заказ клиента', key: 'order', width: 150, render: (_, row) => (
+            <div>
+                <a href={`/customer-orders/${row.id}`} onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    openCustomerOrder(row.id);
+                }}>{row.number}</a>
+                <div><Text type="secondary">{row.received_at ? dayjs(row.received_at).format('DD.MM.YY HH:mm') : '—'}</Text></div>
+            </div>
         ) },
-        { title: 'Дата', dataIndex: 'received_at', render: (value) => value ? dayjs(value).format('DD.MM.YY HH:mm') : '—' },
-        { title: 'Клиент', dataIndex: 'customer_name' },
-        { title: 'Сумма заказа', render: (_, row) => money(row.amounts.order) },
-        { title: 'Наш склад', render: (_, row) => money(row.amounts.own) },
-        { title: 'Кросс-докинг', render: (_, row) => money(row.amounts.cross) },
-        { title: 'Позиций', render: (_, row) => row.counts.lines || 0 },
-        { title: 'Заказано, шт.', render: (_, row) => row.counts.ordered || 0 },
-        { title: 'Поступило', render: (_, row) => row.counts.received || 0 },
-        { title: 'Этикетки поставщика, шт.', render: (_, row) => row.counts.cross_labeled || 0 },
-        { title: 'Собрано с нашего, шт.', render: (_, row) => row.counts.own_labeled || 0 },
-        { title: 'В реализациях', render: (_, row) => row.counts.committed || 0 },
-        { title: 'К реализации', render: (_, row) => <Tag color="green">{row.counts.ready || 0}</Tag> },
-        { title: 'Следующий шаг', render: (_, row) => (row.actions || []).length
+        { title: 'Клиент', dataIndex: 'customer_name', ellipsis: true },
+        { title: hint('Сумма', 'Сумма заказа и из чего она состоит'), key: 'amounts', width: 170, render: (_, row) => (
+            <div>
+                <Text strong>{money(row.amounts.order)}</Text>
+                {stat('Наш склад', money(row.amounts.own))}
+                {stat('Кросс-докинг', money(row.amounts.cross))}
+            </div>
+        ) },
+        { title: hint('Состав', 'Сколько позиций и штук в заказе'), key: 'size', width: 130, render: (_, row) => (
+            <div>
+                {stat('Позиций', row.counts.lines || 0)}
+                {stat('Заказано', `${row.counts.ordered || 0} шт.`)}
+            </div>
+        ) },
+        { title: hint('Комплектация, шт.', 'Поступило от поставщика; этикетки поставщика; собрано с нашего склада; уже в реализациях'), key: 'progress', width: 230, render: (_, row) => (
+            <div>
+                {stat('Поступило', row.counts.received || 0)}
+                {stat('Этикетки поставщика', row.counts.cross_labeled || 0)}
+                {stat('Собрано с нашего', row.counts.own_labeled || 0)}
+                {stat('В реализациях', row.counts.committed || 0)}
+            </div>
+        ) },
+        { title: hint('К реализации', 'Сколько штук готово попасть в реализацию прямо сейчас'), key: 'ready', width: 110, render: (_, row) => (
+            <Tag color={row.counts.ready ? 'green' : 'default'}>{row.counts.ready || 0}</Tag>
+        ) },
+        { title: 'Следующий шаг', key: 'actions', width: 190, render: (_, row) => (row.actions || []).length
             ? row.actions.map((action) => <Tag key={action} color={action === 'create_realization' ? 'green' : 'blue'}>
                 {ACTION_LABELS[action] || action}
             </Tag>) : <Text type="secondary">Действий нет</Text> },
     ];
 
     const detailColumns = [
-        { title: 'Заказ', dataIndex: 'order_number', width: 110 },
-        { title: 'Позиция', render: (_, row) => <><Text strong>{row.brand} {row.oem}</Text><br /><Text type="secondary">{row.name}</Text>
+        { title: 'Позиция', key: 'item', render: (_, row) => <><Text strong>{row.brand} {row.oem}</Text><br /><Text type="secondary">{row.name}</Text>
+            <div><Text type="secondary">Заказ {row.order_number}</Text></div>
             {row.actual_oem && row.actual_oem !== row.oem && <div><Text type="secondary">Подобрано: {row.actual_brand} {row.actual_oem}</Text></div>}
             {row.source_switch?.status === 'switched' && <div><Tag color="green">
                 {row.source_switch.basis === 'exact' ? 'После прихода выбран исходный артикул'
@@ -496,14 +523,22 @@ const CustomerOrderAssemblyPage = () => {
                 </Space>
             </div>}
         </> },
-        { title: 'Цена', dataIndex: 'price', render: money },
-        { title: 'Заказано', dataIndex: 'ordered' },
-        { title: 'Наш склад', render: (_, row) => `${row.own_labeled}/${row.own_ordered}` },
-        { title: 'Поставщик', render: (_, row) => `${row.cross_labeled}/${row.received}` },
-        { title: 'Принято', render: (_, row) => (row.cross_stock_items || []).reduce((sum, item) => sum + Number(item.picked_quantity || 0), 0) },
-        { title: 'В реализациях', dataIndex: 'committed' },
-        { title: 'Готово', dataIndex: 'ready', render: (value) => <Tag color={value ? 'green' : 'default'}>{value}</Tag> },
-        { title: 'Приёмка', render: (_, row) => row.cross_stock_items?.length ? <Space>
+        { title: hint('Заказано', 'Количество в заказе клиента и цена за штуку'), key: 'ordered', width: 120, render: (_, row) => (
+            <div>
+                {stat('Шт.', row.ordered)}
+                {stat('Цена', money(row.price))}
+            </div>
+        ) },
+        { title: hint('Комплектация', 'Наш склад: этикетки напечатаны / заказано. Поставщик: этикетки напечатаны / поступило. Принято — отмечено при приёмке.'), key: 'progress', width: 220, render: (_, row) => (
+            <div>
+                {stat('Наш склад', `${row.own_labeled}/${row.own_ordered}`)}
+                {stat('Поставщик', `${row.cross_labeled}/${row.received}`)}
+                {stat('Принято', (row.cross_stock_items || []).reduce((sum, item) => sum + Number(item.picked_quantity || 0), 0))}
+                {stat('В реализациях', row.committed)}
+            </div>
+        ) },
+        { title: hint('Готово', 'Сколько штук можно отгрузить сейчас'), dataIndex: 'ready', width: 90, render: (value) => <Tag color={value ? 'green' : 'default'}>{value}</Tag> },
+        { title: 'Приёмка поставщика', key: 'accept', width: 250, render: (_, row) => row.cross_stock_items?.length ? <Space wrap size={4}>
             <InputNumber size="small" min={0} max={row.received} style={{ width: 75 }}
                 value={crossPickInputs[row.id] ?? (row.cross_stock_items || []).reduce(
                     (sum, item) => sum + Number(item.picked_quantity || 0), 0)}
@@ -536,10 +571,14 @@ const CustomerOrderAssemblyPage = () => {
             }
             return <Text type="danger">Нет свободного остатка</Text>;
         } },
-        { title: 'Заказано', dataIndex: 'quantity' },
-        { title: 'Этикетки / собрано', render: (_, row) => `${row.labeled}/${row.quantity}` },
-        { title: 'Осталось', dataIndex: 'remaining' },
-        { title: '', render: (_, row) => <Button size="small" onClick={() => openLabels(row)}>Этикетки</Button> },
+        { title: hint('Количество', 'Заказано / собрано (этикетки напечатаны) / осталось собрать'), key: 'qty', width: 160, render: (_, row) => (
+            <div>
+                {stat('Заказано', row.quantity)}
+                {stat('Собрано', `${row.labeled}/${row.quantity}`)}
+                {stat('Осталось', row.remaining)}
+            </div>
+        ) },
+        { title: '', key: 'labels', width: 100, render: (_, row) => <Button size="small" onClick={() => openLabels(row)}>Этикетки</Button> },
     ];
 
     return <div style={{ padding: 24 }}>
@@ -591,7 +630,7 @@ const CustomerOrderAssemblyPage = () => {
                 <Card size="small" title="Заказы клиентов" extra={<Button type="primary" disabled={busy || !selectedOrderIds.length && !focused}
                     onClick={openPreview}>Создать черновик реализации</Button>}>
                     <Table rowKey="id" size="small" loading={loading} dataSource={visibleOrders} columns={orderColumns}
-                        scroll={{ x: 1700, y: 300 }} pagination={{ current: page, pageSize: 50, total,
+                        scroll={{ x: 1000, y: 300 }} pagination={{ current: page, pageSize: 50, total,
                             showTotal: (count) => `${count} заказов` }}
                         onChange={(pagination) => setPage(pagination.current)}
                         onRow={(row) => ({ onClick: () => setFocusedOrderId(row.id) })}
@@ -603,7 +642,7 @@ const CustomerOrderAssemblyPage = () => {
                     extra={<Button size="small" disabled={busy || !detailRows.some((row) => row.cross_stock_items?.length)}
                         onClick={acceptAllCross}>Принять все полученные</Button>}>
                     {detailRows.length ? <Table rowKey="key" size="small" columns={detailColumns}
-                        dataSource={detailRows} pagination={{ pageSize: 30 }} scroll={{ x: 1200, y: 380 }} />
+                        dataSource={detailRows} pagination={{ pageSize: 30 }} scroll={{ x: 1000, y: 380 }} />
                         : <Text type="secondary">Выберите заказ в верхней таблице.</Text>}
                 </Card>
             </Space> },
@@ -621,7 +660,7 @@ const CustomerOrderAssemblyPage = () => {
                         onClick={() => printLabels(selectedStockIds)}>Печать выбранных</Button>
                 </Space>
                 <Table rowKey="id" size="small" loading={loading} columns={ownColumns}
-                    dataSource={visibleOwnRows} pagination={{ pageSize: 40 }} scroll={{ x: 1100 }}
+                    dataSource={visibleOwnRows} pagination={{ pageSize: 40 }} scroll={{ x: 900 }}
                     rowClassName={(row) => (!row.location && Number(row.labeled) > 0
                         ? (Number(row.remaining) <= 0 ? 'assembly-row-done' : 'assembly-row-partial') : '')}
                     rowSelection={{ selectedRowKeys: selectedStockIds, onChange: setSelectedStockIds,
