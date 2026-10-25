@@ -20,6 +20,7 @@ export const fetchAllCustomersBrief = async ({
     pageSize = 200,
     maxPages = 25,
     typePrices,
+    customerGroup,
 } = {}) => {
     const items = [];
     for (let page = 1; page <= maxPages; page += 1) {
@@ -27,6 +28,7 @@ export const fetchAllCustomersBrief = async ({
             page,
             page_size: pageSize,
             ...(typePrices ? { type_prices: typePrices } : {}),
+            ...(customerGroup ? { customer_group: customerGroup } : {}),
         });
         items.push(...(data?.items || []));
         if (page >= (data?.pages || 1)) break;

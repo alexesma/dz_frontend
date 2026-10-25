@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     Button,
     Card,
@@ -11,6 +11,7 @@ import {
     Modal,
     Popconfirm,
     Select,
+    Segmented,
     Switch,
     Table,
     Tag,
@@ -43,12 +44,12 @@ import {
     retryCustomerOrder,
     updateCustomerOrder,
 } from '../api/customerOrders';
-import { getCustomersSummary } from '../api/customers';
+import { getCustomerById, getCustomersSummary } from '../api/customers';
 import { getAllProviders } from '../api/providers';
 import PartsSoftOrderReconciliation from './PartsSoftOrderReconciliation';
 import CustomerOrderEditModal from './CustomerOrderEditModal';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 dayjs.locale('ru');
 const displayOem = (value) => {
@@ -57,6 +58,7 @@ const displayOem = (value) => {
 };
 
 const DEFAULT_FILTERS = {
+    customerGroup: 'Wholesale',
     customerId: null,
     supplierIds: [],
     status: null,
@@ -68,6 +70,8 @@ const readFilters = (searchParams) => {
     const dateFrom = searchParams.get('date_from');
     const dateTo = searchParams.get('date_to');
     return {
+        customerGroup: ['all', 'Retail'].includes(searchParams.get('customer_group'))
+            ? searchParams.get('customer_group') : 'Wholesale',
         customerId: Number(searchParams.get('customer_id')) || null,
         supplierIds: (searchParams.get('supplier_ids') || '').split(',')
             .map(Number).filter((id) => id > 0),
@@ -79,6 +83,9 @@ const readFilters = (searchParams) => {
 
 const buildSearch = (filters, tab, page) => {
     const params = new URLSearchParams();
+    if (filters.customerGroup !== 'Wholesale') {
+        params.set('customer_group', filters.customerGroup);
+    }
     if (filters.customerId) params.set('customer_id', filters.customerId);
     if (filters.supplierIds?.length) params.set('supplier_ids', filters.supplierIds.join(','));
     if (filters.status) params.set('status', filters.status);
@@ -98,6 +105,15 @@ const ORDER_STATUS_LABELS = {
     SENT: 'Отправлен',
     ERROR: 'Ошибка',
 };
+const NEXT_ACTION_LABELS = {
+    check_source: 'Проверить источник',
+    accept_receipt: 'Принять поступление',
+    print_own_labels: 'Напечатать этикетки',
+    print_supplier_labels: 'Этикетки поставщика',
+    create_realization: 'Создать реализацию',
+    await_supplier: 'Ждём поставщика',
+    await_stock: 'Нет свободного остатка',
+};
 
 const CustomerOrdersPage = () => {
     const navigate = useNavigate();
@@ -112,9 +128,11 @@ const CustomerOrdersPage = () => {
     const [ordersTotal, setOrdersTotal] = useState(0);
     const [errorOrdersTotal, setErrorOrdersTotal] = useState(0);
     const [customers, setCustomers] = useState([]);
+    const [customerSearch, setCustomerSearch] = useState('');
     const [providers, setProviders] = useState([]);
     const [oemOptions, setOemOptions] = useState([]);
     const [loading, setLoading] = useState(false);
+    const fetchRequestId = useRef(0);
     const [filters, setFilters] = useState(appliedFilters);
     const [createOpen, setCreateOpen] = useState(false);
     const [creating, setCreating] = useState(false);
@@ -171,6 +189,10 @@ const CustomerOrdersPage = () => {
 
     const buildBaseParams = useCallback((activeFilters) => {
         const params = {};
+        if (activeFilters.customerGroup !== 'all') {
+            params.customer_group = activeFilters.customerGroup === 'Retail'
+                ? 'retail' : 'wholesale';
+        }
         if (activeFilters.customerId) {
             params.customer_id = activeFilters.customerId;
         }
@@ -189,6 +211,7 @@ const CustomerOrdersPage = () => {
 
     const fetchOrders = useCallback(async (filtersState, pageNumber = page) => {
         const activeFilters = filtersState || DEFAULT_FILTERS;
+        const requestId = ++fetchRequestId.current;
         setLoading(true);
         try {
             const baseParams = buildBaseParams(activeFilters);
@@ -197,21 +220,23 @@ const CustomerOrdersPage = () => {
                 summaryParams.status = activeFilters.status;
             }
             const pageParams = { skip: (pageNumber - 1) * 20, limit: 20 };
-            const [ordersResp, errorOrdersResp, errorCountResp, customersResp] = await Promise.all([
+            const [ordersResp, errorOrdersResp, errorCountResp] = await Promise.all([
                 getCustomerOrdersSummaryPage({ ...summaryParams, ...pageParams }),
                 getCustomerOrders({ ...baseParams, status: 'ERROR', ...pageParams }),
                 getCustomerOrdersCount({ ...baseParams, status: 'ERROR' }),
-                getCustomersSummary({ page: 1, page_size: 200 }),
             ]);
-            setOrders((ordersResp.data?.items || []).filter((order) => order.status !== 'ERROR'));
-            setOrdersTotal(ordersResp.data?.total || 0);
-            setErrorOrders(errorOrdersResp.data || []);
-            setErrorOrdersTotal(errorCountResp.data || 0);
-            setCustomers(customersResp.data?.items || []);
+            if (requestId === fetchRequestId.current) {
+                setOrders((ordersResp.data?.items || []).filter((order) => order.status !== 'ERROR'));
+                setOrdersTotal(ordersResp.data?.total || 0);
+                setErrorOrders(errorOrdersResp.data || []);
+                setErrorOrdersTotal(errorCountResp.data || 0);
+            }
         } catch {
-            message.error('Не удалось загрузить заказы клиентов');
+            if (requestId === fetchRequestId.current) {
+                message.error('Не удалось загрузить заказы клиентов');
+            }
         } finally {
-            setLoading(false);
+            if (requestId === fetchRequestId.current) setLoading(false);
         }
     }, [buildBaseParams, page]);
 
@@ -219,6 +244,40 @@ const CustomerOrdersPage = () => {
         setFilters(appliedFilters);
         fetchOrders(appliedFilters, page);
     }, [appliedFilters, fetchOrders, page]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const group = appliedFilters.customerGroup === 'all' ? undefined
+            : appliedFilters.customerGroup === 'Retail' ? 'retail' : 'wholesale';
+        const timer = window.setTimeout(() => getCustomersSummary({
+            page: 1, page_size: 50, customer_group: group,
+            ...(customerSearch.trim() ? { search: customerSearch.trim() } : {}),
+        }).then(({ data }) => {
+            if (!cancelled) {
+                setCustomers((previous) => {
+                    const chosenIds = [appliedFilters.customerId, formState.customerId];
+                    const selected = previous.filter((row) => chosenIds.includes(row.id));
+                    const rows = data?.items || [];
+                    return [...selected.filter((row) => !rows.some((next) => next.id === row.id)),
+                        ...rows];
+                });
+            }
+        }).catch(() => {
+            if (!cancelled) message.error('Не удалось загрузить список клиентов');
+        }), 250);
+        return () => { cancelled = true; window.clearTimeout(timer); };
+    }, [appliedFilters.customerGroup, appliedFilters.customerId,
+        formState.customerId, customerSearch]);
+
+    useEffect(() => {
+        const id = appliedFilters.customerId;
+        if (!id || customers.some((row) => row.id === id)) return;
+        let cancelled = false;
+        getCustomerById(id).then(({ data }) => {
+            if (!cancelled) setCustomers((rows) => [data, ...rows]);
+        }).catch(() => {});
+        return () => { cancelled = true; };
+    }, [appliedFilters.customerId, customers]);
 
     useEffect(() => {
         getAllProviders().then(setProviders).catch(() => {
@@ -684,6 +743,21 @@ const CustomerOrdersPage = () => {
         );
     };
 
+    const renderFulfillment = (record) => {
+        const progress = record.fulfillment || {};
+        if (!progress.ordered) return <Text type="secondary">Нет позиций к отгрузке</Text>;
+        const actions = (record.next_actions || []).slice(0, 2);
+        return <div style={{ fontSize: 12, lineHeight: 1.5 }}>
+            <div>К отгрузке: {progress.ordered} · поступило: {progress.received || 0}</div>
+            <div>Этикетки: {(progress.cross_labeled || 0) + (progress.own_labeled || 0)}
+                {' · '}в реализациях: {progress.committed || 0}
+                {' · '}готово: {progress.ready || 0}</div>
+            {actions.map((action) => <Tag key={action} color={action === 'create_realization' ? 'green' : 'blue'}>
+                {NEXT_ACTION_LABELS[action] || action}
+            </Tag>)}
+        </div>;
+    };
+
     const columns = [
         {
             title: 'Дата',
@@ -735,7 +809,7 @@ const CustomerOrdersPage = () => {
             dataIndex: 'customer_id',
             key: 'customer_id',
             width: '18%',
-            render: (value) => (
+            render: (value, record) => (
                 <Button
                     type="link"
                     className="customer-order-customer-link"
@@ -744,7 +818,7 @@ const CustomerOrdersPage = () => {
                         navigate(`/customers/${value}/edit`);
                     }}
                 >
-                    {customerMap[value] || value}
+                    {record.customer_name || customerMap[value] || value}
                 </Button>
             ),
         },
@@ -797,6 +871,12 @@ const CustomerOrdersPage = () => {
             render: (_, record) => renderExecutionSummary(record),
         },
         {
+            title: 'Комплектация',
+            key: 'fulfillment',
+            width: '26%',
+            render: (_, record) => renderFulfillment(record),
+        },
+        {
             title: 'Действия',
             key: 'actions',
             width: '14%',
@@ -818,7 +898,7 @@ const CustomerOrdersPage = () => {
             dataIndex: 'customer_id',
             key: 'customer_id',
             width: 180,
-            render: (value) => (
+            render: (value, record) => (
                 <Button
                     type="link"
                     style={{ padding: 0, height: 'auto' }}
@@ -827,7 +907,7 @@ const CustomerOrdersPage = () => {
                         navigate(`/customers/${value}/edit`);
                     }}
                 >
-                    {customerMap[value] || value}
+                    {record.customer_name || customerMap[value] || value}
                 </Button>
             ),
         },
@@ -891,6 +971,24 @@ const CustomerOrdersPage = () => {
             <Title level={3}>Заказы клиентов</Title>
             {activeTab !== 'partssoft' && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+                <Segmented
+                    value={filters.customerGroup}
+                    onChange={(value) => {
+                        const nextFilters = {
+                            ...filters, customerGroup: value, customerId: null,
+                        };
+                        setOrders([]);
+                        setErrorOrders([]);
+                        setCustomers([]);
+                        setFilters(nextFilters);
+                        updateListSearch(nextFilters);
+                    }}
+                    options={[
+                        { value: 'Wholesale', label: 'Оптовые клиенты' },
+                        { value: 'all', label: 'Все клиенты' },
+                        { value: 'Retail', label: 'Розничные клиенты' },
+                    ]}
+                />
                 <RangePicker
                     value={
                         filters.dateRange
@@ -917,9 +1015,12 @@ const CustomerOrdersPage = () => {
                 />
                 <Select
                     allowClear
+                    showSearch
+                    filterOption={false}
                     style={{ minWidth: 220 }}
                     placeholder="Клиент"
                     value={filters.customerId}
+                    onSearch={setCustomerSearch}
                     onChange={(value) =>
                         setFilters((prev) => ({ ...prev, customerId: value || null }))
                     }
@@ -1075,9 +1176,12 @@ const CustomerOrdersPage = () => {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
                     <Select
                         allowClear
+                        showSearch
+                        filterOption={false}
                         style={{ minWidth: 240 }}
                         placeholder="Клиент"
                         value={formState.customerId}
+                        onSearch={setCustomerSearch}
                         onChange={(value) => {
                             const customerId = value || null;
                             setFormState((prev) => ({

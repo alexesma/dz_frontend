@@ -2,6 +2,7 @@ import api from '../api.js';
 
 export const getMyPrinters = () => api.get('/print-jobs/me');
 export const enqueuePrintJob = (data) => api.post('/print-jobs', data);
+export const getPrintJob = (id) => api.get(`/print-jobs/${id}`);
 export const getPrintDevices = () => api.get('/print-jobs/admin/devices');
 export const getPrintAssignments = () => api.get('/print-jobs/admin/assignments');
 export const savePrintAssignment = (data) =>

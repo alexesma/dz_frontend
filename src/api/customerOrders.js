@@ -6,6 +6,15 @@ export const getStockOrders = (params) =>
 export const getCustomerAssembly = (params = {}) =>
     api.get('/customer-orders/assembly', { params });
 
+export const getCustomerAssemblyPage = (params = {}) =>
+    api.get('/customer-orders/assembly/page', { params });
+
+export const updateCrossPicksBulk = (items) =>
+    api.post('/customer-orders/assembly/cross-picks/bulk', { items });
+
+export const previewAssemblyRealization = (orderIds) =>
+    api.post('/customer-orders/assembly/realizations/preview', { order_ids: orderIds });
+
 export const approveExactStockSwitch = (itemId) =>
     api.post(`/customer-orders/assembly/source-switch/${itemId}/approve`);
 
