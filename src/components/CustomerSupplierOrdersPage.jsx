@@ -150,8 +150,15 @@ const CustomerSupplierOrdersPage = () => {
             dataIndex: 'provider_config_name',
             key: 'provider_config_name',
             width: 160,
-            render: (value, record) =>
-                value || (record.provider_config_id ? `#${record.provider_config_id}` : 'Общий'),
+            render: (value, record) => {
+                // Заказ у поставщика может объединять позиции из разных
+                // прайсов — показываем реальные прайсы позиций.
+                const names = record.provider_config_names?.length
+                    ? record.provider_config_names
+                    : (value ? [value] : []);
+                if (names.length) return names.join(', ');
+                return record.provider_config_id ? `#${record.provider_config_id}` : '—';
+            },
         },
         {
             title: 'Сумма заказа',

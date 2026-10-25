@@ -6,6 +6,7 @@ import {
     Popconfirm,
     Table,
     Tag,
+    Tooltip,
     Typography,
     message,
 } from 'antd';
@@ -13,7 +14,7 @@ import dayjs from 'dayjs';
 import { useNavigate, useParams } from 'react-router-dom';
 import { getSupplierOrderDetail, sendSupplierOrders } from '../api/customerOrders';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 
 const SUPPLIER_STATUS_LABELS = {
     NEW: 'Новый',
@@ -118,130 +119,99 @@ const CustomerSupplierOrderDetailPage = () => {
         }
     };
 
+    const hint = (label, text) => (
+        <Tooltip title={text}><span style={{ borderBottom: '1px dotted' }}>{label}</span></Tooltip>
+    );
+    const labelled = (label, value) => (
+        <div style={{ whiteSpace: 'nowrap' }}>
+            <Text type="secondary">{label}: </Text>{value}
+        </div>
+    );
+
     const columns = [
         {
-            title: 'OEM',
-            dataIndex: 'oem',
-            key: 'oem',
-            width: 140,
-        },
-        {
-            title: 'Бренд',
-            dataIndex: 'brand',
-            key: 'brand',
-            width: 140,
-        },
-        {
-            title: 'Название',
-            dataIndex: 'name',
-            key: 'name',
-            width: 240,
-            render: (value) => value || '—',
-        },
-        {
-            title: 'Кол-во',
-            dataIndex: 'quantity',
-            key: 'quantity',
-            width: 90,
-        },
-        {
-            title: 'Цена',
-            dataIndex: 'price',
-            key: 'price',
-            width: 110,
-            render: formatMoney,
-        },
-        {
-            title: 'Отправлен',
-            key: 'sent_at',
-            width: 150,
-            render: () => formatDateTime(order?.sent_at),
-        },
-        {
-            title: 'Заказано',
-            dataIndex: 'requested_qty',
-            key: 'requested_qty',
-            width: 110,
-            render: (value) => value ?? '—',
-        },
-        {
-            title: 'Отгрузка',
-            dataIndex: 'ship_qty',
-            key: 'ship_qty',
-            width: 100,
-            render: (value) => value ?? '—',
-        },
-        {
-            title: 'Подтверждённый отказ',
-            dataIndex: 'explicit_rejected_quantity',
-            key: 'explicit_rejected_quantity',
-            width: 90,
-            render: (value) => value ?? '—',
-        },
-        {
-            title: 'Состояние ответа',
-            dataIndex: 'response_state',
-            key: 'response_state',
-            width: 180,
-            render: (value) => {
-                const meta = RESPONSE_STATES[value] || RESPONSE_STATES.not_sent;
-                return <Tag color={meta.color}>{meta.label}</Tag>;
-            },
-        },
-        {
-            title: 'Основание',
-            key: 'response_basis',
-            width: 240,
+            title: 'Позиция',
+            key: 'item',
             render: (_, record) => (
                 <div>
-                    <div>{RESPONSE_SOURCES[record.response_source] || (
-                        ['overdue', 'partially_received_overdue'].includes(record.response_state)
-                            ? 'Нет ответа по остатку к сроку' : '—'
-                    )}</div>
-                    {record.response_status_raw && <div>{record.response_status_raw === 'автоотказ по документу'
-                        ? 'Строки нет в документе (историческая отметка)'
-                        : record.response_status_raw}</div>}
-                    {record.response_comment && !record.response_comment.startsWith('Авто-отказ: позиция отсутствует') && (
-                        <div>{record.response_comment}</div>
-                    )}
-                    {record.confirmed_quantity !== null && record.confirmed_quantity !== undefined && (
-                        <div>Подтверждено: {record.confirmed_quantity}</div>
-                    )}
-                    {Object.entries(record.refusal_sources || {}).map(([source, quantity]) => (
-                        <div key={source}>Отказ {RESPONSE_SOURCES[source] || source}: {quantity}</div>
-                    ))}
-                    {record.pending_quantity > 0 && <div>Ждём: {record.pending_quantity}</div>}
-                    {record.document_refusal_due_at && <div>Отказ по документу после: {dayjs(record.document_refusal_due_at).format('DD.MM.YYYY HH:mm')}</div>}
+                    <Text strong>{record.brand} {record.oem}</Text>
+                    <div><Text type="secondary">{record.name || '—'}</Text></div>
                 </div>
             ),
         },
         {
-            title: 'Срок ответа',
-            dataIndex: 'response_due_at',
-            key: 'response_due_at',
-            width: 150,
-            render: formatDateTime,
+            title: hint('Заказ', 'Что заказано у поставщика и по какой цене'),
+            key: 'order',
+            width: 110,
+            render: (_, record) => (
+                <div>
+                    {labelled('Кол-во', record.quantity)}
+                    {labelled('Цена', formatMoney(record.price))}
+                </div>
+            ),
         },
         {
-            title: 'Подтвердить без ответа',
-            dataIndex: 'auto_confirm_at',
-            key: 'auto_confirm_at',
-            width: 170,
-            render: formatDateTime,
+            title: hint('По заказу клиента', 'Заказано клиентом / сколько подтверждено к отгрузке / подтверждённый отказ'),
+            key: 'customer_qty',
+            width: 150,
+            render: (_, record) => (
+                <div>
+                    {labelled('Заказано', record.requested_qty ?? '—')}
+                    {labelled('Отгрузка', record.ship_qty ?? '—')}
+                    {labelled('Отказ', record.explicit_rejected_quantity ?? '—')}
+                </div>
+            ),
         },
         {
-            title: 'Ответ получен',
-            dataIndex: 'response_at',
-            key: 'response_at',
-            width: 150,
-            render: formatDateTime,
+            title: hint('Ответ поставщика', 'Состояние ответа и на каком основании оно выставлено'),
+            key: 'response',
+            width: 280,
+            render: (_, record) => {
+                const meta = RESPONSE_STATES[record.response_state] || RESPONSE_STATES.not_sent;
+                return (
+                    <div>
+                        <Tag color={meta.color}>{meta.label}</Tag>
+                        <div>{RESPONSE_SOURCES[record.response_source] || (
+                            ['overdue', 'partially_received_overdue'].includes(record.response_state)
+                                ? 'Нет ответа по остатку к сроку' : null
+                        )}</div>
+                        {record.response_status_raw && <div>{record.response_status_raw === 'автоотказ по документу'
+                            ? 'Строки нет в документе (историческая отметка)'
+                            : record.response_status_raw}</div>}
+                        {record.response_comment && !record.response_comment.startsWith('Авто-отказ: позиция отсутствует') && (
+                            <div>{record.response_comment}</div>
+                        )}
+                        {record.confirmed_quantity !== null && record.confirmed_quantity !== undefined && (
+                            <div>Подтверждено: {record.confirmed_quantity}</div>
+                        )}
+                        {Object.entries(record.refusal_sources || {}).map(([source, quantity]) => (
+                            <div key={source}>Отказ {RESPONSE_SOURCES[source] || source}: {quantity}</div>
+                        ))}
+                        {record.pending_quantity > 0 && <div>Ждём: {record.pending_quantity}</div>}
+                        {record.document_refusal_due_at && <div>Отказ по документу после: {formatDateTime(record.document_refusal_due_at)}</div>}
+                    </div>
+                );
+            },
+        },
+        {
+            title: hint('Сроки', 'Срок ответа — до какого времени поставщик должен ответить. Подтвердить без ответа — если к этому времени ответа нет, позиция считается подтверждённой автоматически. Ответ получен — когда пришёл ответ.'),
+            key: 'dates',
+            width: 230,
+            render: (_, record) => (
+                <div>
+                    {labelled('Срок ответа', formatDateTime(record.response_due_at))}
+                    {labelled('Авто-подтверждение', formatDateTime(record.auto_confirm_at))}
+                    {labelled('Ответ получен', formatDateTime(record.response_at))}
+                </div>
+            ),
         },
         {
             title: 'Поступление',
             key: 'receipt',
-            width: 170,
+            width: 150,
             render: (_, record) => record.received_quantity
-                ? `${record.received_quantity} шт., ${formatDateTime(record.received_at)}`
+                ? <div><div>{record.received_quantity} шт.</div>
+                    <Text type="secondary">{formatDateTime(record.received_at)}</Text></div>
                 : '—',
         },
     ];
@@ -326,7 +296,7 @@ const CustomerSupplierOrderDetailPage = () => {
                             columns={columns}
                             pagination={false}
                             size="small"
-                            scroll={{ x: 'max-content' }}
+                            scroll={{ x: 1000 }}
                             rowClassName={(record) =>
                                 ['overdue', 'partially_received_overdue'].includes(record.response_state)
                                     ? 'row-auto-refused' : ''
