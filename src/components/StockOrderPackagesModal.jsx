@@ -41,6 +41,8 @@ import {
     updateStockOrderPackageContents,
     verifyStockOrderPackage,
 } from '../api/customerOrders';
+import { buildCustomLabelDocument, usePrintForm } from '../utils/printFormTemplates';
+import { usePrintDelivery } from '../utils/usePrintDelivery';
 
 const { Text, Title } = Typography;
 
@@ -97,6 +99,8 @@ const buildPrintHtml = (packing, box, barcodeHtml) => `
 </html>`;
 
 const StockOrderPackagesModal = ({ orderId, open, onClose, onChanged }) => {
+    const printForm = usePrintForm('stock_order_box');
+    const { printHtml } = usePrintDelivery();
     const [packing, setPacking] = useState(null);
     const [loading, setLoading] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
@@ -182,14 +186,24 @@ const StockOrderPackagesModal = ({ orderId, open, onClose, onChanged }) => {
     };
 
     const executePrint = async (box, printReason = null) => {
-        const printWindow = window.open('', '_blank', 'width=480,height=640');
-        if (!printWindow) {
-            message.error('Браузер заблокировал окно печати');
+        const barcodeHtml = barcodeRefs.current[box.id]?.innerHTML || '';
+        const html = printForm
+            ? buildCustomLabelDocument(printForm, [{
+                customer_name: packing.customer_name,
+                stock_order_id: packing.stock_order_id,
+                box_number: box.sequence_number,
+                box_total: box.total_packages,
+                position_count: box.items.length,
+                quantity: box.total_quantity,
+                barcode: box.barcode,
+            }], `Коробка ${box.sequence_number}`)
+            : buildPrintHtml(packing, box, barcodeHtml);
+        try {
+            await printHtml(html, `Коробка ${box.sequence_number}`);
+        } catch (error) {
+            message.error(error?.response?.data?.detail || error.message);
             return;
         }
-        const barcodeHtml = barcodeRefs.current[box.id]?.innerHTML || '';
-        printWindow.document.write(buildPrintHtml(packing, box, barcodeHtml));
-        printWindow.document.close();
         const result = await runAction(
             () => printStockOrderPackageLabel(box.id, printReason),
             `Этикетка коробки ${box.sequence_number} передана на печать`

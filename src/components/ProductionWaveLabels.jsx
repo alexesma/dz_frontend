@@ -21,8 +21,9 @@ import {
 import {
     buildLabelPrintDocument,
     escapeHtml,
-    openLabelPrintWindow,
 } from '../utils/labelPrint';
+import { buildCustomLabelDocument, usePrintForm } from '../utils/printFormTemplates';
+import { usePrintDelivery } from '../utils/usePrintDelivery';
 
 const { Text, Title } = Typography;
 
@@ -52,14 +53,24 @@ const renderWaveLabel = (label) => `
     <div class="code">${escapeHtml(label.barcode)}</div>
 `;
 
-const buildPrintHtml = (labels, barcodeHtml) => buildLabelPrintDocument({
-    title: 'Этикетки волны DragonZap',
-    fieldsCss: WAVE_LABEL_FIELDS_CSS,
-    items: labels.map((label) => ({ ...label, barcodeHtml: barcodeHtml[label.id] || '' })),
-    renderLabel: renderWaveLabel,
-});
+const buildPrintHtml = (labels, barcodeHtml, printForm) => {
+    const items = labels.map((label) => ({
+        ...label, barcodeHtml: barcodeHtml[label.id] || '',
+    }));
+    if (printForm) {
+        return buildCustomLabelDocument(printForm, items, 'Этикетки волны DragonZap');
+    }
+    return buildLabelPrintDocument({
+        title: 'Этикетки волны DragonZap',
+        fieldsCss: WAVE_LABEL_FIELDS_CSS,
+        items,
+        renderLabel: renderWaveLabel,
+    });
+};
 
 const ProductionWaveLabels = ({ waveId, enabled, onSummaryChange }) => {
+    const printForm = usePrintForm('production_wave');
+    const { printHtml } = usePrintDelivery();
     const [labels, setLabels] = useState([]);
     const [loading, setLoading] = useState(false);
     const [printing, setPrinting] = useState(false);
@@ -110,8 +121,11 @@ const ProductionWaveLabels = ({ waveId, enabled, onSummaryChange }) => {
         selected.forEach((label) => {
             barcodeHtml[label.id] = barcodeRefs.current[label.id]?.innerHTML || '';
         });
-        if (!openLabelPrintWindow(buildPrintHtml(selected, barcodeHtml))) {
-            message.error('Браузер заблокировал окно печати');
+        try {
+            await printHtml(buildPrintHtml(selected, barcodeHtml, printForm),
+                `Этикетки волны #${waveId}`);
+        } catch (error) {
+            message.error(error?.response?.data?.detail || error.message);
             return;
         }
         setPrinting(true);

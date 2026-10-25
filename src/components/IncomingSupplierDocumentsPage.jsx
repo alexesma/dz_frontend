@@ -58,6 +58,7 @@ import {
 import { listDiadocInboundDocuments } from '../api/diadoc';
 import useAuth from '../context/useAuth';
 import CrossDockingLabelsModal from './CrossDockingLabelsModal';
+import { usePrintDelivery } from '../utils/usePrintDelivery';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -181,6 +182,7 @@ const LabelCard = ({ item, receipt }) => (
 
 // ─── Label print modal ────────────────────────────────────────────────────────
 const LabelModal = ({ open, receipt, onClose }) => {
+    const { printHtml } = usePrintDelivery();
     useEffect(() => {
         if (open) ensureLabelPrintStyle();
     }, [open]);
@@ -188,12 +190,21 @@ const LabelModal = ({ open, receipt, onClose }) => {
     if (!receipt) return null;
     const items = receipt.items || [];
 
-    const handlePrint = () => {
+    const handlePrint = async () => {
         const root = document.getElementById('label-print-root');
         if (!root) return;
-        root.style.display = 'block';
-        window.print();
-        root.style.display = 'none';
+        const css = document.getElementById(LABEL_STYLE_ID)?.innerHTML || '';
+        const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><style>${css}</style></head><body>${root.outerHTML}</body></html>`;
+        try {
+            await printHtml(html, `Этикетки поступления #${receipt.id}`, () => {
+                root.style.display = 'block';
+                window.print();
+                root.style.display = 'none';
+                return true;
+            });
+        } catch (error) {
+            message.error(error?.response?.data?.detail || error.message);
+        }
     };
 
     return (

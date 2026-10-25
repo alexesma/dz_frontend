@@ -4,6 +4,7 @@ import {
     Button,
     Card,
     Col,
+    DatePicker,
     Descriptions,
     Divider,
     Form,
@@ -42,9 +43,10 @@ import {
     postStockDocument,
     unpostStockDocument,
     updateStockDocument,
+    updateDocumentItem,
 } from '../api/inventory';
 import { searchAutopartsByOem } from '../api/autoparts';
-import { getStorageLocations } from '../api/storage';
+import { getStorageLocations, getWarehouses } from '../api/storage';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -57,12 +59,12 @@ const DOC_TYPE_LABELS = {
     manual_writeoff: 'Списание',
 };
 
-const STATUS_LABELS  = { draft: 'Черновик', posted: 'Проведён', cancelled: 'Отменён' };
-const STATUS_COLORS  = { draft: 'default',  posted: 'success',  cancelled: 'error' };
+const STATUS_LABELS  = { draft: 'Черновик', posted: 'Проведён', cancelled: 'Распроведён' };
+const STATUS_COLORS  = { draft: 'default',  posted: 'success',  cancelled: 'warning' };
 
 // ── AddItemModal ──────────────────────────────────────────────────────────────
 
-const AddItemModal = ({ open, onClose, onAdd, docType }) => {
+const AddItemModal = ({ open, onClose, onAdd, docType, item }) => {
     const [form] = Form.useForm();
     const [autopartOptions, setAutopartOptions] = useState([]);
     const [locationOptions, setLocationOptions] = useState([]);
@@ -73,6 +75,24 @@ const AddItemModal = ({ open, onClose, onAdd, docType }) => {
     useEffect(() => {
         if (!open) return;
         form.resetFields();
+        if (item) {
+            setAutopartOptions([{
+                value: item.autopart_id,
+                label: `${item.autopart_oem} — ${item.autopart_brand || 'Без бренда'} — ${item.autopart_name || 'Без названия'}`,
+            }]);
+            form.setFieldsValue({
+                autopart_id: item.autopart_id,
+                storage_location_id: item.storage_location_id,
+                quantity: item.quantity,
+                cost_price: item.cost_price,
+                gtd_number: item.gtd_number,
+                country_code: item.country_code,
+                country_name: item.country_name,
+                notes: item.notes,
+            });
+        } else {
+            setAutopartOptions([]);
+        }
         getStorageLocations({ limit: 500 })
             .then((res) => {
                 setLocationOptions(
@@ -83,7 +103,7 @@ const AddItemModal = ({ open, onClose, onAdd, docType }) => {
                 );
             })
             .catch(() => {});
-    }, [open, form]);
+    }, [open, form, item]);
 
     const handleApSearch = (q) => {
         clearTimeout(searchTimer.current);
@@ -95,7 +115,7 @@ const AddItemModal = ({ open, onClose, onAdd, docType }) => {
                 setAutopartOptions(
                     (res.data || []).map((ap) => ({
                         value: ap.id,
-                        label: `${ap.oem_number} — ${ap.name}${ap.brand_name ? ` [${ap.brand_name}]` : ''}`,
+                        label: `${ap.oem_number} — ${ap.brand || 'Без бренда'} — ${ap.name || 'Без названия'}`,
                     }))
                 );
             } catch { /* ignore */ }
@@ -113,6 +133,7 @@ const AddItemModal = ({ open, onClose, onAdd, docType }) => {
                 autopart_id:         values.autopart_id,
                 storage_location_id: values.storage_location_id || null,
                 quantity:            values.quantity,
+                cost_price:          values.cost_price ?? null,
                 gtd_number:          values.gtd_number || null,
                 country_code:        values.country_code || null,
                 country_name:        values.country_name || null,
@@ -127,10 +148,10 @@ const AddItemModal = ({ open, onClose, onAdd, docType }) => {
     return (
         <Modal
             open={open}
-            title={`Добавить строку — ${DOC_TYPE_LABELS[docType] || ''}`}
+            title={`${item ? 'Редактировать' : 'Добавить'} строку — ${DOC_TYPE_LABELS[docType] || ''}`}
             onCancel={onClose}
             onOk={handleSubmit}
-            okText="Добавить"
+            okText={item ? 'Сохранить' : 'Добавить'}
             cancelText="Отмена"
             confirmLoading={saving}
             width={560}
@@ -176,6 +197,9 @@ const AddItemModal = ({ open, onClose, onAdd, docType }) => {
                 </Row>
                 {docType === 'manual_receipt' && (
                     <>
+                        <Form.Item name="cost_price" label="Себестоимость за единицу">
+                            <InputNumber min={0} precision={4} style={{ width: '100%' }} />
+                        </Form.Item>
                         <Divider orientation="left" plain style={{ margin: '8px 0' }}>
                             ГТД (необязательно)
                         </Divider>
@@ -211,14 +235,25 @@ const AddItemModal = ({ open, onClose, onAdd, docType }) => {
 const EditHeaderModal = ({ open, doc, onClose, onSave }) => {
     const [form] = Form.useForm();
     const [saving, setSaving] = useState(false);
+    const [warehouseOptions, setWarehouseOptions] = useState([]);
 
     useEffect(() => {
         if (open && doc) {
             form.setFieldsValue({
                 document_number: doc.document_number || '',
+                document_date: dayjs(doc.document_date),
+                warehouse_id: doc.warehouse_id,
                 reason:          doc.reason || '',
                 notes:           doc.notes || '',
             });
+            getWarehouses({ limit: 200 })
+                .then((res) => setWarehouseOptions(
+                    (res.data?.items || res.data || []).map((warehouse) => ({
+                        value: warehouse.id,
+                        label: warehouse.name,
+                    }))
+                ))
+                .catch(() => {});
         }
     }, [open, doc, form]);
 
@@ -227,7 +262,10 @@ const EditHeaderModal = ({ open, doc, onClose, onSave }) => {
         try { values = await form.validateFields(); }
         catch { return; }
         setSaving(true);
-        try { await onSave(values); }
+        try { await onSave({
+            ...values,
+            document_date: values.document_date?.toISOString(),
+        }); }
         finally { setSaving(false); }
     };
 
@@ -244,6 +282,13 @@ const EditHeaderModal = ({ open, doc, onClose, onSave }) => {
             <Form form={form} layout="vertical">
                 <Form.Item name="document_number" label="Номер документа">
                     <Input placeholder="например, ОПР-2026-001" />
+                </Form.Item>
+                <Form.Item name="document_date" label="Дата документа"
+                    rules={[{ required: true, message: 'Укажите дату' }]}>
+                    <DatePicker showTime format="DD.MM.YYYY HH:mm" style={{ width: '100%' }} />
+                </Form.Item>
+                <Form.Item name="warehouse_id" label="Склад">
+                    <Select allowClear options={warehouseOptions} placeholder="Выберите склад" />
                 </Form.Item>
                 <Form.Item name="reason" label="Причина">
                     <Input placeholder="Возврат от клиента, брак, инвентаризация…" />
@@ -266,6 +311,7 @@ const StockDocumentDetailPage = () => {
     const [actionLoading, setActionLoading] = useState(false);
     const [addModalOpen, setAddModalOpen] = useState(false);
     const [editModalOpen, setEditModalOpen] = useState(false);
+    const [editingItem, setEditingItem] = useState(null);
 
     const fetchDoc = useCallback(async () => {
         setLoading(true);
@@ -281,7 +327,7 @@ const StockDocumentDetailPage = () => {
 
     useEffect(() => { fetchDoc(); }, [fetchDoc]);
 
-    const isDraft = doc?.status === 'draft';
+    const isEditable = doc?.status === 'draft' || doc?.status === 'cancelled';
 
     // ── Actions ─────────────────────────────────────────────────────────────
 
@@ -302,7 +348,7 @@ const StockDocumentDetailPage = () => {
         setActionLoading(true);
         try {
             await unpostStockDocument(id);
-            message.success('Документ распроведён');
+            message.success('Документ распроведён и доступен для редактирования');
             fetchDoc();
         } catch (e) {
             message.error(e?.response?.data?.detail || 'Ошибка распроведения');
@@ -330,16 +376,21 @@ const StockDocumentDetailPage = () => {
             message.success('Сохранено');
             setEditModalOpen(false);
             fetchDoc();
-        } catch {
-            message.error('Ошибка сохранения');
+        } catch (error) {
+            message.error(error?.response?.data?.detail || 'Ошибка сохранения');
         }
     };
 
     const handleAddItem = async (itemData) => {
         try {
-            await addDocumentItem(id, itemData);
-            message.success('Строка добавлена');
+            if (editingItem) {
+                await updateDocumentItem(id, editingItem.id, itemData);
+            } else {
+                await addDocumentItem(id, itemData);
+            }
+            message.success(editingItem ? 'Строка обновлена' : 'Строка добавлена');
             setAddModalOpen(false);
+            setEditingItem(null);
             fetchDoc();
         } catch (e) {
             message.error(e?.response?.data?.detail || 'Ошибка добавления строки');
@@ -389,6 +440,13 @@ const StockDocumentDetailPage = () => {
             align: 'right',
             render: (v) => <Text strong>{v}</Text>,
         },
+        doc?.doc_type === 'manual_receipt' && {
+            title: 'Себестоимость',
+            dataIndex: 'cost_price',
+            width: 120,
+            align: 'right',
+            render: (value) => value == null ? '—' : Number(value).toFixed(2),
+        },
         {
             title: 'Ячейка',
             dataIndex: 'storage_location_name',
@@ -423,12 +481,17 @@ const StockDocumentDetailPage = () => {
             ellipsis: true,
             render: (v) => v || <Text type="secondary">—</Text>,
         },
-        isDraft && {
+        isEditable && {
             title: '',
             key: 'actions',
-            width: 60,
+            width: 100,
             render: (_, rec) => (
-                <Popconfirm
+                <Space size="small"><Button
+                    type="text"
+                    size="small"
+                    icon={<EditOutlined />}
+                    onClick={() => { setEditingItem(rec); setAddModalOpen(true); }}
+                /><Popconfirm
                     title="Удалить строку?"
                     onConfirm={() => handleDeleteItem(rec.id)}
                     okText="Да"
@@ -440,7 +503,7 @@ const StockDocumentDetailPage = () => {
                         size="small"
                         icon={<DeleteOutlined />}
                     />
-                </Popconfirm>
+                </Popconfirm></Space>
             ),
         },
     ].filter(Boolean);
@@ -502,7 +565,7 @@ const StockDocumentDetailPage = () => {
                 </Col>
                 <Col>
                     <Space>
-                        {isDraft && (
+                        {isEditable && (
                             <>
                                 <Button
                                     icon={<EditOutlined />}
@@ -589,12 +652,12 @@ const StockDocumentDetailPage = () => {
             <Card
                 title={`Строки документа (${doc.items?.length || 0})`}
                 extra={
-                    isDraft && (
+                    isEditable && (
                         <Button
                             type="primary"
                             size="small"
                             icon={<PlusOutlined />}
-                            onClick={() => setAddModalOpen(true)}
+                            onClick={() => { setEditingItem(null); setAddModalOpen(true); }}
                         >
                             Добавить строку
                         </Button>
@@ -626,9 +689,10 @@ const StockDocumentDetailPage = () => {
             {/* Modals */}
             <AddItemModal
                 open={addModalOpen}
-                onClose={() => setAddModalOpen(false)}
+                onClose={() => { setAddModalOpen(false); setEditingItem(null); }}
                 onAdd={handleAddItem}
                 docType={doc.doc_type}
+                item={editingItem}
             />
             <EditHeaderModal
                 open={editModalOpen}

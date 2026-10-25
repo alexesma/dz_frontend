@@ -50,6 +50,8 @@ import CustomerSupplierOrdersPage from './components/CustomerSupplierOrdersPage'
 import CustomerSupplierOrderDetailPage from './components/CustomerSupplierOrderDetailPage';
 import EmailAccountsPage from './components/EmailAccountsPage';
 import SettingsPage from './components/SettingsPage';
+import PrintFormsPage from './components/PrintFormsPage';
+import PrinterSettingsPage from './components/PrinterSettingsPage';
 import AdminMonitoringPage from './components/AdminMonitoringPage';
 import PriceControlPage from './components/PriceControlPage';
 import CustomerPricelistStudioPage from './components/CustomerPricelistStudioPage';
@@ -220,6 +222,8 @@ const AppRoutes = () => (
         <Route path="/autoparts/certificates" element={<RequireAuth><CertificatesPage /></RequireAuth>} />
         <Route path="/autoparts/regulatory" element={<RequireAuth><RegulatoryPage /></RequireAuth>} />
         <Route path="/autoparts/labels" element={<RequireAuth><ProductLabelsPage /></RequireAuth>} />
+        <Route path="/admin/print-forms" element={<RequireAdmin><PrintFormsPage /></RequireAdmin>} />
+        <Route path="/admin/printers" element={<RequireAdmin><PrinterSettingsPage /></RequireAdmin>} />
 
         {/* Warehouse */}
         <Route path="/warehouse/storage" element={<RequireAuth><StorageLocationsPage /></RequireAuth>} />

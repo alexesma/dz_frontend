@@ -35,6 +35,7 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate, useParams } from 'react-router-dom';
+import { usePrintDelivery } from '../utils/usePrintDelivery';
 import {
     addInvoiceItem,
     createCustomerPayment,
@@ -301,6 +302,7 @@ const SendEmailModal = ({ open, onClose, invoice }) => {
 // ── Main component ────────────────────────────────────────────────────────────
 
 const InvoiceDetailPage = () => {
+    const { printUrl } = usePrintDelivery('a4');
     const { invoiceId }              = useParams();
     const navigate                   = useNavigate();
     const [invoice,    setInvoice]   = useState(null);
@@ -417,7 +419,8 @@ const InvoiceDetailPage = () => {
                     <Divider type="vertical" />
                     <Tooltip title="Открыть версию для печати / сохранить PDF">
                         <Button icon={<PrinterOutlined />}
-                            onClick={() => window.open(getInvoicePrintUrl(invoice.id), '_blank')}>
+                            onClick={() => void printUrl(getInvoicePrintUrl(invoice.id), `Счёт №${invoice.invoice_number}`)
+                                .catch((error) => message.error(error?.response?.data?.detail || error.message))}>
                             Печать / PDF
                         </Button>
                     </Tooltip>

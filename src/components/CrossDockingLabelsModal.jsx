@@ -22,8 +22,9 @@ import {
 import {
     buildLabelPrintDocument,
     escapeHtml,
-    openLabelPrintWindow,
 } from '../utils/labelPrint';
+import { buildCustomLabelDocument, usePrintForm } from '../utils/printFormTemplates';
+import { usePrintDelivery } from '../utils/usePrintDelivery';
 
 const { Text } = Typography;
 
@@ -50,14 +51,24 @@ const renderCrossDockingLabel = (label) => `
     <div class="code">${escapeHtml(label.barcode)}</div>
 `;
 
-const buildPrintHtml = (labels, barcodeHtml) => buildLabelPrintDocument({
-    title: 'Этикетки cross-docking',
-    fieldsCss: CROSS_DOCKING_LABEL_FIELDS_CSS,
-    items: labels.map((label) => ({ ...label, barcodeHtml: barcodeHtml[label.id] || '' })),
-    renderLabel: renderCrossDockingLabel,
-});
+const buildPrintHtml = (labels, barcodeHtml, printForm) => {
+    const items = labels.map((label) => ({
+        ...label, barcodeHtml: barcodeHtml[label.id] || '',
+    }));
+    if (printForm) {
+        return buildCustomLabelDocument(printForm, items, 'Этикетки cross-docking');
+    }
+    return buildLabelPrintDocument({
+        title: 'Этикетки cross-docking',
+        fieldsCss: CROSS_DOCKING_LABEL_FIELDS_CSS,
+        items,
+        renderLabel: renderCrossDockingLabel,
+    });
+};
 
 const CrossDockingLabelsModal = ({ receiptId, open, onClose }) => {
+    const printForm = usePrintForm('cross_docking');
+    const { printHtml } = usePrintDelivery();
     const [labels, setLabels] = useState([]);
     const [loading, setLoading] = useState(false);
     const [printing, setPrinting] = useState(false);
@@ -96,8 +107,11 @@ const CrossDockingLabelsModal = ({ receiptId, open, onClose }) => {
         selected.forEach((label) => {
             barcodeHtml[label.id] = barcodeRefs.current[label.id]?.innerHTML || '';
         });
-        if (!openLabelPrintWindow(buildPrintHtml(selected, barcodeHtml))) {
-            message.error('Браузер заблокировал окно печати');
+        try {
+            await printHtml(buildPrintHtml(selected, barcodeHtml, printForm),
+                `Кросс-докинг #${receiptId}`);
+        } catch (error) {
+            message.error(error?.response?.data?.detail || error.message);
             return;
         }
         setPrinting(true);

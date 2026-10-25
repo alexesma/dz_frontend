@@ -19,12 +19,14 @@ export const getCustomersSummary = (params, config = {}) =>
 export const fetchAllCustomersBrief = async ({
     pageSize = 200,
     maxPages = 25,
+    typePrices,
 } = {}) => {
     const items = [];
     for (let page = 1; page <= maxPages; page += 1) {
         const { data } = await getCustomersSummary({
             page,
             page_size: pageSize,
+            ...(typePrices ? { type_prices: typePrices } : {}),
         });
         items.push(...(data?.items || []));
         if (page >= (data?.pages || 1)) break;

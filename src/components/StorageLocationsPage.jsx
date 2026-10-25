@@ -62,8 +62,9 @@ import {
 import { printLocationLabel } from '../api/labelPrints';
 import {
     buildLabelPrintDocument,
-    openLabelPrintWindow,
 } from '../utils/labelPrint';
+import { usePrintDelivery } from '../utils/usePrintDelivery';
+import { buildCustomLabelDocument, usePrintForm } from '../utils/printFormTemplates';
 
 const { Title, Text } = Typography;
 const { Panel } = Collapse;
@@ -110,11 +111,16 @@ const LOCATION_LABEL_FIELDS_CSS = `
 `;
 
 function LabelPrintPreview({ locationId, locationName, onClose }) {
+    const { printHtml } = usePrintDelivery();
     const barcodeRef = useRef(null);
     const [printing, setPrinting] = useState(false);
+    const printForm = usePrintForm('location');
 
     const handlePrint = async () => {
-        const html = buildLabelPrintDocument({
+        const html = printForm ? buildCustomLabelDocument(printForm, [{
+            location_id: locationId, location_name: locationName,
+            barcode: locationName,
+        }], `Бирка: ${locationName}`) : buildLabelPrintDocument({
             title: `Бирка: ${locationName}`,
             fieldsCss: LOCATION_LABEL_FIELDS_CSS,
             items: [{}],
@@ -123,11 +129,13 @@ function LabelPrintPreview({ locationId, locationName, onClose }) {
                 <div>${barcodeRef.current?.innerHTML || ''}</div>
             `,
         });
-        if (!openLabelPrintWindow(html)) {
-            message.error('Браузер заблокировал окно печати');
+        try {
+            await printHtml(html, `Место хранения ${locationName}`);
+        } catch (error) {
+            message.error(error?.response?.data?.detail || error.message);
             return;
         }
-        // Печать уже ушла в браузер — запись истории не должна её
+        // Задание принято на печать — запись истории не должна её
         // задерживать и не должна пугать оператора, если журнал
         // недоступен.
         setPrinting(true);

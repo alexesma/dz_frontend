@@ -27,8 +27,9 @@ import {
     DEFAULT_LABEL_WIDTH_MM as LABEL_WIDTH_MM,
     buildLabelPrintDocument,
     escapeHtml,
-    openLabelPrintWindow,
 } from '../utils/labelPrint';
+import { buildCustomLabelDocument, usePrintForm } from '../utils/printFormTemplates';
+import { usePrintDelivery } from '../utils/usePrintDelivery';
 
 const { Text, Title } = Typography;
 
@@ -108,7 +109,7 @@ const renderProductLabel = (row) => `
     <div class="barcode-text">${escapeHtml(row.barcode || '')}</div>
 `;
 
-const buildPrintHtml = (rows, barcodeHtmlByRowKey) => {
+const buildPrintHtml = (rows, barcodeHtmlByRowKey, printForm) => {
     const labels = [];
     rows.forEach((row) => {
         const copies = Math.max(1, Number(row.copies || 1));
@@ -118,6 +119,10 @@ const buildPrintHtml = (rows, barcodeHtmlByRowKey) => {
         }
     });
 
+    if (printForm) {
+        return buildCustomLabelDocument(printForm, labels,
+            `Печать этикеток ${printForm.width_mm}×${printForm.height_mm}`);
+    }
     return buildLabelPrintDocument({
         title: `Печать этикеток ${LABEL_WIDTH_MM}×${LABEL_HEIGHT_MM}`,
         fieldsCss: PRODUCT_LABEL_FIELDS_CSS,
@@ -127,6 +132,8 @@ const buildPrintHtml = (rows, barcodeHtmlByRowKey) => {
 };
 
 const ProductLabelsPage = () => {
+    const { printHtml, printers } = usePrintDelivery();
+    const printForm = usePrintForm('product');
     const [searchValue, setSearchValue] = useState('');
     const [options, setOptions] = useState([]);
     const [selectedId, setSelectedId] = useState(null);
@@ -234,12 +241,14 @@ const ProductLabelsPage = () => {
         rows.forEach((row) => {
             barcodeHtmlByRowKey[row.key] = barcodeRefs.current[row.key]?.innerHTML || '';
         });
-        const opened = openLabelPrintWindow(buildPrintHtml(rows, barcodeHtmlByRowKey));
-        if (!opened) {
-            message.error('Браузер заблокировал окно печати');
+        try {
+            await printHtml(buildPrintHtml(rows, barcodeHtmlByRowKey, printForm),
+                'Товарные этикетки');
+        } catch (error) {
+            message.error(error?.response?.data?.detail || error.message);
             return;
         }
-        // Печать уже ушла в браузер — запись истории не должна её
+        // Задание принято на печать — запись истории не должна её
         // задерживать и не должна пугать оператора, если журнал
         // недоступен: сама печать важнее, чем её протокол.
         try {
@@ -348,8 +357,9 @@ const ProductLabelsPage = () => {
                 <Alert
                     type="info"
                     showIcon
-                    message="Печать идёт через браузер"
-                    description="В настройках печати выберите термопринтер, размер бумаги 58×40 мм, масштаб 100% и минимальные поля."
+                    message={(printers?.label || []).some((row) => row.is_default)
+                        ? 'Печать через назначенный принтер Windows' : 'Печать через браузер'}
+                    description="Для термопринтера задайте в драйвере нужный размер бумаги. Если принтер не назначен, выберите его в окне браузера."
                 />
 
                 <Card title="Добавить из номенклатуры">

@@ -50,13 +50,13 @@ const DOC_TYPE_COLORS = {
 const STATUS_LABELS = {
     draft:     'Черновик',
     posted:    'Проведён',
-    cancelled: 'Отменён',
+    cancelled: 'Распроведён',
 };
 
 const STATUS_COLORS = {
     draft:     'default',
     posted:    'success',
-    cancelled: 'error',
+    cancelled: 'warning',
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -315,7 +315,7 @@ const StockDocumentsPage = () => {
                     >
                         <Option value="draft">Черновик</Option>
                         <Option value="posted">Проведён</Option>
-                        <Option value="cancelled">Отменён</Option>
+                        <Option value="cancelled">Распроведён</Option>
                     </Select>
                 </Space>
             </Card>

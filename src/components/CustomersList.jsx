@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Table, Input, Button, message, Spin, Tag, Space, Card, Popconfirm, Select } from 'antd';
+import { Table, Input, Button, message, Spin, Tag, Space, Card, Popconfirm, Select, Segmented } from 'antd';
 import {
     SearchOutlined, ReloadOutlined, EditOutlined,
     DeleteOutlined, PlusOutlined
@@ -12,7 +12,7 @@ const { Search } = Input;
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 20;
 const DEFAULT_FILTERS = {
-    typePrices: 'all',
+    typePrices: 'Wholesale',
     hasPriceLists: 'all',
     hasPricelistConfigs: 'all',
 };
@@ -60,7 +60,8 @@ const CustomersList = () => {
             params.page = effectivePage;
             params.page_size = effectivePageSize;
             if (effectiveFilters.typePrices !== 'all') {
-                params.type_prices = effectiveFilters.typePrices;
+                params.customer_group = effectiveFilters.typePrices === 'Wholesale'
+                    ? 'wholesale' : 'retail';
             }
             if (effectiveFilters.hasPriceLists !== 'all') {
                 params.has_price_lists =
@@ -314,16 +315,15 @@ const CustomersList = () => {
                         >
                             Обновить
                         </Button>
-                        <Select
+                        <Segmented
                             value={filters.typePrices}
                             onChange={(value) =>
                                 handleFilterChange('typePrices', value)
                             }
-                            style={{ width: 190 }}
                             options={[
-                                { value: 'all', label: 'Все типы цен' },
-                                { value: 'Wholesale', label: 'Оптовые' },
-                                { value: 'Retail', label: 'Розничные' },
+                                { value: 'Wholesale', label: 'Оптовые клиенты' },
+                                { value: 'all', label: 'Все клиенты' },
+                                { value: 'Retail', label: 'Розничные клиенты' },
                             ]}
                         />
                         <Select

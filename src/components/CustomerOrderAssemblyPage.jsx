@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Card, ConfigProvider, DatePicker, Input, InputNumber, Modal, Select, Space, Table, Tabs, Tag, Typography, message } from 'antd';
 import ruRU from 'antd/locale/ru_RU';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import 'dayjs/locale/ru';
@@ -18,14 +18,26 @@ import {
     updateStockOrderItemPick,
 } from '../api/customerOrders';
 import { buildLabelPrintDocument, escapeHtml } from '../utils/labelPrint';
+import { buildCustomLabelDocument, usePrintForm } from '../utils/printFormTemplates';
+import { usePrintDelivery } from '../utils/usePrintDelivery';
 
 const { Text, Title } = Typography;
 dayjs.locale('ru');
 const money = (value) => Number(value || 0).toLocaleString('ru-RU', {
     minimumFractionDigits: 2, maximumFractionDigits: 2,
 });
+const defaultAssemblyDates = () => {
+    const today = dayjs().startOf('day');
+    return [today.subtract(today.day() === 1 ? 3 : 1, 'day'), today];
+};
+const openCustomerOrder = (orderId) => {
+    window.open(`/customer-orders/${orderId}`, `customer-order-${orderId}`,
+        'popup=yes,width=1200,height=850,scrollbars=yes,resizable=yes');
+};
 
-const labelHtml = (labels) => buildLabelPrintDocument({
+const labelHtml = (labels, printForm) => printForm
+    ? buildCustomLabelDocument(printForm, labels, 'Этикетки отбора · наш склад')
+    : buildLabelPrintDocument({
     title: 'Этикетки отбора · наш склад',
     fieldsCss: `
         .label { padding: 2mm 2.5mm; }
@@ -54,12 +66,14 @@ const labelHtml = (labels) => buildLabelPrintDocument({
 });
 
 const CustomerOrderAssemblyPage = () => {
+    const printForm = usePrintForm('own_stock');
+    const { printHtml, printers } = usePrintDelivery();
     const navigate = useNavigate();
     const [orders, setOrders] = useState([]);
     const [loading, setLoading] = useState(false);
     const [busy, setBusy] = useState(false);
     const [customerId, setCustomerId] = useState(null);
-    const [dateRange, setDateRange] = useState(null);
+    const [dateRange, setDateRange] = useState(defaultAssemblyDates);
     const [query, setQuery] = useState('');
     const [serverQuery, setServerQuery] = useState('');
     const [customerOptions, setCustomerOptions] = useState([]);
@@ -103,15 +117,13 @@ const CustomerOrderAssemblyPage = () => {
     }, [query]);
 
     useEffect(() => {
-        fetchAllCustomersBrief().then((rows) => {
+        fetchAllCustomersBrief({ typePrices: 'Wholesale' }).then((rows) => {
             setCustomerOptions(rows.map((row) => ({ value: row.id, label: row.name })));
         }).catch(() => {});
     }, []);
 
-    const customers = useMemo(() => [...new Map([...customerOptions, ...orders.map((order) => (
-        { value: order.customer_id, label: order.customer_name }
-    ))].map((row) => [row.value, row])).values()]
-        .sort((a, b) => a.label.localeCompare(b.label, 'ru')), [customerOptions, orders]);
+    const customers = useMemo(() => [...customerOptions]
+        .sort((a, b) => a.label.localeCompare(b.label, 'ru')), [customerOptions]);
 
     const visibleOrders = useMemo(() => orders.filter((order) => {
         if (customerId && order.customer_id !== customerId) return false;
@@ -167,9 +179,10 @@ const CustomerOrderAssemblyPage = () => {
         const ids = [...new Set(stockIds)].filter((id) =>
             ownRows.some((row) => row.id === id && row.remaining > 0));
         if (!ids.length) { message.info('Все выбранные позиции уже переданы на печать'); return; }
-        const popup = window.open('', '_blank', 'width=480,height=640');
-        if (!popup) { message.error('Браузер заблокировал окно печати'); return; }
-        popup.document.write('<p>Подготавливаем этикетки…</p>');
+        const direct = (printers?.label || []).some((row) => row.is_default);
+        const popup = direct ? null : window.open('', '_blank', 'width=480,height=640');
+        if (!direct && !popup) { message.error('Браузер заблокировал окно печати'); return; }
+        popup?.document.write('<p>Подготавливаем этикетки…</p>');
         setBusy(true);
         try {
             const labels = [];
@@ -178,18 +191,21 @@ const CustomerOrderAssemblyPage = () => {
                 labels.push(...(response.data || []));
             }
             if (!labels.length) {
-                popup.close();
+                popup?.close();
                 message.info('Нет свободного остатка для новых этикеток');
             } else {
-                popup.document.open();
-                popup.document.write(labelHtml(labels));
-                popup.document.close();
+                await printHtml(labelHtml(labels, printForm), 'Этикетки отбора · наш склад', () => {
+                    popup.document.open();
+                    popup.document.write(labelHtml(labels, printForm));
+                    popup.document.close();
+                    return true;
+                });
                 message.success(`Передано на печать: ${labels.length} этикеток`);
                 setSelectedStockIds([]);
                 await load();
             }
         } catch (error) {
-            popup.close();
+            popup?.close();
             message.error(error?.response?.data?.detail || 'Не удалось подготовить этикетки');
         } finally { setBusy(false); }
     };
@@ -204,20 +220,25 @@ const CustomerOrderAssemblyPage = () => {
     };
 
     const reprint = async (label) => {
-        const popup = window.open('', '_blank', 'width=480,height=640');
-        if (!popup) { message.error('Браузер заблокировал окно печати'); return; }
+        const direct = (printers?.label || []).some((row) => row.is_default);
+        const popup = direct ? null : window.open('', '_blank', 'width=480,height=640');
+        if (!direct && !popup) { message.error('Браузер заблокировал окно печати'); return; }
         try {
             await reprintOwnStockLabel(label.id);
             const row = labelModal.row;
-            popup.document.write(labelHtml([{
+            const html = labelHtml([{
                 ...label, brand: row.brand, oem: row.oem, name: row.name,
                 customer_name: row.customerName, order_number: row.orderNumber,
-            }]));
-            popup.document.close();
+            }], printForm);
+            await printHtml(html, `Повторная этикетка #${label.id}`, () => {
+                popup.document.write(html);
+                popup.document.close();
+                return true;
+            });
             await openLabels(row);
         } catch (error) {
-            popup.close();
-            message.error(error?.response?.data?.detail || 'Не удалось повторить печать');
+            popup?.close();
+            message.error(error?.response?.data?.detail || error.message || 'Не удалось повторить печать');
         }
     };
 
@@ -272,7 +293,11 @@ const CustomerOrderAssemblyPage = () => {
 
     const orderColumns = [
         { title: 'Заказ клиента', dataIndex: 'number', render: (value, row) => (
-            <Link to={`/customer-orders/${row.id}`}>{value}</Link>
+            <a href={`/customer-orders/${row.id}`} onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                openCustomerOrder(row.id);
+            }}>{value}</a>
         ) },
         { title: 'Дата', dataIndex: 'received_at', render: (value) => value ? dayjs(value).format('DD.MM.YY HH:mm') : '—' },
         { title: 'Клиент', dataIndex: 'customer_name' },
@@ -311,7 +336,11 @@ const CustomerOrderAssemblyPage = () => {
     ];
 
     const ownColumns = [
-        { title: 'Клиент / заказ', render: (_, row) => <><div>{row.customerName}</div><Link to={`/customer-orders/${row.orderId}`}>{row.orderNumber}</Link></> },
+        { title: 'Клиент / заказ', render: (_, row) => <><div>{row.customerName}</div><a href={`/customer-orders/${row.orderId}`} onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            openCustomerOrder(row.orderId);
+        }}>{row.orderNumber}</a></> },
         { title: 'Позиция', render: (_, row) => <><Text strong>{row.brand} {row.oem}</Text><br /><Text type="secondary">{row.name}</Text></> },
         { title: 'Место отбора', render: (_, row) => row.location
             ? <>{row.location}{row.location_split && <Tag style={{ marginLeft: 6 }}>несколько мест</Tag>}</>

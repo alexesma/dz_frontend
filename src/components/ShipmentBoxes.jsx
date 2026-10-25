@@ -11,11 +11,15 @@ import {
     sealAssemblyBox,
     updateAssemblyBox,
 } from '../api/customerOrders';
-import { buildLabelPrintDocument, escapeHtml, openLabelPrintWindow } from '../utils/labelPrint';
+import { buildLabelPrintDocument, escapeHtml } from '../utils/labelPrint';
+import { buildCustomLabelDocument, usePrintForm } from '../utils/printFormTemplates';
+import { usePrintDelivery } from '../utils/usePrintDelivery';
 
 const { Text } = Typography;
 
 const ShipmentBoxes = ({ shipment }) => {
+    const printForm = usePrintForm('shipment_box');
+    const { printHtml } = usePrintDelivery();
     const [boxes, setBoxes] = useState([]);
     const [drafts, setDrafts] = useState({});
     const [busy, setBusy] = useState(false);
@@ -58,11 +62,17 @@ const ShipmentBoxes = ({ shipment }) => {
         } finally { setBusy(false); }
     };
 
-    const printBox = (box) => {
+    const printBox = async (box) => {
         const barcode = `DZ-BOX-${shipment.id}-${box.number}`;
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         JsBarcode(svg, barcode, { format: 'CODE128', width: 1, height: 40, displayValue: false, margin: 0 });
-        const html = buildLabelPrintDocument({
+        const html = printForm ? buildCustomLabelDocument(printForm, [{
+            customer_name: shipment.customer_name,
+            document_number: shipment.doc_number || `#${shipment.id}`,
+            box_number: box.number, box_total: boxes.length,
+            quantity: box.items.reduce((sum, row) => sum + row.quantity, 0),
+            barcode,
+        }], `Коробка ${box.number}`) : buildLabelPrintDocument({
             title: `Коробка ${box.number}`,
             fieldsCss: `.label { padding: 3mm; } .head { font: bold 13pt Arial; }
                 .text { font: 8pt Arial; margin-top: 2mm; } svg { max-width: 100%; height: 13mm; }`,
@@ -72,7 +82,11 @@ const ShipmentBoxes = ({ shipment }) => {
                 <div class="text">${box.items.reduce((sum, row) => sum + row.quantity, 0)} шт.</div>
                 <div style="margin-top:2mm">${svg.outerHTML}</div>`,
         });
-        if (!openLabelPrintWindow(html)) message.error('Браузер заблокировал окно печати');
+        try {
+            await printHtml(html, `Коробка ${box.number}`);
+        } catch (error) {
+            message.error(error?.response?.data?.detail || error.message);
+        }
     };
 
     return <Card title={<Space>Коробки реализации <Tag color={complete ? 'green' : 'orange'}>

@@ -31,6 +31,7 @@ import {
     CloudSyncOutlined,
     CloseOutlined,
     BarcodeOutlined,
+    PrinterOutlined,
     ApartmentOutlined,
     ExperimentOutlined,
     FileSearchOutlined,
@@ -93,6 +94,8 @@ const NAVIGATION_SEARCH_ITEMS = [
     { path: '/admin/users', title: 'Пользователи', section: 'Админ', keywords: 'сотрудники роли доступ', roles: ['admin'] },
     { path: '/admin/email-accounts', title: 'Почты', section: 'Админ', keywords: 'email smtp imap relay аккаунты', roles: ['admin'] },
     { path: '/admin/settings', title: 'Настройки', section: 'Админ', keywords: 'параметры система интеграции', roles: ['admin'] },
+    { path: '/admin/print-forms', title: 'Печатные формы', section: 'Админ', keywords: 'этикетки шаблоны макеты', roles: ['admin'] },
+    { path: '/admin/printers', title: 'Принтеры', section: 'Админ', keywords: 'печать windows relay сотрудники', roles: ['admin'] },
     { path: '/admin/price-control', title: 'Контроль цен', section: 'Админ', keywords: 'прайс отклонения скачки проверка', roles: ['admin'] },
     { path: '/admin/customer-pricelists', title: 'Прайсы клиентов', section: 'Админ', keywords: 'рассылка фильтры наценка публикация', roles: ['admin'] },
     { path: '/admin/brands', title: 'Бренды', section: 'Админ', keywords: 'марки производители синонимы', roles: ['admin'] },
@@ -190,6 +193,8 @@ const Sidebar = () => {
         if (path.startsWith('/admin/users')) return 'admin-users';
         if (path.startsWith('/admin/email-accounts')) return 'admin-emails';
         if (path.startsWith('/admin/settings')) return 'admin-settings';
+        if (path.startsWith('/admin/print-forms')) return 'admin-print-forms';
+        if (path.startsWith('/admin/printers')) return 'admin-printers';
         if (path.startsWith('/admin/price-control')) return 'admin-price-control';
         if (path.startsWith('/admin/customer-pricelists')) return 'admin-customer-pricelists';
         if (path.startsWith('/admin/brands')) return 'admin-brands';
@@ -431,6 +436,12 @@ const Sidebar = () => {
                     </Menu.Item>
                     <Menu.Item key="admin-settings" icon={<SettingOutlined />}>
                         <Link to="/admin/settings">Настройки</Link>
+                    </Menu.Item>
+                    <Menu.Item key="admin-print-forms" icon={<BarcodeOutlined />}>
+                        <Link to="/admin/print-forms">Печатные формы</Link>
+                    </Menu.Item>
+                    <Menu.Item key="admin-printers" icon={<PrinterOutlined />}>
+                        <Link to="/admin/printers">Принтеры</Link>
                     </Menu.Item>
                     <Menu.Item key="admin-price-control" icon={<DollarOutlined />}>
                         <Link to="/admin/price-control">Контроль цен</Link>

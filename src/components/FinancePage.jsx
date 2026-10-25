@@ -34,6 +34,7 @@ import {
 import BankStatementsTab from './BankStatementsTab';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
+import { usePrintDelivery } from '../utils/usePrintDelivery';
 import {
     createCustomerPayment,
     createInvoice,
@@ -373,6 +374,7 @@ const SendEmailModal = ({ open, onClose, invoice }) => {
 // ── Invoices tab ──────────────────────────────────────────────────────────────
 
 const InvoicesTab = ({ customers }) => {
+    const { printUrl } = usePrintDelivery('a4');
     const navigate = useNavigate();
     const [invoices, setInvoices] = useState([]);
     const [loading,  setLoading]  = useState(false);
@@ -482,7 +484,8 @@ const InvoicesTab = ({ customers }) => {
                 <Space size={4}>
                     <Tooltip title="Печать / PDF">
                         <Button size="small" icon={<PrinterOutlined />}
-                            onClick={() => window.open(getInvoicePrintUrl(rec.id), '_blank')} />
+                            onClick={() => void printUrl(getInvoicePrintUrl(rec.id), `Счёт №${rec.invoice_number}`)
+                                .catch((error) => message.error(error?.response?.data?.detail || error.message))} />
                     </Tooltip>
                     <Tooltip title="Отправить по email">
                         <Button size="small" icon={<MailOutlined />}
