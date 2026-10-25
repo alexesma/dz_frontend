@@ -464,7 +464,7 @@ const CustomerOrderAssemblyPage = () => {
     );
 
     const orderColumns = [
-        { title: 'Заказ клиента', key: 'order', width: 140, render: (_, row) => (
+        { title: 'Заказ клиента', key: 'order', width: 120, render: (_, row) => (
             <div>
                 <a href={`/customer-orders/${row.id}`} onClick={(event) => {
                     event.preventDefault();
@@ -474,15 +474,15 @@ const CustomerOrderAssemblyPage = () => {
                 <div><Text type="secondary">{row.received_at ? dayjs(row.received_at).format('DD.MM.YY HH:mm') : '—'}</Text></div>
             </div>
         ) },
-        { title: 'Клиент', dataIndex: 'customer_name', width: 230 },
-        { title: hint('Сумма', 'Сумма заказа и из чего она состоит'), key: 'amounts', width: 160, render: (_, row) => (
+        { title: 'Клиент', dataIndex: 'customer_name', width: 170 },
+        { title: hint('Сумма', 'Сумма заказа и из чего она состоит'), key: 'amounts', width: 140, render: (_, row) => (
             <div>
                 <Text strong>{money(row.amounts.order)}</Text>
                 {stat('Наш склад', money(row.amounts.own))}
                 {stat('Кросс-докинг', money(row.amounts.cross))}
             </div>
         ) },
-        { title: hint('Состав заказа', 'Позиций в заказе, сколько штук уже пришло, отказано и сколько ещё ждём от поставщика'), key: 'size', width: 170, render: (_, row) => (
+        { title: hint('Состав заказа', 'Позиций в заказе, сколько штук уже пришло, отказано и сколько ещё ждём от поставщика'), key: 'size', width: 130, render: (_, row) => (
             <div>
                 {stat('Позиций', row.counts.lines || 0)}
                 {stat('Пришло', `${row.counts.received || 0} шт.`)}
@@ -490,17 +490,16 @@ const CustomerOrderAssemblyPage = () => {
                 {stat('Ждём', `${row.counts.awaiting_receipt || 0} шт.`)}
             </div>
         ) },
-        { title: hint('Комплектация, шт.', 'Этикетки поставщика; собрано с нашего склада; уже в реализациях'), key: 'progress', width: 200, render: (_, row) => (
+        { title: hint('Комплектация, шт.', 'Этикетки поставщика; собрано с нашего склада; уже в реализациях; готово к реализации прямо сейчас'), key: 'progress', width: 190, render: (_, row) => (
             <div>
                 {stat('Этикетки поставщика', row.counts.cross_labeled || 0)}
                 {stat('Собрано с нашего', row.counts.own_labeled || 0)}
                 {stat('В реализациях', row.counts.committed || 0)}
+                <div style={{ whiteSpace: 'nowrap' }}><Text type="secondary">К реализации: </Text>
+                    <Tag color={row.counts.ready ? 'green' : 'default'} style={{ marginInlineEnd: 0 }}>{row.counts.ready || 0}</Tag></div>
             </div>
         ) },
-        { title: hint('К реализации', 'Сколько штук готово попасть в реализацию прямо сейчас'), key: 'ready', width: 110, render: (_, row) => (
-            <Tag color={row.counts.ready ? 'green' : 'default'}>{row.counts.ready || 0}</Tag>
-        ) },
-        { title: 'Следующий шаг', key: 'actions', width: 170, render: (_, row) => (row.actions || []).length
+        { title: 'Следующий шаг', key: 'actions', width: 150, render: (_, row) => (row.actions || []).length
             ? row.actions.map((action) => <Tag key={action} color={action === 'create_realization' ? 'green' : 'blue'}>
                 {ACTION_LABELS[action] || action}
             </Tag>) : <Text type="secondary">Действий нет</Text> },
@@ -509,6 +508,10 @@ const CustomerOrderAssemblyPage = () => {
     const detailColumns = [
         { title: 'Позиция', key: 'item', render: (_, row) => <><Text strong>{row.brand} {row.oem}</Text><br /><Text type="secondary">{row.name}</Text>
             <div><Text type="secondary">Заказ {row.order_number}</Text></div>
+            <div>{(row.supplier_names || []).length
+                ? <Text>Поставщик: {row.supplier_names.join(' / ')}</Text>
+                : <Text type="secondary">{row.own_ordered > 0 ? 'Наш склад' : 'Поставщик не назначен'}</Text>}
+            </div>
             {row.actual_oem && row.actual_oem !== row.oem && <div><Text type="secondary">Подобрано: {row.actual_brand} {row.actual_oem}</Text></div>}
             {row.source_switch?.status === 'switched' && <div><Tag color="green">
                 {row.source_switch.basis === 'exact' ? 'После прихода выбран исходный артикул'
@@ -631,7 +634,7 @@ const CustomerOrderAssemblyPage = () => {
                 <Card size="small" title="Заказы клиентов" extra={<Button type="primary" disabled={busy || !selectedOrderIds.length && !focused}
                     onClick={openPreview}>Создать черновик реализации</Button>}>
                     <Table rowKey="id" size="small" loading={loading} dataSource={visibleOrders} columns={orderColumns}
-                        scroll={{ x: 1150, y: 300 }} pagination={{ current: page, pageSize: 50, total,
+                        scroll={{ y: 300 }} pagination={{ current: page, pageSize: 50, total,
                             showTotal: (count) => `${count} заказов` }}
                         onChange={(pagination) => setPage(pagination.current)}
                         onRow={(row) => ({ onClick: () => setFocusedOrderId(row.id) })}
@@ -643,7 +646,7 @@ const CustomerOrderAssemblyPage = () => {
                     extra={<Button size="small" disabled={busy || !detailRows.some((row) => row.cross_stock_items?.length)}
                         onClick={acceptAllCross}>Принять все полученные</Button>}>
                     {detailRows.length ? <Table rowKey="key" size="small" columns={detailColumns}
-                        dataSource={detailRows} pagination={{ pageSize: 30 }} scroll={{ x: 1000, y: 380 }} />
+                        dataSource={detailRows} pagination={{ pageSize: 30 }} scroll={{ y: 380 }} />
                         : <Text type="secondary">Выберите заказ в верхней таблице.</Text>}
                 </Card>
             </Space> },
