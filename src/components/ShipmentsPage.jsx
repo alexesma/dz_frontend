@@ -454,7 +454,10 @@ const ShipmentsPage = ({ title = 'Накладные на отгрузку' }) =
         {
             title: 'Клиент',
             dataIndex: 'customer_name',
-            render: (v) => v || <Text type="secondary">—</Text>,
+            width: 260,
+            render: (v) => (v
+                ? <span style={{ wordBreak: 'normal', overflowWrap: 'break-word' }}>{v}</span>
+                : <Text type="secondary">—</Text>),
         },
         {
             title: 'Заказ клиента',
@@ -751,7 +754,7 @@ const ShipmentsPage = ({ title = 'Накладные на отгрузку' }) =
                         setPageSize(ps);
                     },
                 }}
-                scroll={{ x: 1200 }}
+                scroll={{ x: 1400 }}
                 onRow={(row) => ({
                     onDoubleClick: () => navigate(`/warehouse/shipments/${row.id}`),
                     style: { cursor: 'pointer' },
