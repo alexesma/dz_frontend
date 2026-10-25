@@ -198,6 +198,15 @@ export const createShipment = (data) =>
 export const getShipment = (id) =>
     api.get(`/inventory/shipments/${id}/`);
 
+/** Печатные формы реализации: upd | packing_list | transport_waybill (HTML). */
+export const getShipmentPrintUrl = (id, kind, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return `${api.defaults.baseURL}/inventory/shipments/${id}/print/${kind}${query ? `?${query}` : ''}`;
+};
+
+export const listShipmentPrintKinds = () =>
+    api.get('/inventory/print-documents/kinds');
+
 export const updateShipment = (id, data) =>
     api.patch(`/inventory/shipments/${id}/`, data);
 

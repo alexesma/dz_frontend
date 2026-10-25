@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Alert, Button, Card, Input, InputNumber, Select, Space, Switch,
+    Alert, Button, Card, Input, InputNumber, Select, Space, Switch, Tabs,
     Typography, message,
 } from 'antd';
 import { DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons';
 
 import { getPrintForms, savePrintForm } from '../api/printForms';
+import ShipmentDocumentsPanel from './ShipmentDocumentsPanel';
 import {
     PRINT_FIELD_LABELS, PRINT_FORM_CATALOG, PRINT_FORMS_CHANGED_EVENT,
     freshDefaultForm, getFieldValue,
@@ -107,8 +108,7 @@ const PrintFormsPage = () => {
         });
     };
 
-    return <div style={{ padding: 24 }}>
-        <Title level={4}>Печатные формы · этикетки</Title>
+    const labelEditor = <>
         <Alert showIcon type="info" style={{ marginBottom: 16 }}
             message="Выберите формат, перетащите блоки и сохраните макет. До первого сохранения действует прежний вид этикетки." />
         <Space wrap style={{ marginBottom: 16 }}>
@@ -207,6 +207,14 @@ const PrintFormsPage = () => {
                 </Space> : <Text type="secondary">Нажмите на блок на этикетке.</Text>}
             </Card>
         </div>
+    </>;
+
+    return <div style={{ padding: 24 }}>
+        <Title level={4}>Печатные формы</Title>
+        <Tabs items={[
+            { key: 'labels', label: 'Этикетки', children: labelEditor },
+            { key: 'documents', label: 'Документы реализации', children: <ShipmentDocumentsPanel /> },
+        ]} />
     </div>;
 };
 

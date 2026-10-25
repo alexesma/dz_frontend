@@ -56,6 +56,7 @@ import { searchAutopartsByOem } from '../api/autoparts';
 import { getStorageLocations, getWarehouses } from '../api/storage';
 import useAuth from '../context/useAuth';
 import ShipmentBoxes from './ShipmentBoxes';
+import ShipmentPrintMenu from './ShipmentPrintMenu';
 import { Link } from 'react-router-dom';
 
 const { Title, Text } = Typography;
@@ -816,6 +817,7 @@ const ShipmentDetailPage = () => {
                 </Col>
                 <Col>
                     <Space>
+                        <ShipmentPrintMenu shipmentId={shipment.id} docNumber={shipment.doc_number} />
                         {isDraft && (
                             <>
                                 <Button
