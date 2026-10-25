@@ -7,7 +7,8 @@ import { DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons';
 
 import { getPrintForms, savePrintForm } from '../api/printForms';
 import {
-    PRINT_FIELD_LABELS, PRINT_FORM_CATALOG, freshDefaultForm, getFieldValue,
+    PRINT_FIELD_LABELS, PRINT_FORM_CATALOG, PRINT_FORMS_CHANGED_EVENT,
+    freshDefaultForm, getFieldValue,
 } from '../utils/printFormTemplates';
 
 const { Title, Text } = Typography;
@@ -78,6 +79,7 @@ const PrintFormsPage = () => {
             setForm(data);
             setSaved((current) => ({ ...current, [key]: data }));
             setDirty(false);
+            window.dispatchEvent(new Event(PRINT_FORMS_CHANGED_EVENT));
             message.success('Форма сохранена для всех сотрудников');
         } catch (error) {
             const detail = error?.response?.data?.detail;

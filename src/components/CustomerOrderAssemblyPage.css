@@ -1,0 +1,7 @@
+.assembly-row-done > td {
+    background: #f6ffed !important;
+}
+
+.assembly-row-partial > td {
+    background: #fffbe6 !important;
+}

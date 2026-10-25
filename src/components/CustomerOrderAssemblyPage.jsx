@@ -4,6 +4,7 @@ import ruRU from 'antd/locale/ru_RU';
 import { useNavigate } from 'react-router-dom';
 import { PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import './CustomerOrderAssemblyPage.css';
 import 'dayjs/locale/ru';
 import JsBarcode from 'jsbarcode';
 import { fetchAllCustomersBrief } from '../api/customers';
@@ -151,6 +152,7 @@ const CustomerOrderAssemblyPage = () => {
         (item.stock_items || []).map((stock) => ({
             ...stock, key: stock.id, orderId: order.id, orderNumber: order.number,
             customerId: order.customer_id, customerName: order.customer_name,
+            customerLabelName: order.customer_label_name || order.customer_name,
             brand: item.brand, oem: item.oem, name: item.name,
         }))));
     const locations = [...new Map(ownRows.flatMap((row) => [
@@ -228,7 +230,7 @@ const CustomerOrderAssemblyPage = () => {
             const row = labelModal.row;
             const html = labelHtml([{
                 ...label, brand: row.brand, oem: row.oem, name: row.name,
-                customer_name: row.customerName, order_number: row.orderNumber,
+                customer_name: row.customerLabelName || row.customerName, order_number: row.orderNumber,
             }], printForm);
             await printHtml(html, `Повторная этикетка #${label.id}`, () => {
                 popup.document.write(html);
@@ -342,9 +344,19 @@ const CustomerOrderAssemblyPage = () => {
             openCustomerOrder(row.orderId);
         }}>{row.orderNumber}</a></> },
         { title: 'Позиция', render: (_, row) => <><Text strong>{row.brand} {row.oem}</Text><br /><Text type="secondary">{row.name}</Text></> },
-        { title: 'Место отбора', render: (_, row) => row.location
-            ? <>{row.location}{row.location_split && <Tag style={{ marginLeft: 6 }}>несколько мест</Tag>}</>
-            : <Text type="danger">Нет свободного остатка</Text> },
+        { title: 'Место отбора', render: (_, row) => {
+            if (row.location) {
+                return <>{row.location}{row.location_split && <Tag style={{ marginLeft: 6 }}>несколько мест</Tag>}</>;
+            }
+            const printed = [...new Set((row.printed_locations || []).map((location) => location.name).filter(Boolean))].join(', ');
+            if (Number(row.remaining) <= 0 && Number(row.labeled) > 0) {
+                return <Text type="success">Собрано{printed ? ` (${printed})` : ''}</Text>;
+            }
+            if (Number(row.labeled) > 0) {
+                return <Text type="warning">Собрано {row.labeled} из {row.quantity}, остатка для остального нет</Text>;
+            }
+            return <Text type="danger">Нет свободного остатка</Text>;
+        } },
         { title: 'Заказано', dataIndex: 'quantity' },
         { title: 'Этикетки / собрано', render: (_, row) => `${row.labeled}/${row.quantity}` },
         { title: 'Осталось', dataIndex: 'remaining' },
@@ -400,6 +412,8 @@ const CustomerOrderAssemblyPage = () => {
                 </Space>
                 <Table rowKey="id" size="small" loading={loading} columns={ownColumns}
                     dataSource={visibleOwnRows} pagination={{ pageSize: 40 }} scroll={{ x: 1100 }}
+                    rowClassName={(row) => (!row.location && Number(row.labeled) > 0
+                        ? (Number(row.remaining) <= 0 ? 'assembly-row-done' : 'assembly-row-partial') : '')}
                     rowSelection={{ selectedRowKeys: selectedStockIds, onChange: setSelectedStockIds,
                         getCheckboxProps: (row) => ({ disabled: row.remaining <= 0
                             || !row.location || (locationFilter && !(row.location_choices || [])

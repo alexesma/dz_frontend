@@ -126,14 +126,32 @@ export const getFieldValue = (item, path) => path.split('.').reduce(
     (value, part) => value?.[part], item,
 );
 
+export const PRINT_FORMS_CHANGED_EVENT = 'dz-print-forms-changed';
+
+// Макет мог быть изменён в другой вкладке или другим администратором, а
+// страница печати — оставаться открытой. Поэтому макет перечитывается при
+// возврате в окно, при сохранении в редакторе и раз в минуту; ошибка
+// загрузки не затирает уже полученный макет.
 export function usePrintForm(key) {
     const [form, setForm] = useState(null);
     useEffect(() => {
         let active = true;
-        getPrintForms().then(({ data }) => {
+        const load = () => getPrintForms({ params: { _: Date.now() } }).then(({ data }) => {
             if (active) setForm((data || []).find((row) => row.key === key) || null);
         }).catch(() => {});
-        return () => { active = false; };
+        void load();
+        const onVisible = () => { if (!document.hidden) void load(); };
+        window.addEventListener('focus', load);
+        window.addEventListener(PRINT_FORMS_CHANGED_EVENT, load);
+        document.addEventListener('visibilitychange', onVisible);
+        const timer = window.setInterval(load, 60000);
+        return () => {
+            active = false;
+            window.removeEventListener('focus', load);
+            window.removeEventListener(PRINT_FORMS_CHANGED_EVENT, load);
+            document.removeEventListener('visibilitychange', onVisible);
+            window.clearInterval(timer);
+        };
     }, [key]);
     return form;
 }

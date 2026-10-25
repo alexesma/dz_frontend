@@ -497,6 +497,7 @@ const ProviderPage = () => {
                     inn: data.provider.inn,
                     kpp: data.provider.kpp,
                     legal_name: data.provider.legal_name,
+                    label_name: data.provider.label_name,
                     legal_address: data.provider.legal_address,
                     postal_address: data.provider.postal_address,
                     company_type: data.provider.company_type,
@@ -2905,6 +2906,11 @@ const ProviderPage = () => {
 
                     <Form.Item name="legal_name" label="Юридическое название">
                         <Input placeholder='Например: ООО «ФРОЗА МСК»' maxLength={512} />
+                    </Form.Item>
+
+                    <Form.Item name="label_name" label="Название на этикетках"
+                        extra="Если не указано, на этикетках печатается название поставщика.">
+                        <Input maxLength={255} allowClear />
                     </Form.Item>
 
                     <Form.Item name="company_type" label="Тип организации">
