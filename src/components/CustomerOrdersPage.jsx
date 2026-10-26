@@ -733,10 +733,10 @@ const CustomerOrdersPage = () => {
         return (
             <Tooltip title={<span style={{ whiteSpace: 'pre-line' }}>{details}</span>}>
                 <div className="customer-order-execution">
-                    <span><b>Склад</b> {formatMoney(record.stock_sum)}</span>
-                    <span><b>Пост.</b> {formatMoney(record.supplier_sum)}</span>
-                    <span className={Number.isFinite(rejectedPercent) && rejectedPercent > 0 ? 'has-rejection' : ''}>
-                        <b>Отказ</b> {rejectedLabel}
+                    <span className="row"><b>Склад</b><i>{formatMoney(record.stock_sum)}</i></span>
+                    <span className="row"><b>Поставщики</b><i>{formatMoney(record.supplier_sum)}</i></span>
+                    <span className={`row${Number.isFinite(rejectedPercent) && rejectedPercent > 0 ? ' has-rejection' : ''}`}>
+                        <b>Отказ</b><i>{rejectedLabel}</i>
                     </span>
                 </div>
             </Tooltip>
@@ -746,15 +746,22 @@ const CustomerOrdersPage = () => {
     const renderFulfillment = (record) => {
         const progress = record.fulfillment || {};
         if (!progress.ordered) return <Text type="secondary">Нет позиций к отгрузке</Text>;
-        const actions = (record.next_actions || []).slice(0, 2);
-        return <div style={{ fontSize: 12, lineHeight: 1.5 }}>
-            <div>К отгрузке: {progress.ordered} · поступило: {progress.received || 0}</div>
-            <div>Этикетки: {(progress.cross_labeled || 0) + (progress.own_labeled || 0)}
-                {' · '}в реализациях: {progress.committed || 0}
-                {' · '}готово: {progress.ready || 0}</div>
-            {actions.map((action) => <Tag key={action} color={action === 'create_realization' ? 'green' : 'blue'}>
-                {NEXT_ACTION_LABELS[action] || action}
-            </Tag>)}
+        const actions = record.next_actions || [];
+        const [mainAction, ...otherActions] = actions;
+        const labels = (list) => list.map((action) => NEXT_ACTION_LABELS[action] || action).join(', ');
+        return <div className="customer-order-fulfillment">
+            <div>К отгрузке <b>{progress.ordered}</b> · поступило <b>{progress.received || 0}</b></div>
+            <div>Этикетки <b>{(progress.cross_labeled || 0) + (progress.own_labeled || 0)}</b>
+                {' · '}в реализ. <b>{progress.committed || 0}</b>
+                {' · '}готово <b>{progress.ready || 0}</b></div>
+            {mainAction && <div className="actions">
+                <Tag color={mainAction === 'create_realization' ? 'green' : 'blue'}>
+                    {NEXT_ACTION_LABELS[mainAction] || mainAction}
+                </Tag>
+                {otherActions.length > 0 && <Tooltip title={labels(otherActions)}>
+                    <Tag>+{otherActions.length}</Tag>
+                </Tooltip>}
+            </div>}
         </div>;
     };
 
@@ -763,16 +770,17 @@ const CustomerOrdersPage = () => {
             title: 'Дата',
             dataIndex: 'received_at',
             key: 'received_at',
-            width: '11%',
-            render: (value) => (
-                <span className="customer-order-single-line">{formatDateTime(value)}</span>
-            ),
+            width: '8%',
+            render: (value) => {
+                const [day, time] = String(formatDateTime(value) || '—').split(', ');
+                return <span className="customer-order-date">{day}{time && <i>{time}</i>}</span>;
+            },
         },
         {
             title: '№ заказа',
             dataIndex: 'order_number',
             key: 'order_number',
-            width: '11%',
+            width: '10%',
             render: (value, record) => {
                 const orderLabel = String(value || record.id);
                 const compactOrderLabel = orderLabel.replace(
@@ -808,7 +816,7 @@ const CustomerOrdersPage = () => {
             title: 'Клиент',
             dataIndex: 'customer_id',
             key: 'customer_id',
-            width: '18%',
+            width: '15%',
             render: (value, record) => (
                 <Button
                     type="link"
@@ -845,7 +853,7 @@ const CustomerOrdersPage = () => {
             title: 'Статус',
             dataIndex: 'status',
             key: 'status',
-            width: '10%',
+            width: '9%',
             render: (value) => (
                 <span className="customer-order-single-line">
                     {ORDER_STATUS_LABELS[value] || value || '—'}
@@ -856,7 +864,7 @@ const CustomerOrdersPage = () => {
             title: 'Сумма',
             dataIndex: 'total_sum',
             key: 'total_sum',
-            width: '10%',
+            width: '9%',
             align: 'right',
             render: (value) => (
                 <Tooltip title={formatMoney(value)}>
@@ -867,19 +875,19 @@ const CustomerOrdersPage = () => {
         {
             title: 'Исполнение',
             key: 'execution',
-            width: '26%',
+            width: '17%',
             render: (_, record) => renderExecutionSummary(record),
         },
         {
             title: 'Комплектация',
             key: 'fulfillment',
-            width: '26%',
+            width: '22%',
             render: (_, record) => renderFulfillment(record),
         },
         {
             title: 'Действия',
             key: 'actions',
-            width: '14%',
+            width: '10%',
             align: 'right',
             render: (_, record) => renderOrderActions(record),
         },
