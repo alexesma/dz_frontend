@@ -43,3 +43,8 @@ export const createHoliday = (data) =>
 
 export const deleteHoliday = (id) =>
     api.delete(`/settings/holidays/${id}`);
+
+export const getCompanyProfile = () => api.get("/settings/company-profile");
+
+export const updateCompanyProfile = (data) =>
+    api.put("/settings/company-profile", data);

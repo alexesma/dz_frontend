@@ -30,6 +30,7 @@ import {
 } from '../api/settings';
 import { getEmailAccounts } from '../api/emailAccounts';
 import { formatMoscow } from '../utils/time';
+import CompanyProfilePanel from './CompanyProfilePanel';
 
 const { Paragraph, Text } = Typography;
 
@@ -390,6 +391,7 @@ const SettingsPage = () => {
 
     return (
         <>
+            <CompanyProfilePanel />
             <Card title="Настройки проверки прайсов">
                 <Paragraph style={{ marginBottom: 16 }}>
                     Проверка почты выполняется по общему расписанию. Если дни/время не
