@@ -6,6 +6,14 @@ export const getOneCStatus = () =>
 export const getOneCEnterpriseDataStatus = () =>
     api.get('/1c/enterprise-data/status');
 
+export const downloadOneCIncoming = async (filename) => {
+    const response = await api.get(
+        `/1c/enterprise-data/incoming/${encodeURIComponent(filename)}`,
+        { responseType: 'blob', timeout: 300000 },
+    );
+    downloadBlob(response.data, filename);
+};
+
 export const resetOneCExport = (params = {}) =>
     api.post('/1c/reset-export', null, { params });
 

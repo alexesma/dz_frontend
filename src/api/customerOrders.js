@@ -30,6 +30,9 @@ export const printOwnStockLabels = (stockItemIds, storageLocationId = null) =>
 export const getOwnStockLabels = (stockItemId) =>
     api.get('/customer-orders/assembly/own-labels', { params: { stock_item_id: stockItemId } });
 
+export const reportOwnStockShortage = (stockItemId, payload) =>
+    api.post(`/customer-orders/assembly/own-stock/${stockItemId}/shortage`, payload);
+
 export const reprintOwnStockLabel = (labelId) =>
     api.post(`/customer-orders/assembly/own-labels/${labelId}/reprint`);
 

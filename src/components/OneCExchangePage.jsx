@@ -28,6 +28,7 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
+    downloadOneCIncoming,
     downloadOneCExport,
     getOneCEnterpriseDataStatus,
     getOneCStatus,
@@ -148,6 +149,17 @@ const OneCExchangePage = () => {
             );
         } finally {
             setResetting(false);
+        }
+    };
+
+    const handleIncomingDownload = async (filename) => {
+        setDownloadingKey(`incoming:${filename}`);
+        try {
+            await downloadOneCIncoming(filename);
+        } catch (err) {
+            message.error(err?.response?.data?.detail || 'Не удалось скачать сообщение УНФ');
+        } finally {
+            setDownloadingKey(null);
         }
     };
 
@@ -322,6 +334,11 @@ const OneCExchangePage = () => {
                         <Alert key={item.file} showIcon type={item.error ? 'error' : 'info'}
                             style={{ marginTop: 8 }}
                             message={`Входящий файл: ${item.file}`}
+                            action={<Button size="small" icon={<DownloadOutlined />}
+                                loading={downloadingKey === `incoming:${item.file}`}
+                                onClick={() => handleIncomingDownload(item.file)}>
+                                Скачать XML/ZIP
+                            </Button>}
                             description={item.error || item.note || (
                                 `Изменён: ${item.modified_at ? dayjs(item.modified_at).format('DD.MM.YYYY HH:mm:ss') : '—'}; сообщение №${item.message_no}; ${item.has_body ? 'содержит данные — автоматический разбор пока не реализован' : 'служебное рукопожатие'}; версий формата: ${(item.format_versions || []).join(', ') || '—'}`
                             )} />

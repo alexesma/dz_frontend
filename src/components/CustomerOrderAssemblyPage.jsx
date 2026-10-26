@@ -19,6 +19,7 @@ import {
     keepCrossSource,
     previewAssemblyRealization,
     printOwnStockLabels,
+    reportOwnStockShortage,
     reprintOwnStockLabel,
     updateCrossPicksBulk,
 } from '../api/customerOrders';
@@ -129,11 +130,11 @@ const CustomerOrderAssemblyPage = () => {
     const [selectedStockIds, setSelectedStockIds] = useState([]);
     const [locationFilter, setLocationFilter] = useState(initialFilters.locationFilter);
     const [labelModal, setLabelModal] = useState(null);
+    const [shortage, setShortage] = useState(null);
     const [preview, setPreview] = useState(null);
     const [printJob, setPrintJob] = useState(null);
     const [lastPrintJobId, setLastPrintJobId] = useState(() =>
         Number(window.sessionStorage.getItem('customer-assembly-print-job')) || null);
-    const [crossPickInputs, setCrossPickInputs] = useState({});
 
     const load = useCallback(async () => {
         const requestId = ++loadRequestId.current;
@@ -397,6 +398,33 @@ const CustomerOrderAssemblyPage = () => {
         }
     };
 
+    const openShortage = (row) => setShortage({
+        row,
+        found: Math.max(0, Number(row.remaining || 0) - 1),
+        locationId: (row.location_choices || [])[0]?.id || null,
+        comment: '',
+    });
+
+    const submitShortage = async () => {
+        if (!shortage) return;
+        setBusy(true);
+        try {
+            const { data } = await reportOwnStockShortage(shortage.row.id, {
+                found_quantity: Number(shortage.found || 0),
+                storage_location_id: shortage.locationId,
+                comment: shortage.comment || null,
+            });
+            message.success(`В отказ ${data.rejected_quantity} шт.; создана инвентаризация по месту ${data.location}`);
+            if (data.response_already_sent) {
+                message.warning('Ответ клиенту уже отправлен: согласуйте отказ с клиентом');
+            }
+            setShortage(null);
+            await load();
+        } catch (error) {
+            message.error(error?.response?.data?.detail || 'Не удалось оформить недостачу');
+        } finally { setBusy(false); }
+    };
+
     const acceptCross = async (item, quantity) => {
         const rows = item.cross_stock_items || [];
         if (!rows.length) return;
@@ -410,11 +438,6 @@ const CustomerOrderAssemblyPage = () => {
             });
             await updateCrossPicksBulk(updates);
             await load();
-            setCrossPickInputs((prev) => {
-                const next = { ...prev };
-                delete next[item.id];
-                return next;
-            });
         } catch (error) {
             message.error(error?.response?.data?.detail || 'Не удалось изменить приёмку');
         } finally { setBusy(false); }
@@ -429,7 +452,6 @@ const CustomerOrderAssemblyPage = () => {
                 id: row.id, picked_quantity: row.quantity,
             })));
             await load();
-            setCrossPickInputs({});
             message.success('Полученные позиции отмечены');
         } catch (error) {
             message.error(error?.response?.data?.detail || 'Не удалось принять все позиции');
@@ -542,17 +564,16 @@ const CustomerOrderAssemblyPage = () => {
             </div>
         ) },
         { title: hint('Готово', 'Сколько штук можно отгрузить сейчас'), dataIndex: 'ready', width: 90, render: (value) => <Tag color={value ? 'green' : 'default'}>{value}</Tag> },
-        { title: 'Приёмка поставщика', key: 'accept', width: 250, render: (_, row) => row.cross_stock_items?.length ? <Space wrap size={4}>
-            <InputNumber size="small" min={0} max={row.received} style={{ width: 75 }}
-                value={crossPickInputs[row.id] ?? (row.cross_stock_items || []).reduce(
-                    (sum, item) => sum + Number(item.picked_quantity || 0), 0)}
-                onChange={(value) => setCrossPickInputs((prev) => ({ ...prev, [row.id]: value || 0 }))} />
-            <Button size="small" disabled={busy} onClick={() => acceptCross(row,
-                crossPickInputs[row.id] ?? (row.cross_stock_items || []).reduce(
-                    (sum, item) => sum + Number(item.picked_quantity || 0), 0))}>Сохранить</Button>
-            <Button size="small" disabled={busy} onClick={() => acceptCross(row, row.received)}>Принять всё</Button>
-            <Button size="small" disabled={busy} onClick={() => acceptCross(row, 0)}>Снять</Button>
-        </Space> : <Text type="secondary">По этикетке</Text> },
+        { title: hint('Принято', 'Принятое количество отмечается автоматически при печати этикетки поставщика. «Снять» — если приёмку отметили по ошибке.'), key: 'accept', width: 150, render: (_, row) => {
+            if (!row.cross_stock_items?.length) return <Text type="secondary">По этикетке</Text>;
+            const accepted = (row.cross_stock_items || []).reduce(
+                (sum, item) => sum + Number(item.picked_quantity || 0), 0);
+            return <Space size={4} wrap>
+                <Tag color={accepted >= row.received && row.received > 0 ? 'green' : accepted > 0 ? 'gold' : 'default'}
+                    style={{ marginInlineEnd: 0 }}>{accepted}/{row.received}</Tag>
+                {accepted > 0 && <Button size="small" disabled={busy} onClick={() => acceptCross(row, 0)}>Снять</Button>}
+            </Space>;
+        } },
     ];
 
     const ownColumns = [
@@ -582,7 +603,12 @@ const CustomerOrderAssemblyPage = () => {
                 {stat('Осталось', row.remaining)}
             </div>
         ) },
-        { title: '', key: 'labels', width: 100, render: (_, row) => <Button size="small" onClick={() => openLabels(row)}>Этикетки</Button> },
+        { title: '', key: 'labels', width: 190, render: (_, row) => <Space size={4} wrap>
+            <Button size="small" onClick={() => openLabels(row)}>Этикетки</Button>
+            {Number(row.remaining) > 0 && <Tooltip title="Нашли меньше, чем по системе: остальное в отказ и инвентаризация по месту">
+                <Button size="small" danger onClick={() => openShortage(row)}>Недостача</Button>
+            </Tooltip>}
+        </Space> },
     ];
 
     return <div style={{ padding: 24 }}>
@@ -673,6 +699,28 @@ const CustomerOrderAssemblyPage = () => {
                                 .some((location) => location.id === locationFilter)) }) }} />
             </Space> },
         ]} />
+        <Modal open={!!shortage} title="Недостача при сборке" onCancel={() => setShortage(null)}
+            onOk={submitShortage} okText="Оформить недостачу" okButtonProps={{ danger: true, disabled: !shortage || shortage.found >= (shortage.row.remaining || 0) }}
+            confirmLoading={busy}>
+            {shortage && <Space direction="vertical" style={{ width: '100%' }}>
+                <Text strong>{shortage.row.brand} {shortage.row.oem}</Text>
+                <Text type="secondary">Заказ {shortage.row.orderNumber} · осталось собрать {shortage.row.remaining} шт.</Text>
+                <div>
+                    <Text>Сколько нашли на месте</Text><br />
+                    <InputNumber min={0} max={Math.max(0, Number(shortage.row.remaining) - 1)} value={shortage.found}
+                        onChange={(value) => setShortage((prev) => ({ ...prev, found: value || 0 }))} />
+                    <Text type="secondary"> из {shortage.row.remaining}</Text>
+                </div>
+                {(shortage.row.location_choices || []).length > 1 && <Select style={{ width: '100%' }}
+                    value={shortage.locationId} placeholder="Место хранения"
+                    onChange={(value) => setShortage((prev) => ({ ...prev, locationId: value }))}
+                    options={shortage.row.location_choices.map((place) => ({ value: place.id, label: place.name }))} />}
+                <Input.TextArea rows={2} maxLength={300} placeholder="Комментарий (необязательно)"
+                    value={shortage.comment}
+                    onChange={(event) => setShortage((prev) => ({ ...prev, comment: event.target.value }))} />
+                <Alert showIcon type="warning" message={`Недостающие ${Math.max(0, Number(shortage.row.remaining) - Number(shortage.found || 0))} шт. уйдут клиенту в отказ, ответ клиенту обновится, по месту создастся инвентаризация, администраторы получат уведомление.`} />
+            </Space>}
+        </Modal>
         <Modal open={!!preview} title={`Предпросмотр реализации · ${preview?.customer_name || ''}`}
             width={900} onCancel={() => setPreview(null)} onOk={makeDraft}
             okText="Создать черновик" okButtonProps={{ disabled: !preview?.ready_total }}
