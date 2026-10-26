@@ -61,14 +61,15 @@ const ShipmentDocumentsPanel = () => {
 
     return <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Alert showIcon type="info"
-            message="Документы формируются по данным реализации и реквизитам организации из настроек Диадока (название, ИНН/КПП, адреса, подписант)."
-            description="Откройте нужную реализацию и нажмите «Документы», либо выберите её здесь. Печать идёт на принтер A4 по умолчанию (настраивается в «Принтерах»), без принтера открывается страница с кнопкой «Печать»." />
+            message="Документы формируются по данным реализации и реквизитам из раздела «Настройки → Реквизиты организации»."
+            description="Для изменения цены или количества после отгрузки откройте «Корректировки реализаций — УКД». Печать идёт на принтер A4 по умолчанию." />
+        <Button href="/documents/shipment-corrections">Корректировки реализаций — УКД</Button>
         <Select showSearch allowClear filterOption={false} loading={loading}
             style={{ width: 'min(520px, 100%)' }} placeholder="Реализация: номер, клиент"
             value={shipmentId} options={options} onSearch={onSearch}
             onChange={(value) => setShipmentId(value || null)} />
         <Space wrap align="start" size="middle">
-            {SHIPMENT_DOCUMENTS.filter((entry) => entry.key !== 'upd:2').map((entry) => <Card key={entry.key}
+            {SHIPMENT_DOCUMENTS.map((entry) => <Card key={entry.key}
                 size="small" title={entry.kind === 'upd' ? 'УПД' : entry.short} style={{ width: 340 }}>
                 <Space direction="vertical" size={6} style={{ width: '100%' }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>
@@ -83,9 +84,6 @@ const ShipmentDocumentsPanel = () => {
                             onClick={() => void run(entry, 'print')}>Печать</Button>
                         <Button icon={<EyeOutlined />} disabled={!shipmentId}
                             onClick={() => void run(entry, 'view')}>Открыть</Button>
-                        {entry.kind === 'upd' && <Button disabled={!shipmentId}
-                            onClick={() => void run(SHIPMENT_DOCUMENTS[1], 'print')}>
-                            Только передаточный (статус 2)</Button>}
                     </Space>
                 </Space>
             </Card>)}

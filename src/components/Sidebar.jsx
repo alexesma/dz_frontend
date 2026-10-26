@@ -67,6 +67,7 @@ const NAVIGATION_SEARCH_ITEMS = [
     { path: '/customer-orders/receipts', title: 'Поступления от поставщиков', section: 'Заказы', keywords: 'приемка приход накладная поставка' },
     { path: '/documents/incoming', title: 'Входящие документы', section: 'Документы', keywords: 'упд накладная эдо получение' },
     { path: '/documents/corrections', title: 'КСФ поставщиков', section: 'Документы', keywords: 'корректировка укд ксф поставщик' },
+    { path: '/documents/shipment-corrections', title: 'Корректировки реализаций', section: 'Документы', keywords: 'укд корректировка реализация клиент', roles: ['admin'] },
     { path: '/documents/outgoing', title: 'Реализации и черновики', section: 'Документы', keywords: 'реализация исходящие упд накладная эдо отправка' },
     { path: '/documents/diadoc', title: 'Диадок', section: 'Документы', keywords: 'эдо контур упд', roles: ['admin'] },
     { path: '/documents/1c', title: 'Обмен с 1С', section: 'Документы', keywords: 'интеграция выгрузка загрузка синхронизация', roles: ['admin'] },

@@ -3,6 +3,9 @@ import api from '../api';
 export const getOneCStatus = () =>
     api.get('/1c/status');
 
+export const getOneCEnterpriseDataStatus = () =>
+    api.get('/1c/enterprise-data/status');
+
 export const resetOneCExport = (params = {}) =>
     api.post('/1c/reset-export', null, { params });
 

@@ -41,6 +41,7 @@ import CustomerOrderAssemblyPage from './components/CustomerOrderAssemblyPage';
 import SupplierReceiptsPage from './components/SupplierReceiptsPage';
 import IncomingSupplierDocumentsPage from './components/IncomingSupplierDocumentsPage';
 import SupplierReceiptCorrectionsPage from './components/SupplierReceiptCorrectionsPage';
+import ShipmentCorrectionsPage from './components/ShipmentCorrectionsPage';
 import OutgoingCustomerDocumentsPage from './components/OutgoingCustomerDocumentsPage';
 import DiadocPage from './components/DiadocPage';
 import OneCExchangePage from './components/OneCExchangePage';
@@ -191,6 +192,7 @@ const AppRoutes = () => (
         <Route path="/customer-orders/suppliers/:orderId" element={<RequireAuth><CustomerSupplierOrderDetailPage /></RequireAuth>} />
         <Route path="/documents/incoming" element={<RequireAuth><IncomingSupplierDocumentsPage /></RequireAuth>} />
         <Route path="/documents/corrections" element={<RequireAuth><SupplierReceiptCorrectionsPage /></RequireAuth>} />
+        <Route path="/documents/shipment-corrections" element={<RequireAdmin><ShipmentCorrectionsPage /></RequireAdmin>} />
         <Route path="/documents/outgoing" element={<RequireAuth><OutgoingCustomerDocumentsPage /></RequireAuth>} />
         <Route path="/documents/diadoc" element={<RequireAdmin><DiadocPage /></RequireAdmin>} />
         <Route path="/documents/1c" element={<RequireAdmin><OneCExchangePage /></RequireAdmin>} />

@@ -207,6 +207,24 @@ export const getShipmentPrintUrl = (id, kind, params = {}) => {
 export const listShipmentPrintKinds = () =>
     api.get('/inventory/print-documents/kinds');
 
+export const listShipmentCorrections = (params = {}) =>
+    api.get('/inventory/shipment-corrections', { params });
+
+export const getShipmentCorrection = (id) =>
+    api.get(`/inventory/shipment-corrections/${id}`);
+
+export const createShipmentCorrection = (data) =>
+    api.post('/inventory/shipment-corrections', data);
+
+export const updateShipmentCorrection = (id, data) =>
+    api.put(`/inventory/shipment-corrections/${id}`, data);
+
+export const postShipmentCorrection = (id) =>
+    api.post(`/inventory/shipment-corrections/${id}/post`);
+
+export const getShipmentCorrectionPrintUrl = (id, formalized = false) =>
+    `${api.defaults.baseURL}/inventory/shipment-corrections/${id}/print/${formalized ? 'diadoc-pdf' : 'ukd'}`;
+
 export const updateShipment = (id, data) =>
     api.patch(`/inventory/shipments/${id}/`, data);
 

@@ -29,6 +29,7 @@ import {
 import dayjs from 'dayjs';
 import {
     downloadOneCExport,
+    getOneCEnterpriseDataStatus,
     getOneCStatus,
     getOneCBatches,
     getOneCEvents,
@@ -56,6 +57,7 @@ const BATCH_STATUS = {
 
 const ENTITY_LABELS = {
     shipment: 'Реализация',
+    shipment_correction: 'Корректировка реализации',
     supplier_receipt: 'Поступление',
     stock_document: 'Складской документ',
     production_wave: 'Выпуск DragonZap',
@@ -63,6 +65,7 @@ const ENTITY_LABELS = {
 
 const OneCExchangePage = () => {
     const [status, setStatus] = useState(null);
+    const [enterpriseStatus, setEnterpriseStatus] = useState(null);
     const [statusLoading, setStatusLoading] = useState(false);
     const [period, setPeriod] = useState([
         dayjs().startOf('month'),
@@ -79,14 +82,16 @@ const OneCExchangePage = () => {
     const loadStatus = useCallback(async () => {
         setStatusLoading(true);
         try {
-            const [statusResponse, eventsResponse, batchesResponse, salesResponse] =
+            const [statusResponse, enterpriseResponse, eventsResponse, batchesResponse, salesResponse] =
                 await Promise.all([
                     getOneCStatus(),
+                    getOneCEnterpriseDataStatus().catch(() => ({ data: null })),
                     getOneCEvents({ limit: 100 }),
                     getOneCBatches({ limit: 50 }),
                     getSalesHistorySummary().catch(() => ({ data: null })),
                 ]);
             setStatus(statusResponse.data || null);
+            setEnterpriseStatus(enterpriseResponse.data || null);
             setEvents(eventsResponse.data?.items || []);
             setBatches(batchesResponse.data?.items || []);
             setSalesSummary(salesResponse.data || null);
@@ -302,8 +307,28 @@ const OneCExchangePage = () => {
     return (
         <div style={{ margin: 16 }}>
             <Space direction="vertical" size="large" style={{ width: '100%' }}>
+                <Card title="1С:Управление нашей фирмой — EnterpriseData">
+                    <Alert showIcon type="warning"
+                        message="Автоматическая передача реализаций и УКД в УНФ ещё не подключена"
+                        description="FTP-канал сейчас обрабатывает только служебные сообщения синхронизации. Очередь JSON ниже работает отдельно и сама не создаёт документы в УНФ. Подтверждённым обмен считается только после ответа принимающей 1С." />
+                    <Descriptions size="small" column={1} style={{ marginTop: 16 }}
+                        items={[
+                            { key: 'directory', label: 'Каталог обмена', children: enterpriseStatus?.directory_exists ? 'Доступен' : 'Не найден или статус недоступен' },
+                            { key: 'incoming', label: 'Входящих сообщений', children: enterpriseStatus?.incoming_files?.length ?? '—' },
+                            { key: 'sent', label: 'Номер нашего сообщения', children: enterpriseStatus?.sent_no ?? '—' },
+                            { key: 'received', label: 'Номер сообщения УНФ', children: enterpriseStatus?.received_no ?? '—' },
+                        ]} />
+                    {(enterpriseStatus?.incoming_messages || []).map((item) => (
+                        <Alert key={item.file} showIcon type={item.error ? 'error' : 'info'}
+                            style={{ marginTop: 8 }}
+                            message={`Входящий файл: ${item.file}`}
+                            description={item.error || item.note || (
+                                `Изменён: ${item.modified_at ? dayjs(item.modified_at).format('DD.MM.YYYY HH:mm:ss') : '—'}; сообщение №${item.message_no}; ${item.has_body ? 'содержит данные — автоматический разбор пока не реализован' : 'служебное рукопожатие'}; версий формата: ${(item.format_versions || []).join(', ') || '—'}`
+                            )} />
+                    ))}
+                </Card>
                 <Card
-                    title="Автоматический обмен (1С: «Обмен с сайтом»)"
+                    title="Отдельный канал: «Обмен с сайтом» (CommerceML)"
                     extra={
                         <Button
                             icon={<ReloadOutlined />}
@@ -379,18 +404,17 @@ const OneCExchangePage = () => {
                         ]}
                     />
                     <Paragraph type="secondary" style={{ marginTop: 12 }}>
-                        В 1С:Управление торговлей: Администрирование → Обмен с
-                        сайтом → включить, указать адрес и логин/пароль,
-                        отметить «Обмен заказами». 1С будет по расписанию
-                        забирать проведённые отгрузки как заказы —
-                        реализация создаётся «на основании» заказа. Повторный
-                        запрос до подтверждения получает тот же
-                        пакет. Отгрузка считается синхронизированной только
-                        после ответа success от 1С.
+                        Этот канал отдаёт отгрузки в формате CommerceML как заказы.
+                        Он не передаёт корректировки реализации и не заменяет
+                        обмен EnterpriseData с вашей УНФ. Адрес приведён только
+                        для существующей настройки «Обмен с сайтом».
                     </Paragraph>
                 </Card>
 
-                <Card title="Надёжная очередь и история обмена">
+                <Card title="Очередь JSON API и история обмена">
+                    <Alert showIcon type="info" style={{ marginBottom: 16 }}
+                        message="Событие в очереди ещё не означает загрузку в УНФ"
+                        description="Корректировки и другие документы здесь ожидают отдельного получателя JSON API. После получения образца EnterpriseData подключим их к штатной синхронизации УНФ." />
                     <Tabs
                         items={[
                             {

@@ -818,6 +818,10 @@ const ShipmentDetailPage = () => {
                 <Col>
                     <Space>
                         <ShipmentPrintMenu shipmentId={shipment.id} docNumber={shipment.doc_number} />
+                        {shipment.status === 'posted' && user?.role === 'admin' &&
+                            <Button onClick={() => navigate(`/documents/shipment-corrections?shipmentId=${shipment.id}`)}>
+                                Создать корректировку
+                            </Button>}
                         {isDraft && (
                             <>
                                 <Button

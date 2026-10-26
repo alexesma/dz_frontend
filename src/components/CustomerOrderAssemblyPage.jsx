@@ -665,7 +665,7 @@ const CustomerOrderAssemblyPage = () => {
                 </Space>
                 <Table rowKey="id" size="small" loading={loading} columns={ownColumns}
                     dataSource={visibleOwnRows} pagination={{ pageSize: 40 }} scroll={{ x: 900 }}
-                    rowClassName={(row) => (!row.location && Number(row.labeled) > 0
+                    rowClassName={(row) => (Number(row.labeled) > 0
                         ? (Number(row.remaining) <= 0 ? 'assembly-row-done' : 'assembly-row-partial') : '')}
                     rowSelection={{ selectedRowKeys: selectedStockIds, onChange: setSelectedStockIds,
                         getCheckboxProps: (row) => ({ disabled: row.remaining <= 0

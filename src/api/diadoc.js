@@ -61,6 +61,16 @@ export const createDiadocOutboundDocumentFromShipment = (
 ) =>
     api.post(`/diadoc/outbound-documents/from-shipment/${shipmentId}`, data);
 
+export const getDiadocShipmentCorrectionReadiness = (correctionId) =>
+    api.get(`/diadoc/outbound-readiness/shipment-correction/${correctionId}`);
+
+export const createDiadocOutboundDocumentFromShipmentCorrection = (
+    correctionId, data = {}
+) => api.post(
+    `/diadoc/outbound-documents/from-shipment-correction/${correctionId}`,
+    data
+);
+
 export const createDiadocOutboundDocumentFromCustomerReturn = (
     returnId,
     data = {}

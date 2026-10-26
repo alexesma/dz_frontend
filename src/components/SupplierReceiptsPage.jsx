@@ -71,6 +71,7 @@ const SupplierReceiptsPage = () => {
     const [loading, setLoading] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [rows, setRows] = useState([]);
+    const [customerFilter, setCustomerFilter] = useState(null);
     const [syncingResponses, setSyncingResponses] = useState(false);
     const [filters, setFilters] = useState({
         providerId: null,
@@ -113,6 +114,28 @@ const SupplierReceiptsPage = () => {
     }, [filters.dateRange, filters.customerOnly]);
 
     useEffect(() => { fetchProviders(); }, [fetchProviders]);
+
+    // Клиенты из загруженных строк: подсказка при вводе имени.
+    const customerOptions = useMemo(() => {
+        const counts = new Map();
+        rows.forEach((row) => {
+            const name = row.customer_name || '';
+            if (name) counts.set(name, (counts.get(name) || 0) + 1);
+        });
+        return [...counts.entries()]
+            .sort((left, right) => left[0].localeCompare(right[0], 'ru'))
+            .map(([name, count]) => ({ value: name, label: `${name} (${count})` }));
+    }, [rows]);
+    const visibleRows = useMemo(() => (
+        customerFilter ? rows.filter((row) => row.customer_name === customerFilter) : rows
+    ), [rows, customerFilter]);
+
+    useEffect(() => {
+        // клиент пропал из списка (сменили поставщика или период) — сбрасываем
+        if (customerFilter && !customerOptions.some((option) => option.value === customerFilter)) {
+            setCustomerFilter(null);
+        }
+    }, [customerFilter, customerOptions]);
 
     const fetchRows = useCallback(async () => {
         if (!filters.providerId) { setRows([]); return; }
@@ -512,7 +535,7 @@ const SupplierReceiptsPage = () => {
 
                 {/* Filters */}
                 <Row gutter={12} style={{ marginBottom: 12 }}>
-                    <Col xs={24} md={9}>
+                    <Col xs={24} md={6}>
                         <Select
                             showSearch
                             allowClear
@@ -530,7 +553,23 @@ const SupplierReceiptsPage = () => {
                             }
                         />
                     </Col>
-                    <Col xs={24} md={9}>
+                    <Col xs={24} md={6}>
+                        <Select
+                            showSearch
+                            allowClear
+                            placeholder="Клиент (начните вводить имя)"
+                            style={{ width: '100%' }}
+                            value={customerFilter}
+                            onChange={(value) => setCustomerFilter(value || null)}
+                            options={customerOptions}
+                            disabled={!filters.providerId}
+                            notFoundContent="Клиентов нет"
+                            filterOption={(input, option) =>
+                                (option?.label || '').toLowerCase().includes(input.toLowerCase())
+                            }
+                        />
+                    </Col>
+                    <Col xs={24} md={6}>
                         <RangePicker
                             style={{ width: '100%' }}
                             value={filters.dateRange}
@@ -542,7 +581,7 @@ const SupplierReceiptsPage = () => {
                         />
                     </Col>
                     <Col xs={24} md={6}>
-                        <Space>
+                        <Space wrap>
                             <Button type="primary" onClick={fetchRows} loading={loading}>
                                 Обновить
                             </Button>
@@ -669,7 +708,7 @@ const SupplierReceiptsPage = () => {
                         size="small"
                         loading={loading}
                         rowSelection={rowSelection}
-                        dataSource={rows.map((row) => ({ ...row, key: row.supplier_order_item_id }))}
+                        dataSource={visibleRows.map((row) => ({ ...row, key: row.supplier_order_item_id }))}
                         columns={columns}
                         rowClassName={rowClassName}
                         pagination={{ pageSize: 50, showSizeChanger: true }}
