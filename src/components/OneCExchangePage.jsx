@@ -38,6 +38,7 @@ import {
     importSalesHistory,
     resetOneCExport,
     retryOneCEvent,
+    sendOneCEnterpriseDataEvent,
 } from '../api/oneC';
 
 const { Text, Paragraph } = Typography;
@@ -79,6 +80,7 @@ const OneCExchangePage = () => {
     const [events, setEvents] = useState([]);
     const [batches, setBatches] = useState([]);
     const [retryingEventId, setRetryingEventId] = useState(null);
+    const [sendingEventId, setSendingEventId] = useState(null);
 
     const loadStatus = useCallback(async () => {
         setStatusLoading(true);
@@ -180,6 +182,19 @@ const OneCExchangePage = () => {
         }
     };
 
+    const handleEnterpriseSend = async (eventId) => {
+        setSendingEventId(eventId);
+        try {
+            const { data } = await sendOneCEnterpriseDataEvent(eventId);
+            message.success(`Сообщение №${data.message_no} размещено для УНФ`);
+            await loadStatus();
+        } catch (err) {
+            message.error(err?.response?.data?.detail || 'Не удалось отправить сообщение в УНФ');
+        } finally {
+            setSendingEventId(null);
+        }
+    };
+
     const eventColumns = [
         {
             title: 'Создано',
@@ -222,17 +237,29 @@ const OneCExchangePage = () => {
         {
             title: '',
             key: 'actions',
-            width: 55,
-            render: (_, row) => row.status !== 'succeeded' ? (
-                <Tooltip title="Вернуть в очередь">
-                    <Button
-                        type="text"
-                        icon={<RetweetOutlined />}
-                        loading={retryingEventId === row.id}
-                        onClick={() => handleRetryEvent(row.id)}
-                    />
-                </Tooltip>
-            ) : null,
+            width: 110,
+            render: (_, row) => (
+                <Space size={0}>
+                    {row.event_type === 'posted' && ['shipment', 'supplier_receipt'].includes(row.entity_type) && (
+                        <Popconfirm
+                            title="Отправить этот документ в тестовую УНФ?"
+                            description="Файл будет размещён на FTP. Затем запустите синхронизацию в УНФ и проверьте результат."
+                            onConfirm={() => handleEnterpriseSend(row.id)}
+                        >
+                            <Tooltip title="Пробная отправка EnterpriseData">
+                                <Button type="text" loading={sendingEventId === row.id}>В УНФ</Button>
+                            </Tooltip>
+                        </Popconfirm>
+                    )}
+                    {row.status !== 'succeeded' && (
+                        <Tooltip title="Вернуть в очередь">
+                            <Button type="text" icon={<RetweetOutlined />}
+                                loading={retryingEventId === row.id}
+                                onClick={() => handleRetryEvent(row.id)} />
+                        </Tooltip>
+                    )}
+                </Space>
+            ),
         },
     ];
 
@@ -329,6 +356,8 @@ const OneCExchangePage = () => {
                             { key: 'incoming', label: 'Входящих сообщений', children: enterpriseStatus?.incoming_files?.length ?? '—' },
                             { key: 'sent', label: 'Номер нашего сообщения', children: enterpriseStatus?.sent_no ?? '—' },
                             { key: 'received', label: 'Номер сообщения УНФ', children: enterpriseStatus?.received_no ?? '—' },
+                            { key: 'confirmed', label: 'УНФ подтвердила наше сообщение №', children: enterpriseStatus?.peer_confirmed_our_no ?? '—' },
+                            { key: 'pending', label: 'Ожидает чтения УНФ', children: enterpriseStatus?.pending_body && enterpriseStatus.pending_body.message_no > (enterpriseStatus.peer_confirmed_our_no || 0) ? `Сообщение №${enterpriseStatus.pending_body.message_no}: ${enterpriseStatus.pending_body.description}` : 'Нет' },
                             { key: 'sending', label: 'Согласованы типы на отправку', children: (enterpriseStatus?.negotiated_sending || []).join(', ') || 'Пока нет подтверждения узла' },
                             { key: 'corrections', label: 'УНФ принимает корректировки через FTP', children: enterpriseStatus?.peer_receives_corrections === true ? 'Да' : enterpriseStatus?.peer_receives_corrections === false ? 'Нет' : 'Неизвестно' },
                         ]} />
