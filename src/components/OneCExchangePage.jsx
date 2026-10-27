@@ -321,14 +321,16 @@ const OneCExchangePage = () => {
             <Space direction="vertical" size="large" style={{ width: '100%' }}>
                 <Card title="1С:Управление нашей фирмой — EnterpriseData">
                     <Alert showIcon type="warning"
-                        message="Автоматическая передача реализаций и УКД в УНФ ещё не подключена"
-                        description="FTP-канал сейчас обрабатывает только служебные сообщения синхронизации. Очередь JSON ниже работает отдельно и сама не создаёт документы в УНФ. Подтверждённым обмен считается только после ответа принимающей 1С." />
+                        message="Автоматическая передача документов в УНФ ещё не подключена"
+                        description="FTP-канал сейчас обрабатывает только служебные сообщения. Тестовая УНФ не принимает корректировки реализации через EnterpriseData; для УКД проверяем штатный маршрут ЭДО. Очередь JSON ниже сама не создаёт документы в УНФ." />
                     <Descriptions size="small" column={1} style={{ marginTop: 16 }}
                         items={[
                             { key: 'directory', label: 'Каталог обмена', children: enterpriseStatus?.directory_exists ? 'Доступен' : 'Не найден или статус недоступен' },
                             { key: 'incoming', label: 'Входящих сообщений', children: enterpriseStatus?.incoming_files?.length ?? '—' },
                             { key: 'sent', label: 'Номер нашего сообщения', children: enterpriseStatus?.sent_no ?? '—' },
                             { key: 'received', label: 'Номер сообщения УНФ', children: enterpriseStatus?.received_no ?? '—' },
+                            { key: 'sending', label: 'Согласованы типы на отправку', children: (enterpriseStatus?.negotiated_sending || []).join(', ') || 'Пока нет подтверждения узла' },
+                            { key: 'corrections', label: 'УНФ принимает корректировки через FTP', children: enterpriseStatus?.peer_receives_corrections === true ? 'Да' : enterpriseStatus?.peer_receives_corrections === false ? 'Нет' : 'Неизвестно' },
                         ]} />
                     {(enterpriseStatus?.incoming_messages || []).map((item) => (
                         <Alert key={item.file} showIcon type={item.error ? 'error' : 'info'}
@@ -431,7 +433,7 @@ const OneCExchangePage = () => {
                 <Card title="Очередь JSON API и история обмена">
                     <Alert showIcon type="info" style={{ marginBottom: 16 }}
                         message="Событие в очереди ещё не означает загрузку в УНФ"
-                        description="Корректировки и другие документы здесь ожидают отдельного получателя JSON API. После получения образца EnterpriseData подключим их к штатной синхронизации УНФ." />
+                        description="Очередь JSON работает отдельно от штатной синхронизации. Реализации, заказы и поступления проверяем через EnterpriseData; корректировки через этот узел УНФ не принимаются." />
                     <Tabs
                         items={[
                             {
