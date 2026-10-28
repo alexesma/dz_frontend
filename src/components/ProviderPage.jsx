@@ -2770,9 +2770,6 @@ const ProviderPage = () => {
                             { validator: (_, v) => {
                                     const val = (v ?? '').trim();
                                     if (!val) return Promise.reject('Название не может быть пустым');
-                                    if (!/^[A-Za-z0-9 .,_&()\\-]+$/.test(val)) {
-                                      return Promise.reject('Разрешены только латинские буквы, цифры и - _ . , & ( )');
-                                    }
                                     return Promise.resolve();
                                 }
                             }
