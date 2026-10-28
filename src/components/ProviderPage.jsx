@@ -496,6 +496,10 @@ const ProviderPage = () => {
                     email_incoming_price: data.provider.email_incoming_price,
                     inn: data.provider.inn,
                     kpp: data.provider.kpp,
+                    one_c_contract_name: data.provider.one_c_contract_name,
+                    one_c_contract_number: data.provider.one_c_contract_number,
+                    one_c_contract_date: data.provider.one_c_contract_date,
+                    one_c_contract_guid: data.provider.one_c_contract_guid,
                     legal_name: data.provider.legal_name,
                     label_name: data.provider.label_name,
                     legal_address: data.provider.legal_address,
@@ -681,6 +685,10 @@ const ProviderPage = () => {
         if (user?.role !== "admin") {
             delete normalizedValues.inventory_policy;
             delete normalizedValues.inventory_policy_note;
+            delete normalizedValues.one_c_contract_name;
+            delete normalizedValues.one_c_contract_number;
+            delete normalizedValues.one_c_contract_date;
+            delete normalizedValues.one_c_contract_guid;
         }
         setSaving(true);
         try {
@@ -2891,6 +2899,39 @@ const ProviderPage = () => {
                     <Form.Item name="kpp" label="КПП">
                         <Input placeholder="770101001" maxLength={32} />
                     </Form.Item>
+
+                    {user?.role === "admin" && <>
+                    <Divider orientation="left">Договор для обмена с 1С:УНФ</Divider>
+                    <Alert
+                        type="info"
+                        showIcon
+                        style={{ marginBottom: 16 }}
+                        message="Основной договор этого поставщика"
+                        description="Для передачи поступления в УНФ укажите название договора. Если договор уже есть в УНФ, добавьте его идентификатор 1С: тогда обмен свяжет документ с существующим договором. Без идентификатора договор будет создан в УНФ при первом обмене."
+                    />
+                    <Form.Item name="one_c_contract_name" label="Название договора в 1С">
+                        <Input maxLength={255} placeholder="Основной договор поставки" />
+                    </Form.Item>
+                    <Space wrap size="middle" style={{ width: "100%" }}>
+                        <Form.Item name="one_c_contract_number" label="Номер договора" style={{ minWidth: 220 }}>
+                            <Input maxLength={100} />
+                        </Form.Item>
+                        <Form.Item name="one_c_contract_date" label="Дата договора" style={{ minWidth: 220 }}>
+                            <Input type="date" />
+                        </Form.Item>
+                    </Space>
+                    <Form.Item
+                        name="one_c_contract_guid"
+                        label="Идентификатор существующего договора в 1С (UUID)"
+                        extra="Оставьте пустым, если договор должен быть создан обменом."
+                        rules={[{
+                            pattern: /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/,
+                            message: "Введите UUID договора 1С",
+                        }]}
+                    >
+                        <Input placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" maxLength={36} />
+                    </Form.Item>
+                    </>}
 
                     <Divider orientation="left">
                         Юридические и банковские реквизиты
