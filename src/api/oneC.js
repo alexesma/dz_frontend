@@ -9,6 +9,9 @@ export const getOneCEnterpriseDataStatus = () =>
 export const sendOneCEnterpriseDataEvent = (eventId) =>
     api.post(`/1c/enterprise-data/send/${eventId}`);
 
+export const prepareOneCEnterpriseReceipt = (receiptId) =>
+    api.post(`/1c/enterprise-data/prepare-receipt/${receiptId}`);
+
 export const downloadOneCIncoming = async (filename) => {
     const response = await api.get(
         `/1c/enterprise-data/incoming/${encodeURIComponent(filename)}`,

@@ -6,6 +6,7 @@ import {
     Col,
     DatePicker,
     Descriptions,
+    InputNumber,
     Popconfirm,
     Row,
     Space,
@@ -36,6 +37,7 @@ import {
     getOneCEvents,
     getSalesHistorySummary,
     importSalesHistory,
+    prepareOneCEnterpriseReceipt,
     resetOneCExport,
     retryOneCEvent,
     sendOneCEnterpriseDataEvent,
@@ -81,6 +83,8 @@ const OneCExchangePage = () => {
     const [batches, setBatches] = useState([]);
     const [retryingEventId, setRetryingEventId] = useState(null);
     const [sendingEventId, setSendingEventId] = useState(null);
+    const [receiptIdToPrepare, setReceiptIdToPrepare] = useState(null);
+    const [preparingReceipt, setPreparingReceipt] = useState(false);
 
     const loadStatus = useCallback(async () => {
         setStatusLoading(true);
@@ -179,6 +183,21 @@ const OneCExchangePage = () => {
             );
         } finally {
             setRetryingEventId(null);
+        }
+    };
+
+    const handlePrepareReceipt = async () => {
+        if (!receiptIdToPrepare) return;
+        setPreparingReceipt(true);
+        try {
+            const { data } = await prepareOneCEnterpriseReceipt(receiptIdToPrepare);
+            message.success(`Поступление добавлено в очередь как событие №${data.id}`);
+            setReceiptIdToPrepare(null);
+            await loadStatus();
+        } catch (err) {
+            message.error(err?.response?.data?.detail || 'Не удалось подготовить поступление');
+        } finally {
+            setPreparingReceipt(false);
         }
     };
 
@@ -358,6 +377,7 @@ const OneCExchangePage = () => {
                             { key: 'received', label: 'Номер сообщения УНФ', children: enterpriseStatus?.received_no ?? '—' },
                             { key: 'confirmed', label: 'УНФ подтвердила наше сообщение №', children: enterpriseStatus?.peer_confirmed_our_no ?? '—' },
                             { key: 'pending', label: 'Ожидает чтения УНФ', children: enterpriseStatus?.pending_body && enterpriseStatus.pending_body.message_no > (enterpriseStatus.peer_confirmed_our_no || 0) ? `Сообщение №${enterpriseStatus.pending_body.message_no}: ${enterpriseStatus.pending_body.description}` : 'Нет' },
+                            { key: 'lastBody', label: 'Последний документ, прочитанный УНФ', children: enterpriseStatus?.last_confirmed_body ? `Сообщение №${enterpriseStatus.last_confirmed_body.message_no}: ${enterpriseStatus.last_confirmed_body.description}` : '—' },
                             { key: 'sending', label: 'Согласованы типы на отправку', children: (enterpriseStatus?.negotiated_sending || []).join(', ') || 'Пока нет подтверждения узла' },
                             { key: 'corrections', label: 'УНФ принимает корректировки через FTP', children: enterpriseStatus?.peer_receives_corrections === true ? 'Да' : enterpriseStatus?.peer_receives_corrections === false ? 'Нет' : 'Неизвестно' },
                         ]} />
@@ -374,6 +394,13 @@ const OneCExchangePage = () => {
                                 `Изменён: ${item.modified_at ? dayjs(item.modified_at).format('DD.MM.YYYY HH:mm:ss') : '—'}; сообщение №${item.message_no}; ${item.has_body ? 'содержит данные — автоматический разбор пока не реализован' : 'служебное рукопожатие'}; версий формата: ${(item.format_versions || []).join(', ') || '—'}`
                             )} />
                     ))}
+                    <Space wrap style={{ marginTop: 16 }}>
+                        <Text>Проверить существующее проведённое поступление:</Text>
+                        <InputNumber min={1} precision={0} placeholder="ID поступления"
+                            value={receiptIdToPrepare} onChange={setReceiptIdToPrepare} />
+                        <Button disabled={!receiptIdToPrepare} loading={preparingReceipt}
+                            onClick={handlePrepareReceipt}>Добавить в очередь</Button>
+                    </Space>
                 </Card>
                 <Card
                     title="Отдельный канал: «Обмен с сайтом» (CommerceML)"
