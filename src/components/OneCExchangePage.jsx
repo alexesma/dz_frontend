@@ -31,7 +31,10 @@ import dayjs from 'dayjs';
 import {
     downloadOneCIncoming,
     downloadOneCExport,
+    backfillOneCEnterpriseHistory,
+    getOneCEnterpriseHistoryAudit,
     getOneCEnterpriseDataStatus,
+    getOneCEnterpriseAutoStatus,
     getOneCStatus,
     getOneCBatches,
     getOneCEvents,
@@ -40,6 +43,7 @@ import {
     prepareOneCEnterpriseReceipt,
     resetOneCExport,
     retryOneCEvent,
+    retryOneCEnterpriseEvent,
     sendOneCEnterpriseDataEvent,
 } from '../api/oneC';
 
@@ -70,6 +74,10 @@ const ENTITY_LABELS = {
 const OneCExchangePage = () => {
     const [status, setStatus] = useState(null);
     const [enterpriseStatus, setEnterpriseStatus] = useState(null);
+    const [enterpriseAutoStatus, setEnterpriseAutoStatus] = useState(null);
+    const [historyAudit, setHistoryAudit] = useState(null);
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const [historyBackfilling, setHistoryBackfilling] = useState(false);
     const [statusLoading, setStatusLoading] = useState(false);
     const [period, setPeriod] = useState([
         dayjs().startOf('month'),
@@ -82,6 +90,7 @@ const OneCExchangePage = () => {
     const [events, setEvents] = useState([]);
     const [batches, setBatches] = useState([]);
     const [retryingEventId, setRetryingEventId] = useState(null);
+    const [retryingEnterpriseId, setRetryingEnterpriseId] = useState(null);
     const [sendingEventId, setSendingEventId] = useState(null);
     const [receiptIdToPrepare, setReceiptIdToPrepare] = useState(null);
     const [preparingReceipt, setPreparingReceipt] = useState(false);
@@ -89,16 +98,18 @@ const OneCExchangePage = () => {
     const loadStatus = useCallback(async () => {
         setStatusLoading(true);
         try {
-            const [statusResponse, enterpriseResponse, eventsResponse, batchesResponse, salesResponse] =
+            const [statusResponse, enterpriseResponse, autoResponse, eventsResponse, batchesResponse, salesResponse] =
                 await Promise.all([
                     getOneCStatus(),
                     getOneCEnterpriseDataStatus().catch(() => ({ data: null })),
+                    getOneCEnterpriseAutoStatus().catch(() => ({ data: null })),
                     getOneCEvents({ limit: 100 }),
                     getOneCBatches({ limit: 50 }),
                     getSalesHistorySummary().catch(() => ({ data: null })),
                 ]);
             setStatus(statusResponse.data || null);
             setEnterpriseStatus(enterpriseResponse.data || null);
+            setEnterpriseAutoStatus(autoResponse.data || null);
             setEvents(eventsResponse.data?.items || []);
             setBatches(batchesResponse.data?.items || []);
             setSalesSummary(salesResponse.data || null);
@@ -214,6 +225,44 @@ const OneCExchangePage = () => {
         }
     };
 
+    const handleEnterpriseRetry = async (eventId) => {
+        setRetryingEnterpriseId(eventId);
+        try {
+            await retryOneCEnterpriseEvent(eventId);
+            message.success('Ошибка подготовки снята; документ снова доступен автоотправке');
+            await loadStatus();
+        } catch (err) {
+            message.error(err?.response?.data?.detail || 'Не удалось повторить подготовку');
+        } finally {
+            setRetryingEnterpriseId(null);
+        }
+    };
+
+    const handleHistoryAudit = async () => {
+        setHistoryLoading(true);
+        try {
+            const { data } = await getOneCEnterpriseHistoryAudit();
+            setHistoryAudit(data);
+        } catch (err) {
+            message.error(err?.response?.data?.detail || 'Не удалось проверить историю');
+        } finally {
+            setHistoryLoading(false);
+        }
+    };
+
+    const handleHistoryBackfill = async () => {
+        setHistoryBackfilling(true);
+        try {
+            const { data } = await backfillOneCEnterpriseHistory(50);
+            message.success(`Подготовлено документов: ${data.count}`);
+            await Promise.all([handleHistoryAudit(), loadStatus()]);
+        } catch (err) {
+            message.error(err?.response?.data?.detail || 'Не удалось подготовить историю');
+        } finally {
+            setHistoryBackfilling(false);
+        }
+    };
+
     const eventColumns = [
         {
             title: 'Создано',
@@ -233,12 +282,29 @@ const OneCExchangePage = () => {
             ),
         },
         {
-            title: 'Статус',
+            title: 'Обмен с сайтом / JSON',
             dataIndex: 'status',
             width: 135,
             render: (value) => {
                 const meta = EVENT_STATUS[value] || { label: value };
                 return <Tag color={meta.color}>{meta.label}</Tag>;
+            },
+        },
+        {
+            title: 'EnterpriseData',
+            key: 'enterprise',
+            width: 175,
+            render: (_, row) => {
+                if (row.ed_last_error) {
+                    return <Tooltip title={row.ed_last_error}><Tag color="red">Ошибка подготовки</Tag></Tooltip>;
+                }
+                if (row.ed_transport_confirmed_at) {
+                    return <Tooltip title="УНФ прочитала сообщение; проведение документа этим не подтверждено"><Tag color="cyan">Прочитано №{row.ed_message_no}</Tag></Tooltip>;
+                }
+                if (row.ed_message_no) {
+                    return <Tag color="blue">Ждёт чтения №{row.ed_message_no}</Tag>;
+                }
+                return <Text type="secondary">Не отправлено</Text>;
             },
         },
         {
@@ -259,7 +325,7 @@ const OneCExchangePage = () => {
             width: 110,
             render: (_, row) => (
                 <Space size={0}>
-                    {row.event_type === 'posted' && ['shipment', 'supplier_receipt'].includes(row.entity_type) && (
+                    {row.event_type === 'posted' && !row.ed_message_no && ['shipment', 'supplier_receipt'].includes(row.entity_type) && (
                         <Popconfirm
                             title="Отправить этот документ в тестовую УНФ?"
                             description="Файл будет размещён на FTP. Затем запустите синхронизацию в УНФ и проверьте результат."
@@ -275,6 +341,13 @@ const OneCExchangePage = () => {
                             <Button type="text" icon={<RetweetOutlined />}
                                 loading={retryingEventId === row.id}
                                 onClick={() => handleRetryEvent(row.id)} />
+                        </Tooltip>
+                    )}
+                    {row.ed_last_error && (
+                        <Tooltip title="Повторить подготовку EnterpriseData после исправления данных">
+                            <Button type="text" icon={<ReloadOutlined />}
+                                loading={retryingEnterpriseId === row.id}
+                                onClick={() => handleEnterpriseRetry(row.id)} />
                         </Tooltip>
                     )}
                 </Space>
@@ -366,11 +439,14 @@ const OneCExchangePage = () => {
         <div style={{ margin: 16 }}>
             <Space direction="vertical" size="large" style={{ width: '100%' }}>
                 <Card title="1С:Управление нашей фирмой — EnterpriseData">
-                    <Alert showIcon type="warning"
-                        message="Автоматическая передача документов в УНФ ещё не подключена"
-                        description="FTP-канал сейчас обрабатывает только служебные сообщения. Тестовая УНФ не принимает корректировки реализации через EnterpriseData; для УКД проверяем штатный маршрут ЭДО. Очередь JSON ниже сама не создаёт документы в УНФ." />
+                    <Alert showIcon type={enterpriseAutoStatus?.config?.enabled ? 'info' : 'warning'}
+                        message={enterpriseAutoStatus?.config?.enabled ? 'Автоотправка EnterpriseData включена' : 'Автоотправка EnterpriseData выключена до подготовки истории'}
+                        description="Подтверждение чтения сообщения не означает проведения документа в УНФ. Исторические остатки и документы переносятся отдельно; корректировки реализации эта УНФ через FTP не принимает." />
                     <Descriptions size="small" column={1} style={{ marginTop: 16 }}
                         items={[
+                            { key: 'auto', label: 'Автоотправка', children: enterpriseAutoStatus?.config?.enabled ? 'Включена' : 'Выключена' },
+                            { key: 'autoTypes', label: 'Типы автоотправки', children: [enterpriseAutoStatus?.config?.send_receipts && 'Поступления', enterpriseAutoStatus?.config?.send_shipments && 'Реализации'].filter(Boolean).join(', ') || 'Не выбраны' },
+                            { key: 'autoStart', label: 'События начиная с', children: enterpriseAutoStatus?.config?.first_event_id ?? 'Не задано' },
                             { key: 'directory', label: 'Каталог обмена', children: enterpriseStatus?.directory_exists ? 'Доступен' : 'Не найден или статус недоступен' },
                             { key: 'incoming', label: 'Входящих сообщений', children: enterpriseStatus?.incoming_files?.length ?? '—' },
                             { key: 'sent', label: 'Номер нашего сообщения', children: enterpriseStatus?.sent_no ?? '—' },
@@ -401,6 +477,34 @@ const OneCExchangePage = () => {
                         <Button disabled={!receiptIdToPrepare} loading={preparingReceipt}
                             onClick={handlePrepareReceipt}>Добавить в очередь</Button>
                     </Space>
+                </Card>
+                <Card title="Перенос истории в УНФ">
+                    <Space wrap>
+                        <Button loading={historyLoading} onClick={handleHistoryAudit}>Проверить историю</Button>
+                        <Popconfirm
+                            title="Подготовить 50 исторических документов?"
+                            description="Создаст события EnterpriseData без отправки в УНФ. Очередь CommerceML не затрагивается."
+                            onConfirm={handleHistoryBackfill}
+                        >
+                            <Button loading={historyBackfilling}
+                                disabled={enterpriseAutoStatus?.config?.enabled}>Подготовить следующую партию</Button>
+                        </Popconfirm>
+                    </Space>
+                    {historyAudit && (
+                        <Descriptions size="small" column={1} style={{ marginTop: 16 }}
+                            items={[
+                                { key: 'receipts', label: 'Проведённые поступления', children: `${historyAudit.posted_receipts?.count ?? 0}; без события: ${historyAudit.posted_receipts?.without_event ?? 0}` },
+                                { key: 'shipments', label: 'Проведённые реализации', children: `${historyAudit.posted_shipments?.count ?? 0}; без события: ${historyAudit.posted_shipments?.without_event ?? 0}` },
+                                { key: 'dates', label: 'Период', children: `${historyAudit.posted_receipts?.first_date || '—'} — ${historyAudit.posted_shipments?.last_date || '—'}` },
+                                { key: 'contracts', label: 'Поставщики без договора УНФ', children: historyAudit.providers_missing_contract?.length ?? 0 },
+                            ]} />
+                    )}
+                    {(historyAudit?.providers_missing_contract || []).length > 0 && (
+                        <Paragraph type="warning">
+                            Нет договора: {historyAudit.providers_missing_contract.slice(0, 10).map((item) => `${item.name} (${item.posted_receipts})`).join(', ')}
+                            {historyAudit.providers_missing_contract.length > 10 ? '…' : ''}
+                        </Paragraph>
+                    )}
                 </Card>
                 <Card
                     title="Отдельный канал: «Обмен с сайтом» (CommerceML)"

@@ -6,6 +6,21 @@ export const getOneCStatus = () =>
 export const getOneCEnterpriseDataStatus = () =>
     api.get('/1c/enterprise-data/status');
 
+export const getOneCEnterpriseAutoStatus = () =>
+    api.get('/1c/enterprise-data/auto');
+
+export const updateOneCEnterpriseAuto = (data) =>
+    api.put('/1c/enterprise-data/auto', data);
+
+export const retryOneCEnterpriseEvent = (eventId) =>
+    api.post(`/1c/enterprise-data/retry/${eventId}`);
+
+export const getOneCEnterpriseHistoryAudit = () =>
+    api.get('/1c/enterprise-data/history/audit');
+
+export const backfillOneCEnterpriseHistory = (limit = 50) =>
+    api.post('/1c/enterprise-data/history/backfill', null, { params: { limit } });
+
 export const sendOneCEnterpriseDataEvent = (eventId) =>
     api.post(`/1c/enterprise-data/send/${eventId}`);
 
