@@ -86,7 +86,7 @@ const InventoryScanPage = () => {
         if (!code) return;
         if (!sessionId) { message.warning('Выберите сеанс инвентаризации'); scanFail(); return; }
         try {
-            const { data } = await resolveScanCode(code);
+            const { data } = await resolveScanCode(code, 'inventory');
             if (data.kind === 'location') {
                 if (pendingRef.current.product) await flush();
                 setLocation({ storage_location_id: data.storage_location_id, name: data.name });

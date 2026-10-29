@@ -9,6 +9,7 @@ import {
 } from '../api/inventory';
 import { useBarcodeScanner } from '../utils/useBarcodeScanner';
 import { scanFail, scanOk } from '../utils/scanFeedback';
+import { similarity } from '../utils/scanCatalog';
 import CameraScanModal from './CameraScanModal';
 
 const { Text, Title } = Typography;
@@ -123,7 +124,7 @@ const ReceivingScanPage = () => {
         if (!code) return;
         if (!state.current.plan) { message.warning('Выберите поступление'); scanFail(); return; }
         try {
-            const { data } = await resolveScanCode(code);
+            const { data } = await resolveScanCode(code, 'receiving');
             if (data.kind === 'location' && state.current.mode === 'place') {
                 if (state.current.product) await place();
                 setLocation({ storage_location_id: data.storage_location_id, name: data.name });
@@ -202,8 +203,9 @@ const ReceivingScanPage = () => {
         <CameraScanModal open={cameraOpen} onClose={() => setCameraOpen(false)} onScan={onScan} />
         {unknown && plan && (() => {
             const bindable = plan.lines.filter((line) => line.autopart_id);
-            const open = bindable.filter((line) => line.accepted_qty < line.document_qty);
-            const shown = showAll || !open.length ? bindable : open;
+            const rank = (list) => [...list].sort((a, b) => similarity(unknown, b.oem) - similarity(unknown, a.oem));
+            const open = rank(bindable.filter((line) => line.accepted_qty < line.document_qty));
+            const shown = showAll || !open.length ? rank(bindable) : open;
             return <Card size="small" style={{ marginBottom: 12 }}
                 title={`Код ${unknown} не найден. Какой это товар?`}
                 extra={<Button size="small" onClick={() => setUnknown(null)}>Отмена</Button>}>

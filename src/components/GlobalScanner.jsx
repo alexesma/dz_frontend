@@ -1,9 +1,12 @@
 import React, { useCallback, useState } from 'react';
 import { Button, Descriptions, Modal, Select, message } from 'antd';
+import { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { searchAutopartsByOem } from '../api/autoparts';
 import { bindScanCode, resolveScanCode } from '../api/inventory';
+import { ensureCatalog } from '../utils/scanCatalog';
+import { scanFail, scanOk } from '../utils/scanFeedback';
 import { useBarcodeScanner } from '../utils/useBarcodeScanner';
 
 const KIND_TITLES = {
@@ -21,6 +24,9 @@ const GlobalScanner = () => {
     const navigate = useNavigate();
     const { pathname } = useLocation();
     const [result, setResult] = useState(null);
+
+    // каталог для мгновенного распознавания грузим в фоне после входа
+    useEffect(() => { void ensureCatalog(); }, []);
     const [unknown, setUnknown] = useState(null);
 
     const search = async (q) => {
@@ -47,15 +53,17 @@ const GlobalScanner = () => {
 
     const onScan = useCallback(async (code) => {
         try {
-            const response = await resolveScanCode(code);
+            const response = await resolveScanCode(code, 'global');
             if (response.data.kind === 'autopart_choice') {
                 setResult({ code, ...response.data });
             } else {
                 // скан сразу ведёт в карточку найденного объекта
+                scanOk();
                 message.success(response.data.title);
                 navigate(response.data.route);
             }
         } catch (error) {
+            scanFail();
             if (error?.response?.status === 404) setUnknown({ code, options: [], picked: null });
             else message.warning(error?.response?.data?.detail || 'Не удалось распознать код');
         }

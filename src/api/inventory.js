@@ -1,5 +1,6 @@
 import api from '../api';
 import { normalizeScanCode } from '../utils/scanCode';
+import { rememberAlias, resolveLocal } from '../utils/scanCatalog';
 
 // ── StockByLocation ───────────────────────────────────────────────────────────
 
@@ -355,8 +356,27 @@ export const bulkSyncDocuments = (data) =>
 export const scanCountInventoryItem = (sessionId, data) =>
     api.post(`/inventory/sessions/${sessionId}/scan-count/`, data);
 
-export const resolveScanCode = (code) =>
-    api.get('/scan/resolve', { params: { code: normalizeScanCode(code) } });
+const pendingScanEvents = [];
+let scanLogTimer = null;
+
+const flushScanLog = () => {
+    scanLogTimer = null;
+    const events = pendingScanEvents.splice(0, 200);
+    if (events.length) api.post('/scan/log', { events }).catch(() => {});
+};
+
+// Сначала локальный каталог (мгновенно), иначе сервер. Локальные сканы
+// отправляются в журнал пачкой, чтобы журнал был полным.
+export const resolveScanCode = async (code, context) => {
+    const normalized = normalizeScanCode(code);
+    const local = resolveLocal(normalized);
+    if (local) {
+        pendingScanEvents.push({ code: normalized.slice(0, 128), kind: local.kind, found: true, context });
+        if (!scanLogTimer) scanLogTimer = setTimeout(flushScanLog, 5000);
+        return { data: local };
+    }
+    return api.get('/scan/resolve', { params: { code: normalized, context } });
+};
 
 export const getReceivingPlan = (receiptId) =>
     api.get(`/receiving-scan/receipts/${receiptId}`);
@@ -367,5 +387,9 @@ export const countReceivedItem = (receiptId, data) =>
 export const placeReceivedItem = (receiptId, data) =>
     api.post(`/receiving-scan/receipts/${receiptId}/place`, data);
 
-export const bindScanCode = (code, autopartId) =>
-    api.post('/scan/alias', { code: normalizeScanCode(code), autopart_id: autopartId });
+export const bindScanCode = async (code, autopartId) => {
+    const normalized = normalizeScanCode(code);
+    const response = await api.post('/scan/alias', { code: normalized, autopart_id: autopartId });
+    rememberAlias(normalized, autopartId);
+    return response;
+};

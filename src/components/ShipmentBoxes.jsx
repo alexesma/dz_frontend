@@ -15,6 +15,7 @@ import {
 import { buildLabelPrintDocument, escapeHtml } from '../utils/labelPrint';
 import { buildCustomLabelDocument, usePrintForm } from '../utils/printFormTemplates';
 import { usePrintDelivery } from '../utils/usePrintDelivery';
+import { scanFail, scanOk } from '../utils/scanFeedback';
 import { useBarcodeScanner } from '../utils/useBarcodeScanner';
 import CameraScanModal from './CameraScanModal';
 
@@ -68,8 +69,10 @@ const ShipmentBoxes = ({ shipment }) => {
         try {
             const response = await scanIntoAssemblyBox(shipment.id, targetBox.id, code);
             await load();
+            scanOk();
             message.success(`Коробка ${targetBox.number}: +${response.data.added} шт.`);
         } catch (error) {
+            scanFail();
             message.error(error?.response?.data?.detail || 'Не удалось добавить по скану');
         }
     };

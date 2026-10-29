@@ -209,6 +209,7 @@ const Sidebar = () => {
         if (path.startsWith('/inbox')) return 'inbox';
         if (path.startsWith('/warehouse/stock-documents')) return 'warehouse-stock-documents';
         if (path.startsWith('/warehouse/storage')) return 'warehouse-storage';
+        if (path.startsWith('/warehouse/scan-log')) return 'warehouse-scan-log';
         if (path.startsWith('/warehouse/scanner-test')) return 'warehouse-scanner-test';
         if (path.startsWith('/warehouse/receiving-scan')) return 'warehouse-receiving-scan';
         if (path.startsWith('/warehouse/inventory-scan')) return 'warehouse-inventory-scan';
@@ -377,6 +378,9 @@ const Sidebar = () => {
                 </Menu.Item>
                 <Menu.Item key="warehouse-inventory" icon={<AuditOutlined />}>
                     <Link to="/warehouse/inventory">Инвентаризация</Link>
+                </Menu.Item>
+                <Menu.Item key="warehouse-scan-log" icon={<AuditOutlined />}>
+                    <Link to="/warehouse/scan-log">Журнал сканов</Link>
                 </Menu.Item>
                 <Menu.Item key="warehouse-scanner-test" icon={<AuditOutlined />}>
                     <Link to="/warehouse/scanner-test">Проверка сканера</Link>
