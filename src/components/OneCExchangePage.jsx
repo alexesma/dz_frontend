@@ -31,6 +31,7 @@ import dayjs from 'dayjs';
 import {
     downloadOneCIncoming,
     downloadOneCExport,
+    dispatchOneCEnterpriseNext,
     backfillOneCEnterpriseHistory,
     getOneCEnterpriseHistoryAudit,
     getOneCEnterpriseDataStatus,
@@ -78,6 +79,7 @@ const OneCExchangePage = () => {
     const [enterpriseAutoStatus, setEnterpriseAutoStatus] = useState(null);
     const [autoBatchSize, setAutoBatchSize] = useState(1);
     const [autoSettingsSaving, setAutoSettingsSaving] = useState(false);
+    const [dispatchingEnterprise, setDispatchingEnterprise] = useState(false);
     const [historyAudit, setHistoryAudit] = useState(null);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [historyBackfilling, setHistoryBackfilling] = useState(false);
@@ -284,6 +286,23 @@ const OneCExchangePage = () => {
             message.error(err?.response?.data?.detail || 'Не удалось сохранить настройки обмена');
         } finally {
             setAutoSettingsSaving(false);
+        }
+    };
+
+    const handleDispatchEnterprise = async () => {
+        setDispatchingEnterprise(true);
+        try {
+            const { data } = await dispatchOneCEnterpriseNext();
+            if (data.sent_event_ids?.length) {
+                message.success(`Отправлено сообщение №${data.message_no}: ${data.sent_event_ids.length} документ(а)`);
+            } else {
+                message.info(data.note || 'Новых документов для отправки нет');
+            }
+            await loadStatus();
+        } catch (err) {
+            message.error(err?.response?.data?.detail || 'Не удалось отправить следующую партию');
+        } finally {
+            setDispatchingEnterprise(false);
         }
     };
 
@@ -507,6 +526,11 @@ const OneCExchangePage = () => {
                                 </Button>
                             </Popconfirm>
                         )}
+                        <Button loading={dispatchingEnterprise}
+                            disabled={!enterpriseAutoStatus?.config?.enabled}
+                            onClick={handleDispatchEnterprise}>
+                            Отправить следующую партию сейчас
+                        </Button>
                     </Space>
                     {(enterpriseStatus?.incoming_messages || []).map((item) => (
                         <Alert key={item.file} showIcon type={item.error ? 'error' : 'info'}

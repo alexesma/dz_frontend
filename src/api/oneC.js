@@ -12,6 +12,9 @@ export const getOneCEnterpriseAutoStatus = () =>
 export const updateOneCEnterpriseAuto = (data) =>
     api.put('/1c/enterprise-data/auto', data);
 
+export const dispatchOneCEnterpriseNext = () =>
+    api.post('/1c/enterprise-data/dispatch-next');
+
 export const retryOneCEnterpriseEvent = (eventId) =>
     api.post(`/1c/enterprise-data/retry/${eventId}`);
 
