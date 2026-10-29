@@ -42,6 +42,13 @@ export const useBarcodeScanner = (onScan, enabled = true, { fallback = false } =
                 }
                 return;
             }
+            // Tab у части оригинальных кодов (Toyota) — разделитель внутри скана;
+            // без preventDefault он увёл бы фокус со страницы.
+            if (event.key === 'Tab' && buffer) {
+                event.preventDefault();
+                buffer += '\t';
+                return;
+            }
             if (event.key.length === 1) buffer += event.key;
         };
         window.addEventListener('keydown', onKeyDown, true);
