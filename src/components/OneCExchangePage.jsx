@@ -45,6 +45,7 @@ import {
     retryOneCEvent,
     retryOneCEnterpriseEvent,
     sendOneCEnterpriseDataEvent,
+    updateOneCEnterpriseAuto,
 } from '../api/oneC';
 
 const { Text, Paragraph } = Typography;
@@ -75,6 +76,8 @@ const OneCExchangePage = () => {
     const [status, setStatus] = useState(null);
     const [enterpriseStatus, setEnterpriseStatus] = useState(null);
     const [enterpriseAutoStatus, setEnterpriseAutoStatus] = useState(null);
+    const [autoBatchSize, setAutoBatchSize] = useState(1);
+    const [autoSettingsSaving, setAutoSettingsSaving] = useState(false);
     const [historyAudit, setHistoryAudit] = useState(null);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [historyBackfilling, setHistoryBackfilling] = useState(false);
@@ -110,6 +113,7 @@ const OneCExchangePage = () => {
             setStatus(statusResponse.data || null);
             setEnterpriseStatus(enterpriseResponse.data || null);
             setEnterpriseAutoStatus(autoResponse.data || null);
+            setAutoBatchSize(autoResponse.data?.config?.batch_size || 1);
             setEvents(eventsResponse.data?.items || []);
             setBatches(batchesResponse.data?.items || []);
             setSalesSummary(salesResponse.data || null);
@@ -260,6 +264,26 @@ const OneCExchangePage = () => {
             message.error(err?.response?.data?.detail || 'Не удалось подготовить историю');
         } finally {
             setHistoryBackfilling(false);
+        }
+    };
+
+    const handleAutoSettings = async (enabled) => {
+        setAutoSettingsSaving(true);
+        try {
+            await updateOneCEnterpriseAuto({
+                enabled,
+                send_receipts: true,
+                send_shipments: enabled && !enterpriseAutoStatus?.config?.enabled
+                    ? false : Boolean(enterpriseAutoStatus?.config?.send_shipments),
+                include_history: enabled && !enterpriseAutoStatus?.config?.enabled,
+                batch_size: autoBatchSize,
+            });
+            message.success(enabled ? 'Отправка исторических поступлений включена' : 'Настройки обмена сохранены');
+            await loadStatus();
+        } catch (err) {
+            message.error(err?.response?.data?.detail || 'Не удалось сохранить настройки обмена');
+        } finally {
+            setAutoSettingsSaving(false);
         }
     };
 
@@ -446,6 +470,7 @@ const OneCExchangePage = () => {
                         items={[
                             { key: 'auto', label: 'Автоотправка', children: enterpriseAutoStatus?.config?.enabled ? 'Включена' : 'Выключена' },
                             { key: 'autoTypes', label: 'Типы автоотправки', children: [enterpriseAutoStatus?.config?.send_receipts && 'Поступления', enterpriseAutoStatus?.config?.send_shipments && 'Реализации'].filter(Boolean).join(', ') || 'Не выбраны' },
+                            { key: 'autoBatch', label: 'Документов в сообщении', children: enterpriseAutoStatus?.config?.batch_size || 1 },
                             { key: 'autoStart', label: 'События начиная с', children: enterpriseAutoStatus?.config?.first_event_id ?? 'Не задано' },
                             { key: 'directory', label: 'Каталог обмена', children: enterpriseStatus?.directory_exists ? 'Доступен' : 'Не найден или статус недоступен' },
                             { key: 'incoming', label: 'Входящих сообщений', children: enterpriseStatus?.incoming_files?.length ?? '—' },
@@ -457,6 +482,32 @@ const OneCExchangePage = () => {
                             { key: 'sending', label: 'Согласованы типы на отправку', children: (enterpriseStatus?.negotiated_sending || []).join(', ') || 'Пока нет подтверждения узла' },
                             { key: 'corrections', label: 'УНФ принимает корректировки через FTP', children: enterpriseStatus?.peer_receives_corrections === true ? 'Да' : enterpriseStatus?.peer_receives_corrections === false ? 'Нет' : 'Неизвестно' },
                         ]} />
+                    <Space wrap style={{ marginTop: 12 }}>
+                        <Text>Размер партии:</Text>
+                        <InputNumber min={1} max={50} precision={0} value={autoBatchSize}
+                            onChange={(value) => setAutoBatchSize(value || 1)} />
+                        <Button loading={autoSettingsSaving}
+                            onClick={() => handleAutoSettings(Boolean(enterpriseAutoStatus?.config?.enabled))}>
+                            Сохранить размер партии
+                        </Button>
+                        {enterpriseAutoStatus?.config?.enabled ? (
+                            <Button danger loading={autoSettingsSaving} onClick={() => handleAutoSettings(false)}>
+                                Остановить автоотправку
+                            </Button>
+                        ) : (
+                            <Popconfirm
+                                title="Отправить исторические поступления в тестовую УНФ?"
+                                description="Документы будут отправляться партиями через FTP. Проведение в УНФ нужно проверять отдельно."
+                                onConfirm={() => { void handleAutoSettings(true); }}
+                            >
+                                <Button type="primary" loading={autoSettingsSaving}
+                                    disabled={!historyAudit || historyAudit.posted_receipts?.without_event > 0 ||
+                                        historyAudit.providers_missing_contract?.length > 0}>
+                                    Включить перенос поступлений
+                                </Button>
+                            </Popconfirm>
+                        )}
+                    </Space>
                     {(enterpriseStatus?.incoming_messages || []).map((item) => (
                         <Alert key={item.file} showIcon type={item.error ? 'error' : 'info'}
                             style={{ marginTop: 8 }}
@@ -484,7 +535,7 @@ const OneCExchangePage = () => {
                         <Popconfirm
                             title="Подготовить 50 исторических документов?"
                             description="Создаст события EnterpriseData без отправки в УНФ. Очередь CommerceML не затрагивается."
-                            onConfirm={handleHistoryBackfill}
+                            onConfirm={() => { void handleHistoryBackfill(); }}
                         >
                             <Button loading={historyBackfilling}
                                 disabled={enterpriseAutoStatus?.config?.enabled}>Подготовить следующую партию</Button>
