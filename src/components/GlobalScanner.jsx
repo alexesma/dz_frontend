@@ -60,8 +60,10 @@ const GlobalScanner = () => {
             else message.warning(error?.response?.data?.detail || 'Не удалось распознать код');
         }
     }, [navigate]);
-    // страница складских заказов сама принимает сканы в своём поле
-    useBarcodeScanner(onScan, !pathname.startsWith('/customer-orders/stock/scan'), { fallback: true });
+    // эти страницы сами принимают сканы, глобальный переход им мешал бы
+    const ownsScan = pathname.startsWith('/customer-orders/stock/scan')
+        || pathname.startsWith('/warehouse/scanner-test');
+    useBarcodeScanner(onScan, !ownsScan, { fallback: true });
 
     return <><Modal open={!!unknown} title="Код не найден"
         okText="Привязать" okButtonProps={{ disabled: !unknown?.picked }}

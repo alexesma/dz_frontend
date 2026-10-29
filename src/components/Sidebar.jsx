@@ -75,6 +75,7 @@ const NAVIGATION_SEARCH_ITEMS = [
     { path: '/customers', title: 'Клиенты', section: 'Контрагенты', keywords: 'покупатели опт розница инн реквизиты объединение' },
     { path: '/substitutions', title: 'Подмены', section: 'Контрагенты', keywords: 'замена клиент поставщик' },
     { path: '/warehouse/storage', title: 'Склады и ячейки', section: 'Склад', keywords: 'места хранения адрес стеллаж' },
+    { path: '/warehouse/scanner-test', title: 'Проверка сканера', section: 'Склад', keywords: 'сканер настройка раскладка штрихкод' },
     { path: '/warehouse/receiving-scan', title: 'Приёмка сканером', section: 'Склад', keywords: 'сканер штрихкод поступление размещение' },
     { path: '/warehouse/inventory-scan', title: 'Инвентаризация сканером', section: 'Склад', keywords: 'сканер штрихкод пересчет' },
     { path: '/warehouse/inventory', title: 'Инвентаризация', section: 'Склад', keywords: 'пересчет остатки ревизия' },
@@ -208,6 +209,7 @@ const Sidebar = () => {
         if (path.startsWith('/inbox')) return 'inbox';
         if (path.startsWith('/warehouse/stock-documents')) return 'warehouse-stock-documents';
         if (path.startsWith('/warehouse/storage')) return 'warehouse-storage';
+        if (path.startsWith('/warehouse/scanner-test')) return 'warehouse-scanner-test';
         if (path.startsWith('/warehouse/receiving-scan')) return 'warehouse-receiving-scan';
         if (path.startsWith('/warehouse/inventory-scan')) return 'warehouse-inventory-scan';
         if (path.startsWith('/warehouse/inventory')) return 'warehouse-inventory';
@@ -375,6 +377,9 @@ const Sidebar = () => {
                 </Menu.Item>
                 <Menu.Item key="warehouse-inventory" icon={<AuditOutlined />}>
                     <Link to="/warehouse/inventory">Инвентаризация</Link>
+                </Menu.Item>
+                <Menu.Item key="warehouse-scanner-test" icon={<AuditOutlined />}>
+                    <Link to="/warehouse/scanner-test">Проверка сканера</Link>
                 </Menu.Item>
                 <Menu.Item key="warehouse-receiving-scan" icon={<AuditOutlined />}>
                     <Link to="/warehouse/receiving-scan">Приёмка сканером</Link>
