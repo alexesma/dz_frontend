@@ -96,7 +96,7 @@ const ReceivingScanPage = () => {
                 autopart_id: part.autopart_id, storage_location_id: spot.storage_location_id, quantity: qty,
             });
             patchLine(part.autopart_id, () => ({ placed_qty: data.line.placed_qty }));
-            message.success(`${spot.name}: +${qty} шт.`);
+            message.success(`${spot.name}: ${part.title} +${qty} шт.`);
         } catch (error) {
             scanFail();
             message.error(error?.response?.data?.detail || 'Не удалось разместить');
@@ -106,7 +106,13 @@ const ReceivingScanPage = () => {
     const pickProduct = useCallback(async (autopartId, title) => {
         const line = state.current.plan?.lines.find((row) => row.autopart_id === autopartId);
         if (!line) { message.warning(`${title}: этого товара нет в документе`); scanFail(); return; }
-        if (state.current.mode === 'count') { addCount(line); scanOk(); return; }
+        if (state.current.mode === 'count') {
+            addCount(line);
+            scanOk();
+            message.open({ key: 'recv-count', type: 'info', duration: 1.5,
+                content: `${line.brand || ''} ${line.oem || ''}: принято ${line.accepted_qty + 1} из ${line.document_qty}` });
+            return;
+        }
         if (!state.current.location) { message.warning('Сначала отсканируйте место'); scanFail(); return; }
         if (state.current.product?.autopart_id === autopartId) {
             setQuantity((value) => value + 1);

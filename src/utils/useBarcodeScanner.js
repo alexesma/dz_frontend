@@ -33,11 +33,31 @@ export const useBarcodeScanner = (onScan, enabled = true, { fallback = false } =
         let buffer = '';
         let lastAt = 0;
         let startedAt = 0;
+        let burstField = null;
+        let burstValue = '';
+        // Глобальный сканер работает и когда курсор стоит в поле ввода (например в поиске):
+        // после распознавания возвращаем в поле то, что было до скана.
+        const restoreField = () => {
+            if (!burstField || !('value' in burstField)) return;
+            const proto = Object.getPrototypeOf(burstField);
+            const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+            if (setter) {
+                setter.call(burstField, burstValue);
+                burstField.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        };
         const onKeyDown = (event) => {
             if (fallback && pageScanners > 0) return;
-            if (event.ctrlKey || event.metaKey || event.altKey || isTypingTarget(event.target)) return;
+            if (event.ctrlKey || event.metaKey || event.altKey) return;
+            const typing = isTypingTarget(event.target);
+            if (typing && !fallback) return;
             const now = Date.now();
-            if (now - lastAt > MAX_KEY_GAP_MS) { buffer = ''; startedAt = now; }
+            if (now - lastAt > MAX_KEY_GAP_MS) {
+                buffer = '';
+                startedAt = now;
+                burstField = typing ? event.target : null;
+                burstValue = typing && 'value' in event.target ? event.target.value : '';
+            }
             lastAt = now;
             if (event.key === 'Enter') {
                 const code = normalizeScanCode(buffer);
@@ -46,8 +66,11 @@ export const useBarcodeScanner = (onScan, enabled = true, { fallback = false } =
                 buffer = '';
                 if (code.length >= MIN_CODE_LENGTH && avgGap <= MAX_AVG_GAP_MS) {
                     event.preventDefault();
+                    event.stopPropagation();
+                    restoreField();
                     handlerRef.current?.(code);
                 }
+                burstField = null;
                 return;
             }
             // Tab у части оригинальных кодов (Toyota) — разделитель внутри скана;

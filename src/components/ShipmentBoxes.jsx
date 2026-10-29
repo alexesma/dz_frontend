@@ -70,7 +70,7 @@ const ShipmentBoxes = ({ shipment }) => {
             const response = await scanIntoAssemblyBox(shipment.id, targetBox.id, code);
             await load();
             scanOk();
-            message.success(`Коробка ${targetBox.number}: +${response.data.added} шт.`);
+            message.success(`Коробка ${targetBox.number}: ${response.data.title} +${response.data.added} шт.`);
         } catch (error) {
             scanFail();
             message.error(error?.response?.data?.detail || 'Не удалось добавить по скану');

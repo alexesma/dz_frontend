@@ -153,7 +153,7 @@ const RequireAdmin = ({ children }) => {
     if (user.role !== 'admin') {
         return <Navigate to="/" replace />;
     }
-    return children;
+    return <>{children}<GlobalScanner /></>;
 };
 
 const RequireReclamation = ({ children }) => {
@@ -170,7 +170,7 @@ const RequireReclamation = ({ children }) => {
     if (!['admin', 'reclamation'].includes(user.role)) {
         return <Navigate to="/" replace />;
     }
-    return children;
+    return <>{children}<GlobalScanner /></>;
 };
 
 const AppRoutes = () => (
