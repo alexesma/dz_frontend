@@ -80,6 +80,8 @@ const OneCExchangePage = () => {
     const [autoBatchSize, setAutoBatchSize] = useState(1);
     const [autoSettingsSaving, setAutoSettingsSaving] = useState(false);
     const [dispatchingEnterprise, setDispatchingEnterprise] = useState(false);
+    const [dispatchResult, setDispatchResult] = useState(null);
+    const [enterpriseErrors, setEnterpriseErrors] = useState([]);
     const [historyAudit, setHistoryAudit] = useState(null);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [historyBackfilling, setHistoryBackfilling] = useState(false);
@@ -103,12 +105,13 @@ const OneCExchangePage = () => {
     const loadStatus = useCallback(async () => {
         setStatusLoading(true);
         try {
-            const [statusResponse, enterpriseResponse, autoResponse, eventsResponse, batchesResponse, salesResponse] =
+            const [statusResponse, enterpriseResponse, autoResponse, eventsResponse, enterpriseErrorsResponse, batchesResponse, salesResponse] =
                 await Promise.all([
                     getOneCStatus(),
                     getOneCEnterpriseDataStatus().catch(() => ({ data: null })),
                     getOneCEnterpriseAutoStatus().catch(() => ({ data: null })),
                     getOneCEvents({ limit: 100 }),
+                    getOneCEvents({ limit: 100, enterprise_error: true }),
                     getOneCBatches({ limit: 50 }),
                     getSalesHistorySummary().catch(() => ({ data: null })),
                 ]);
@@ -117,6 +120,7 @@ const OneCExchangePage = () => {
             setEnterpriseAutoStatus(autoResponse.data || null);
             setAutoBatchSize(autoResponse.data?.config?.batch_size || 1);
             setEvents(eventsResponse.data?.items || []);
+            setEnterpriseErrors(enterpriseErrorsResponse.data?.items || []);
             setBatches(batchesResponse.data?.items || []);
             setSalesSummary(salesResponse.data || null);
         } catch (err) {
@@ -293,6 +297,7 @@ const OneCExchangePage = () => {
         setDispatchingEnterprise(true);
         try {
             const { data } = await dispatchOneCEnterpriseNext();
+            setDispatchResult(data);
             if (data.sent_event_ids?.length) {
                 message.success(`Отправлено сообщение №${data.message_no}: ${data.sent_event_ids.length} документ(а)`);
             } else {
@@ -300,6 +305,7 @@ const OneCExchangePage = () => {
             }
             await loadStatus();
         } catch (err) {
+            setDispatchResult({ note: err?.response?.data?.detail || 'Не удалось отправить следующую партию' });
             message.error(err?.response?.data?.detail || 'Не удалось отправить следующую партию');
         } finally {
             setDispatchingEnterprise(false);
@@ -532,6 +538,35 @@ const OneCExchangePage = () => {
                             Отправить следующую партию сейчас
                         </Button>
                     </Space>
+                    {dispatchResult && (
+                        <Alert showIcon style={{ marginTop: 12 }}
+                            type={dispatchResult.error_event_id ? 'error' : 'info'}
+                            message={dispatchResult.message_no
+                                ? `Отправлено сообщение №${dispatchResult.message_no}`
+                                : dispatchResult.error_event_id
+                                    ? `Ошибка подготовки события №${dispatchResult.error_event_id}`
+                                    : 'Результат ручного запуска'}
+                            description={dispatchResult.note || (
+                                dispatchResult.sent_event_ids?.length
+                                    ? `Документов: ${dispatchResult.sent_event_ids.length}`
+                                    : 'Новых документов нет'
+                            )} />
+                    )}
+                    {enterpriseErrors.length > 0 && (
+                        <Table size="small" style={{ marginTop: 12 }}
+                            rowKey="id" pagination={{ pageSize: 10 }}
+                            title={() => `Ошибки подготовки EnterpriseData: ${enterpriseErrors.length}`}
+                            dataSource={enterpriseErrors}
+                            columns={[
+                                { title: 'Событие', dataIndex: 'id' },
+                                { title: 'Документ', render: (_, row) => `${ENTITY_LABELS[row.entity_type] || row.entity_type} №${row.entity_id}` },
+                                { title: 'Причина', dataIndex: 'ed_last_error' },
+                                { title: '', render: (_, row) => (
+                                    <Button size="small" loading={retryingEnterpriseId === row.id}
+                                        onClick={() => handleEnterpriseRetry(row.id)}>Повторить после исправления</Button>
+                                ) },
+                            ]} />
+                    )}
                     {(enterpriseStatus?.incoming_messages || []).map((item) => (
                         <Alert key={item.file} showIcon type={item.error ? 'error' : 'info'}
                             style={{ marginTop: 8 }}
