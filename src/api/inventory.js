@@ -365,3 +365,6 @@ export const countReceivedItem = (receiptId, data) =>
 
 export const placeReceivedItem = (receiptId, data) =>
     api.post(`/receiving-scan/receipts/${receiptId}/place`, data);
+
+export const bindScanCode = (code, autopartId) =>
+    api.post('/scan/alias', { code, autopart_id: autopartId });

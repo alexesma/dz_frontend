@@ -5,7 +5,7 @@ import { useSearchParams } from 'react-router-dom';
 
 import { getSupplierReceipts } from '../api/customerOrders';
 import {
-    countReceivedItem, getReceivingPlan, placeReceivedItem, resolveScanCode,
+    bindScanCode, countReceivedItem, getReceivingPlan, placeReceivedItem, resolveScanCode,
 } from '../api/inventory';
 import { useBarcodeScanner } from '../utils/useBarcodeScanner';
 import { scanFail, scanOk } from '../utils/scanFeedback';
@@ -26,6 +26,8 @@ const ReceivingScanPage = () => {
     const [product, setProduct] = useState(null);
     const [quantity, setQuantity] = useState(0);
     const [choices, setChoices] = useState([]);
+    const [unknown, setUnknown] = useState(null);
+    const [showAll, setShowAll] = useState(false);
     const [cameraOpen, setCameraOpen] = useState(false);
     const [manual, setManual] = useState('');
     const pending = useRef({});
@@ -140,12 +142,29 @@ const ReceivingScanPage = () => {
             }
         } catch (error) {
             scanFail();
-            message.warning(error?.response?.status === 404 ? `Код ${code} не найден` : 'Не удалось распознать код');
+            if (error?.response?.status !== 404) { message.warning('Не удалось распознать код'); return; }
+            if (state.current.mode === 'place' && !state.current.location) {
+                message.warning(`Код ${code} не найден. Если это место, проверьте название на этикетке.`);
+            } else {
+                setShowAll(false);
+                setUnknown(code);
+            }
         }
     }, [place, pickProduct]);
 
     useBarcodeScanner(onScan, true);
     useEffect(() => () => clearTimeout(timer.current), []);
+    const bindUnknown = async (line) => {
+        const code = unknown;
+        try {
+            await bindScanCode(code, line.autopart_id);
+            setUnknown(null);
+            message.success('Код привязан к товару');
+            await pickProduct(line.autopart_id, `${line.brand || ''} ${line.oem || ''}`.trim());
+        } catch (error) {
+            message.error(error?.response?.data?.detail || 'Не удалось привязать код');
+        }
+    };
     const submitManual = () => { void onScan(manual); setManual(''); };
 
     return <div style={{ maxWidth: 900, margin: '0 auto', padding: 12 }}>
@@ -181,6 +200,24 @@ const ReceivingScanPage = () => {
             <Button icon={<CameraOutlined />} onClick={() => setCameraOpen(true)} />
         </Space.Compact>
         <CameraScanModal open={cameraOpen} onClose={() => setCameraOpen(false)} onScan={onScan} />
+        {unknown && plan && (() => {
+            const bindable = plan.lines.filter((line) => line.autopart_id);
+            const open = bindable.filter((line) => line.accepted_qty < line.document_qty);
+            const shown = showAll || !open.length ? bindable : open;
+            return <Card size="small" style={{ marginBottom: 12 }}
+                title={`Код ${unknown} не найден. Какой это товар?`}
+                extra={<Button size="small" onClick={() => setUnknown(null)}>Отмена</Button>}>
+                <Space direction="vertical" style={{ width: '100%' }}>
+                    {shown.map((line) => <Button key={line.autopart_id} block
+                        onClick={() => void bindUnknown(line)}>
+                        {line.brand} {line.oem} — {line.name} (принято {line.accepted_qty} из {line.document_qty})
+                    </Button>)}
+                    {!showAll && open.length > 0 && open.length < bindable.length &&
+                        <Button type="link" onClick={() => setShowAll(true)}>Показать все позиции документа</Button>}
+                    {!bindable.length && <Text type="secondary">В документе нет позиций с привязкой к номенклатуре</Text>}
+                </Space>
+            </Card>;
+        })()}
         {choices.length > 0 && <Card size="small" title="Выберите товар" style={{ marginBottom: 12 }}>
             <Space direction="vertical" style={{ width: '100%' }}>
                 {choices.map((option) => <Button key={option.autopart_id} block onClick={() => {
