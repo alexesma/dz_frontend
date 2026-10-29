@@ -1,4 +1,5 @@
 import api from '../api';
+import { normalizeScanCode } from '../utils/scanCode';
 
 // ── StockByLocation ───────────────────────────────────────────────────────────
 
@@ -355,7 +356,7 @@ export const scanCountInventoryItem = (sessionId, data) =>
     api.post(`/inventory/sessions/${sessionId}/scan-count/`, data);
 
 export const resolveScanCode = (code) =>
-    api.get('/scan/resolve', { params: { code } });
+    api.get('/scan/resolve', { params: { code: normalizeScanCode(code) } });
 
 export const getReceivingPlan = (receiptId) =>
     api.get(`/receiving-scan/receipts/${receiptId}`);
@@ -367,4 +368,4 @@ export const placeReceivedItem = (receiptId, data) =>
     api.post(`/receiving-scan/receipts/${receiptId}/place`, data);
 
 export const bindScanCode = (code, autopartId) =>
-    api.post('/scan/alias', { code, autopart_id: autopartId });
+    api.post('/scan/alias', { code: normalizeScanCode(code), autopart_id: autopartId });

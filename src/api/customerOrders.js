@@ -1,4 +1,5 @@
 import api from '../api.js';
+import { normalizeScanCode } from '../utils/scanCode';
 
 export const getStockOrders = (params) =>
     api.get('/customer-orders/stock/list', { params });
@@ -52,7 +53,7 @@ export const updateAssemblyBox = (documentId, boxId, items) =>
     api.put(`/customer-orders/assembly/realizations/${documentId}/boxes/${boxId}`, { items });
 
 export const scanIntoAssemblyBox = (documentId, boxId, code) =>
-    api.post(`/customer-orders/assembly/realizations/${documentId}/boxes/${boxId}/scan`, { code });
+    api.post(`/customer-orders/assembly/realizations/${documentId}/boxes/${boxId}/scan`, { code: normalizeScanCode(code) });
 
 export const sealAssemblyBox = (documentId, boxId) =>
     api.post(`/customer-orders/assembly/realizations/${documentId}/boxes/${boxId}/seal`);

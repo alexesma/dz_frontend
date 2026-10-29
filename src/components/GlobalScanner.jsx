@@ -1,9 +1,9 @@
 import React, { useCallback, useState } from 'react';
 import { Button, Descriptions, Modal, Select, message } from 'antd';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
-import api from '../api.js';
 import { searchAutopartsByOem } from '../api/autoparts';
+import { bindScanCode, resolveScanCode } from '../api/inventory';
 import { useBarcodeScanner } from '../utils/useBarcodeScanner';
 
 const KIND_TITLES = {
@@ -19,6 +19,7 @@ const KIND_TITLES = {
 // Универсальный поиск: скан в любом месте, где страница сама сканер не ждёт.
 const GlobalScanner = () => {
     const navigate = useNavigate();
+    const { pathname } = useLocation();
     const [result, setResult] = useState(null);
     const [unknown, setUnknown] = useState(null);
 
@@ -34,9 +35,11 @@ const GlobalScanner = () => {
     };
     const bind = async () => {
         try {
-            await api.post('/scan/alias', { code: unknown.code, autopart_id: unknown.picked });
+            await bindScanCode(unknown.code, unknown.picked);
             message.success('Код привязан к товару');
+            const pickedId = unknown.picked;
             setUnknown(null);
+            navigate(`/autoparts/nomenclature?autopart_id=${pickedId}&edit=1`);
         } catch (error) {
             message.error(error?.response?.data?.detail || 'Не удалось привязать код');
         }
@@ -44,14 +47,21 @@ const GlobalScanner = () => {
 
     const onScan = useCallback(async (code) => {
         try {
-            const response = await api.get('/scan/resolve', { params: { code } });
-            setResult({ code, ...response.data });
+            const response = await resolveScanCode(code);
+            if (response.data.kind === 'autopart_choice') {
+                setResult({ code, ...response.data });
+            } else {
+                // скан сразу ведёт в карточку найденного объекта
+                message.success(response.data.title);
+                navigate(response.data.route);
+            }
         } catch (error) {
             if (error?.response?.status === 404) setUnknown({ code, options: [], picked: null });
             else message.warning(error?.response?.data?.detail || 'Не удалось распознать код');
         }
-    }, []);
-    useBarcodeScanner(onScan, true, { fallback: true });
+    }, [navigate]);
+    // страница складских заказов сама принимает сканы в своём поле
+    useBarcodeScanner(onScan, !pathname.startsWith('/customer-orders/stock/scan'), { fallback: true });
 
     return <><Modal open={!!unknown} title="Код не найден"
         okText="Привязать" okButtonProps={{ disabled: !unknown?.picked }}
@@ -65,14 +75,12 @@ const GlobalScanner = () => {
         onCancel={() => setResult(null)}
         footer={[
             <Button key="close" onClick={() => setResult(null)}>Закрыть</Button>,
-            <Button key="open" type="primary" onClick={() => {
-                const route = result.route;
-                setResult(null);
-                navigate(route);
-            }}>Открыть</Button>,
         ]}>
         {result?.kind === 'autopart_choice' && result.options.map((option) =>
-            <div key={option.autopart_id}>{option.brand} {option.oem} — {option.name}</div>)}
+            <Button key={option.autopart_id} block style={{ marginBottom: 6 }} onClick={() => {
+                setResult(null);
+                navigate(`/autoparts/nomenclature?autopart_id=${option.autopart_id}&edit=1`);
+            }}>{option.brand} {option.oem} — {option.name}</Button>)}
         {result && <Descriptions size="small" column={1} items={[
             { key: 'title', label: 'Что это', children: result.title },
             { key: 'code', label: 'Код', children: result.code },

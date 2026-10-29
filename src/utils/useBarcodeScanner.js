@@ -1,6 +1,11 @@
 import { useEffect, useRef } from 'react';
 
-const MAX_KEY_GAP_MS = 60;
+import { keyEventToChar, normalizeScanCode } from './scanCode';
+
+// Пауза между символами сканера мала (USB ~5–30 мс, Bluetooth до ~100 мс);
+// человек печатает заметно медленнее, поэтому смотрим на среднюю скорость.
+const MAX_KEY_GAP_MS = 250;
+const MAX_AVG_GAP_MS = 80;
 const MIN_CODE_LENGTH = 4;
 
 // Сколько страниц сейчас сами обрабатывают скан; глобальный обработчик
@@ -27,16 +32,19 @@ export const useBarcodeScanner = (onScan, enabled = true, { fallback = false } =
         if (!fallback) pageScanners += 1;
         let buffer = '';
         let lastAt = 0;
+        let startedAt = 0;
         const onKeyDown = (event) => {
             if (fallback && pageScanners > 0) return;
             if (event.ctrlKey || event.metaKey || event.altKey || isTypingTarget(event.target)) return;
             const now = Date.now();
-            if (now - lastAt > MAX_KEY_GAP_MS) buffer = '';
+            if (now - lastAt > MAX_KEY_GAP_MS) { buffer = ''; startedAt = now; }
             lastAt = now;
             if (event.key === 'Enter') {
-                const code = buffer.trim();
+                const code = normalizeScanCode(buffer);
+                const length = buffer.length;
+                const avgGap = length > 1 ? (now - startedAt) / (length - 1) : Infinity;
                 buffer = '';
-                if (code.length >= MIN_CODE_LENGTH) {
+                if (code.length >= MIN_CODE_LENGTH && avgGap <= MAX_AVG_GAP_MS) {
                     event.preventDefault();
                     handlerRef.current?.(code);
                 }
@@ -49,7 +57,8 @@ export const useBarcodeScanner = (onScan, enabled = true, { fallback = false } =
                 buffer += '\t';
                 return;
             }
-            if (event.key.length === 1) buffer += event.key;
+            const char = keyEventToChar(event);
+            if (char) buffer += char;
         };
         window.addEventListener('keydown', onKeyDown, true);
         return () => {

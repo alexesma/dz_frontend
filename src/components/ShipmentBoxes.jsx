@@ -73,7 +73,8 @@ const ShipmentBoxes = ({ shipment }) => {
             message.error(error?.response?.data?.detail || 'Не удалось добавить по скану');
         }
     };
-    useBarcodeScanner(scanCode, isDraft && !!targetBox);
+    // на странице черновика скан принадлежит ей, даже если открытых коробок нет
+    useBarcodeScanner(scanCode, isDraft);
 
     const action = async (request, success) => {
         setBusy(true);
