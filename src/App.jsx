@@ -86,6 +86,7 @@ import StockOverviewPage from './components/StockOverviewPage';
 import FinancePage from './components/FinancePage';
 import InvoiceDetailPage from './components/InvoiceDetailPage';
 import ProcessArchitecturePage from './components/ProcessArchitecturePage';
+import GlobalScanner from './components/GlobalScanner';
 import { AuthProvider } from './context/AuthContext';
 import useAuth from './context/useAuth';
 
@@ -131,7 +132,7 @@ const RequireAuth = ({ children }) => {
     if (!user) {
         return <Navigate to="/login" replace />;
     }
-    return children;
+    return <>{children}<GlobalScanner /></>;
 };
 
 const RequireAdmin = ({ children }) => {

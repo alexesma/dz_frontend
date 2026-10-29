@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, InputNumber, Popconfirm, Space, Table, Tag, Typography, message } from 'antd';
-import { DeleteOutlined, PlusOutlined, PrinterOutlined } from '@ant-design/icons';
+import { Alert, Button, Card, Input, InputNumber, Popconfirm, Space, Table, Tag, Typography, message } from 'antd';
+import { CameraOutlined, DeleteOutlined, PlusOutlined, PrinterOutlined } from '@ant-design/icons';
 import JsBarcode from 'jsbarcode';
 
 import {
@@ -8,12 +8,15 @@ import {
     deleteAssemblyBox,
     listAssemblyBoxes,
     openAssemblyBox,
+    scanIntoAssemblyBox,
     sealAssemblyBox,
     updateAssemblyBox,
 } from '../api/customerOrders';
 import { buildLabelPrintDocument, escapeHtml } from '../utils/labelPrint';
 import { buildCustomLabelDocument, usePrintForm } from '../utils/printFormTemplates';
 import { usePrintDelivery } from '../utils/usePrintDelivery';
+import { useBarcodeScanner } from '../utils/useBarcodeScanner';
+import CameraScanModal from './CameraScanModal';
 
 const { Text } = Typography;
 
@@ -23,6 +26,9 @@ const ShipmentBoxes = ({ shipment }) => {
     const [boxes, setBoxes] = useState([]);
     const [drafts, setDrafts] = useState({});
     const [busy, setBusy] = useState(false);
+    const [scanBoxId, setScanBoxId] = useState(null);
+    const [cameraOpen, setCameraOpen] = useState(false);
+    const [scanText, setScanText] = useState('');
     const items = shipment.items || [];
     const isDraft = shipment.status === 'draft';
 
@@ -50,6 +56,24 @@ const ShipmentBoxes = ({ shipment }) => {
     const complete = items.length > 0 && boxes.length > 0
         && boxes.every((box) => box.sealed_at)
         && items.every((item) => (committed[item.id] || 0) === item.quantity);
+
+    const openBoxes = boxes.filter((box) => !box.sealed_at);
+    const targetBox = openBoxes.find((box) => box.id === scanBoxId) || openBoxes[openBoxes.length - 1];
+    const scanCode = async (rawCode) => {
+        const code = String(rawCode || '').trim();
+        if (!code || !targetBox) {
+            if (code) message.warning('Нет открытой коробки: добавьте или откройте коробку');
+            return;
+        }
+        try {
+            const response = await scanIntoAssemblyBox(shipment.id, targetBox.id, code);
+            await load();
+            message.success(`Коробка ${targetBox.number}: +${response.data.added} шт.`);
+        } catch (error) {
+            message.error(error?.response?.data?.detail || 'Не удалось добавить по скану');
+        }
+    };
+    useBarcodeScanner(scanCode, isDraft && !!targetBox);
 
     const action = async (request, success) => {
         setBusy(true);
@@ -128,6 +152,20 @@ const ShipmentBoxes = ({ shipment }) => {
                 onClick={() => action(() => createAssemblyBox(shipment.id), 'Коробка добавлена')}>
                 Добавить коробку</Button>}
         </Space>}>
+        {isDraft && <Space wrap style={{ marginBottom: 12 }}>
+            <Input allowClear style={{ width: 280 }} value={scanText} disabled={!targetBox}
+                placeholder={targetBox ? `Скан этикетки → коробка ${targetBox.number}` : 'Добавьте коробку'}
+                onChange={(event) => setScanText(event.target.value)}
+                onPressEnter={() => { void scanCode(scanText); setScanText(''); }} />
+            <Button icon={<CameraOutlined />} disabled={!targetBox}
+                onClick={() => setCameraOpen(true)}>Камера</Button>
+            {openBoxes.length > 1 && <Space size={4}>В коробку:
+                {openBoxes.map((box) => <Button key={box.id} size="small"
+                    type={box.id === targetBox?.id ? 'primary' : 'default'}
+                    onClick={() => setScanBoxId(box.id)}>{box.number}</Button>)}
+            </Space>}
+        </Space>}
+        <CameraScanModal open={cameraOpen} onClose={() => setCameraOpen(false)} onScan={scanCode} />
         <Alert showIcon type="info" style={{ marginBottom: 12 }}
             message="Перед проведением распределите всё количество из черновика по коробкам и закройте их. Количество в строке черновика можно изменить до упаковки." />
         <Space direction="vertical" style={{ width: '100%' }}>

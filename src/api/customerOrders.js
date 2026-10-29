@@ -51,6 +51,9 @@ export const createAssemblyBox = (documentId) =>
 export const updateAssemblyBox = (documentId, boxId, items) =>
     api.put(`/customer-orders/assembly/realizations/${documentId}/boxes/${boxId}`, { items });
 
+export const scanIntoAssemblyBox = (documentId, boxId, code) =>
+    api.post(`/customer-orders/assembly/realizations/${documentId}/boxes/${boxId}/scan`, { code });
+
 export const sealAssemblyBox = (documentId, boxId) =>
     api.post(`/customer-orders/assembly/realizations/${documentId}/boxes/${boxId}/seal`);
 
