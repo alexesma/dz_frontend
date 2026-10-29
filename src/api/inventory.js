@@ -350,3 +350,9 @@ export const syncDocument = (id, data) =>
 
 export const bulkSyncDocuments = (data) =>
     api.post('/inventory/documents/bulk-sync-1c/', data);
+
+export const scanCountInventoryItem = (sessionId, data) =>
+    api.post(`/inventory/sessions/${sessionId}/scan-count/`, data);
+
+export const resolveScanCode = (code) =>
+    api.get('/scan/resolve', { params: { code } });

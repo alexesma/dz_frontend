@@ -75,6 +75,7 @@ const NAVIGATION_SEARCH_ITEMS = [
     { path: '/customers', title: 'Клиенты', section: 'Контрагенты', keywords: 'покупатели опт розница инн реквизиты объединение' },
     { path: '/substitutions', title: 'Подмены', section: 'Контрагенты', keywords: 'замена клиент поставщик' },
     { path: '/warehouse/storage', title: 'Склады и ячейки', section: 'Склад', keywords: 'места хранения адрес стеллаж' },
+    { path: '/warehouse/inventory-scan', title: 'Инвентаризация сканером', section: 'Склад', keywords: 'сканер штрихкод пересчет' },
     { path: '/warehouse/inventory', title: 'Инвентаризация', section: 'Склад', keywords: 'пересчет остатки ревизия' },
     { path: '/warehouse/stock-documents', title: 'Оприходование / Списание', section: 'Склад', keywords: 'приход расход корректировка' },
     { path: '/warehouse/overview', title: 'Остатки (обзор)', section: 'Склад', keywords: 'наличие запасы количество' },
@@ -206,6 +207,7 @@ const Sidebar = () => {
         if (path.startsWith('/inbox')) return 'inbox';
         if (path.startsWith('/warehouse/stock-documents')) return 'warehouse-stock-documents';
         if (path.startsWith('/warehouse/storage')) return 'warehouse-storage';
+        if (path.startsWith('/warehouse/inventory-scan')) return 'warehouse-inventory-scan';
         if (path.startsWith('/warehouse/inventory')) return 'warehouse-inventory';
         if (path.startsWith('/warehouse/movements')) return 'warehouse-movements';
         if (path.startsWith('/warehouse/marking')) return 'warehouse-marking';
@@ -371,6 +373,9 @@ const Sidebar = () => {
                 </Menu.Item>
                 <Menu.Item key="warehouse-inventory" icon={<AuditOutlined />}>
                     <Link to="/warehouse/inventory">Инвентаризация</Link>
+                </Menu.Item>
+                <Menu.Item key="warehouse-inventory-scan" icon={<AuditOutlined />}>
+                    <Link to="/warehouse/inventory-scan">Инвентаризация сканером</Link>
                 </Menu.Item>
                 <Menu.Item key="warehouse-stock-documents" icon={<FileAddOutlined />}>
                     <Link to="/warehouse/stock-documents">Оприходование / Списание</Link>
