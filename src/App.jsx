@@ -68,6 +68,7 @@ import OrderWindowsPage from './components/OrderWindowsPage';
 import StorageLocationsPage from './components/StorageLocationsPage';
 import InventoryPage from './components/InventoryPage';
 import InventoryScanPage from './components/InventoryScanPage';
+import ReceivingScanPage from './components/ReceivingScanPage';
 import StockDocumentsPage from './components/StockDocumentsPage';
 import StockDocumentDetailPage from './components/StockDocumentDetailPage';
 import StockMovementsPage from './components/StockMovementsPage';
@@ -231,6 +232,7 @@ const AppRoutes = () => (
 
         {/* Warehouse */}
         <Route path="/warehouse/storage" element={<RequireAuth><StorageLocationsPage /></RequireAuth>} />
+        <Route path="/warehouse/receiving-scan" element={<RequireAuth><ReceivingScanPage /></RequireAuth>} />
         <Route path="/warehouse/inventory-scan" element={<RequireAuth><InventoryScanPage /></RequireAuth>} />
         <Route path="/warehouse/inventory" element={<RequireAuth><InventoryPage /></RequireAuth>} />
         <Route path="/warehouse/stock-documents" element={<RequireAuth><StockDocumentsPage /></RequireAuth>} />

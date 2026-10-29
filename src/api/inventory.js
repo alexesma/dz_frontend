@@ -356,3 +356,12 @@ export const scanCountInventoryItem = (sessionId, data) =>
 
 export const resolveScanCode = (code) =>
     api.get('/scan/resolve', { params: { code } });
+
+export const getReceivingPlan = (receiptId) =>
+    api.get(`/receiving-scan/receipts/${receiptId}`);
+
+export const countReceivedItem = (receiptId, data) =>
+    api.post(`/receiving-scan/receipts/${receiptId}/count`, data);
+
+export const placeReceivedItem = (receiptId, data) =>
+    api.post(`/receiving-scan/receipts/${receiptId}/place`, data);
