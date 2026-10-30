@@ -607,7 +607,23 @@ const OneCExchangePage = () => {
                                 { key: 'shipments', label: 'Проведённые реализации', children: `${historyAudit.posted_shipments?.count ?? 0}; без события: ${historyAudit.posted_shipments?.without_event ?? 0}` },
                                 { key: 'dates', label: 'Период', children: `${historyAudit.posted_receipts?.first_date || '—'} — ${historyAudit.posted_shipments?.last_date || '—'}` },
                                 { key: 'contracts', label: 'Поставщики без договора УНФ', children: historyAudit.providers_missing_contract?.length ?? 0 },
+                                { key: 'quantity', label: 'Авто-черновики с превышением заказа более чем в 10 раз', children: historyAudit.suspicious_auto_receipts?.length ?? 0 },
+                                { key: 'prices', label: 'Поступления с нулевой или отсутствующей ценой', children: historyAudit.missing_price_receipts?.length ?? 0 },
                             ]} />
+                    )}
+                    {(historyAudit?.suspicious_auto_receipts || []).length > 0 && (
+                        <Alert showIcon type="error" style={{ marginTop: 12 }}
+                            message="Проверьте подозрительные исторические поступления"
+                            description={historyAudit.suspicious_auto_receipts.slice(0, 10).map((item) =>
+                                `№${item.receipt_id} ${item.provider}: ${item.received_quantity} шт. при заказе №${item.supplier_order_id} на ${item.ordered_quantity} шт.`
+                            ).join('; ')} />
+                    )}
+                    {(historyAudit?.missing_price_receipts || []).length > 0 && (
+                        <Alert showIcon type="warning" style={{ marginTop: 12 }}
+                            message="Поступления без цены поставщика не будут переданы автоматически"
+                            description={historyAudit.missing_price_receipts.slice(0, 10).map((item) =>
+                                `№${item.receipt_id} ${item.provider} (${item.items} строк)`
+                            ).join('; ')} />
                     )}
                     {(historyAudit?.providers_missing_contract || []).length > 0 && (
                         <Paragraph type="warning">
