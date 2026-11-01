@@ -8,6 +8,7 @@ import {
     Form,
     Input,
     Modal,
+    Popconfirm,
     Row,
     Select,
     Space,
@@ -44,6 +45,7 @@ import {
     downloadDiadocPrintForm,
     listDiadocOutboundDocuments,
     processDiadocInboundDocument,
+    resolveDiadocInboundMismatch,
     refreshDiadocOutboundDocumentStatus,
     startDiadocInboundReject,
     startDiadocInboundSign,
@@ -71,6 +73,9 @@ const STATUS_COLORS = {
     rejected: 'error',
     revoked: 'warning',
     revocation_requested: 'warning',
+    amount_mismatch: 'warning',
+    duplicate: 'default',
+    skipped: 'default',
 };
 
 // Status.Type из внешнего документооборота ГИС ЭПД (перевозочные документы)
@@ -93,6 +98,9 @@ const SYNC_RESULT_LABELS = {
     rejected: 'Отказ',
     revoked: 'Аннулирован',
     revocation_requested: 'Запрошено аннулирование',
+    amount_mismatch: 'Расхождение по сумме',
+    duplicate: 'Дубль',
+    skipped: 'Не поступление',
 };
 
 const BindCounteragentModal = ({
@@ -668,6 +676,21 @@ const DiadocPage = () => {
         }
     };
 
+    const handleResolveMismatch = async (row, action) => {
+        setProcessingDocId(row.id);
+        try {
+            const response = await resolveDiadocInboundMismatch(row.id, action);
+            message.success(response.data?.detail || 'Готово');
+            if (response.data?.correction_id) navigate('/documents/corrections');
+            await loadInbound();
+        } catch (err) {
+            console.error('Failed to resolve mismatch', err);
+            message.error(err?.response?.data?.detail || 'Ошибка разрешения расхождения');
+        } finally {
+            setProcessingDocId(null);
+        }
+    };
+
     const handleBindCounteragent = async (values) => {
         if (!bindCounteragent) return;
         setBindLoading(true);
@@ -702,10 +725,28 @@ const DiadocPage = () => {
             title: 'Статус',
             dataIndex: 'status',
             width: 140,
-            render: (value) => (
-                <Tag color={STATUS_COLORS[value] || 'default'}>
-                    {SYNC_RESULT_LABELS[value] || value}
-                </Tag>
+            render: (value, row) => (
+                <Space direction="vertical" size={2}>
+                    <Tag color={STATUS_COLORS[value] || 'default'}>
+                        {SYNC_RESULT_LABELS[value] || value}
+                    </Tag>
+                    {row.amount_mismatch_status === 'pending' && (
+                        <Tooltip title={`Диадок ${row.total_amount ?? '—'} ₽, второй источник ${row.mismatch_other_total ?? '—'} ₽`}>
+                            <Tag color="warning">Расхождение по сумме</Tag>
+                        </Tooltip>
+                    )}
+                    {row.amount_mismatch_status === 'correction_required' && (
+                        <Tag color="error">Требуется корректировка</Tag>
+                    )}
+                    {row.duplicate_kind === 'email' && (
+                        <Tooltip title="Тот же документ уже получен по почте: второе поступление не создано, подпись и статусы — по Диадоку">
+                            <Tag color="cyan">Тот же документ (почта)</Tag>
+                        </Tooltip>
+                    )}
+                    {row.duplicate_kind === 'diadoc' && (
+                        <Tag>Дубль документа #{row.duplicate_of_document_id}</Tag>
+                    )}
+                </Space>
             ),
         },
         {
@@ -719,6 +760,14 @@ const DiadocPage = () => {
                         {row.document_number || 'Без номера'}
                         {row.document_date ? ` · ${dayjs(row.document_date).format('DD.MM.YYYY')}` : ''}
                     </Text>
+                    {row.total_amount != null && (
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                            Сумма: {Number(row.total_amount).toLocaleString('ru-RU')} ₽
+                        </Text>
+                    )}
+                    {row.import_error_details && ['amount_mismatch', 'duplicate', 'skipped'].includes(row.status) && (
+                        <Text type="secondary" style={{ fontSize: 12 }}>{row.import_error_details}</Text>
+                    )}
                 </Space>
             ),
         },
@@ -769,11 +818,34 @@ const DiadocPage = () => {
             width: 230,
             render: (_, row) => (
                 <Space wrap>
+                    {row.amount_mismatch_status === 'pending' && (
+                        <>
+                            <Popconfirm
+                                title="Применить данные Диадока?"
+                                description="Непроведённое поступление из письма будет заменено, проведённое — не изменится (создастся КСФ для корректировки)."
+                                okText="Применить"
+                                cancelText="Отмена"
+                                onConfirm={() => handleResolveMismatch(row, 'apply_diadoc')}
+                            >
+                                <Button size="small" type="primary" loading={processingDocId === row.id}>
+                                    Взять данные Диадока
+                                </Button>
+                            </Popconfirm>
+                            <Popconfirm
+                                title="Оставить версию из письма?"
+                                okText="Оставить"
+                                cancelText="Отмена"
+                                onConfirm={() => handleResolveMismatch(row, 'keep_existing')}
+                            >
+                                <Button size="small">Оставить как есть</Button>
+                            </Popconfirm>
+                        </>
+                    )}
                     <Button
                         size="small"
                         icon={<SyncOutlined />}
                         loading={processingDocId === row.id}
-                        disabled={!row.can_process_supplier_message || !row.provider_id}
+                        disabled={!row.can_process_supplier_message || !row.provider_id || row.amount_mismatch_status === 'pending'}
                         onClick={() => handleProcessInbound(row)}
                     >
                         Обработать
