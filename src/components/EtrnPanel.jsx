@@ -33,6 +33,7 @@ import {
     saveEtrnDraft,
     startEtrnT1Sign,
     startEtrnT3Accept,
+    startEtrnT6Sign,
     syncEtrnWaybills,
     updateDiadocSettings,
 } from '../api/diadoc';
@@ -53,6 +54,11 @@ const T3_STATE = {
     pending_sign: 'Ждёт подписи Т3',
     signed_here: 'Т3 подписан в DragonZap',
     signed_external: 'Т3 подписан в другой системе (1С)',
+};
+const T6_STATE = {
+    none: 'Т5 получен, Т6 не подписан',
+    pending_sign: 'Т6 ждёт подписи',
+    signed_here: 'Т6 подписан',
 };
 const T3_RESULT = {
     accepted: 'Принять полностью',
@@ -602,6 +608,11 @@ const WaybillStatus = ({ row }) => {
         <Space direction="vertical" size={0}>
             <Tag color={color}>{text}</Tag>
             {row.stage_label && <Text type="secondary">{row.stage_label}</Text>}
+            {row.driver_confirm?.text && (
+                <Text type={row.driver_confirm.type === 'Error' ? 'danger' : 'secondary'}>
+                    Водитель: {row.driver_confirm.text}
+                </Text>
+            )}
             {row.gis_status_text && (
                 <Text type={row.gis_status_type === 'Error' ? 'danger' : 'secondary'}>
                     ГИС ЭПД: {row.gis_status_text}
@@ -624,6 +635,9 @@ const EtrnPanel = ({ status, onStatusChanged }) => {
     const [code, setCode] = useState('');
     const [confirming, setConfirming] = useState(false);
     const enabled = Boolean(status?.etrn_enabled);
+    const t6Enabled = enabled && Boolean(status?.etrn_t6_enabled);
+    const [t6Target, setT6Target] = useState(null);
+    const [t6Info, setT6Info] = useState('');
 
     const loadDirs = useCallback(async () => {
         const out = {};
@@ -672,9 +686,9 @@ const EtrnPanel = ({ status, onStatusChanged }) => {
             message.error(errText(e, 'Не удалось обновить статус'));
         }
     };
-    const toggleEnabled = async (value) => {
+    const toggleEnabled = async (value, field = 'etrn_enabled') => {
         try {
-            await updateDiadocSettings({ etrn_enabled: value });
+            await updateDiadocSettings({ [field]: value });
             onStatusChanged?.();
         } catch (e) {
             message.error(errText(e, 'Не удалось изменить настройку'));
@@ -753,6 +767,14 @@ const EtrnPanel = ({ status, onStatusChanged }) => {
                         </>
                     )}
                     {r.t1_message_id && <Button size="small" icon={<ReloadOutlined />} onClick={() => refresh(r)} />}
+                    {t6Enabled && r.cost?.t5_entity_id && (
+                        <Space direction="vertical" size={0}>
+                            <Text type="secondary">{T6_STATE[r.cost.t6_state] || r.cost.t6_state}</Text>
+                            {r.cost.t6_state !== 'signed_here' && (
+                                <Button size="small" onClick={() => { setT6Target(r); setT6Info(''); }}>Подписать Т6</Button>
+                            )}
+                        </Space>
+                    )}
                 </Space>
             ),
         },
@@ -769,6 +791,15 @@ const EtrnPanel = ({ status, onStatusChanged }) => {
                     : 'Режим «только чтение»: статусы, УИД и стадии видны, титулы подписываются в 1С.'}
                 action={<Space>Подписание в DragonZap <Switch checked={enabled} onChange={toggleEnabled} /></Space>}
             />
+            {enabled && (
+                <Space style={{ marginBottom: 8 }}>
+                    <Text type="secondary">
+                        Т6 (ответ на стоимость перевозки, Т5 перевозчика) — необязательный титул
+                    </Text>
+                    <Switch size="small" checked={Boolean(status?.etrn_t6_enabled)}
+                        onChange={(v) => toggleEnabled(v, 'etrn_t6_enabled')} />
+                </Space>
+            )}
             <Space style={{ marginBottom: 12 }}>
                 <Button icon={<SyncOutlined />} onClick={sync} loading={loading}>Обновить из Диадока</Button>
                 {enabled && (
@@ -810,6 +841,22 @@ const EtrnPanel = ({ status, onStatusChanged }) => {
                 startSign={startSign}
             />
             <Modal
+                open={Boolean(t6Target)}
+                title={`Т6 · стоимость перевозки ${t6Target?.number || ''}`}
+                okText="Подписать (SMS)"
+                cancelText="Отмена"
+                onOk={async () => {
+                    try {
+                        await startSign(() => startEtrnT6Sign(t6Target.id, { info: t6Info || undefined }));
+                        setT6Target(null);
+                    } catch { /* ошибка уже показана */ }
+                }}
+                onCancel={() => setT6Target(null)}
+            >
+                <Text type="secondary">Основание (например, договор перевозки) — необязательно</Text>
+                <Input.TextArea rows={2} value={t6Info} onChange={(e) => setT6Info(e.target.value)} />
+            </Modal>
+            <Modal
                 open={Boolean(signTask)}
                 title="Подтверждение подписи"
                 okText="Подписать и отправить"
@@ -822,7 +869,7 @@ const EtrnPanel = ({ status, onStatusChanged }) => {
                 <Space direction="vertical" style={{ width: '100%' }}>
                     <Descriptions size="small" column={1}>
                         <Descriptions.Item label="Операция">
-                            {signTask?.operation === 'etrn_t3_send' ? 'Т3 — приёмка груза' : 'Т1 — титул грузоотправителя'}
+                            {({ etrn_t3_send: 'Т3 — приёмка груза', etrn_t6_send: 'Т6 — стоимость перевозки' })[signTask?.operation] || 'Т1 — титул грузоотправителя'}
                         </Descriptions.Item>
                     </Descriptions>
                     <Text>Код из SMS придёт директору на телефон облачной подписи.</Text>
