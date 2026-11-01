@@ -7,6 +7,7 @@ import {
     Descriptions,
     Form,
     Input,
+    Checkbox,
     Modal,
     Popconfirm,
     Row,
@@ -82,6 +83,8 @@ const STATUS_COLORS = {
     direction_unknown: 'warning',
     transport: 'cyan',
     service_act: 'default',
+    discrepancy_act: 'warning',
+    other_doc: 'default',
 };
 
 // Status.Type из внешнего документооборота ГИС ЭПД (перевозочные документы)
@@ -90,6 +93,17 @@ const TRANSPORT_STATUS_COLORS = {
     Error: 'error',
     Warning: 'warning',
     Normal: 'blue',
+};
+
+const DOCUMENT_KIND_LABELS = {
+    upd: 'УПД',
+    ukd: 'УКД / КСЧФ',
+    kschf: 'КСЧФ',
+    torg12: 'ТОРГ-12',
+    act: 'Акт / услуги',
+    discrepancy_act: 'Акт о расхождениях',
+    transport: 'ЭТрН',
+    other: 'Прочее',
 };
 
 const SYNC_RESULT_LABELS = {
@@ -111,6 +125,8 @@ const SYNC_RESULT_LABELS = {
     direction_unknown: 'Направление не определено',
     transport: 'ЭТрН (перевозки)',
     service_act: 'Акт / услуги',
+    discrepancy_act: 'Акт о расхождениях',
+    other_doc: 'Прочее',
 };
 
 const BindCounteragentModal = ({
@@ -220,6 +236,7 @@ const DiadocPage = () => {
         registeredOnly: undefined,
     });
     const [processingDocId, setProcessingDocId] = useState(null);
+    const [onlyNeedsDecision, setOnlyNeedsDecision] = useState(false);
 
     const [outboundRows, setOutboundRows] = useState([]);
     const [outboundLoading, setOutboundLoading] = useState(false);
@@ -800,6 +817,23 @@ const DiadocPage = () => {
                         {row.document_number || 'Без номера'}
                         {row.document_date ? ` · ${dayjs(row.document_date).format('DD.MM.YYYY')}` : ''}
                     </Text>
+                    {row.document_kind && (
+                        <Tag style={{ marginTop: 2 }}>
+                            {DOCUMENT_KIND_LABELS[row.document_kind] || row.document_kind}
+                        </Tag>
+                    )}
+                    {row.parsed_details?.correction_id && (
+                        <Button
+                            size="small"
+                            type="link"
+                            style={{ padding: 0 }}
+                            onClick={() => navigate('/documents/corrections')}
+                        >
+                            КСФ #{row.parsed_details.correction_id}
+                            {row.parsed_details.state === 'receipt_not_found' ? ' · привязать вручную' : ''}
+                            {row.parsed_details.unmatched?.length ? ` · строк без пары: ${row.parsed_details.unmatched.length}` : ''}
+                        </Button>
+                    )}
                     {row.total_amount != null && (
                         <Text type="secondary" style={{ fontSize: 12 }}>
                             Сумма: {Number(row.total_amount).toLocaleString('ru-RU')} ₽
@@ -1503,6 +1537,14 @@ const DiadocPage = () => {
                                             />
                                         </Col>
                                         <Col xs={24} md={8}>
+                                            <Checkbox
+                                                checked={onlyNeedsDecision}
+                                                onChange={(event) => setOnlyNeedsDecision(event.target.checked)}
+                                            >
+                                                Требует решения
+                                            </Checkbox>
+                                        </Col>
+                                        <Col xs={24} md={8}>
                                             <Select
                                                 style={{ width: '100%' }}
                                                 value={String(inboundFilters.registeredOnly ?? 'all')}
@@ -1532,7 +1574,7 @@ const DiadocPage = () => {
                                         rowKey="id"
                                         size="small"
                                         loading={inboundLoading}
-                                        dataSource={inboundRows}
+                                        dataSource={onlyNeedsDecision ? inboundRows.filter((row) => row.needs_decision) : inboundRows}
                                         columns={inboundColumns}
                                         rowClassName={(row) => (
                                             focusedInboundId && row.id === focusedInboundId
