@@ -85,6 +85,7 @@ const STATUS_COLORS = {
     service_act: 'default',
     discrepancy_act: 'warning',
     other_doc: 'default',
+    possible_return: 'volcano',
 };
 
 // Status.Type из внешнего документооборота ГИС ЭПД (перевозочные документы)
@@ -127,6 +128,7 @@ const SYNC_RESULT_LABELS = {
     service_act: 'Акт / услуги',
     discrepancy_act: 'Акт о расхождениях',
     other_doc: 'Прочее',
+    possible_return: 'Возможный возврат',
 };
 
 const BindCounteragentModal = ({
