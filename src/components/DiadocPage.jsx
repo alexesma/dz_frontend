@@ -80,6 +80,8 @@ const STATUS_COLORS = {
     skipped: 'default',
     customer_doc: 'purple',
     direction_unknown: 'warning',
+    transport: 'cyan',
+    service_act: 'default',
 };
 
 // Status.Type из внешнего документооборота ГИС ЭПД (перевозочные документы)
@@ -107,6 +109,8 @@ const SYNC_RESULT_LABELS = {
     skipped: 'Не поступление',
     customer_doc: 'По клиенту',
     direction_unknown: 'Направление не определено',
+    transport: 'ЭТрН (перевозки)',
+    service_act: 'Акт / услуги',
 };
 
 const BindCounteragentModal = ({
