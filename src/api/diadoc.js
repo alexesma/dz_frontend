@@ -147,3 +147,5 @@ export const startEtrnT3Accept = (id, data) =>
     api.post(`/diadoc/etrn/waybills/${id}/accept`, data, { timeout: 120000 });
 export const getEtrnShipmentPrefill = (shipmentId) =>
     api.get(`/diadoc/etrn/shipments/${shipmentId}/prefill`);
+export const startEtrnT6Sign = (id, data = {}) =>
+    api.post(`/diadoc/etrn/waybills/${id}/t6`, data, { timeout: 120000 });
