@@ -78,6 +78,8 @@ const STATUS_COLORS = {
     amount_mismatch: 'warning',
     duplicate: 'default',
     skipped: 'default',
+    customer_doc: 'purple',
+    direction_unknown: 'warning',
 };
 
 // Status.Type из внешнего документооборота ГИС ЭПД (перевозочные документы)
@@ -103,6 +105,8 @@ const SYNC_RESULT_LABELS = {
     amount_mismatch: 'Расхождение по сумме',
     duplicate: 'Дубль',
     skipped: 'Не поступление',
+    customer_doc: 'По клиенту',
+    direction_unknown: 'Направление не определено',
 };
 
 const BindCounteragentModal = ({
@@ -746,6 +750,17 @@ const DiadocPage = () => {
                     <Tag color={STATUS_COLORS[value] || 'default'}>
                         {SYNC_RESULT_LABELS[value] || value}
                     </Tag>
+                    {row.direction === 'supplier' && <Tag color="geekblue">поставщик</Tag>}
+                    {row.direction === 'customer' && (
+                        <Tooltip title="Документ по нашей продаже клиенту: поступление не создаётся">
+                            <Tag color="purple">клиент</Tag>
+                        </Tooltip>
+                    )}
+                    {row.direction === 'unknown' && (
+                        <Tooltip title="Контрагент привязан и к поставщику, и к клиенту, а по документу направление не определить. Нужно решение вручную.">
+                            <Tag color="warning">не определено</Tag>
+                        </Tooltip>
+                    )}
                     {row.amount_mismatch_status === 'pending' && (
                         <Tooltip title={`Диадок ${row.total_amount ?? '—'} ₽, второй источник ${row.mismatch_other_total ?? '—'} ₽`}>
                             <Tag color="warning">Расхождение по сумме</Tag>
@@ -798,7 +813,7 @@ const DiadocPage = () => {
             width: 220,
             render: (_, row) => (
                 <Space direction="vertical" size={0}>
-                    <Text>{row.provider_name || 'Не сопоставлен'}</Text>
+                    <Text>{row.direction === 'customer' ? (row.customer_name || 'Клиент') : (row.provider_name || 'Не сопоставлен')}</Text>
                     <Text type="secondary" style={{ fontSize: 12 }}>
                         {row.counteragent_box_id || '—'}
                     </Text>
