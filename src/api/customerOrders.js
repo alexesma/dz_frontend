@@ -194,6 +194,9 @@ export const updateCrossDockingDocument = (receiptId, payload) =>
 export const postSupplierReceipt = (receiptId) =>
     api.post(`/customer-orders/supplier-receipts/${receiptId}/post`);
 
+export const checkSupplierReceiptMarking = (receiptId) =>
+    api.post(`/customer-orders/supplier-receipts/${receiptId}/marking-check`);
+
 export const sendSupplierReceiptUpdEmail = (receiptId) =>
     api.post(`/customer-orders/supplier-receipts/${receiptId}/send-upd-email`);
 

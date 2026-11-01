@@ -58,6 +58,8 @@ import {
 import { listDiadocInboundDocuments } from '../api/diadoc';
 import useAuth from '../context/useAuth';
 import CrossDockingLabelsModal from './CrossDockingLabelsModal';
+import ReceiptMarkingPanel, { ReceiptMarkingBadge } from './ReceiptMarkingPanel';
+import { markingItemBadge } from './receiptMarkingUtils';
 import { usePrintDelivery } from '../utils/usePrintDelivery';
 
 const { Title, Text } = Typography;
@@ -833,6 +835,7 @@ const IncomingSupplierDocumentsPage = () => {
                             <Tag color="red">Цена выше заказа</Tag>
                         </Tooltip>
                     )}
+                    <ReceiptMarkingBadge receipt={row} />
                 </Space>
             ),
         },
@@ -952,6 +955,12 @@ const IncomingSupplierDocumentsPage = () => {
             {
                 title: 'Кол-во', dataIndex: 'received_quantity', key: 'qty',
                 width: 80, align: 'right',
+                render: (v, row) => (
+                    <Space direction="vertical" size={0} align="end">
+                        <span>{v}</span>
+                        {markingItemBadge(row)}
+                    </Space>
+                ),
             },
             {
                 title: 'Цена', dataIndex: 'price', key: 'price',
@@ -1413,6 +1422,13 @@ const IncomingSupplierDocumentsPage = () => {
 
                     return (
                         <>
+                            <ReceiptMarkingPanel
+                                receipt={detailReceipt}
+                                onChanged={(data) => {
+                                    setDetailReceipt(data);
+                                    fetchDocuments();
+                                }}
+                            />
                             {/* Header */}
                             {!editMode ? (
                                 <Descriptions size="small" bordered

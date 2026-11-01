@@ -92,6 +92,9 @@ export const createDiadocOutboundDocumentFromSupplierReturn = (
 export const getDiadocShipmentOutboundReadiness = (shipmentId) =>
     api.get(`/diadoc/outbound-readiness/shipment/${shipmentId}`);
 
+export const checkDiadocShipmentMarking = (shipmentId) =>
+    api.post(`/diadoc/outbound-readiness/shipment/${shipmentId}/marking-check`);
+
 export const getDiadocShipmentsOutboundReadiness = (shipmentIds = []) =>
     api.get('/diadoc/outbound-readiness/shipments', {
         params: { shipment_ids: shipmentIds },

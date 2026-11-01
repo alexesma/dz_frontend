@@ -56,6 +56,7 @@ import { searchAutopartsByOem } from '../api/autoparts';
 import { getStorageLocations, getWarehouses } from '../api/storage';
 import useAuth from '../context/useAuth';
 import ShipmentBoxes from './ShipmentBoxes';
+import ShipmentMarkingCheck from './ShipmentMarkingCheck';
 import ShipmentPrintMenu from './ShipmentPrintMenu';
 import { Link } from 'react-router-dom';
 
@@ -1064,6 +1065,8 @@ const ShipmentDetailPage = () => {
                                     )}
                                 />
                             )}
+
+                            <ShipmentMarkingCheck shipmentId={id} />
 
                             <Space wrap>
                                 {diadocReadiness.customer_id && (
