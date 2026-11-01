@@ -39,6 +39,7 @@ import {
     markAllNotificationsRead,
     markNotificationRead,
     postponeRelayOffline,
+    actOnDocumentMismatch,
 } from '../api/notifications';
 import {
     confirmReclamationShortage,
@@ -78,6 +79,12 @@ const PRICELIST_BLOCKED_PREFIX = 'Прайс заблокирован:';
 const SHORTAGE_NOTIFICATION_TYPE = 'reclamation_shortage';
 const STALE_PRICELIST_NOTIFICATION_TYPE = 'pricelist_stale_action';
 const RELAY_OFFLINE_NOTIFICATION_TYPE = 'email_relay_offline_action';
+const DOCUMENT_MISMATCH_NOTIFICATION_TYPE = 'supplier_document_mismatch_action';
+
+const isDocumentMismatchNotification = (item) => (
+    Boolean(item)
+    && item.payload?.notification_type === DOCUMENT_MISMATCH_NOTIFICATION_TYPE
+);
 
 const isStalePricelistNotification = (item) => (
     Boolean(item)
@@ -210,6 +217,7 @@ const NotificationCenter = () => {
     const [blockedRejectReason, setBlockedRejectReason] = useState('');
     const [stalePricelistActionLoading, setStalePricelistActionLoading] = useState(false);
     const [relayOfflineActionLoading, setRelayOfflineActionLoading] = useState(false);
+    const [mismatchActionLoading, setMismatchActionLoading] = useState(false);
     const initializedRef = useRef(false);
     const seenIdsRef = useRef(new Set());
     const titleFlashIntervalRef = useRef(null);
@@ -332,7 +340,11 @@ const NotificationCenter = () => {
 
     const openNotificationItem = useCallback(async (item) => {
         if (
-            (isStalePricelistNotification(item) || isRelayOfflineNotification(item))
+            (
+                isStalePricelistNotification(item)
+                || isRelayOfflineNotification(item)
+                || isDocumentMismatchNotification(item)
+            )
             && !item.read_at
         ) {
             setDrawerOpen(false);
@@ -629,6 +641,14 @@ const NotificationCenter = () => {
     );
     const relayOfflineItem = relayOfflineItems[0] || null;
     const relayOfflinePayload = relayOfflineItem?.payload || {};
+    const mismatchItems = useMemo(
+        () => sortedItems.filter(
+            (item) => !item.read_at && isDocumentMismatchNotification(item)
+        ),
+        [sortedItems]
+    );
+    const mismatchItem = mismatchItems[0] || null;
+    const mismatchPayload = mismatchItem?.payload || {};
     const shortageNotificationItem = useMemo(
         () => sortedItems.find(
             (item) => (
@@ -694,6 +714,27 @@ const NotificationCenter = () => {
             setRelayOfflineActionLoading(false);
         }
     }, [fetchNotificationState, relayOfflineItem, updateReadState]);
+
+    const handleMismatchAction = useCallback(async (action) => {
+        if (!mismatchItem) return;
+        setMismatchActionLoading(true);
+        try {
+            await actOnDocumentMismatch(mismatchItem.id, action);
+            updateReadState(mismatchItem.id);
+            await fetchNotificationState({ silent: true });
+            if (action === 'go_to_resolution') {
+                navigate(mismatchItem.link || '/documents/diadoc?tab=inbound');
+            } else {
+                message.success('Расхождение отложено на 30 минут');
+            }
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail || 'Не удалось отложить расхождение'
+            );
+        } finally {
+            setMismatchActionLoading(false);
+        }
+    }, [fetchNotificationState, mismatchItem, navigate, updateReadState]);
 
     const finishShortageNotification = useCallback(async () => {
         if (!shortageNotificationItem) {
@@ -1028,10 +1069,65 @@ const NotificationCenter = () => {
                 </Typography.Paragraph>
             </Modal>
             <Modal
+                open={Boolean(mismatchItem) && !blockedPricelistItem && !relayOfflineItem}
+                centered
+                width={640}
+                closable={false}
+                maskClosable={false}
+                keyboard={false}
+                title="Расхождение по сумме документа поставщика"
+                footer={(
+                    <Space>
+                        <Button
+                            icon={<ClockCircleOutlined />}
+                            loading={mismatchActionLoading}
+                            onClick={() => void handleMismatchAction('snooze_30_minutes')}
+                        >
+                            Отложить на 30 минут
+                        </Button>
+                        <Button
+                            type="primary"
+                            loading={mismatchActionLoading}
+                            onClick={() => void handleMismatchAction('go_to_resolution')}
+                        >
+                            Перейти к решению
+                        </Button>
+                    </Space>
+                )}
+            >
+                <Alert
+                    type="error"
+                    showIcon
+                    message={`Документ № ${mismatchPayload.document_number || '—'}${
+                        mismatchPayload.document_date
+                            ? ` от ${dayjs(mismatchPayload.document_date).format('DD.MM.YYYY')}`
+                            : ''
+                    }`}
+                    description={mismatchItem?.message}
+                />
+                <Descriptions bordered size="small" column={1} style={{ marginTop: 16 }}>
+                    <Descriptions.Item label="Поставщик">
+                        {mismatchPayload.provider_name || '—'}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Сумма по Диадоку">
+                        {mismatchPayload.diadoc_total ?? '—'} ₽
+                    </Descriptions.Item>
+                    <Descriptions.Item label={`Сумма (${mismatchPayload.other_source || 'второй источник'})`}>
+                        {mismatchPayload.other_total ?? '—'} ₽
+                    </Descriptions.Item>
+                </Descriptions>
+                <Typography.Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0 }}>
+                    Данные Диадока главнее. Откройте документ, проверьте результат и
+                    нажмите «Проверено» (или примите решение). Пока решения нет, это окно
+                    будет возвращаться каждые 30 минут.
+                </Typography.Paragraph>
+            </Modal>
+            <Modal
                 open={(
                     Boolean(stalePricelistItem)
                     && !blockedPricelistItem
                     && !relayOfflineItem
+                    && !mismatchItem
                 )}
                 centered
                 width={680}
@@ -1125,6 +1221,7 @@ const NotificationCenter = () => {
                     shortageNotificationItem
                     && !blockedPricelistItem
                     && !relayOfflineItem
+                    && !mismatchItem
                     && !stalePricelistItem
                 )}
                 centered

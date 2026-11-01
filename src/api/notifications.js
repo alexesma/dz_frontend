@@ -35,3 +35,11 @@ export const postponeRelayOffline = async (notificationId) => {
     );
     return data;
 };
+
+export const actOnDocumentMismatch = async (notificationId, action) => {
+    const { data } = await api.post(
+        `/notifications/${notificationId}/document-mismatch-action`,
+        { action }
+    );
+    return data;
+};

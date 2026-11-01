@@ -828,6 +828,11 @@ const IncomingSupplierDocumentsPage = () => {
                     {(row.items || []).some((item) => item.document_pending) && (
                         <Tag color="orange">DOC_PENDING</Tag>
                     )}
+                    {(row.has_price_alert || (row.items || []).some((item) => item.price_exceeds_order)) && (
+                        <Tooltip title="Есть позиции, где цена в документе выше цены в заказе более чем на 1 ₽">
+                            <Tag color="red">Цена выше заказа</Tag>
+                        </Tooltip>
+                    )}
                 </Space>
             ),
         },
@@ -950,17 +955,30 @@ const IncomingSupplierDocumentsPage = () => {
             },
             {
                 title: 'Цена', dataIndex: 'price', key: 'price',
-                width: 100, align: 'right',
+                width: 120, align: 'right',
                 render: (v, row) => {
                     // All prices in the DB are stored WITH VAT.
                     // Derive unit price as total_with_vat / qty (no VAT division).
-                    if (row.total_price_with_vat != null && row.received_quantity) {
-                        return formatMoney(
+                    const shown = (row.total_price_with_vat != null && row.received_quantity)
+                        ? formatMoney(
                             Number(row.total_price_with_vat) / Number(row.received_quantity),
-                        );
-                    }
-                    return formatMoney(v); // price is already WITH VAT
+                        )
+                        : formatMoney(v); // price is already WITH VAT
+                    if (!row.price_exceeds_order) return shown;
+                    return (
+                        <Tooltip title={`Дороже заказа: в заказе ${formatMoney(row.order_price)}`}>
+                            <Space direction="vertical" size={0}>
+                                <Text type="danger" strong>{shown}</Text>
+                                <Text type="danger" style={{ fontSize: 11 }}>
+                                    в заказе {formatMoney(row.order_price)}
+                                </Text>
+                            </Space>
+                        </Tooltip>
+                    );
                 },
+                onCell: (row) => (
+                    row.price_exceeds_order ? { style: { background: '#fff1f0' } } : {}
+                ),
             },
             {
                 title: 'Сумма', key: 'sum', width: 110, align: 'right',
