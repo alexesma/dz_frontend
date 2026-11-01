@@ -120,3 +120,30 @@ export const downloadDiadocPrintForm = async (messageId, entityId) => {
     link.remove();
     URL.revokeObjectURL(url);
 };
+
+// ── ЭТрН (электронная транспортная накладная) ────────────────────────────
+export const listEtrnDirectory = (name, params = {}) =>
+    api.get(`/diadoc/etrn/${name}`, { params });
+export const saveEtrnDirectoryItem = (name, id, data) =>
+    id
+        ? api.put(`/diadoc/etrn/${name}/${id}`, data)
+        : api.post(`/diadoc/etrn/${name}`, data);
+export const deleteEtrnDirectoryItem = (name, id) =>
+    api.delete(`/diadoc/etrn/${name}/${id}`);
+
+export const listEtrnWaybills = (params = {}) =>
+    api.get('/diadoc/etrn/waybills', { params });
+export const syncEtrnWaybills = () =>
+    api.post('/diadoc/etrn/sync', null, { timeout: 120000 });
+export const refreshEtrnWaybill = (id) =>
+    api.post(`/diadoc/etrn/waybills/${id}/refresh`, null, { timeout: 120000 });
+export const saveEtrnDraft = (id, data) =>
+    id
+        ? api.put(`/diadoc/etrn/waybills/${id}`, data)
+        : api.post('/diadoc/etrn/waybills', data);
+export const startEtrnT1Sign = (id) =>
+    api.post(`/diadoc/etrn/waybills/${id}/sign`, null, { timeout: 120000 });
+export const startEtrnT3Accept = (id, data) =>
+    api.post(`/diadoc/etrn/waybills/${id}/accept`, data, { timeout: 120000 });
+export const getEtrnShipmentPrefill = (shipmentId) =>
+    api.get(`/diadoc/etrn/shipments/${shipmentId}/prefill`);

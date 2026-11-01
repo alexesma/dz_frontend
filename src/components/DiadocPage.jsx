@@ -54,6 +54,7 @@ import {
 } from '../api/diadoc';
 import { getCustomersSummary } from '../api/customers';
 import { getAllProviders } from '../api/providers';
+import EtrnPanel from './EtrnPanel';
 
 const { Title, Text } = Typography;
 
@@ -1418,6 +1419,11 @@ const DiadocPage = () => {
                                     />
                                 </Card>
                             ),
+                        },
+                        {
+                            key: 'etrn',
+                            label: 'Перевозки (ЭТрН)',
+                            children: <EtrnPanel status={status} onStatusChanged={loadStatus} />,
                         },
                         {
                             key: 'outbound',
