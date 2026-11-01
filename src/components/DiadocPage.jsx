@@ -46,6 +46,7 @@ import {
     listDiadocOutboundDocuments,
     processDiadocInboundDocument,
     resolveDiadocInboundMismatch,
+    acknowledgeDiadocInboundMismatch,
     refreshDiadocOutboundDocumentStatus,
     startDiadocInboundReject,
     startDiadocInboundSign,
@@ -691,6 +692,20 @@ const DiadocPage = () => {
         }
     };
 
+    const handleAcknowledgeMismatch = async (row) => {
+        setProcessingDocId(row.id);
+        try {
+            await acknowledgeDiadocInboundMismatch(row.id);
+            message.success('Расхождение отмечено как проверенное');
+            await loadInbound();
+        } catch (err) {
+            console.error('Failed to acknowledge mismatch', err);
+            message.error(err?.response?.data?.detail || 'Не удалось отметить расхождение');
+        } finally {
+            setProcessingDocId(null);
+        }
+    };
+
     const handleBindCounteragent = async (values) => {
         if (!bindCounteragent) return;
         setBindLoading(true);
@@ -733,6 +748,11 @@ const DiadocPage = () => {
                     {row.amount_mismatch_status === 'pending' && (
                         <Tooltip title={`Диадок ${row.total_amount ?? '—'} ₽, второй источник ${row.mismatch_other_total ?? '—'} ₽`}>
                             <Tag color="warning">Расхождение по сумме</Tag>
+                        </Tooltip>
+                    )}
+                    {row.amount_mismatch_status === 'applied' && !row.mismatch_acknowledged_at && (
+                        <Tooltip title="Сумма отличалась от письма; применены данные Диадока. Ждёт проверки.">
+                            <Tag color="error">Расхождение: применён Диадок</Tag>
                         </Tooltip>
                     )}
                     {row.amount_mismatch_status === 'correction_required' && (
@@ -840,6 +860,20 @@ const DiadocPage = () => {
                                 <Button size="small">Оставить как есть</Button>
                             </Popconfirm>
                         </>
+                    )}
+                    {['applied', 'correction_required', 'dismissed'].includes(row.amount_mismatch_status)
+                        && !row.mismatch_acknowledged_at && (
+                        <Tooltip title="Подтвердить, что расхождение просмотрено: всплывающее окно закроется">
+                            <Button
+                                size="small"
+                                type="primary"
+                                danger
+                                loading={processingDocId === row.id}
+                                onClick={() => handleAcknowledgeMismatch(row)}
+                            >
+                                Проверено
+                            </Button>
+                        </Tooltip>
                     )}
                     <Button
                         size="small"

@@ -24,6 +24,9 @@ export const listDiadocInboundDocuments = (params = {}) =>
 export const resolveDiadocInboundMismatch = (documentId, action) =>
     api.post(`/diadoc/inbound-documents/${documentId}/resolve-mismatch`, { action });
 
+export const acknowledgeDiadocInboundMismatch = (documentId) =>
+    api.post(`/diadoc/inbound-documents/${documentId}/acknowledge-mismatch`);
+
 export const processDiadocInboundDocument = (documentId, data = {}) =>
     api.post(`/diadoc/inbound-documents/${documentId}/process`, data);
 
