@@ -836,6 +836,19 @@ const DiadocPage = () => {
                             {row.parsed_details.unmatched?.length ? ` · строк без пары: ${row.parsed_details.unmatched.length}` : ''}
                         </Button>
                     )}
+                    {row.parsed_details?.reclamation_id && (
+                        <Button
+                            size="small"
+                            type="link"
+                            style={{ padding: 0 }}
+                            onClick={() => navigate('/reclamations')}
+                        >
+                            Рекламация #{row.parsed_details.reclamation_id}
+                        </Button>
+                    )}
+                    {row.parsed_details?.state === 'shipment_not_found' && (
+                        <Tag color="warning">реализация не найдена — привязать вручную</Tag>
+                    )}
                     {row.total_amount != null && (
                         <Text type="secondary" style={{ fontSize: 12 }}>
                             Сумма: {Number(row.total_amount).toLocaleString('ru-RU')} ₽
