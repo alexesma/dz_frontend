@@ -419,6 +419,7 @@ const CustomerPricelistStudioPage = () => {
             zzap_rounding_step: safeNumber(extra.ZZAP_ROUNDING_STEP, 10),
             zzap_label_products: extra.ZZAP_LABEL_PRODUCTS !== false,
             require_draft_approval: Boolean(extra.REQUIRE_DRAFT_APPROVAL),
+            send_pricelist_by_email: Boolean(extra.SEND_PRICELIST_BY_EMAIL),
             publish_confirmed_dz_crosses:
                 extra.PUBLISH_CONFIRMED_DZ_CROSSES !== false,
             pipeline_v2_enabled: Boolean(extra.PIPELINE_V2_ENABLED),
@@ -614,6 +615,7 @@ const CustomerPricelistStudioPage = () => {
                     ? false
                     : Boolean(activeConfig.additional_filters?.ZZAP),
                 REQUIRE_DRAFT_APPROVAL: Boolean(values.require_draft_approval),
+                SEND_PRICELIST_BY_EMAIL: Boolean(values.send_pricelist_by_email),
                 PUBLISH_CONFIRMED_DZ_CROSSES:
                     values.publish_confirmed_dz_crosses !== false,
                 PIPELINE_V2_ENABLED: Boolean(values.pipeline_v2_enabled),
@@ -1381,6 +1383,16 @@ const CustomerPricelistStudioPage = () => {
                         name="require_draft_approval"
                         label="Требовать проверку черновика перед отправкой"
                         valuePropName="checked"
+                    >
+                        <Switch />
+                    </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                    <Form.Item
+                        name="send_pricelist_by_email"
+                        label="Отправлять прайс клиенту по почте по расписанию"
+                        valuePropName="checked"
+                        extra="Если выключено, прайс собирается и применяется к заказам, но клиенту письмо не уходит. Отправить вручную можно кнопкой «Отправить прайс получателям»"
                     >
                         <Switch />
                     </Form.Item>
