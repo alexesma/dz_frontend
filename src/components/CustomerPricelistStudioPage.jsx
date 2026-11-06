@@ -13,6 +13,7 @@ import {
     InputNumber,
     Modal,
     Popconfirm,
+    Radio,
     Row,
     Select,
     Space,
@@ -988,6 +989,11 @@ const CustomerPricelistStudioPage = () => {
         }
     };
 
+    const sourceOptions = useMemo(() => sources.map((source) => ({
+        value: source.id,
+        label: `${source.provider_name || 'Поставщик'} · ${source.provider_config_name || `конфигурация ${source.provider_config_id}`}`,
+    })), [sources]);
+
     const normalizedSources = useMemo(() => sources.map((source) => ({
         ...source,
         dz_expand_brands: source.dz_expand_brands ?? Boolean(
@@ -1093,6 +1099,9 @@ const CustomerPricelistStudioPage = () => {
             source_autopart_id: rule.source_autopart_id,
             target_autopart_ids: existingTargets.map((item) => item.autopart_id),
             fixed_price: rule.fixed_price == null ? null : Number(rule.fixed_price),
+            price_mode: rule.price_mode || (rule.fixed_price == null ? 'default' : 'fixed'),
+            price_percent: rule.price_percent == null ? 100 : Number(rule.price_percent),
+            price_source_id: rule.price_source_id ?? null,
             mode: rule.mode,
             is_active: rule.is_active,
         });
@@ -1948,11 +1957,23 @@ const CustomerPricelistStudioPage = () => {
         {
             title: 'Цена замены',
             dataIndex: 'fixed_price',
-            width: 130,
+            width: 190,
             align: 'right',
             render: (value, row) => {
                 if (row.mode === 'hide') {
                     return <Text type="secondary">Не применяется</Text>;
+                }
+                if (row.price_mode === 'percent' && row.price_percent != null) {
+                    return (
+                        <div>
+                            <Text strong>{Number(row.price_percent).toLocaleString('ru-RU')} %</Text>
+                            <div className="muted-line">
+                                {row.price_source_name
+                                    ? `от прайса ${row.price_source_name}`
+                                    : 'от итоговой цены'}
+                            </div>
+                        </div>
+                    );
                 }
                 return value == null
                     ? <Text type="secondary">По расчёту</Text>
@@ -2288,6 +2309,9 @@ const CustomerPricelistStudioPage = () => {
                                                 is_active: true,
                                                 target_autopart_ids: [],
                                                 fixed_price: null,
+                                                price_mode: 'default',
+                                                price_percent: 100,
+                                                price_source_id: null,
                                             });
                                             setRuleModalOpen(true);
                                         }}
@@ -2796,18 +2820,100 @@ const CustomerPricelistStudioPage = () => {
                                     />
                                 </Form.Item>
                                 <Form.Item
-                                    name="fixed_price"
-                                    label="Фиксированная цена замены, ₽"
-                                    extra="Оставьте пустым, чтобы использовать обычный расчёт цены источника и наценок."
+                                    name="price_mode"
+                                    label="Цена замены"
+                                    extra="Как считать цену выбранных кроссов в прайсе клиента."
                                 >
-                                    <InputNumber
-                                        min={0.01}
-                                        max={99999999.99}
-                                        precision={2}
-                                        decimalSeparator=","
-                                        style={{ width: '100%' }}
-                                        placeholder="Цена по обычному расчёту"
-                                    />
+                                    <Radio.Group buttonStyle="solid">
+                                        <Radio.Button value="default">По расчёту</Radio.Button>
+                                        <Radio.Button value="fixed">Фиксированная цена</Radio.Button>
+                                        <Radio.Button value="percent">% от цены в прайсе</Radio.Button>
+                                    </Radio.Group>
+                                </Form.Item>
+                                <Form.Item
+                                    noStyle
+                                    shouldUpdate={(previous, current) => (
+                                        previous.price_mode !== current.price_mode
+                                        || previous.price_percent !== current.price_percent
+                                        || previous.price_source_id !== current.price_source_id
+                                    )}
+                                >
+                                    {({ getFieldValue }) => {
+                                        const priceMode = getFieldValue('price_mode');
+                                        if (priceMode === 'fixed') {
+                                            return (
+                                                <Form.Item
+                                                    name="fixed_price"
+                                                    label="Цена, ₽"
+                                                    rules={[{ required: true, message: 'Укажите цену' }]}
+                                                >
+                                                    <InputNumber
+                                                        min={0.01}
+                                                        max={99999999.99}
+                                                        precision={2}
+                                                        decimalSeparator=","
+                                                        style={{ width: '100%' }}
+                                                        placeholder="Например, 1250,00"
+                                                    />
+                                                </Form.Item>
+                                            );
+                                        }
+                                        if (priceMode === 'percent') {
+                                            const percent = Number(getFieldValue('price_percent')) || 0;
+                                            const delta = Math.round((percent - 100) * 100) / 100;
+                                            const sourceId = getFieldValue('price_source_id');
+                                            const sourceLabel = sourceId
+                                                ? sourceOptions.find((item) => item.value === sourceId)?.label
+                                                : null;
+                                            return (
+                                                <>
+                                                    <Row gutter={12}>
+                                                        <Col xs={24} md={10}>
+                                                            <Form.Item
+                                                                name="price_percent"
+                                                                label="Процент от цены, %"
+                                                                rules={[{ required: true, message: 'Укажите процент' }]}
+                                                            >
+                                                                <InputNumber
+                                                                    min={1}
+                                                                    max={1000}
+                                                                    precision={2}
+                                                                    decimalSeparator=","
+                                                                    addonAfter="%"
+                                                                    style={{ width: '100%' }}
+                                                                />
+                                                            </Form.Item>
+                                                        </Col>
+                                                        <Col xs={24} md={14}>
+                                                            <Form.Item
+                                                                name="price_source_id"
+                                                                label="Прайс, из которого берём цену"
+                                                            >
+                                                                <Select
+                                                                    allowClear
+                                                                    showSearch
+                                                                    optionFilterProp="label"
+                                                                    options={sourceOptions}
+                                                                    placeholder="Итоговая цена позиции в прайсе"
+                                                                />
+                                                            </Form.Item>
+                                                        </Col>
+                                                    </Row>
+                                                    <Alert
+                                                        type="info"
+                                                        showIcon
+                                                        style={{ marginBottom: 16 }}
+                                                        message={
+                                                            `Цена = ${sourceLabel ? `цена позиции в прайсе «${sourceLabel}»` : 'итоговая цена позиции'} × ${percent.toLocaleString('ru-RU')} %`
+                                                            + (delta === 0 ? ' (без изменений)' : delta > 0 ? ` (на ${delta.toLocaleString('ru-RU')} % дороже)` : ` (на ${Math.abs(delta).toLocaleString('ru-RU')} % дешевле)`)
+                                                        }
+                                                        description="Цена берётся с учётом наценки этого источника. Если позиции нет в выбранном прайсе, используется итоговая цена, а в сводке генерации появится предупреждение."
+                                                    />
+                                                </>
+                                            );
+                                        }
+                                        return null;
+                                    }}
                                 </Form.Item>
                             </>
                         )}
