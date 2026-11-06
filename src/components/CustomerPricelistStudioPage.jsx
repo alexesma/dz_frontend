@@ -1,11 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import dayjs from 'dayjs';
 import {
     Alert,
     Button,
     Card,
+    Checkbox,
     Col,
     Collapse,
+    DatePicker,
     Divider,
     Empty,
     Form,
@@ -22,6 +25,7 @@ import {
     Table,
     Tag,
     Typography,
+    Upload,
     message,
 } from 'antd';
 import {
@@ -41,6 +45,7 @@ import {
 import {
     approveCustomerPricelistDraft,
     buildCustomerPricelistDraft,
+    bulkSaveCustomerPricelistPublicationRules,
     createCustomerPricelistConfig,
     createCustomerPricelistSource,
     deleteCustomerPricelistConfig,
@@ -48,13 +53,16 @@ import {
     deleteCustomerPricelistSource,
     diagnoseCustomerPricelistPosition,
     downloadCustomerPricelistDraft,
+    downloadPublicationRulesImportTemplate,
     getCustomerPricelistConfigs,
     getCustomerPricelistSources,
     getCustomersSummary,
+    importCustomerPricelistPublicationRules,
     listCustomerPricelistDraftRows,
     listCustomerPricelistDrafts,
     listCustomerPricelistPublicationCrosses,
     listCustomerPricelistPublicationRules,
+    previewCustomerPricelistPublicationRule,
     rejectCustomerPricelistDraft,
     saveCustomerPricelistPublicationRule,
     searchCustomerPricelistPublicationCandidates,
@@ -199,6 +207,21 @@ const getErrorText = (error, fallback) => {
     return error?.message || fallback;
 };
 
+const ruleValidityLabel = (rule) => {
+    const today = dayjs().format('YYYY-MM-DD');
+    const range = [
+        rule.valid_from ? `с ${dayjs(rule.valid_from).format('DD.MM.YYYY')}` : null,
+        rule.valid_to ? `по ${dayjs(rule.valid_to).format('DD.MM.YYYY')}` : null,
+    ].filter(Boolean).join(' ');
+    if (rule.valid_to && rule.valid_to < today) return `${range} · срок истёк`;
+    if (rule.valid_from && rule.valid_from > today) return `${range} · ещё не началось`;
+    return range;
+};
+
+const formatRub = (value) => (
+    value == null ? '—' : `${Number(value).toLocaleString('ru-RU')} ₽`
+);
+
 const candidateLabel = (item) => (
     `${item.brand} ${item.oem}${item.name ? ` · ${item.name}` : ''}`
 );
@@ -252,6 +275,26 @@ const CustomerPricelistStudioPage = () => {
     const [crossOptions, setCrossOptions] = useState([]);
     const [candidateLoading, setCandidateLoading] = useState(false);
     const [ruleSaving, setRuleSaving] = useState(false);
+    const [rulePreview, setRulePreview] = useState(null);
+    const [bulkOpen, setBulkOpen] = useState(false);
+    const [bulkSaving, setBulkSaving] = useState(false);
+    const [bulkPositionOptions, setBulkPositionOptions] = useState([]);
+    const [importOpen, setImportOpen] = useState(false);
+    const [importing, setImporting] = useState(false);
+    const [importReport, setImportReport] = useState(null);
+    const [importFile, setImportFile] = useState(null);
+    const [importOverwrite, setImportOverwrite] = useState(false);
+    const [bulkForm] = Form.useForm();
+    const bulkScope = Form.useWatch('scope', bulkForm);
+    const bulkAction = Form.useWatch('action', bulkForm);
+    const bulkPriceMode = Form.useWatch('price_mode', bulkForm);
+    const watchedRuleSource = Form.useWatch('source_autopart_id', ruleForm);
+    const watchedRulePriceMode = Form.useWatch('price_mode', ruleForm);
+    const watchedRuleFixed = Form.useWatch('fixed_price', ruleForm);
+    const watchedRulePercent = Form.useWatch('price_percent', ruleForm);
+    const watchedRuleSourceId = Form.useWatch('price_source_id', ruleForm);
+    const watchedRuleRounding = Form.useWatch('price_rounding_step', ruleForm);
+    const watchedRuleMode = Form.useWatch('mode', ruleForm);
     const [pipelineOrder, setPipelineOrder] = useState(DEFAULT_PIPELINE_ORDER);
     const [draggedPipelineStep, setDraggedPipelineStep] = useState(null);
     const [sourceFilterOpen, setSourceFilterOpen] = useState(false);
@@ -1049,10 +1092,55 @@ const CustomerPricelistStudioPage = () => {
         }
     };
 
+    useEffect(() => {
+        const priceMode = watchedRulePriceMode;
+        const ready = ruleModalOpen && customerId && configId && watchedRuleSource
+            && watchedRuleMode !== 'hide'
+            && (priceMode === 'fixed' ? Number(watchedRuleFixed) > 0
+                : priceMode === 'percent' ? Number(watchedRulePercent) > 0 : false);
+        if (!ready) {
+            setRulePreview(null);
+            return undefined;
+        }
+        let cancelled = false;
+        const timer = setTimeout(async () => {
+            try {
+                const { data } = await previewCustomerPricelistPublicationRule(
+                    customerId,
+                    configId,
+                    {
+                        source_autopart_id: watchedRuleSource,
+                        price_mode: priceMode,
+                        fixed_price: priceMode === 'fixed' ? Number(watchedRuleFixed) : null,
+                        price_percent: priceMode === 'percent' ? Number(watchedRulePercent) : null,
+                        price_source_id: priceMode === 'percent' ? watchedRuleSourceId || null : null,
+                        price_rounding_step: priceMode === 'percent' ? watchedRuleRounding || null : null,
+                    }
+                );
+                if (!cancelled) setRulePreview(data);
+            } catch {
+                if (!cancelled) setRulePreview(null);
+            }
+        }, 400);
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [
+        ruleModalOpen, customerId, configId, watchedRuleSource, watchedRulePriceMode,
+        watchedRuleFixed, watchedRulePercent, watchedRuleSourceId, watchedRuleRounding,
+        watchedRuleMode,
+    ]);
+
     const handleSaveRule = async () => {
         setRuleSaving(true);
         try {
-            const values = await ruleForm.validateFields();
+            const { valid_range: validRange, ...formValues } = await ruleForm.validateFields();
+            const values = {
+                ...formValues,
+                valid_from: validRange?.[0] ? validRange[0].format('YYYY-MM-DD') : null,
+                valid_to: validRange?.[1] ? validRange[1].format('YYYY-MM-DD') : null,
+            };
             await saveCustomerPricelistPublicationRule(
                 customerId,
                 configId,
@@ -1067,11 +1155,112 @@ const CustomerPricelistStudioPage = () => {
             ruleForm.resetFields();
             setCandidateOptions([]);
             setCrossOptions([]);
+            setRulePreview(null);
             message.success('Правило публикации сохранено');
         } catch (error) {
             message.error(getErrorText(error, 'Не удалось сохранить правило'));
         } finally {
             setRuleSaving(false);
+        }
+    };
+
+    const refreshRules = async () => {
+        const { data } = await listCustomerPricelistPublicationRules(customerId, configId);
+        setRules(data || []);
+    };
+
+    const openBulkModal = () => {
+        bulkForm.resetFields();
+        bulkForm.setFieldsValue({
+            scope: 'brand',
+            action: 'price_only',
+            price_mode: 'percent',
+            price_percent: 100,
+            overwrite_cross_rules: false,
+        });
+        setBulkPositionOptions([]);
+        setBulkOpen(true);
+    };
+
+    const searchBulkPositions = async (value) => {
+        if (String(value || '').trim().length < 2) return;
+        try {
+            const { data } = await searchCustomerPricelistPublicationCandidates(
+                customerId,
+                configId,
+                { search: String(value).trim(), limit: 50 }
+            );
+            setBulkPositionOptions((previous) => {
+                const merged = new Map(previous.map((item) => [item.autopart_id, item]));
+                (data || []).forEach((item) => merged.set(item.autopart_id, item));
+                return Array.from(merged.values());
+            });
+        } catch (error) {
+            message.error(getErrorText(error, 'Не удалось найти позиции'));
+        }
+    };
+
+    const handleBulkSave = async () => {
+        setBulkSaving(true);
+        try {
+            const values = await bulkForm.validateFields();
+            const priced = values.action === 'price_only';
+            const { data } = await bulkSaveCustomerPricelistPublicationRules(customerId, configId, {
+                mode: values.action,
+                price_mode: priced ? values.price_mode : 'default',
+                fixed_price: priced && values.price_mode === 'fixed' ? values.fixed_price : null,
+                price_percent: priced && values.price_mode === 'percent' ? values.price_percent : null,
+                price_source_id: priced && values.price_mode === 'percent' ? values.price_source_id || null : null,
+                price_rounding_step: priced && values.price_mode === 'percent' ? values.price_rounding_step || null : null,
+                brand_id: values.scope === 'brand' ? values.brand_id : null,
+                autopart_ids: values.scope === 'positions' ? values.autopart_ids : [],
+                valid_from: values.valid_range?.[0] ? values.valid_range[0].format('YYYY-MM-DD') : null,
+                valid_to: values.valid_range?.[1] ? values.valid_range[1].format('YYYY-MM-DD') : null,
+                overwrite_cross_rules: Boolean(values.overwrite_cross_rules),
+            });
+            await refreshRules();
+            setBulkOpen(false);
+            message.success(
+                `Правил создано: ${data.created}, обновлено: ${data.updated}, пропущено: ${data.skipped}`
+            );
+        } catch (error) {
+            if (error?.errorFields) return;
+            message.error(getErrorText(error, 'Не удалось применить правило'));
+        } finally {
+            setBulkSaving(false);
+        }
+    };
+
+    const handleDownloadTemplate = async () => {
+        try {
+            const { data } = await downloadPublicationRulesImportTemplate(customerId, configId);
+            const url = URL.createObjectURL(data);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'publication_rules_template.xlsx';
+            link.click();
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            message.error(getErrorText(error, 'Не удалось скачать шаблон'));
+        }
+    };
+
+    const handleImportRules = async () => {
+        if (!importFile) return;
+        setImporting(true);
+        try {
+            const { data } = await importCustomerPricelistPublicationRules(
+                customerId,
+                configId,
+                importFile,
+                importOverwrite
+            );
+            setImportReport(data);
+            await refreshRules();
+        } catch (error) {
+            message.error(getErrorText(error, 'Не удалось загрузить файл'));
+        } finally {
+            setImporting(false);
         }
     };
 
@@ -1102,6 +1291,10 @@ const CustomerPricelistStudioPage = () => {
             price_mode: rule.price_mode || (rule.fixed_price == null ? 'default' : 'fixed'),
             price_percent: rule.price_percent == null ? 100 : Number(rule.price_percent),
             price_source_id: rule.price_source_id ?? null,
+            price_rounding_step: rule.price_rounding_step ?? null,
+            valid_range: rule.valid_from || rule.valid_to
+                ? [rule.valid_from ? dayjs(rule.valid_from) : null, rule.valid_to ? dayjs(rule.valid_to) : null]
+                : null,
             mode: rule.mode,
             is_active: rule.is_active,
         });
@@ -1924,17 +2117,29 @@ const CustomerPricelistStudioPage = () => {
             title: 'Правило',
             dataIndex: 'mode',
             width: 190,
-            render: (value) => ({
-                only_cross: <Tag color="green">Только выбранные кроссы</Tag>,
-                add_cross: <Tag color="blue">Исходная + кроссы</Tag>,
-                hide: <Tag color="red">Не публиковать</Tag>,
-            }[value] || value),
+            render: (value, row) => (
+                <div>
+                    {{
+                        only_cross: <Tag color="green">Только выбранные кроссы</Tag>,
+                        add_cross: <Tag color="blue">Исходная + кроссы</Tag>,
+                        price_only: <Tag color="purple">Только цена</Tag>,
+                        hide: <Tag color="red">Не публиковать</Tag>,
+                    }[value] || value}
+                    {(row.valid_from || row.valid_to) && (
+                        <div className="muted-line">
+                            {ruleValidityLabel(row)}
+                        </div>
+                    )}
+                </div>
+            ),
         },
         {
             title: 'Публиковать как',
             key: 'target',
             width: 390,
-            render: (_, row) => row.mode === 'hide' ? '—' : (
+            render: (_, row) => row.mode === 'hide' ? '—' : row.mode === 'price_only' ? (
+                <Text type="secondary">Та же позиция, меняется только цена</Text>
+            ) : (
                 <div className="publication-rule-targets">
                     {(row.targets?.length ? row.targets : [{
                         brand: row.target_brand,
@@ -1971,6 +2176,7 @@ const CustomerPricelistStudioPage = () => {
                                 {row.price_source_name
                                     ? `от прайса ${row.price_source_name}`
                                     : 'от итоговой цены'}
+                                {row.price_rounding_step ? `, округление до ${row.price_rounding_step} ₽` : ''}
                             </div>
                         </div>
                     );
@@ -2128,9 +2334,25 @@ const CustomerPricelistStudioPage = () => {
             title: 'Преобразование',
             dataIndex: 'row_type',
             width: 190,
-            render: (value) => {
+            render: (value, row) => {
                 const meta = ROW_TYPE_META[value] || { color: 'default', label: value };
-                return <Tag color={meta.color}>{meta.label}</Tag>;
+                const rule = row.publication_rule_id
+                    ? rules.find((item) => item.id === row.publication_rule_id)
+                    : null;
+                return (
+                    <div>
+                        <Tag color={meta.color}>{meta.label}</Tag>
+                        {row.publication_rule_id && (
+                            <Tag
+                                color="purple"
+                                style={{ cursor: rule ? 'pointer' : 'default' }}
+                                onClick={rule ? () => handleEditRule(rule) : undefined}
+                            >
+                                {rule ? `Правило №${rule.id}` : `Правило №${row.publication_rule_id} удалено`}
+                            </Tag>
+                        )}
+                    </div>
+                );
             },
         },
     ];
@@ -2295,6 +2517,27 @@ const CustomerPricelistStudioPage = () => {
                                 key: 'rules',
                                 label: `Правила публикации позиций (${rules.length})`,
                                 extra: (
+                                    <Space size={8}>
+                                    <Button
+                                        size="small"
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            openBulkModal();
+                                        }}
+                                    >
+                                        Массово
+                                    </Button>
+                                    <Button
+                                        size="small"
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            setImportFile(null);
+                                            setImportReport(null);
+                                            setImportOpen(true);
+                                        }}
+                                    >
+                                        Импорт из Excel
+                                    </Button>
                                     <Button
                                         type="primary"
                                         size="small"
@@ -2312,12 +2555,15 @@ const CustomerPricelistStudioPage = () => {
                                                 price_mode: 'default',
                                                 price_percent: 100,
                                                 price_source_id: null,
+                                                price_rounding_step: null,
+                                                valid_range: null,
                                             });
                                             setRuleModalOpen(true);
                                         }}
                                     >
                                         Добавить правило
                                     </Button>
+                                    </Space>
                                 ),
                                 children: (
                                     <>
@@ -2562,6 +2808,9 @@ const CustomerPricelistStudioPage = () => {
                                                 <Table
                                                     rowKey="id"
                                                     columns={rowColumns}
+                                                    rowClassName={(row) => (
+                                                        row.publication_rule_id ? 'publication-rule-row' : ''
+                                                    )}
                                                     dataSource={draftRows}
                                                     loading={rowsLoading}
                                                     pagination={{
@@ -2786,6 +3035,11 @@ const CustomerPricelistStudioPage = () => {
                     </Form.Item>
                     <Form.Item name="mode" label="Режим публикации" rules={[{ required: true }]}>
                         <Select
+                            onChange={(value) => {
+                                if (value === 'price_only' && ruleForm.getFieldValue('price_mode') === 'default') {
+                                    ruleForm.setFieldsValue({ price_mode: 'percent', price_percent: 100 });
+                                }
+                            }}
                             options={[
                                 {
                                     value: 'only_cross',
@@ -2795,6 +3049,10 @@ const CustomerPricelistStudioPage = () => {
                                     value: 'add_cross',
                                     label: 'Оставить позицию и добавить выбранные кроссы',
                                 },
+                                {
+                                    value: 'price_only',
+                                    label: 'Оставить позицию как есть и изменить только цену',
+                                },
                                 { value: 'hide', label: 'Не публиковать позицию' },
                             ]}
                         />
@@ -2802,6 +3060,7 @@ const CustomerPricelistStudioPage = () => {
                     <Form.Item noStyle shouldUpdate={(previous, current) => previous.mode !== current.mode}>
                         {({ getFieldValue }) => getFieldValue('mode') !== 'hide' && (
                             <>
+                                {getFieldValue('mode') !== 'price_only' && (
                                 <Form.Item
                                     name="target_autopart_ids"
                                     label="Подтверждённые кроссы"
@@ -2819,13 +3078,16 @@ const CustomerPricelistStudioPage = () => {
                                         }))}
                                     />
                                 </Form.Item>
+                                )}
                                 <Form.Item
                                     name="price_mode"
                                     label="Цена замены"
                                     extra="Как считать цену выбранных кроссов в прайсе клиента."
                                 >
                                     <Radio.Group buttonStyle="solid">
-                                        <Radio.Button value="default">По расчёту</Radio.Button>
+                                        {watchedRuleMode !== 'price_only' && (
+                                            <Radio.Button value="default">По расчёту</Radio.Button>
+                                        )}
                                         <Radio.Button value="fixed">Фиксированная цена</Radio.Button>
                                         <Radio.Button value="percent">% от цены в прайсе</Radio.Button>
                                     </Radio.Group>
@@ -2899,6 +3161,20 @@ const CustomerPricelistStudioPage = () => {
                                                             </Form.Item>
                                                         </Col>
                                                     </Row>
+                                                    <Form.Item
+                                                        name="price_rounding_step"
+                                                        label="Округлять цену вверх до"
+                                                        extra="Например, до 10 ₽: 1 045 ₽ станет 1 050 ₽. Так же округляет контроль цены."
+                                                    >
+                                                        <Select
+                                                            allowClear
+                                                            placeholder="Без округления"
+                                                            options={[5, 10, 50, 100].map((step) => ({
+                                                                value: step,
+                                                                label: `до ${step} ₽`,
+                                                            }))}
+                                                        />
+                                                    </Form.Item>
                                                     <Alert
                                                         type="info"
                                                         showIcon
@@ -2915,13 +3191,207 @@ const CustomerPricelistStudioPage = () => {
                                         return null;
                                     }}
                                 </Form.Item>
+                                {rulePreview && (
+                                    <Alert
+                                        type={rulePreview.result_price == null ? 'warning' : 'success'}
+                                        showIcon
+                                        style={{ marginBottom: 16 }}
+                                        message={
+                                            rulePreview.result_price == null
+                                                ? rulePreview.note
+                                                : `Сейчас в прайсе ${formatRub(rulePreview.current_price)}, станет ${formatRub(rulePreview.result_price)}`
+                                        }
+                                        description={
+                                            rulePreview.result_price == null
+                                                ? undefined
+                                                : (
+                                                    <div>
+                                                        {(rulePreview.source_prices || []).map((item) => (
+                                                            <div key={item.source_id}>
+                                                                {item.source_name}: {formatRub(item.price_with_markup)}
+                                                            </div>
+                                                        ))}
+                                                        <div className="muted-line">{rulePreview.note}</div>
+                                                    </div>
+                                                )
+                                        }
+                                    />
+                                )}
                             </>
                         )}
+                    </Form.Item>
+                    <Form.Item
+                        name="valid_range"
+                        label="Срок действия (необязательно)"
+                        extra="Без дат правило действует всегда. Для акции укажите начало и конец: после конца цена и публикация вернутся к обычным."
+                    >
+                        <DatePicker.RangePicker
+                            allowEmpty={[true, true]}
+                            format="DD.MM.YYYY"
+                            placeholder={['С даты', 'По дату']}
+                            style={{ width: '100%' }}
+                        />
                     </Form.Item>
                     <Form.Item name="is_active" label="Правило активно" valuePropName="checked">
                         <Switch />
                     </Form.Item>
                 </Form>
+            </Modal>
+
+            <Modal
+                title="Массовое правило публикации"
+                open={bulkOpen}
+                onCancel={() => setBulkOpen(false)}
+                onOk={handleBulkSave}
+                okText="Применить"
+                confirmLoading={bulkSaving}
+                width={680}
+            >
+                <Form form={bulkForm} layout="vertical">
+                    <Form.Item name="scope" label="К чему применить" rules={[{ required: true }]}>
+                        <Radio.Group buttonStyle="solid">
+                            <Radio.Button value="brand">Весь бренд</Radio.Button>
+                            <Radio.Button value="positions">Выбранные позиции</Radio.Button>
+                        </Radio.Group>
+                    </Form.Item>
+                    {bulkScope === 'brand' ? (
+                        <Form.Item
+                            name="brand_id"
+                            label="Бренд"
+                            extra="Правило создастся для позиций бренда, которые есть в свежих прайсах источников этой конфигурации."
+                            rules={[{ required: true, message: 'Выберите бренд' }]}
+                        >
+                            <Select
+                                showSearch
+                                optionFilterProp="label"
+                                options={brandOptions.map((brand) => ({ value: brand.id, label: brand.name }))}
+                                placeholder="Выберите бренд"
+                            />
+                        </Form.Item>
+                    ) : (
+                        <Form.Item
+                            name="autopart_ids"
+                            label="Позиции"
+                            rules={[{ required: true, message: 'Выберите позиции' }]}
+                        >
+                            <Select
+                                mode="multiple"
+                                showSearch
+                                filterOption={false}
+                                onSearch={searchBulkPositions}
+                                placeholder="Введите артикул, бренд или название"
+                                options={bulkPositionOptions.map((item) => ({
+                                    value: item.autopart_id,
+                                    label: candidateLabel(item),
+                                }))}
+                            />
+                        </Form.Item>
+                    )}
+                    <Form.Item name="action" label="Действие" rules={[{ required: true }]}>
+                        <Radio.Group buttonStyle="solid">
+                            <Radio.Button value="price_only">Изменить цену</Radio.Button>
+                            <Radio.Button value="hide">Не публиковать</Radio.Button>
+                        </Radio.Group>
+                    </Form.Item>
+                    {bulkAction === 'price_only' && (
+                        <>
+                            <Form.Item name="price_mode" label="Как задать цену">
+                                <Radio.Group buttonStyle="solid">
+                                    <Radio.Button value="percent">% от цены в прайсе</Radio.Button>
+                                    <Radio.Button value="fixed">Фиксированная цена</Radio.Button>
+                                </Radio.Group>
+                            </Form.Item>
+                            {bulkPriceMode === 'fixed' ? (
+                                <Form.Item name="fixed_price" label="Цена, ₽" rules={[{ required: true, message: 'Укажите цену' }]}>
+                                    <InputNumber min={0.01} precision={2} decimalSeparator="," style={{ width: '100%' }} />
+                                </Form.Item>
+                            ) : (
+                                <Row gutter={12}>
+                                    <Col xs={24} md={8}>
+                                        <Form.Item name="price_percent" label="Процент, %" rules={[{ required: true, message: 'Укажите процент' }]}>
+                                            <InputNumber min={1} max={1000} precision={2} decimalSeparator="," addonAfter="%" style={{ width: '100%' }} />
+                                        </Form.Item>
+                                    </Col>
+                                    <Col xs={24} md={16}>
+                                        <Form.Item name="price_source_id" label="Прайс, из которого берём цену">
+                                            <Select allowClear showSearch optionFilterProp="label" options={sourceOptions} placeholder="Итоговая цена позиции в прайсе" />
+                                        </Form.Item>
+                                    </Col>
+                                    <Col xs={24}>
+                                        <Form.Item name="price_rounding_step" label="Округлять цену вверх до">
+                                            <Select
+                                                allowClear
+                                                placeholder="Без округления"
+                                                options={[5, 10, 50, 100].map((step) => ({ value: step, label: `до ${step} ₽` }))}
+                                            />
+                                        </Form.Item>
+                                    </Col>
+                                </Row>
+                            )}
+                        </>
+                    )}
+                    <Form.Item name="valid_range" label="Срок действия (необязательно)">
+                        <DatePicker.RangePicker allowEmpty={[true, true]} format="DD.MM.YYYY" placeholder={['С даты', 'По дату']} style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item name="overwrite_cross_rules" valuePropName="checked">
+                        <Checkbox>Заменить существующие правила с кроссами (по умолчанию они пропускаются)</Checkbox>
+                    </Form.Item>
+                </Form>
+            </Modal>
+
+            <Modal
+                title="Импорт правил публикации из Excel"
+                open={importOpen}
+                onCancel={() => setImportOpen(false)}
+                onOk={handleImportRules}
+                okText="Загрузить"
+                okButtonProps={{ disabled: !importFile }}
+                confirmLoading={importing}
+                width={680}
+            >
+                <Space direction="vertical" style={{ width: '100%' }} size={12}>
+                    <Alert
+                        type="info"
+                        showIcon
+                        message="Колонки: Бренд, Артикул, Действие (скрыть / цена), Тип цены (фиксированная / процент), Значение, Прайс, Округление, Действует с, Действует по"
+                        description="Обязательны первые три. Позиция должна быть в номенклатуре, прайс — подключён к этой конфигурации. Строки с ошибками пропускаются и перечисляются ниже."
+                    />
+                    <Button icon={<CloudDownloadOutlined />} onClick={handleDownloadTemplate}>
+                        Скачать шаблон
+                    </Button>
+                    <Upload
+                        accept=".xlsx"
+                        maxCount={1}
+                        beforeUpload={(file) => {
+                            setImportFile(file);
+                            setImportReport(null);
+                            return false;
+                        }}
+                        onRemove={() => {
+                            setImportFile(null);
+                            setImportReport(null);
+                        }}
+                    >
+                        <Button icon={<PlusOutlined />}>Выбрать файл .xlsx</Button>
+                    </Upload>
+                    <Checkbox checked={importOverwrite} onChange={(event) => setImportOverwrite(event.target.checked)}>
+                        Заменить существующие правила с кроссами
+                    </Checkbox>
+                    {importReport && (
+                        <Alert
+                            type={importReport.errors?.length ? 'warning' : 'success'}
+                            showIcon
+                            message={`Создано: ${importReport.created}, обновлено: ${importReport.updated}, пропущено: ${importReport.skipped}, ошибок: ${importReport.errors?.length || 0}`}
+                            description={importReport.errors?.length ? (
+                                <div style={{ maxHeight: 200, overflow: 'auto' }}>
+                                    {importReport.errors.map((item) => (
+                                        <div key={`${item.row}-${item.message}`}>Строка {item.row}: {item.message}</div>
+                                    ))}
+                                </div>
+                            ) : undefined}
+                        />
+                    )}
+                </Space>
             </Modal>
         </div>
     );

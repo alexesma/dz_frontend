@@ -112,6 +112,39 @@ export const listCustomerPricelistPublicationRules = (customerId, configId) =>
 export const saveCustomerPricelistPublicationRule = (customerId, configId, data) =>
     api.post(`/customers/${customerId}/pricelist-configs/${configId}/publication-rules`, data);
 
+export const previewCustomerPricelistPublicationRule = (customerId, configId, data) =>
+    api.post(
+        `/customers/${customerId}/pricelist-configs/${configId}/publication-rules/preview`,
+        data
+    );
+
+export const bulkSaveCustomerPricelistPublicationRules = (customerId, configId, data) =>
+    api.post(
+        `/customers/${customerId}/pricelist-configs/${configId}/publication-rules/bulk`,
+        data
+    );
+
+export const importCustomerPricelistPublicationRules = (
+    customerId,
+    configId,
+    file,
+    overwriteCrossRules = false
+) => {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('overwrite_cross_rules', overwriteCrossRules ? 'true' : 'false');
+    return api.post(
+        `/customers/${customerId}/pricelist-configs/${configId}/publication-rules/import`,
+        form
+    );
+};
+
+export const downloadPublicationRulesImportTemplate = (customerId, configId) =>
+    api.get(
+        `/customers/${customerId}/pricelist-configs/${configId}/publication-rules/import-template`,
+        { responseType: 'blob' }
+    );
+
 export const deleteCustomerPricelistPublicationRule = (customerId, configId, ruleId) =>
     api.delete(`/customers/${customerId}/pricelist-configs/${configId}/publication-rules/${ruleId}`);
 

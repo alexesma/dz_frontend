@@ -477,3 +477,11 @@
         grid-template-columns: 1fr auto;
     }
 }
+
+.customer-pricelist-studio .publication-rule-row > td {
+    background: rgba(114, 46, 209, 0.06);
+}
+
+.customer-pricelist-studio .publication-rule-row:hover > td {
+    background: rgba(114, 46, 209, 0.12) !important;
+}
