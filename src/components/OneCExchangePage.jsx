@@ -28,6 +28,7 @@ import {
     UploadOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { Link } from 'react-router-dom';
 import {
     downloadOneCIncoming,
     downloadOneCExport,
@@ -607,23 +608,41 @@ const OneCExchangePage = () => {
                                 { key: 'shipments', label: 'Проведённые реализации', children: `${historyAudit.posted_shipments?.count ?? 0}; без события: ${historyAudit.posted_shipments?.without_event ?? 0}` },
                                 { key: 'dates', label: 'Период', children: `${historyAudit.posted_receipts?.first_date || '—'} — ${historyAudit.posted_shipments?.last_date || '—'}` },
                                 { key: 'contracts', label: 'Поставщики без договора УНФ', children: historyAudit.providers_missing_contract?.length ?? 0 },
-                                { key: 'quantity', label: 'Авто-черновики с превышением заказа более чем в 10 раз', children: historyAudit.suspicious_auto_receipts?.length ?? 0 },
-                                { key: 'prices', label: 'Поступления с нулевой или отсутствующей ценой', children: historyAudit.missing_price_receipts?.length ?? 0 },
+                                { key: 'quantity', label: 'Авто-черновики с превышением заказа более чем в 10 раз', children: historyAudit.suspicious_auto_receipt_count ?? historyAudit.suspicious_auto_receipts?.length ?? 0 },
+                                { key: 'prices', label: 'Поступления с нулевой или отсутствующей ценой', children: historyAudit.missing_price_receipt_count ?? historyAudit.missing_price_receipts?.length ?? 0 },
                             ]} />
                     )}
                     {(historyAudit?.suspicious_auto_receipts || []).length > 0 && (
                         <Alert showIcon type="error" style={{ marginTop: 12 }}
                             message="Проверьте подозрительные исторические поступления"
-                            description={historyAudit.suspicious_auto_receipts.slice(0, 10).map((item) =>
-                                `№${item.receipt_id} ${item.provider}: ${item.received_quantity} шт. при заказе №${item.supplier_order_id} на ${item.ordered_quantity} шт.`
-                            ).join('; ')} />
+                            description="Автоотправка этих документов заблокирована до исправления данных." />
+                    )}
+                    {(historyAudit?.suspicious_auto_receipts || []).length > 0 && (
+                        <Table size="small" style={{ marginTop: 12 }}
+                            rowKey="receipt_id" dataSource={historyAudit.suspicious_auto_receipts}
+                            pagination={{ pageSize: 10 }}
+                            columns={[
+                                { title: 'Поступление', dataIndex: 'receipt_id', render: (id) => <Link to={`/documents/incoming?openId=${id}`}>№{id}</Link> },
+                                { title: 'Поставщик', dataIndex: 'provider' },
+                                { title: 'Заказ поставщику', dataIndex: 'supplier_order_id' },
+                                { title: 'Получено, шт.', dataIndex: 'received_quantity' },
+                                { title: 'Заказано, шт.', dataIndex: 'ordered_quantity' },
+                            ]} />
                     )}
                     {(historyAudit?.missing_price_receipts || []).length > 0 && (
                         <Alert showIcon type="warning" style={{ marginTop: 12 }}
                             message="Поступления без цены поставщика не будут переданы автоматически"
-                            description={historyAudit.missing_price_receipts.slice(0, 10).map((item) =>
-                                `№${item.receipt_id} ${item.provider} (${item.items} строк)`
-                            ).join('; ')} />
+                            description={`Показаны первые ${historyAudit.missing_price_receipts.length} из ${historyAudit.missing_price_receipt_count ?? historyAudit.missing_price_receipts.length}. Уточните цену по документу поставщика.`} />
+                    )}
+                    {(historyAudit?.missing_price_receipts || []).length > 0 && (
+                        <Table size="small" style={{ marginTop: 12 }}
+                            rowKey="receipt_id" dataSource={historyAudit.missing_price_receipts}
+                            pagination={{ pageSize: 10 }}
+                            columns={[
+                                { title: 'Поступление', dataIndex: 'receipt_id', render: (id) => <Link to={`/documents/incoming?openId=${id}`}>№{id}</Link> },
+                                { title: 'Поставщик', dataIndex: 'provider' },
+                                { title: 'Строк без цены', dataIndex: 'items' },
+                            ]} />
                     )}
                     {(historyAudit?.providers_missing_contract || []).length > 0 && (
                         <Paragraph type="warning">
