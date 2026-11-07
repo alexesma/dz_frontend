@@ -326,11 +326,20 @@ const DiadocPage = () => {
     const loadCounteragents = useCallback(async (query = counteragentQuery) => {
         setCounteragentsLoading(true);
         try {
-            const response = await getDiadocCounteragents({
-                query: query || undefined,
-                page_size: 100,
-            });
-            setCounteragents(response.data?.counteragents || []);
+            // Диадок отдаёт контрагентов страницами по 100: догружаем остальные.
+            let rows = [];
+            let afterIndexKey;
+            for (let page = 0; page < 20; page += 1) {
+                const response = await getDiadocCounteragents({
+                    query: query || undefined,
+                    page_size: 100,
+                    after_index_key: afterIndexKey,
+                });
+                rows = rows.concat(response.data?.counteragents || []);
+                afterIndexKey = response.data?.after_index_key;
+                if (!response.data?.has_more_results || !afterIndexKey) break;
+            }
+            setCounteragents(rows);
         } catch (err) {
             console.error('Failed to load Diadoc counteragents', err);
             message.error('Не удалось загрузить контрагентов Диадока');
