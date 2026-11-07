@@ -124,6 +124,12 @@ export const bulkSaveCustomerPricelistPublicationRules = (customerId, configId, 
         data
     );
 
+export const bulkDeleteCustomerPricelistPublicationRules = (customerId, configId, ruleIds) =>
+    api.post(
+        `/customers/${customerId}/pricelist-configs/${configId}/publication-rules/bulk-delete`,
+        { rule_ids: ruleIds }
+    );
+
 export const importCustomerPricelistPublicationRules = (
     customerId,
     configId,

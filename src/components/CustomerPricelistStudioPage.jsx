@@ -45,6 +45,7 @@ import {
 import {
     approveCustomerPricelistDraft,
     buildCustomerPricelistDraft,
+    bulkDeleteCustomerPricelistPublicationRules,
     bulkSaveCustomerPricelistPublicationRules,
     createCustomerPricelistConfig,
     createCustomerPricelistSource,
@@ -276,6 +277,10 @@ const CustomerPricelistStudioPage = () => {
     const [candidateLoading, setCandidateLoading] = useState(false);
     const [ruleSaving, setRuleSaving] = useState(false);
     const [rulePreview, setRulePreview] = useState(null);
+    const [selectedRuleIds, setSelectedRuleIds] = useState([]);
+    const [filteredRules, setFilteredRules] = useState(null);
+    const [ruleFiltersActive, setRuleFiltersActive] = useState(false);
+    const [ruleDeleting, setRuleDeleting] = useState(false);
     const [bulkOpen, setBulkOpen] = useState(false);
     const [bulkSaving, setBulkSaving] = useState(false);
     const [bulkPositionOptions, setBulkPositionOptions] = useState([]);
@@ -1167,6 +1172,28 @@ const CustomerPricelistStudioPage = () => {
     const refreshRules = async () => {
         const { data } = await listCustomerPricelistPublicationRules(customerId, configId);
         setRules(data || []);
+    };
+
+    const handleBulkDeleteRules = async (ruleIds) => {
+        if (!ruleIds.length) return;
+        setRuleDeleting(true);
+        try {
+            const { data } = await bulkDeleteCustomerPricelistPublicationRules(
+                customerId,
+                configId,
+                ruleIds
+            );
+            await refreshRules();
+            setSelectedRuleIds([]);
+            setFilteredRules((previous) => (
+                previous ? previous.filter((rule) => !ruleIds.includes(rule.id)) : previous
+            ));
+            message.success(`Удалено правил: ${data.deleted}`);
+        } catch (error) {
+            message.error(getErrorText(error, 'Не удалось удалить правила'));
+        } finally {
+            setRuleDeleting(false);
+        }
     };
 
     const openBulkModal = () => {
@@ -2104,6 +2131,11 @@ const CustomerPricelistStudioPage = () => {
             title: 'Фактическая позиция',
             key: 'source',
             width: 280,
+            filters: Array.from(new Set(rules.map((rule) => rule.source_brand).filter(Boolean)))
+                .sort()
+                .map((brand) => ({ text: brand, value: brand })),
+            filterSearch: true,
+            onFilter: (value, row) => row.source_brand === value,
             render: (_, row) => (
                 <div className="publication-rule-position">
                     <Text strong className="publication-rule-code">
@@ -2117,6 +2149,13 @@ const CustomerPricelistStudioPage = () => {
             title: 'Правило',
             dataIndex: 'mode',
             width: 190,
+            filters: [
+                { text: 'Только выбранные кроссы', value: 'only_cross' },
+                { text: 'Исходная + кроссы', value: 'add_cross' },
+                { text: 'Только цена', value: 'price_only' },
+                { text: 'Не публиковать', value: 'hide' },
+            ],
+            onFilter: (value, row) => row.mode === value,
             render: (value, row) => (
                 <div>
                     {{
@@ -2608,11 +2647,51 @@ const CustomerPricelistStudioPage = () => {
                                                 </Button>
                                             </div>
                                         </Card>
+                                        {(selectedRuleIds.length > 0 || ruleFiltersActive) && (
+                                            <Space style={{ marginBottom: 12 }} wrap>
+                                                <Popconfirm
+                                                    title={`Удалить выбранные правила (${selectedRuleIds.length})?`}
+                                                    description="Позиции вернутся к обычной публикации. Отменить удаление нельзя."
+                                                    okText="Удалить"
+                                                    okButtonProps={{ danger: true }}
+                                                    onConfirm={() => handleBulkDeleteRules(selectedRuleIds)}
+                                                    disabled={!selectedRuleIds.length}
+                                                >
+                                                    <Button danger size="small" loading={ruleDeleting} disabled={!selectedRuleIds.length}>
+                                                        Удалить выбранные ({selectedRuleIds.length})
+                                                    </Button>
+                                                </Popconfirm>
+                                                {ruleFiltersActive && (
+                                                    <Popconfirm
+                                                        title={`Удалить все правила по текущему фильтру (${(filteredRules || []).length})?`}
+                                                        description="Удалятся правила на всех страницах, подходящие под фильтр. Отменить удаление нельзя."
+                                                        okText="Удалить"
+                                                        okButtonProps={{ danger: true }}
+                                                        onConfirm={() => handleBulkDeleteRules((filteredRules || []).map((rule) => rule.id))}
+                                                        disabled={!(filteredRules || []).length}
+                                                    >
+                                                        <Button danger size="small" loading={ruleDeleting} disabled={!(filteredRules || []).length}>
+                                                            Удалить все по фильтру ({(filteredRules || []).length})
+                                                        </Button>
+                                                    </Popconfirm>
+                                                )}
+                                            </Space>
+                                        )}
                                         <Table
                                             className="publication-rules-table"
                                             rowKey="id"
                                             columns={ruleColumns}
                                             dataSource={rules}
+                                            rowSelection={{
+                                                selectedRowKeys: selectedRuleIds,
+                                                onChange: setSelectedRuleIds,
+                                            }}
+                                            onChange={(_, filters, __, extra) => {
+                                                setFilteredRules(extra.currentDataSource);
+                                                setRuleFiltersActive(
+                                                    Object.values(filters).some((value) => value && value.length)
+                                                );
+                                            }}
                                             pagination={{ pageSize: 20 }}
                                             tableLayout="fixed"
                                             scroll={{ x: 1250 }}
