@@ -8,11 +8,13 @@ import {
     Form,
     Input,
     Checkbox,
+    InputNumber,
     Modal,
     Popconfirm,
     Row,
     Select,
     Space,
+    Switch,
     Table,
     Tabs,
     Tag,
@@ -69,6 +71,7 @@ const STATUS_COLORS = {
     registered: 'processing',
     processed: 'success',
     error: 'error',
+    technical_error: 'error',
     draft: 'default',
     sent: 'processing',
     delivered: 'blue',
@@ -112,6 +115,7 @@ const SYNC_RESULT_LABELS = {
     registered: 'Зарегистрирован',
     processed: 'Обработан',
     error: 'Ошибка',
+    technical_error: 'Техническая ошибка',
     draft: 'Черновик',
     sent: 'Отправлен',
     delivered: 'Доставлен',
@@ -300,6 +304,10 @@ const DiadocPage = () => {
                 signer_position: nextStatus?.signer_position || '',
                 signer_basis: nextStatus?.signer_basis || '',
                 formalized_default_function: nextStatus?.formalized_default_function || 'ДОП',
+                inbound_sync_enabled: nextStatus?.inbound_sync_enabled ?? true,
+                inbound_download_content: nextStatus?.inbound_download_content ?? true,
+                inbound_process_enabled: nextStatus?.inbound_process_enabled ?? false,
+                inbound_sync_count: Math.min(Number(nextStatus?.inbound_sync_count || 50), 100),
             });
         } catch (err) {
             console.error('Failed to load Diadoc status', err);
@@ -972,12 +980,12 @@ const DiadocPage = () => {
                         </Tooltip>
                     ) : (
                         <>
-                            <Tooltip title="Подписать облачной подписью: титул покупателя + извещение о получении. Понадобится код из SMS.">
+                            <Tooltip title={row.sign_block_reason || "Подписать облачной подписью: титул покупателя + извещение о получении. Понадобится код из SMS."}>
                                 <Button
                                     size="small"
                                     icon={<SafetyCertificateOutlined />}
                                     loading={cloudSignStartingKey === `sign:${row.id}`}
-                                    disabled={!row.message_id || !row.entity_id}
+                                    disabled={!row.message_id || !row.entity_id || !row.can_sign_incoming}
                                     onClick={() => handleStartInboundSign(row)}
                                 >
                                     Подписать
@@ -1360,12 +1368,20 @@ const DiadocPage = () => {
                         <Descriptions.Item label="Пользователь">
                             {status?.connected_user_name || '—'}
                         </Descriptions.Item>
-                        <Descriptions.Item label="Последний sync">
-                            {fmtDateTime(status?.last_sync_at)}
+                        <Descriptions.Item label="Последнее получение входящих">
+                            {fmtDateTime(status?.inbound_last_sync_at || status?.last_sync_at)}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Последняя проверка исходящих">
+                            {fmtDateTime(status?.outbound_last_sync_at)}
                         </Descriptions.Item>
                         <Descriptions.Item label="Автообработка входящих">
                             <Tag color={status?.inbound_process_enabled ? 'success' : 'default'}>
                                 {status?.inbound_process_enabled ? 'Включена' : 'Выключена'}
+                            </Tag>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Очередь входящих">
+                            <Tag color={status?.inbound_continuation_index_key ? 'processing' : 'success'}>
+                                {status?.inbound_continuation_index_key ? 'Дочитывается' : 'Обработана до конца'}
                             </Tag>
                         </Descriptions.Item>
                         <Descriptions.Item label="Лимит sync">
@@ -1373,13 +1389,33 @@ const DiadocPage = () => {
                         </Descriptions.Item>
                     </Descriptions>
 
-                    {status?.last_error && (
+                    {status?.last_error
+                        && status.last_error !== status?.inbound_last_error
+                        && status.last_error !== status?.outbound_last_error && (
                         <Alert
                             style={{ marginTop: 16 }}
                             type="error"
                             showIcon
                             message="Последняя ошибка Диадока"
                             description={status.last_error}
+                        />
+                        )}
+                    {status?.inbound_last_error && (
+                        <Alert
+                            style={{ marginTop: 16 }}
+                            type="error"
+                            showIcon
+                            message="Ошибка получения входящих"
+                            description={status.inbound_last_error}
+                        />
+                    )}
+                    {status?.outbound_last_error && (
+                        <Alert
+                            style={{ marginTop: 16 }}
+                            type="error"
+                            showIcon
+                            message="Ошибка проверки исходящих"
+                            description={status.outbound_last_error}
                         />
                     )}
                 </Card>
@@ -1494,6 +1530,56 @@ const DiadocPage = () => {
                                 </Descriptions>
                             </Col>
                         </Row>
+                        <Card
+                            size="small"
+                            title="Получение входящих документов"
+                            style={{ marginTop: 16 }}
+                        >
+                            <Alert
+                                type="info"
+                                showIcon
+                                style={{ marginBottom: 16 }}
+                                message="Синхронизация только загружает документы. Автообработка дополнительно создаёт поступления после сопоставления поставщика и проверки дублей."
+                            />
+                            <Row gutter={16}>
+                                <Col xs={24} md={6}>
+                                    <Form.Item
+                                        name="inbound_sync_enabled"
+                                        label="Автополучение"
+                                        valuePropName="checked"
+                                    >
+                                        <Switch checkedChildren="Включено" unCheckedChildren="Выключено" />
+                                    </Form.Item>
+                                </Col>
+                                <Col xs={24} md={6}>
+                                    <Form.Item
+                                        name="inbound_download_content"
+                                        label="Скачивать файлы"
+                                        valuePropName="checked"
+                                    >
+                                        <Switch checkedChildren="Да" unCheckedChildren="Нет" />
+                                    </Form.Item>
+                                </Col>
+                                <Col xs={24} md={6}>
+                                    <Form.Item
+                                        name="inbound_process_enabled"
+                                        label="Автообработка"
+                                        valuePropName="checked"
+                                    >
+                                        <Switch checkedChildren="Включена" unCheckedChildren="Выключена" />
+                                    </Form.Item>
+                                </Col>
+                                <Col xs={24} md={6}>
+                                    <Form.Item
+                                        name="inbound_sync_count"
+                                        label="Документов на страницу"
+                                        rules={[{ required: true }]}
+                                    >
+                                        <InputNumber min={1} max={100} style={{ width: '100%' }} />
+                                    </Form.Item>
+                                </Col>
+                            </Row>
+                        </Card>
                     </Form>
                 </Card>
 
