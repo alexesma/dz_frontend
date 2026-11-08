@@ -393,3 +393,6 @@ export const bindScanCode = async (code, autopartId) => {
     rememberAlias(normalized, autopartId);
     return response;
 };
+
+export const getGtdReport = (params = {}) =>
+    api.get('/inventory/gtd-report', { params });
