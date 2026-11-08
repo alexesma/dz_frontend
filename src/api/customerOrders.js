@@ -155,6 +155,9 @@ export const createSupplierReceipt = (payload) =>
 export const getSupplierReceipts = (params) =>
     api.get('/customer-orders/supplier-receipts/list', { params });
 
+export const relinkSupplierReceipt = (receiptId, apply = false) =>
+    api.post(`/customer-orders/supplier-receipts/${receiptId}/relink`, null, { params: { apply } });
+
 export const getSupplierReceipt = (receiptId) =>
     api.get(`/customer-orders/supplier-receipts/${receiptId}`);
 

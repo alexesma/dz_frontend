@@ -49,6 +49,7 @@ import {
     getSupplierReceipt,
     getSupplierReceipts,
     postSupplierReceipt,
+    relinkSupplierReceipt,
     sendSupplierReceiptUpdEmail,
     unpostSupplierReceipt,
     updateCrossDockingDocument,
@@ -504,6 +505,60 @@ const IncomingSupplierDocumentsPage = () => {
             setDetailLoading(false);
         }
     }, []);
+
+    const [relinking, setRelinking] = useState(false);
+
+    const handleRelink = async (receiptId) => {
+        setRelinking(true);
+        try {
+            const { data: preview } = await relinkSupplierReceipt(receiptId, false);
+            if (!preview.matches.length) {
+                Modal.info({
+                    title: 'Подходящих заказов не найдено',
+                    content: preview.unmatched.length
+                        ? `Без заказа: ${preview.unmatched.join(', ')}`
+                        : 'Все строки уже привязаны.',
+                });
+                return;
+            }
+            Modal.confirm({
+                title: `Привязать к заказам: ${preview.matches.length} поз.`,
+                width: 640,
+                okText: 'Привязать',
+                cancelText: 'Отмена',
+                content: (
+                    <div>
+                        {preview.matches.map((m) => (
+                            <div key={m.supplier_order_item_id}>
+                                {m.oem_number} ({m.brand_name || '—'}) — {m.received_quantity} шт
+                                {' → заказ #'}{m.supplier_order_id}
+                                {m.excess ? `, излишек ${m.excess} шт останется без заказа` : ''}
+                            </div>
+                        ))}
+                        {preview.unmatched.length > 0 && (
+                            <div style={{ marginTop: 8, color: '#999' }}>
+                                Без заказа: {preview.unmatched.join(', ')}
+                            </div>
+                        )}
+                        {preview.skipped_customer_linked > 0 && (
+                            <div style={{ marginTop: 8, color: '#999' }}>
+                                Пропущено позиций заказов под клиентов: {preview.skipped_customer_linked}
+                            </div>
+                        )}
+                    </div>
+                ),
+                onOk: async () => {
+                    await relinkSupplierReceipt(receiptId, true);
+                    message.success('Строки привязаны к заказам');
+                    await reloadDetail(receiptId);
+                },
+            });
+        } catch (error) {
+            message.error(error?.response?.data?.detail || 'Не удалось перепроверить заказы');
+        } finally {
+            setRelinking(false);
+        }
+    };
 
     const reloadDetail = useCallback(async (receiptId) => {
         try {
@@ -1521,6 +1576,25 @@ const IncomingSupplierDocumentsPage = () => {
                                         </Col>
                                     </Row>
                                 </Form>
+                            )}
+
+                            {items.some((item) => !item.supplier_order_item_id
+                                && Number(item.received_quantity) > 0) && (
+                                <Alert
+                                    type="info"
+                                    showIcon
+                                    message="Есть строки без привязки к заказу поставщику"
+                                    action={(
+                                        <Button
+                                            size="small"
+                                            loading={relinking}
+                                            onClick={() => handleRelink(detailReceipt.id)}
+                                        >
+                                            Перепроверить заказы
+                                        </Button>
+                                    )}
+                                    style={{ marginBottom: 12 }}
+                                />
                             )}
 
                             {hasDocumentPending && (
