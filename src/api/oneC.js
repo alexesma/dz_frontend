@@ -44,6 +44,9 @@ export const resetOneCExport = (params = {}) =>
 export const getOneCEvents = (params = {}) =>
     api.get('/1c/events', { params });
 
+export const getOneCExchangeCards = (params = {}) =>
+    api.get('/1c/exchange-cards', { params });
+
 export const getOneCBatches = (params = {}) =>
     api.get('/1c/batches', { params });
 

@@ -3,6 +3,7 @@ import {
     Alert,
     Button,
     Card,
+    Checkbox,
     Col,
     DatePicker,
     Descriptions,
@@ -40,6 +41,7 @@ import {
     getOneCStatus,
     getOneCBatches,
     getOneCEvents,
+    getOneCExchangeCards,
     getSalesHistorySummary,
     importSalesHistory,
     prepareOneCEnterpriseReceipt,
@@ -70,6 +72,10 @@ const ENTITY_LABELS = {
     shipment: 'Реализация',
     shipment_correction: 'Корректировка реализации',
     supplier_receipt: 'Поступление',
+    customer_order: 'Заказ клиента',
+    supplier_order: 'Заказ поставщику',
+    customer_return: 'Возврат от клиента',
+    supplier_return: 'Возврат поставщику',
     stock_document: 'Складской документ',
     production_wave: 'Выпуск DragonZap',
 };
@@ -80,6 +86,14 @@ const OneCExchangePage = () => {
     const [enterpriseAutoStatus, setEnterpriseAutoStatus] = useState(null);
     const [autoBatchSize, setAutoBatchSize] = useState(1);
     const [autoSettingsSaving, setAutoSettingsSaving] = useState(false);
+    const [autoTypes, setAutoTypes] = useState({
+        send_receipts: true,
+        send_shipments: false,
+        send_customer_orders: false,
+        send_supplier_orders: false,
+        send_returns: false,
+        send_stock_documents: false,
+    });
     const [dispatchingEnterprise, setDispatchingEnterprise] = useState(false);
     const [dispatchResult, setDispatchResult] = useState(null);
     const [enterpriseErrors, setEnterpriseErrors] = useState([]);
@@ -96,6 +110,7 @@ const OneCExchangePage = () => {
     const [salesSummary, setSalesSummary] = useState(null);
     const [salesUploading, setSalesUploading] = useState(false);
     const [events, setEvents] = useState([]);
+    const [exchangeCards, setExchangeCards] = useState([]);
     const [batches, setBatches] = useState([]);
     const [retryingEventId, setRetryingEventId] = useState(null);
     const [retryingEnterpriseId, setRetryingEnterpriseId] = useState(null);
@@ -106,7 +121,7 @@ const OneCExchangePage = () => {
     const loadStatus = useCallback(async () => {
         setStatusLoading(true);
         try {
-            const [statusResponse, enterpriseResponse, autoResponse, eventsResponse, enterpriseErrorsResponse, batchesResponse, salesResponse] =
+            const [statusResponse, enterpriseResponse, autoResponse, eventsResponse, enterpriseErrorsResponse, batchesResponse, salesResponse, cardsResponse] =
                 await Promise.all([
                     getOneCStatus(),
                     getOneCEnterpriseDataStatus().catch(() => ({ data: null })),
@@ -115,15 +130,28 @@ const OneCExchangePage = () => {
                     getOneCEvents({ limit: 100, enterprise_error: true }),
                     getOneCBatches({ limit: 50 }),
                     getSalesHistorySummary().catch(() => ({ data: null })),
+                    getOneCExchangeCards({ limit: 100 }).catch(() => ({ data: { items: [] } })),
                 ]);
             setStatus(statusResponse.data || null);
             setEnterpriseStatus(enterpriseResponse.data || null);
             setEnterpriseAutoStatus(autoResponse.data || null);
             setAutoBatchSize(autoResponse.data?.config?.batch_size || 1);
+            if (autoResponse.data?.config) {
+                setAutoTypes((current) => ({
+                    ...current,
+                    ...Object.fromEntries(
+                        Object.keys(current).map((key) => [
+                            key,
+                            Boolean(autoResponse.data.config[key]),
+                        ])
+                    ),
+                }));
+            }
             setEvents(eventsResponse.data?.items || []);
             setEnterpriseErrors(enterpriseErrorsResponse.data?.items || []);
             setBatches(batchesResponse.data?.items || []);
             setSalesSummary(salesResponse.data || null);
+            setExchangeCards(cardsResponse.data?.items || []);
         } catch (err) {
             message.error(
                 err?.response?.data?.detail ||
@@ -279,9 +307,7 @@ const OneCExchangePage = () => {
         try {
             await updateOneCEnterpriseAuto({
                 enabled,
-                send_receipts: true,
-                send_shipments: enabled && !enterpriseAutoStatus?.config?.enabled
-                    ? false : Boolean(enterpriseAutoStatus?.config?.send_shipments),
+                ...autoTypes,
                 include_history: enabled && !enterpriseAutoStatus?.config?.enabled,
                 batch_size: autoBatchSize,
             });
@@ -343,10 +369,22 @@ const OneCExchangePage = () => {
         {
             title: 'EnterpriseData',
             key: 'enterprise',
-            width: 175,
+            width: 210,
             render: (_, row) => {
                 if (row.ed_last_error) {
                     return <Tooltip title={row.ed_last_error}><Tag color="red">Ошибка подготовки</Tag></Tooltip>;
+                }
+                if (row.ed_unf_received_at) {
+                    const expectedPosted = row.event_type === 'posted';
+                    const stateMatches = row.ed_unf_posted === expectedPosted;
+                    return (
+                        <Space direction="vertical" size={0}>
+                            <Tag color={stateMatches ? 'green' : 'red'}>
+                                {row.ed_unf_posted ? 'Проведён в УНФ' : 'Не проведён в УНФ'}
+                            </Tag>
+                            <Text type="secondary">{row.ed_unf_number || row.ed_unf_ref || 'Без номера'}</Text>
+                        </Space>
+                    );
                 }
                 if (row.ed_transport_confirmed_at) {
                     return <Tooltip title="УНФ прочитала сообщение; проведение документа этим не подтверждено"><Tag color="cyan">Прочитано №{row.ed_message_no}</Tag></Tooltip>;
@@ -364,10 +402,10 @@ const OneCExchangePage = () => {
             align: 'center',
         },
         {
-            title: 'ID в 1С / ошибка',
+            title: 'Номер / GUID в УНФ',
             key: 'result',
             ellipsis: true,
-            render: (_, row) => row.external_id || row.last_error || <Text type="secondary">—</Text>,
+            render: (_, row) => row.ed_unf_number || row.ed_unf_ref || row.external_id || row.last_error || <Text type="secondary">—</Text>,
         },
         {
             title: '',
@@ -402,6 +440,60 @@ const OneCExchangePage = () => {
                     )}
                 </Space>
             ),
+        },
+    ];
+
+    const exchangeCardColumns = [
+        {
+            title: 'Документ DragonZap',
+            key: 'source',
+            width: 220,
+            render: (_, row) => (
+                <Space direction="vertical" size={0}>
+                    <Text strong>{ENTITY_LABELS[row.entity_type] || row.entity_type} №{row.entity_id}</Text>
+                    <Text type="secondary">{row.document_number || 'Номер ещё не присвоен'}</Text>
+                </Space>
+            ),
+        },
+        {
+            title: 'УНФ',
+            key: 'unf',
+            width: 250,
+            render: (_, row) => {
+                if (row.unf?.error) return <Tooltip title={row.unf.error}><Tag color="red">Ошибка</Tag></Tooltip>;
+                if (row.unf?.received_at) return (
+                    <Space direction="vertical" size={0}>
+                        <Tag color={row.unf.posted === (row.event_type === 'posted') ? 'green' : 'red'}>
+                            {row.unf.posted ? 'Проведён' : 'Не проведён'}
+                        </Tag>
+                        <Text type="secondary">{row.unf.number || row.unf.ref || 'Ответ без номера'}</Text>
+                    </Space>
+                );
+                if (row.unf?.transport_confirmed_at) return <Tag color="cyan">Прочитано УНФ</Tag>;
+                if (row.unf?.message_no) return <Tag color="blue">Отправлено №{row.unf.message_no}</Tag>;
+                return <Tag>Не отправлено</Tag>;
+            },
+        },
+        {
+            title: 'Диадок',
+            key: 'diadoc',
+            render: (_, row) => row.diadoc ? (
+                <Space direction="vertical" size={0}>
+                    <Tag color={row.diadoc.error ? 'red' : row.diadoc.is_finished ? 'green' : 'blue'}>
+                        {row.diadoc.status_text || row.diadoc.status || 'В обработке'}
+                    </Tag>
+                    <Text type="secondary">
+                        {row.diadoc.direction === 'inbound' ? 'Входящий' : 'Исходящий'}
+                        {row.diadoc.document_number ? ` · №${row.diadoc.document_number}` : ''}
+                    </Text>
+                </Space>
+            ) : <Text type="secondary">Не связан</Text>,
+        },
+        {
+            title: 'Последнее изменение',
+            dataIndex: 'event_created_at',
+            width: 155,
+            render: (value) => value ? dayjs(value).format('DD.MM.YY HH:mm') : '—',
         },
     ];
 
@@ -485,6 +577,23 @@ const OneCExchangePage = () => {
         },
     ];
 
+    const selectedHistoryHasGaps = Boolean(
+        (autoTypes.send_receipts && (
+            (historyAudit?.posted_receipts?.without_event ?? 0) > 0 ||
+            (historyAudit?.providers_missing_contract?.length ?? 0) > 0 ||
+            (historyAudit?.suspicious_auto_receipt_count ?? 0) > 0 ||
+            (historyAudit?.missing_price_receipt_count ?? 0) > 0
+        )) ||
+        (autoTypes.send_shipments && (historyAudit?.posted_shipments?.without_event ?? 0) > 0) ||
+        (autoTypes.send_customer_orders && (historyAudit?.additional_documents?.customer_orders?.without_event ?? 0) > 0) ||
+        (autoTypes.send_supplier_orders && (historyAudit?.additional_documents?.supplier_orders?.without_event ?? 0) > 0) ||
+        (autoTypes.send_returns && (
+            (historyAudit?.additional_documents?.customer_returns?.without_event ?? 0) > 0 ||
+            (historyAudit?.additional_documents?.supplier_returns?.without_event ?? 0) > 0
+        )) ||
+        (autoTypes.send_stock_documents && (historyAudit?.additional_documents?.stock_documents?.without_event ?? 0) > 0)
+    );
+
     return (
         <div style={{ margin: 16 }}>
             <Space direction="vertical" size="large" style={{ width: '100%' }}>
@@ -495,7 +604,7 @@ const OneCExchangePage = () => {
                     <Descriptions size="small" column={1} style={{ marginTop: 16 }}
                         items={[
                             { key: 'auto', label: 'Автоотправка', children: enterpriseAutoStatus?.config?.enabled ? 'Включена' : 'Выключена' },
-                            { key: 'autoTypes', label: 'Типы автоотправки', children: [enterpriseAutoStatus?.config?.send_receipts && 'Поступления', enterpriseAutoStatus?.config?.send_shipments && 'Реализации'].filter(Boolean).join(', ') || 'Не выбраны' },
+                            { key: 'autoTypes', label: 'Типы автоотправки', children: [enterpriseAutoStatus?.config?.send_receipts && 'Поступления', enterpriseAutoStatus?.config?.send_shipments && 'Реализации', enterpriseAutoStatus?.config?.send_customer_orders && 'Заказы клиентов', enterpriseAutoStatus?.config?.send_supplier_orders && 'Заказы поставщикам', enterpriseAutoStatus?.config?.send_returns && 'Возвраты', enterpriseAutoStatus?.config?.send_stock_documents && 'Складские корректировки'].filter(Boolean).join(', ') || 'Не выбраны' },
                             { key: 'autoBatch', label: 'Документов в сообщении', children: enterpriseAutoStatus?.config?.batch_size || 1 },
                             { key: 'autoStart', label: 'События начиная с', children: enterpriseAutoStatus?.config?.first_event_id ?? 'Не задано' },
                             { key: 'directory', label: 'Каталог обмена', children: enterpriseStatus?.directory_exists ? 'Доступен' : 'Не найден или статус недоступен' },
@@ -527,9 +636,8 @@ const OneCExchangePage = () => {
                                 onConfirm={() => { void handleAutoSettings(true); }}
                             >
                                 <Button type="primary" loading={autoSettingsSaving}
-                                    disabled={!historyAudit || historyAudit.posted_receipts?.without_event > 0 ||
-                                        historyAudit.providers_missing_contract?.length > 0}>
-                                    Включить перенос поступлений
+                                    disabled={!historyAudit || selectedHistoryHasGaps}>
+                                    Включить выбранный обмен
                                 </Button>
                             </Popconfirm>
                         )}
@@ -539,6 +647,23 @@ const OneCExchangePage = () => {
                             Отправить следующую партию сейчас
                         </Button>
                     </Space>
+                    <Checkbox.Group
+                        style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 16 }}
+                        value={Object.keys(autoTypes).filter((key) => autoTypes[key])}
+                        onChange={(values) => setAutoTypes(
+                            Object.fromEntries(
+                                Object.keys(autoTypes).map((key) => [key, values.includes(key)])
+                            )
+                        )}
+                        options={[
+                            { value: 'send_receipts', label: 'Поступления' },
+                            { value: 'send_shipments', label: 'Реализации' },
+                            { value: 'send_customer_orders', label: 'Заказы клиентов' },
+                            { value: 'send_supplier_orders', label: 'Заказы поставщикам' },
+                            { value: 'send_returns', label: 'Возвраты' },
+                            { value: 'send_stock_documents', label: 'Складские корректировки' },
+                        ]}
+                    />
                     {dispatchResult && (
                         <Alert showIcon style={{ marginTop: 12 }}
                             type={dispatchResult.error_event_id ? 'error' : 'info'}
@@ -606,6 +731,10 @@ const OneCExchangePage = () => {
                             items={[
                                 { key: 'receipts', label: 'Проведённые поступления', children: `${historyAudit.posted_receipts?.count ?? 0}; без события: ${historyAudit.posted_receipts?.without_event ?? 0}` },
                                 { key: 'shipments', label: 'Проведённые реализации', children: `${historyAudit.posted_shipments?.count ?? 0}; без события: ${historyAudit.posted_shipments?.without_event ?? 0}` },
+                                { key: 'customerOrders', label: 'Заказы клиентов', children: `${historyAudit.additional_documents?.customer_orders?.count ?? 0}; без события: ${historyAudit.additional_documents?.customer_orders?.without_event ?? 0}` },
+                                { key: 'supplierOrders', label: 'Заказы поставщикам', children: `${historyAudit.additional_documents?.supplier_orders?.count ?? 0}; без события: ${historyAudit.additional_documents?.supplier_orders?.without_event ?? 0}` },
+                                { key: 'returns', label: 'Возвраты', children: `${(historyAudit.additional_documents?.customer_returns?.count ?? 0) + (historyAudit.additional_documents?.supplier_returns?.count ?? 0)}; без события: ${(historyAudit.additional_documents?.customer_returns?.without_event ?? 0) + (historyAudit.additional_documents?.supplier_returns?.without_event ?? 0)}` },
+                                { key: 'stockDocuments', label: 'Складские корректировки', children: `${historyAudit.additional_documents?.stock_documents?.count ?? 0}; без события: ${historyAudit.additional_documents?.stock_documents?.without_event ?? 0}` },
                                 { key: 'dates', label: 'Период', children: `${historyAudit.posted_receipts?.first_date || '—'} — ${historyAudit.posted_shipments?.last_date || '—'}` },
                                 { key: 'contracts', label: 'Поставщики без договора УНФ', children: historyAudit.providers_missing_contract?.length ?? 0 },
                                 { key: 'quantity', label: 'Авто-черновики с превышением заказа более чем в 10 раз', children: historyAudit.suspicious_auto_receipt_count ?? historyAudit.suspicious_auto_receipts?.length ?? 0 },
@@ -735,7 +864,21 @@ const OneCExchangePage = () => {
                     </Paragraph>
                 </Card>
 
-                <Card title="Очередь JSON API и история обмена">
+                <Card title="Единая карточка обмена">
+                    <Alert showIcon type="info" style={{ marginBottom: 16 }}
+                        message="Один документ — три независимых состояния"
+                        description="Здесь отдельно видны состояние документа в DragonZap, учётный номер и проведение в УНФ, а также юридический документооборот в Диадоке." />
+                    <Table
+                        rowKey={(row) => `${row.entity_type}:${row.entity_id}`}
+                        size="small"
+                        columns={exchangeCardColumns}
+                        dataSource={exchangeCards}
+                        pagination={{ pageSize: 15, showSizeChanger: false }}
+                        scroll={{ x: 900 }}
+                    />
+                </Card>
+
+                <Card title="Очередь JSON API и техническая история обмена">
                     <Alert showIcon type="info" style={{ marginBottom: 16 }}
                         message="Событие в очереди ещё не означает загрузку в УНФ"
                         description="Очередь JSON работает отдельно от штатной синхронизации. Реализации, заказы и поступления проверяем через EnterpriseData; корректировки через этот узел УНФ не принимаются." />
