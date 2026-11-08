@@ -223,54 +223,48 @@ const StockLotsPage = () => {
     };
 
     const columns = [
-        { title: 'ID', dataIndex: 'id', width: 60 },
-        {
-            title: 'Источник',
-            dataIndex: 'source_type',
-            width: 130,
-            render: (v) => (
-                <Tag color={SOURCE_COLORS[v] || 'default'}>{SOURCE_LABELS[v] || v}</Tag>
-            ),
-        },
-        {
-            title: 'Роль партии',
-            dataIndex: 'inventory_role',
-            width: 190,
-            render: (value, row) => (
-                <Tooltip
-                    title={[
-                        ROLE_SOURCE_LABELS[row.role_source] || row.role_source,
-                        row.role_change_reason,
-                    ].filter(Boolean).join(': ')}
-                >
-                    <Tag color={ROLE_COLORS[value] || 'default'}>
-                        {ROLE_LABELS[value] || value}
-                    </Tag>
-                </Tooltip>
-            ),
-        },
         {
             title: 'Запчасть',
             dataIndex: 'autopart_oem',
+            width: 300,
+            fixed: 'left',
             render: (oem, row) => (
-                <Space direction="vertical" size={0}>
-                    <Text strong>{oem}</Text>
+                <div style={{ lineHeight: 1.3 }}>
+                    <Text strong style={{ wordBreak: 'break-all' }}>
+                        {[row.autopart_brand, oem].filter(Boolean).join(' ')}
+                    </Text>
                     {row.autopart_name && (
-                        <Text type="secondary" style={{ fontSize: 12 }}>{row.autopart_name}</Text>
+                        <div>
+                            <Text type="secondary" style={{ fontSize: 12 }}>{row.autopart_name}</Text>
+                        </div>
                     )}
-                </Space>
+                    <Text type="secondary" style={{ fontSize: 11 }}>Партия №{row.id}</Text>
+                </div>
             ),
         },
         {
-            title: 'Бренд',
-            dataIndex: 'autopart_brand',
-            width: 110,
-            render: (v) => v || <Text type="secondary">—</Text>,
+            title: 'Остаток / приход',
+            width: 130,
+            align: 'right',
+            render: (_, row) => fmtQty(row.remaining_quantity, row.initial_quantity),
         },
         {
-            title: 'Остаток / Нач.',
-            width: 130,
-            render: (_, row) => fmtQty(row.remaining_quantity, row.initial_quantity),
+            title: 'ГТД и страна',
+            dataIndex: 'gtd_number',
+            width: 230,
+            render: (v, row) => {
+                const country = row.country_name || row.country_code;
+                return (
+                    <div style={{ lineHeight: 1.4 }}>
+                        {v
+                            ? <Tag color="purple" style={{ marginRight: 0, whiteSpace: 'normal', wordBreak: 'break-all' }}>{v}</Tag>
+                            : <Tag color="orange" style={{ marginRight: 0 }}>Нет ГТД</Tag>}
+                        {country && (
+                            <div><Text type="secondary" style={{ fontSize: 12 }}>{country}</Text></div>
+                        )}
+                    </div>
+                );
+            },
         },
         {
             title: 'Ячейка',
@@ -279,37 +273,34 @@ const StockLotsPage = () => {
             render: (v) => v || <Text type="secondary">—</Text>,
         },
         {
-            title: 'ГТД',
-            dataIndex: 'gtd_number',
-            width: 160,
-            render: (v) =>
-                v ? <Tag color="purple">{v}</Tag> : <Text type="secondary">—</Text>,
-        },
-        {
-            title: 'Страна',
-            dataIndex: 'country_name',
-            width: 100,
-            render: (v, row) =>
-                v || row.country_code ? (
-                    <Tooltip title={row.country_code}>
-                        <Text>{v || row.country_code}</Text>
-                    </Tooltip>
-                ) : (
-                    <Text type="secondary">—</Text>
-                ),
-        },
-        {
             title: 'Дата прихода',
             dataIndex: 'received_at',
-            width: 140,
-            render: fmtDate,
-            sorter: true,
+            width: 120,
+            render: (d) => (d ? dayjs(d).format('DD.MM.YYYY') : '—'),
         },
         {
-            title: 'Создан',
-            dataIndex: 'created_at',
-            width: 140,
-            render: fmtDate,
+            title: 'Источник',
+            dataIndex: 'source_type',
+            width: 190,
+            render: (v, row) => (
+                <Space direction="vertical" size={2}>
+                    <Tag color={SOURCE_COLORS[v] || 'default'} style={{ marginRight: 0 }}>
+                        {SOURCE_LABELS[v] || v}
+                    </Tag>
+                    {row.inventory_role && row.inventory_role !== 'original_good' && (
+                        <Tooltip
+                            title={[
+                                ROLE_SOURCE_LABELS[row.role_source] || row.role_source,
+                                row.role_change_reason,
+                            ].filter(Boolean).join(': ')}
+                        >
+                            <Tag color={ROLE_COLORS[row.inventory_role] || 'default'} style={{ marginRight: 0 }}>
+                                {ROLE_LABELS[row.inventory_role] || row.inventory_role}
+                            </Tag>
+                        </Tooltip>
+                    )}
+                </Space>
+            ),
         },
         {
             title: '',
@@ -417,7 +408,7 @@ const StockLotsPage = () => {
                 dataSource={data}
                 loading={loading}
                 size="small"
-                rowClassName={(row) => row.remaining_quantity === 0 ? 'opacity-50' : ''}
+                rowClassName={(row) => (row.remaining_quantity === 0 ? 'opacity-50' : '')}
                 pagination={{
                     current: page,
                     pageSize,
@@ -431,7 +422,8 @@ const StockLotsPage = () => {
                         fetchData(p, ps, filters);
                     },
                 }}
-                scroll={{ x: 1200 }}
+                scroll={{ x: 1100 }}
+                sticky
             />
 
             <Modal
