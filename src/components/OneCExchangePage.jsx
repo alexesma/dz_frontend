@@ -9,6 +9,7 @@ import {
     Descriptions,
     InputNumber,
     Popconfirm,
+    Radio,
     Row,
     Space,
     Statistic,
@@ -45,9 +46,11 @@ import {
     getSalesHistorySummary,
     importSalesHistory,
     prepareOneCEnterpriseReceipt,
+    quarantineOneCEnterpriseHistoryProblems,
     resetOneCExport,
     retryOneCEvent,
     retryOneCEnterpriseEvent,
+    restoreOneCEnterpriseEvent,
     sendOneCEnterpriseDataEvent,
     updateOneCEnterpriseAuto,
 } from '../api/oneC';
@@ -85,6 +88,7 @@ const OneCExchangePage = () => {
     const [enterpriseStatus, setEnterpriseStatus] = useState(null);
     const [enterpriseAutoStatus, setEnterpriseAutoStatus] = useState(null);
     const [autoBatchSize, setAutoBatchSize] = useState(1);
+    const [autoActivationMode, setAutoActivationMode] = useState('new');
     const [autoSettingsSaving, setAutoSettingsSaving] = useState(false);
     const [autoTypes, setAutoTypes] = useState({
         send_receipts: true,
@@ -97,9 +101,12 @@ const OneCExchangePage = () => {
     const [dispatchingEnterprise, setDispatchingEnterprise] = useState(false);
     const [dispatchResult, setDispatchResult] = useState(null);
     const [enterpriseErrors, setEnterpriseErrors] = useState([]);
+    const [enterpriseExcluded, setEnterpriseExcluded] = useState([]);
     const [historyAudit, setHistoryAudit] = useState(null);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [historyBackfilling, setHistoryBackfilling] = useState(false);
+    const [historyQuarantining, setHistoryQuarantining] = useState(false);
+    const [restoringEnterpriseId, setRestoringEnterpriseId] = useState(null);
     const [statusLoading, setStatusLoading] = useState(false);
     const [period, setPeriod] = useState([
         dayjs().startOf('month'),
@@ -121,13 +128,14 @@ const OneCExchangePage = () => {
     const loadStatus = useCallback(async () => {
         setStatusLoading(true);
         try {
-            const [statusResponse, enterpriseResponse, autoResponse, eventsResponse, enterpriseErrorsResponse, batchesResponse, salesResponse, cardsResponse] =
+            const [statusResponse, enterpriseResponse, autoResponse, eventsResponse, enterpriseErrorsResponse, excludedResponse, batchesResponse, salesResponse, cardsResponse] =
                 await Promise.all([
                     getOneCStatus(),
                     getOneCEnterpriseDataStatus().catch(() => ({ data: null })),
                     getOneCEnterpriseAutoStatus().catch(() => ({ data: null })),
                     getOneCEvents({ limit: 100 }),
                     getOneCEvents({ limit: 100, enterprise_error: true }),
+                    getOneCEvents({ limit: 200, enterprise_excluded: true }),
                     getOneCBatches({ limit: 50 }),
                     getSalesHistorySummary().catch(() => ({ data: null })),
                     getOneCExchangeCards({ limit: 100 }).catch(() => ({ data: { items: [] } })),
@@ -136,6 +144,7 @@ const OneCExchangePage = () => {
             setEnterpriseStatus(enterpriseResponse.data || null);
             setEnterpriseAutoStatus(autoResponse.data || null);
             setAutoBatchSize(autoResponse.data?.config?.batch_size || 1);
+            setAutoActivationMode(autoResponse.data?.config?.activation_mode || 'new');
             if (autoResponse.data?.config) {
                 setAutoTypes((current) => ({
                     ...current,
@@ -149,6 +158,7 @@ const OneCExchangePage = () => {
             }
             setEvents(eventsResponse.data?.items || []);
             setEnterpriseErrors(enterpriseErrorsResponse.data?.items || []);
+            setEnterpriseExcluded(excludedResponse.data?.items || []);
             setBatches(batchesResponse.data?.items || []);
             setSalesSummary(salesResponse.data || null);
             setExchangeCards(cardsResponse.data?.items || []);
@@ -302,16 +312,43 @@ const OneCExchangePage = () => {
         }
     };
 
+    const handleHistoryQuarantine = async () => {
+        setHistoryQuarantining(true);
+        try {
+            const { data } = await quarantineOneCEnterpriseHistoryProblems();
+            message.success(`Исключено из автообмена: ${data.count}`);
+            await Promise.all([handleHistoryAudit(), loadStatus()]);
+        } catch (err) {
+            message.error(err?.response?.data?.detail || 'Не удалось поместить документы в карантин');
+        } finally {
+            setHistoryQuarantining(false);
+        }
+    };
+
+    const handleEnterpriseRestore = async (eventId) => {
+        setRestoringEnterpriseId(eventId);
+        try {
+            await restoreOneCEnterpriseEvent(eventId);
+            message.success('Документ возвращён в очередь');
+            await Promise.all([handleHistoryAudit(), loadStatus()]);
+        } catch (err) {
+            message.error(err?.response?.data?.detail || 'Не удалось вернуть документ в очередь');
+        } finally {
+            setRestoringEnterpriseId(null);
+        }
+    };
+
     const handleAutoSettings = async (enabled) => {
         setAutoSettingsSaving(true);
         try {
             await updateOneCEnterpriseAuto({
                 enabled,
                 ...autoTypes,
-                include_history: enabled && !enterpriseAutoStatus?.config?.enabled,
+                include_history: false,
+                activation_mode: autoActivationMode,
                 batch_size: autoBatchSize,
             });
-            message.success(enabled ? 'Отправка исторических поступлений включена' : 'Настройки обмена сохранены');
+            message.success(enabled ? 'Автоматический обмен включён' : 'Настройки обмена сохранены');
             await loadStatus();
         } catch (err) {
             message.error(err?.response?.data?.detail || 'Не удалось сохранить настройки обмена');
@@ -577,7 +614,7 @@ const OneCExchangePage = () => {
         },
     ];
 
-    const selectedHistoryHasGaps = Boolean(
+    const selectedHistoryHasGaps = autoActivationMode !== 'new' && Boolean(
         (autoTypes.send_receipts && (
             (historyAudit?.posted_receipts?.without_event ?? 0) > 0 ||
             (historyAudit?.providers_missing_contract?.length ?? 0) > 0 ||
@@ -593,6 +630,9 @@ const OneCExchangePage = () => {
         )) ||
         (autoTypes.send_stock_documents && (historyAudit?.additional_documents?.stock_documents?.without_event ?? 0) > 0)
     );
+    const stockWriteOffSupported = Boolean(
+        enterpriseStatus?.negotiated_sending?.includes('Документ.СписаниеТоваров')
+    );
 
     return (
         <div style={{ margin: 16 }}>
@@ -607,6 +647,7 @@ const OneCExchangePage = () => {
                             { key: 'autoTypes', label: 'Типы автоотправки', children: [enterpriseAutoStatus?.config?.send_receipts && 'Поступления', enterpriseAutoStatus?.config?.send_shipments && 'Реализации', enterpriseAutoStatus?.config?.send_customer_orders && 'Заказы клиентов', enterpriseAutoStatus?.config?.send_supplier_orders && 'Заказы поставщикам', enterpriseAutoStatus?.config?.send_returns && 'Возвраты', enterpriseAutoStatus?.config?.send_stock_documents && 'Складские корректировки'].filter(Boolean).join(', ') || 'Не выбраны' },
                             { key: 'autoBatch', label: 'Документов в сообщении', children: enterpriseAutoStatus?.config?.batch_size || 1 },
                             { key: 'autoStart', label: 'События начиная с', children: enterpriseAutoStatus?.config?.first_event_id ?? 'Не задано' },
+                            { key: 'autoMode', label: 'Режим запуска', children: enterpriseAutoStatus?.config?.activation_mode === 'history' ? 'Вся история' : enterpriseAutoStatus?.config?.activation_mode === 'resume' ? 'Продолжить с сохранённого места' : 'Только новые документы' },
                             { key: 'directory', label: 'Каталог обмена', children: enterpriseStatus?.directory_exists ? 'Доступен' : 'Не найден или статус недоступен' },
                             { key: 'incoming', label: 'Входящих сообщений', children: enterpriseStatus?.incoming_files?.length ?? '—' },
                             { key: 'sent', label: 'Номер нашего сообщения', children: enterpriseStatus?.sent_no ?? '—' },
@@ -618,6 +659,19 @@ const OneCExchangePage = () => {
                             { key: 'corrections', label: 'УНФ принимает корректировки через FTP', children: enterpriseStatus?.peer_receives_corrections === true ? 'Да' : enterpriseStatus?.peer_receives_corrections === false ? 'Нет' : 'Неизвестно' },
                         ]} />
                     <Space wrap style={{ marginTop: 12 }}>
+                        <Text>Старт:</Text>
+                        <Radio.Group
+                            value={autoActivationMode}
+                            disabled={Boolean(enterpriseAutoStatus?.config?.enabled)}
+                            onChange={(event) => setAutoActivationMode(event.target.value)}
+                            options={[
+                                { value: 'new', label: 'Только новые' },
+                                { value: 'resume', label: 'Продолжить' },
+                                { value: 'history', label: 'Вся история' },
+                            ]}
+                            optionType="button"
+                            buttonStyle="solid"
+                        />
                         <Text>Размер партии:</Text>
                         <InputNumber min={1} max={50} precision={0} value={autoBatchSize}
                             onChange={(value) => setAutoBatchSize(value || 1)} />
@@ -631,8 +685,10 @@ const OneCExchangePage = () => {
                             </Button>
                         ) : (
                             <Popconfirm
-                                title="Отправить исторические поступления в тестовую УНФ?"
-                                description="Документы будут отправляться партиями через FTP. Проведение в УНФ нужно проверять отдельно."
+                                title={autoActivationMode === 'new' ? 'Включить обмен только для новых документов?' : 'Запустить обработку накопленной истории?'}
+                                description={autoActivationMode === 'new'
+                                    ? 'Существующие документы не будут отправлены. Новые будут передаваться выбранными партиями.'
+                                    : 'Документы будут отправляться партиями через FTP. Проведение в УНФ нужно проверять отдельно.'}
                                 onConfirm={() => { void handleAutoSettings(true); }}
                             >
                                 <Button type="primary" loading={autoSettingsSaving}
@@ -661,9 +717,14 @@ const OneCExchangePage = () => {
                             { value: 'send_customer_orders', label: 'Заказы клиентов' },
                             { value: 'send_supplier_orders', label: 'Заказы поставщикам' },
                             { value: 'send_returns', label: 'Возвраты' },
-                            { value: 'send_stock_documents', label: 'Складские корректировки' },
+                            { value: 'send_stock_documents', label: 'Складские корректировки', disabled: !stockWriteOffSupported },
                         ]}
                     />
+                    {enterpriseStatus && !stockWriteOffSupported && (
+                        <Alert showIcon type="warning" style={{ marginTop: 12 }}
+                            message="Складские списания пока не согласованы УНФ"
+                            description="Оприходование поддерживается, но УНФ не объявила приём списаний. Поэтому автоматическая передача складских корректировок отключена." />
+                    )}
                     {dispatchResult && (
                         <Alert showIcon style={{ marginTop: 12 }}
                             type={dispatchResult.error_event_id ? 'error' : 'info'}
@@ -718,6 +779,17 @@ const OneCExchangePage = () => {
                     <Space wrap>
                         <Button loading={historyLoading} onClick={handleHistoryAudit}>Проверить историю</Button>
                         <Popconfirm
+                            title="Исключить известные проблемные поступления?"
+                            description="Документы останутся в DragonZap и появятся в карантине. Их можно будет вернуть после исправления цены или количества."
+                            onConfirm={() => { void handleHistoryQuarantine(); }}
+                        >
+                            <Button danger loading={historyQuarantining}
+                                disabled={enterpriseAutoStatus?.config?.enabled || !historyAudit || (
+                                    (historyAudit?.suspicious_auto_receipt_count ?? 0) === 0 &&
+                                    (historyAudit?.missing_price_receipt_count ?? 0) === 0
+                                )}>Поместить проблемы в карантин</Button>
+                        </Popconfirm>
+                        <Popconfirm
                             title="Подготовить 50 исторических документов?"
                             description="Создаст события EnterpriseData без отправки в УНФ. Очередь CommerceML не затрагивается."
                             onConfirm={() => { void handleHistoryBackfill(); }}
@@ -739,6 +811,22 @@ const OneCExchangePage = () => {
                                 { key: 'contracts', label: 'Поставщики без договора УНФ', children: historyAudit.providers_missing_contract?.length ?? 0 },
                                 { key: 'quantity', label: 'Авто-черновики с превышением заказа более чем в 10 раз', children: historyAudit.suspicious_auto_receipt_count ?? historyAudit.suspicious_auto_receipts?.length ?? 0 },
                                 { key: 'prices', label: 'Поступления с нулевой или отсутствующей ценой', children: historyAudit.missing_price_receipt_count ?? historyAudit.missing_price_receipts?.length ?? 0 },
+                                { key: 'quarantine', label: 'В карантине обмена', children: historyAudit.quarantined_event_count ?? 0 },
+                            ]} />
+                    )}
+                    {enterpriseExcluded.length > 0 && (
+                        <Table size="small" style={{ marginTop: 12 }}
+                            rowKey="id" dataSource={enterpriseExcluded}
+                            pagination={{ pageSize: 10 }}
+                            title={() => `Карантин EnterpriseData: ${enterpriseExcluded.length}`}
+                            columns={[
+                                { title: 'Событие', dataIndex: 'id' },
+                                { title: 'Документ', render: (_, row) => `${ENTITY_LABELS[row.entity_type] || row.entity_type} №${row.entity_id}` },
+                                { title: 'Причина', dataIndex: 'ed_exclusion_reason' },
+                                { title: '', render: (_, row) => (
+                                    <Button size="small" loading={restoringEnterpriseId === row.id}
+                                        onClick={() => handleEnterpriseRestore(row.id)}>Вернуть после исправления</Button>
+                                ) },
                             ]} />
                     )}
                     {(historyAudit?.suspicious_auto_receipts || []).length > 0 && (

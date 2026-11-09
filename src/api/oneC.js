@@ -24,6 +24,12 @@ export const getOneCEnterpriseHistoryAudit = () =>
 export const backfillOneCEnterpriseHistory = (limit = 50) =>
     api.post('/1c/enterprise-data/history/backfill', null, { params: { limit } });
 
+export const quarantineOneCEnterpriseHistoryProblems = () =>
+    api.post('/1c/enterprise-data/history/quarantine-problems');
+
+export const restoreOneCEnterpriseEvent = (eventId) =>
+    api.post(`/1c/enterprise-data/events/${eventId}/restore`);
+
 export const sendOneCEnterpriseDataEvent = (eventId) =>
     api.post(`/1c/enterprise-data/send/${eventId}`);
 
