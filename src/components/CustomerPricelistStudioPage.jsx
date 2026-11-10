@@ -71,7 +71,7 @@ import {
     updateCustomerPricelistSource,
 } from '../api/customers';
 import { getCanonicalBrands } from '../api/brands';
-import { getEmailAccounts } from '../api/emailAccounts';
+import { getEmailAccounts, getEmailRelayHealth } from '../api/emailAccounts';
 import { getProviderConfigOptions } from '../api/providers';
 import { formatMoscow } from '../utils/time';
 import './CustomerPricelistStudioPage.css';
@@ -91,11 +91,35 @@ const DAY_OPTIONS = [
 const STATUS_META = {
     draft: { color: 'gold', label: 'Черновик' },
     sent: { color: 'green', label: 'Отправлен' },
+    queued: { color: 'blue', label: 'Ожидает relay' },
+    partially_sent: { color: 'orange', label: 'Отправлен частично' },
+    superseded: { color: 'default', label: 'Заменён новым' },
     rejected: { color: 'red', label: 'Отклонён' },
     send_failed: { color: 'volcano', label: 'Ошибка отправки' },
     generated: { color: 'blue', label: 'Сформирован' },
     generating: { color: 'processing', label: 'Формируется' },
 };
+
+const DELIVERY_STATUS_META = {
+    sent: { color: 'green', label: 'Отправлено' },
+    queued: { color: 'blue', label: 'Ожидает relay' },
+    pending: { color: 'blue', label: 'Ожидает relay' },
+    failed: { color: 'red', label: 'Ошибка' },
+    error: { color: 'red', label: 'Ошибка' },
+    cancelled: { color: 'default', label: 'Отменено' },
+};
+
+const effectiveDraftStatus = (row) => (
+    row.generation_status === 'rejected'
+    && String(row.send_error || '').startsWith('Отменено: сформирован более новый')
+        ? 'superseded'
+        : row.generation_status
+);
+
+const deliveryRecipients = (channel) => (channel.recipients || [])
+    .map((item) => (typeof item === 'string' ? item : item?.email))
+    .filter(Boolean)
+    .join(', ');
 
 const ROW_TYPE_META = {
     direct: { color: 'blue', label: 'Прямая позиция' },
@@ -245,6 +269,7 @@ const CustomerPricelistStudioPage = () => {
     const [configs, setConfigs] = useState([]);
     const [providerOptions, setProviderOptions] = useState([]);
     const [outgoingEmailAccounts, setOutgoingEmailAccounts] = useState([]);
+    const [relayHealth, setRelayHealth] = useState(null);
     const [brandOptions, setBrandOptions] = useState([]);
     const [customerId, setCustomerId] = useState(null);
     const [configId, setConfigId] = useState(null);
@@ -364,6 +389,22 @@ const CustomerPricelistStudioPage = () => {
     useEffect(() => {
         void loadInitial();
     }, [loadInitial]);
+
+    const loadRelayHealth = useCallback(async () => {
+        try {
+            const { data } = await getEmailRelayHealth();
+            setRelayHealth(data || null);
+        } catch (error) {
+            console.error('Relay health load failed:', error);
+            setRelayHealth(null);
+        }
+    }, []);
+
+    useEffect(() => {
+        void loadRelayHealth();
+        const timer = window.setInterval(loadRelayHealth, 60000);
+        return () => window.clearInterval(timer);
+    }, [loadRelayHealth]);
 
     const loadCustomerConfigs = useCallback(async (nextCustomerId) => {
         if (!nextCustomerId) return;
@@ -2265,9 +2306,10 @@ const CustomerPricelistStudioPage = () => {
         {
             title: 'Состояние',
             dataIndex: 'generation_status',
-            width: 150,
-            render: (value) => {
-                const meta = STATUS_META[value] || { color: 'default', label: value };
+            width: 170,
+            render: (_, row) => {
+                const status = effectiveDraftStatus(row);
+                const meta = STATUS_META[status] || { color: 'default', label: status };
                 return <Tag color={meta.color}>{meta.label}</Tag>;
             },
         },
@@ -2284,9 +2326,43 @@ const CustomerPricelistStudioPage = () => {
             render: (value) => Number(value || 0).toLocaleString('ru-RU'),
         },
         {
+            title: 'Каналы доставки',
+            key: 'delivery',
+            width: 330,
+            render: (_, row) => {
+                const channels = row.generation_summary?.delivery?.channels || [];
+                if (!channels.length) {
+                    return row.send_error
+                        ? <Text type="secondary">{row.send_error}</Text>
+                        : <Text type="secondary">Нет детализации</Text>;
+                }
+                return (
+                    <Space direction="vertical" size={2}>
+                        {channels.map((channel, index) => {
+                            const meta = DELIVERY_STATUS_META[channel.status]
+                                || { color: 'default', label: channel.status };
+                            const sender = channel.from_email || (
+                                channel.kind === 'relay' ? 'SMTP relay' : 'Прямой канал'
+                            );
+                            const recipients = deliveryRecipients(channel);
+                            return (
+                                <div key={`${channel.kind}-${sender}-${index}`}>
+                                    <Tag color={meta.color}>{meta.label}</Tag>
+                                    <Text>{sender}</Text>
+                                    {recipients && (
+                                        <div className="muted-line">Кому: {recipients}</div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </Space>
+                );
+            },
+        },
+        {
             title: 'Решение',
             key: 'decision',
-            render: (_, row) => row.decision_reason || (
+            render: (_, row) => row.decision_reason || row.send_error || (
                 row.approved_by_name ? `Отправил: ${row.approved_by_name}` : '—'
             ),
         },
@@ -2473,6 +2549,36 @@ const CustomerPricelistStudioPage = () => {
                     </Space>
                 </div>
             </section>
+
+            {relayHealth?.status === 'offline' && (
+                <Alert
+                    type="error"
+                    showIcon
+                    message="Почтовая программа relay не работает"
+                    description={(
+                        `Ожидают отправки писем: ${Number(relayHealth.pending_count || 0).toLocaleString('ru-RU')}. `
+                        + `Последний сигнал: ${relayHealth.last_seen_at ? formatMoscow(relayHealth.last_seen_at) : 'не получен'}. `
+                        + 'Письма через прямой сервис могут быть уже отправлены — проверяйте каналы доставки в истории ниже.'
+                    )}
+                    action={(
+                        <Space wrap>
+                            <Button size="small" onClick={loadRelayHealth}>Обновить</Button>
+                            <Button size="small" type="primary" onClick={() => navigate('/admin/monitor')}>
+                                Открыть мониторинг
+                            </Button>
+                        </Space>
+                    )}
+                />
+            )}
+            {relayHealth?.status === 'idle' && Number(relayHealth.pending_count || 0) > 0 && (
+                <Alert
+                    type="warning"
+                    showIcon
+                    message="Письма ожидают запуска relay"
+                    description={`В очереди: ${Number(relayHealth.pending_count).toLocaleString('ru-RU')}. Последний сигнал от программы ещё не получен.`}
+                    action={<Button size="small" onClick={loadRelayHealth}>Обновить</Button>}
+                />
+            )}
 
             {!activeConfig ? (
                 <Card className="studio-empty">
@@ -2728,7 +2834,7 @@ const CustomerPricelistStudioPage = () => {
                                             loading={loading}
                                             pagination={{ pageSize: 10 }}
                                             rowClassName={(row) => row.id === selectedDraftId ? 'selected-draft-row' : ''}
-                                            scroll={{ x: 1120 }}
+                                            scroll={{ x: 1580 }}
                                         />
                                         {selectedDraft && (
                                             <Card className="draft-inspector" title={`Проверка версии №${selectedDraft.id}`}>

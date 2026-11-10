@@ -108,6 +108,8 @@ export default function CustomerPricelistProgressModal({ customerId, config, int
     )) : 0;
     const readyMessage = job?.action === 'build' ? 'Файл готов к скачиванию'
         : job?.delivery_status === 'queued' ? 'Прайс передан в очередь отправки relay'
+            : job?.delivery_status === 'partially_sent'
+                ? 'Прайс отправлен прямым каналом и ожидает отправки через relay'
             : 'Прайс принят почтовым транспортом';
 
     return (
@@ -147,6 +149,15 @@ export default function CustomerPricelistProgressModal({ customerId, config, int
                         {active && <div><Text type="secondary">Шкала показывает этапы, а не точный прогноз времени. Можно закрыть окно и вернуться — обработка продолжится.</Text></div>}
                         {job.status === 'queued' && seconds > 60 && <Alert style={{ marginTop: 8 }} type="warning" showIcon message="Задача ещё ожидает обработки" description="Возможно, выполняется другой прайс. Если ожидание затягивается, сообщите администратору номер задачи." />}
                         {job.status === 'failed' && <Alert style={{ marginTop: 8 }} type="error" showIcon message={job.error || 'Ошибка обработки'} />}
+                        {job.status === 'succeeded' && job.delivery_status === 'partially_sent' && (
+                            <Alert
+                                style={{ marginTop: 8 }}
+                                type="warning"
+                                showIcon
+                                message="Доставка завершена не по всем каналам"
+                                description="Прямой почтовый сервис принял файл, а копия через relay ещё находится в очереди."
+                            />
+                        )}
                         {job.status === 'succeeded' && job.action === 'send' && <div><Text type="secondary">Это статус передачи на отправку, а не подтверждение доставки во «Входящие».</Text></div>}
                     </Card>
                 )}
