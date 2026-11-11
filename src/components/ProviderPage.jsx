@@ -466,6 +466,8 @@ const ProviderPage = () => {
                 autopurchase_blocked: false,
                 autopurchase_block_reason: "",
                 order_schedule_enabled: false,
+                order_stub_enabled: true,
+                order_stub_email: "",
                 order_schedule_days: [],
                 order_schedule_times: [],
                 split_orders_by_pricelist: false,
@@ -535,6 +537,8 @@ const ProviderPage = () => {
                     order_schedule_days: data.provider.order_schedule_days || [],
                     order_schedule_times: data.provider.order_schedule_times || [],
                     order_schedule_enabled: data.provider.order_schedule_enabled || false,
+                    order_stub_enabled: data.provider.order_stub_enabled ?? true,
+                    order_stub_email: data.provider.order_stub_email || "",
                     split_orders_by_pricelist:
                         data.provider.split_orders_by_pricelist || false,
                     return_allowed: data.provider.return_allowed ?? true,
@@ -689,6 +693,8 @@ const ProviderPage = () => {
             delete normalizedValues.one_c_contract_number;
             delete normalizedValues.one_c_contract_date;
             delete normalizedValues.one_c_contract_guid;
+            delete normalizedValues.order_stub_enabled;
+            delete normalizedValues.order_stub_email;
         }
         setSaving(true);
         try {
@@ -3124,6 +3130,34 @@ const ProviderPage = () => {
                         extra="Если включено, это расписание заменяет общее для данного поставщика. Укажите хотя бы одно время по Москве."
                     >
                         <Switch />
+                    </Form.Item>
+                    <Form.Item
+                        name="order_stub_enabled"
+                        label="Заглушка отправки заказов"
+                        valuePropName="checked"
+                        extra={
+                            "Включено: автоматические заказы этому поставщику " +
+                            "уходят не ему, а на адрес заглушки (тестовый режим). " +
+                            "Выключите, когда готовы отправлять заказы поставщику " +
+                            "по-настоящему. Ручные заказы из поиска предложений " +
+                            "заглушка не затрагивает."
+                        }
+                    >
+                        <Switch
+                            checkedChildren="Заглушка"
+                            unCheckedChildren="Боевой"
+                            disabled={user?.role !== "admin"}
+                        />
+                    </Form.Item>
+                    <Form.Item
+                        name="order_stub_email"
+                        label="Email заглушки для этого поставщика"
+                        extra="Пусто — используется общий адрес заглушки из настроек."
+                    >
+                        <Input
+                            placeholder="Общий адрес из настроек"
+                            disabled={user?.role !== "admin"}
+                        />
                     </Form.Item>
                     <Form.Item name="order_schedule_days" label="Дни недели">
                         <Select

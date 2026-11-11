@@ -514,23 +514,9 @@ const SettingsPage = () => {
                                 />
                             </div>
                         </div>
-                        <div>
-                            <Text strong>Заглушка отправки заказов поставщикам</Text>
-                            <div style={{ marginTop: 8 }}>
-                                <Switch
-                                    checked={orderInboxSettings?.supplier_order_stub_enabled ?? true}
-                                    onChange={(checked) =>
-                                        setOrderInboxSettings((prev) => ({
-                                            ...(prev || {}),
-                                            supplier_order_stub_enabled: checked,
-                                        }))
-                                    }
-                                    disabled={orderInboxLoading}
-                                />
-                            </div>
-                        </div>
                         <div style={{ minWidth: 320 }}>
-                            <Text strong>Email для заглушки</Text>
+                            <Text strong>Общий адрес заглушки заказов</Text>
+                            <div><Text type="secondary">Включается и выключается в карточке каждого поставщика</Text></div>
                             <div style={{ marginTop: 8 }}>
                                 <Input
                                     value={orderInboxSettings?.supplier_order_stub_email ?? 'info@dragonzap.ru'}
