@@ -11,6 +11,7 @@ import {
     InputNumber,
     Modal,
     Popconfirm,
+    Progress,
     Row,
     Select,
     Space,
@@ -42,7 +43,9 @@ import {
     bindDiadocProviderCounteragent,
     getDiadocCounteragents,
     updateDiadocSettings,
+    getDiadocInboundAcceptance,
     getDiadocStatus,
+    retryDiadocFailedEvents,
     listDiadocInboundDocuments,
     confirmDiadocCloudSignTask,
     downloadDiadocPrintForm,
@@ -65,6 +68,22 @@ import EtrnPanel from './EtrnPanel';
 const { Title, Text } = Typography;
 
 const fmtDateTime = (value) => (value ? dayjs(value).format('DD.MM.YYYY HH:mm') : '—');
+
+const INBOUND_STAGES = [
+    { key: 'received', label: 'Получен' },
+    { key: 'recognized', label: 'Распознан' },
+    { key: 'receipt', label: 'Поступление' },
+    { key: 'posted', label: 'Проведён' },
+    { key: 'signed', label: 'Подписан' },
+];
+
+const ACCEPTANCE_KIND_LABELS = {
+    missing: { label: 'Не принято', color: 'error' },
+    shortage: { label: 'Недостача', color: 'warning' },
+    surplus: { label: 'Излишек', color: 'warning' },
+    extra: { label: 'Нет в документе', color: 'warning' },
+    marking: { label: 'Маркировка', color: 'error' },
+};
 
 const STATUS_COLORS = {
     synced: 'blue',
@@ -242,7 +261,8 @@ const DiadocPage = () => {
         registeredOnly: undefined,
     });
     const [processingDocId, setProcessingDocId] = useState(null);
-    const [onlyNeedsDecision, setOnlyNeedsDecision] = useState(false);
+    const [acceptanceTarget, setAcceptanceTarget] = useState(null);
+    const [retryingEvents, setRetryingEvents] = useState(false);
 
     const [outboundRows, setOutboundRows] = useState([]);
     const [outboundLoading, setOutboundLoading] = useState(false);
@@ -363,6 +383,7 @@ const DiadocPage = () => {
                 document_id: focusedInboundId || undefined,
                 provider_id: nextFilters.providerId || undefined,
                 registered_only: nextFilters.registeredOnly,
+                attention_only: nextFilters.attentionOnly || undefined,
                 limit: 100,
             });
             setInboundRows(response.data || []);
@@ -429,14 +450,24 @@ const DiadocPage = () => {
         }
     }, [loadCounteragents]);
 
-    const handleStartInboundSign = useCallback(async (row) => {
+    const handleStartInboundSign = useCallback(async (row, totalCode = null) => {
         const startKey = `sign:${row.id}`;
         setCloudSignStartingKey(startKey);
         try {
+            if (!totalCode) {
+                // Подпись подтверждает приёмку: сначала сверяем документ
+                // с проведённым поступлением.
+                const { data: acceptance } = await getDiadocInboundAcceptance(row.id);
+                if (acceptance?.has_discrepancies) {
+                    setAcceptanceTarget({ row, acceptance });
+                    return;
+                }
+            }
             const { data } = await startDiadocInboundSign(row.id, {
                 include_receipt: true,
-                total_code: '1',
+                total_code: totalCode || '1',
             });
+            setAcceptanceTarget(null);
             setCloudSignCode('');
             setCloudSignTask({
                 id: data.id,
@@ -696,6 +727,19 @@ const DiadocPage = () => {
         }
     };
 
+    const handleRetryFailedEvents = async () => {
+        setRetryingEvents(true);
+        try {
+            const { data } = await retryDiadocFailedEvents();
+            message.success(`Возвращено в очередь событий: ${data?.requeued || 0}`);
+            await loadStatus();
+        } catch (err) {
+            message.error(err?.response?.data?.detail || 'Не удалось вернуть события в очередь');
+        } finally {
+            setRetryingEvents(false);
+        }
+    };
+
     const handleProcessInbound = async (row) => {
         setProcessingDocId(row.id);
         try {
@@ -824,6 +868,39 @@ const DiadocPage = () => {
                     )}
                 </Space>
             ),
+        },
+        {
+            title: 'Этап',
+            key: 'stage',
+            width: 170,
+            render: (_, row) => {
+                const index = INBOUND_STAGES.findIndex((item) => item.key === row.stage);
+                return (
+                    <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                        {row.stage === 'rejected' && <Tag color="error">Отказано в подписи</Tag>}
+                        {index >= 0 && (
+                            <Tooltip title={INBOUND_STAGES.map((item) => item.label).join(' → ')}>
+                                <div>
+                                    <Progress
+                                        steps={INBOUND_STAGES.length}
+                                        percent={((index + 1) / INBOUND_STAGES.length) * 100}
+                                        showInfo={false}
+                                        size="small"
+                                        strokeColor={row.stage === 'signed' ? '#52c41a' : undefined}
+                                    />
+                                    <div style={{ fontSize: 12 }}>{INBOUND_STAGES[index].label}</div>
+                                </div>
+                            </Tooltip>
+                        )}
+                        {!row.stage && <Text type="secondary" style={{ fontSize: 12 }}>не поступление</Text>}
+                        {row.attention_reason && (
+                            <Text type="warning" style={{ fontSize: 12 }}>
+                                {row.attention_reason}
+                            </Text>
+                        )}
+                    </Space>
+                );
+            },
         },
         {
             title: 'Документ',
@@ -1387,6 +1464,27 @@ const DiadocPage = () => {
                         <Descriptions.Item label="Лимит sync">
                             {status?.inbound_sync_count || 0}
                         </Descriptions.Item>
+                        <Descriptions.Item label="Лента событий">
+                            <Tag color={status?.event_feed_initialized ? 'success' : 'warning'}>
+                                {status?.event_feed_initialized ? 'Работает' : 'Не инициализирована'}
+                            </Tag>
+                            {status?.event_feed_last_polled_at && (
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                    {fmtDateTime(status.event_feed_last_polled_at)}
+                                </Text>
+                            )}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="События в очереди">
+                            <Space size={4} wrap>
+                                <Tag>ждут: {status?.events_pending || 0}</Tag>
+                                <Tag color={status?.events_retrying ? 'warning' : 'default'}>
+                                    повторяются: {status?.events_retrying || 0}
+                                </Tag>
+                                <Tag color={status?.events_failed ? 'error' : 'default'}>
+                                    остановлены: {status?.events_failed || 0}
+                                </Tag>
+                            </Space>
+                        </Descriptions.Item>
                     </Descriptions>
 
                     {status?.last_error
@@ -1400,6 +1498,32 @@ const DiadocPage = () => {
                             description={status.last_error}
                         />
                         )}
+                    {status?.events_failed > 0 && (
+                        <Alert
+                            style={{ marginTop: 16 }}
+                            type="error"
+                            showIcon
+                            message={`События Диадока, обработка которых остановлена после повторов: ${status.events_failed}`}
+                            description={(
+                                <Space direction="vertical" size={2}>
+                                    {(status.events_failed_examples || []).map((item) => (
+                                        <Text key={item.event_id} style={{ fontSize: 12 }}>
+                                            {item.message_id || item.event_id}: {item.error}
+                                        </Text>
+                                    ))}
+                                </Space>
+                            )}
+                            action={(
+                                <Button
+                                    size="small"
+                                    loading={retryingEvents}
+                                    onClick={handleRetryFailedEvents}
+                                >
+                                    Повторить
+                                </Button>
+                            )}
+                        />
+                    )}
                     {status?.inbound_last_error && (
                         <Alert
                             style={{ marginTop: 16 }}
@@ -1648,10 +1772,17 @@ const DiadocPage = () => {
                                         </Col>
                                         <Col xs={24} md={8}>
                                             <Checkbox
-                                                checked={onlyNeedsDecision}
-                                                onChange={(event) => setOnlyNeedsDecision(event.target.checked)}
+                                                checked={Boolean(inboundFilters.attentionOnly)}
+                                                onChange={(event) => {
+                                                    const next = {
+                                                        ...inboundFilters,
+                                                        attentionOnly: event.target.checked,
+                                                    };
+                                                    setInboundFilters(next);
+                                                    loadInbound(next);
+                                                }}
                                             >
-                                                Требует решения
+                                                Требует внимания
                                             </Checkbox>
                                         </Col>
                                         <Col xs={24} md={8}>
@@ -1684,7 +1815,7 @@ const DiadocPage = () => {
                                         rowKey="id"
                                         size="small"
                                         loading={inboundLoading}
-                                        dataSource={onlyNeedsDecision ? inboundRows.filter((row) => row.needs_decision) : inboundRows}
+                                        dataSource={inboundRows}
                                         columns={inboundColumns}
                                         rowClassName={(row) => (
                                             focusedInboundId && row.id === focusedInboundId
@@ -1692,7 +1823,7 @@ const DiadocPage = () => {
                                                 : ''
                                         )}
                                         pagination={{ pageSize: 20, showSizeChanger: true }}
-                                        scroll={{ x: 1200 }}
+                                        scroll={{ x: 1370 }}
                                     />
                                 </Card>
                             ),
@@ -1851,6 +1982,91 @@ const DiadocPage = () => {
                         maxLength={1000}
                         onChange={(e) => setRevokeComment(e.target.value)}
                     />
+                </Space>
+            </Modal>
+
+            <Modal
+                open={Boolean(acceptanceTarget)}
+                width={720}
+                title={`Приёмка расходится с документом ${acceptanceTarget?.row?.document_number || acceptanceTarget?.row?.file_name || ''}`}
+                onCancel={() => setAcceptanceTarget(null)}
+                footer={[
+                    <Button key="cancel" onClick={() => setAcceptanceTarget(null)}>
+                        Отмена
+                    </Button>,
+                    <Button
+                        key="reject"
+                        danger
+                        onClick={() => {
+                            setRejectComment('');
+                            setRejectTarget(acceptanceTarget.row);
+                            setAcceptanceTarget(null);
+                        }}
+                    >
+                        Отказать в подписи
+                    </Button>,
+                    <Button
+                        key="sign"
+                        type="primary"
+                        loading={cloudSignStartingKey === `sign:${acceptanceTarget?.row?.id}`}
+                        onClick={() => handleStartInboundSign(
+                            acceptanceTarget.row,
+                            acceptanceTarget.acceptance?.suggested_total_code || '2',
+                        )}
+                    >
+                        {acceptanceTarget?.acceptance?.suggested_total_code === '3'
+                            ? 'Подписать «не принято»'
+                            : 'Подписать с расхождениями'}
+                    </Button>,
+                ]}
+            >
+                <Space direction="vertical" style={{ width: '100%' }}>
+                    <Alert
+                        type="warning"
+                        showIcon
+                        message="Подписать «принято без расхождений» нельзя"
+                        description="Проведённое поступление отличается от УПД. Исправьте поступление, подпишите документ с расхождениями или откажите в подписи."
+                    />
+                    <Table
+                        size="small"
+                        rowKey={(line, index) => `${line.kind}:${line.label}:${index}`}
+                        dataSource={acceptanceTarget?.acceptance?.lines || []}
+                        pagination={false}
+                        scroll={{ y: 320 }}
+                        columns={[
+                            {
+                                title: 'Расхождение',
+                                dataIndex: 'kind',
+                                width: 140,
+                                render: (kind) => (
+                                    <Tag color={ACCEPTANCE_KIND_LABELS[kind]?.color}>
+                                        {ACCEPTANCE_KIND_LABELS[kind]?.label || kind}
+                                    </Tag>
+                                ),
+                            },
+                            { title: 'Позиция', dataIndex: 'label' },
+                            {
+                                title: 'В документе',
+                                dataIndex: 'document_quantity',
+                                width: 110,
+                                align: 'right',
+                                render: (value, line) => (
+                                    line.kind === 'marking' ? `кодов: ${value}` : value
+                                ),
+                            },
+                            {
+                                title: 'Принято',
+                                dataIndex: 'received_quantity',
+                                width: 90,
+                                align: 'right',
+                            },
+                        ]}
+                    />
+                    {acceptanceTarget?.acceptance?.lines_total > (acceptanceTarget?.acceptance?.lines || []).length && (
+                        <Text type="secondary">
+                            Показаны первые {acceptanceTarget.acceptance.lines.length} из {acceptanceTarget.acceptance.lines_total} расхождений
+                        </Text>
+                    )}
                 </Space>
             </Modal>
 

@@ -39,6 +39,12 @@ export const syncDiadocOutboundStatuses = (params = {}) =>
 export const refreshDiadocOutboundDocumentStatus = (documentId) =>
     api.post(`/diadoc/outbound-documents/${documentId}/refresh-status`);
 
+export const getDiadocInboundAcceptance = (documentId) =>
+    api.get(`/diadoc/inbound-documents/${documentId}/acceptance`);
+
+export const retryDiadocFailedEvents = () =>
+    api.post('/diadoc/events/retry-failed');
+
 export const startDiadocInboundSign = (documentId, data = {}) =>
     api.post(`/diadoc/inbound-documents/${documentId}/sign/start`, data, {
         timeout: 120000,
