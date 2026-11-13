@@ -384,6 +384,12 @@ export const getReceivingPlan = (receiptId) =>
 export const countReceivedItem = (receiptId, data) =>
     api.post(`/receiving-scan/receipts/${receiptId}/count`, data);
 
+export const scanReceiptMarkingCode = (receiptId, code) =>
+    api.post(`/receiving-scan/receipts/${receiptId}/marking-scan`, { code: normalizeScanCode(code) });
+
+export const deleteReceiptMarkingScan = (receiptId, scanId) =>
+    api.delete(`/receiving-scan/receipts/${receiptId}/marking-scan/${scanId}`);
+
 export const placeReceivedItem = (receiptId, data) =>
     api.post(`/receiving-scan/receipts/${receiptId}/place`, data);
 
