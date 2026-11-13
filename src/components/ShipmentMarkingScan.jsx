@@ -43,7 +43,13 @@ const ShipmentMarkingScan = ({ shipmentId, status, isAdmin }) => {
         try {
             const { data } = await scanShipmentMarkingCode(shipmentId, code);
             setState(data.state);
-            if (data.duplicate) {
+            if (data.aggregate) {
+                if (data.errors_total) scanFail(); else scanOk();
+                message.open({ key: 'ship-marking', type: data.errors_total ? 'warning' : 'success', duration: 6,
+                    content: `Упаковка: кодов ${data.units}, закреплено ${data.accepted}`
+                        + (data.duplicates ? `, уже отсканировано ${data.duplicates}` : '')
+                        + (data.errors_total ? `, не подошло ${data.errors_total}: ${data.errors[0].message}` : '') });
+            } else if (data.duplicate) {
                 scanFail();
                 message.warning('Этот код уже отсканирован');
             } else {

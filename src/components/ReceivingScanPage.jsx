@@ -19,6 +19,8 @@ const { Text, Title } = Typography;
 const FLUSH_MS = 700;
 // Код маркировки «Честный знак»: 01 + GTIN(14) + 21 + серийный номер.
 const MARKING_RE = /^(?:\](?:d2|C1|Q3))?01\d{14}21/;
+// Транспортная упаковка (SSCC): 00 + 18 цифр. Раскрывается через ГИС МТ.
+const TRANSPORT_RE = /^(?:\](?:d2|C1|Q3))?\(?00\)?\d{18}$/;
 
 // Приёмка сканером. «Сверка»: скан товара → +1 к принятому, сравнение с документом.
 // «Размещение»: товар → место → количество, перемещение из зоны приёмки.
@@ -141,6 +143,17 @@ const ReceivingScanPage = () => {
             message.error(error?.response?.data?.detail || 'Не удалось записать код маркировки');
             return;
         }
+        if (data.aggregate) {
+            // упаковка: сервер сам засчитал штуки, перечитываем документ
+            await flushCounts();
+            await reload();
+            if (data.extra) scanFail(); else scanOk();
+            message.open({ key: 'recv-marking', type: data.extra ? 'warning' : 'success', duration: 5,
+                content: `Упаковка: кодов ${data.units}, подтверждено ${data.confirmed}`
+                    + (data.extra ? `, лишних ${data.extra}` : '')
+                    + (data.duplicates ? `, уже отсканировано ${data.duplicates}` : '') });
+            return;
+        }
         if (data.duplicate) {
             scanFail();
             message.warning('Этот код маркировки уже отсканирован');
@@ -173,7 +186,7 @@ const ReceivingScanPage = () => {
         if (data.autopart_id) await pickProduct(data.autopart_id, data.code);
         else if (!confirmed) { setShowAll(false); setUnknown(code); }
         else scanOk();
-    }, [receiptId, pickProduct]);
+    }, [receiptId, pickProduct, flushCounts, reload]);
 
     const removeExtra = async (scan) => {
         try {
@@ -191,7 +204,8 @@ const ReceivingScanPage = () => {
         const code = String(raw || '').trim();
         if (!code) return;
         if (!state.current.plan) { message.warning('Выберите поступление'); scanFail(); return; }
-        if (state.current.mode === 'count' && MARKING_RE.test(normalizeScanCode(code))) {
+        const normalized = normalizeScanCode(code);
+        if (state.current.mode === 'count' && (MARKING_RE.test(normalized) || TRANSPORT_RE.test(normalized))) {
             await scanMarking(code);
             return;
         }
