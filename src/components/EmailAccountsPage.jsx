@@ -55,11 +55,16 @@ const EmailAccountsPage = () => {
     }, []);
 
     const openModal = (record = null) => {
+        form.resetFields();
         setEditing(record);
         setTestResult(null);
         if (record) {
             form.setFieldsValue({
                 ...record,
+                // Stored credentials are intentionally never returned by the
+                // API. Blank means "keep the current secret" on update.
+                password: '',
+                resend_api_key: '',
                 transport: ['gmail_api', 'resend_api'].includes(record.transport)
                     ? record.transport
                     : 'smtp',
@@ -102,6 +107,8 @@ const EmailAccountsPage = () => {
             const payload = { ...values };
             delete payload.google_refresh_token;
             if (editing) {
+                if (!payload.password) delete payload.password;
+                if (!payload.resend_api_key) delete payload.resend_api_key;
                 await updateEmailAccount(editing.id, payload);
                 message.success('Аккаунт обновлен');
             } else {
@@ -445,7 +452,9 @@ const EmailAccountsPage = () => {
                     <Form.Item
                         name="password"
                         label="Пароль почты / SMTP"
-                        extra="Для Gmail API и Resend API можно оставить пустым, если IMAP/SMTP не используется."
+                        extra={editing?.has_password
+                            ? 'Пароль сохранён. Оставьте поле пустым, чтобы не менять его.'
+                            : 'Для Gmail API и Resend API можно оставить пустым, если IMAP/SMTP не используется.'}
                     >
                         <Input.Password />
                     </Form.Item>
@@ -537,7 +546,9 @@ const EmailAccountsPage = () => {
                             <Form.Item
                                 name="resend_api_key"
                                 label="Resend API key"
-                                extra="API key из панели Resend. Для приема писем домен должен быть включен на Receiving, для отправки — Verified на Sending."
+                                extra={editing?.has_resend_api_key
+                                    ? 'API key сохранён. Оставьте поле пустым, чтобы не менять его.'
+                                    : 'API key из панели Resend. Для приема писем домен должен быть включен на Receiving, для отправки — Verified на Sending.'}
                             >
                                 <Input.Password
                                     placeholder="re_..."
