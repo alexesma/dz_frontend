@@ -20,6 +20,11 @@ export const setGisMtProductGroup = (productGroup) =>
         params: { product_group: productGroup },
     });
 
+export const setShipmentCodesAutoFifo = (enabled) =>
+    api.put('/inventory/gis-mt/shipment-codes-auto-fifo', null, {
+        params: { enabled },
+    });
+
 export const startGisMtAuth = () =>
     api.post('/inventory/gis-mt/auth/start', null, { timeout: 120000 });
 

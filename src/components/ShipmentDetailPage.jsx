@@ -57,6 +57,7 @@ import { getStorageLocations, getWarehouses } from '../api/storage';
 import useAuth from '../context/useAuth';
 import ShipmentBoxes from './ShipmentBoxes';
 import ShipmentMarkingCheck from './ShipmentMarkingCheck';
+import ShipmentMarkingScan from './ShipmentMarkingScan';
 import ShipmentPrintMenu from './ShipmentPrintMenu';
 import { Link } from 'react-router-dom';
 
@@ -1159,6 +1160,12 @@ const ShipmentDetailPage = () => {
                     }
                 />
             </Card>
+
+            <ShipmentMarkingScan
+                shipmentId={id}
+                status={shipment.status}
+                isAdmin={user?.role === 'admin'}
+            />
 
             {shipment.assembly_managed && <ShipmentBoxes shipment={shipment} />}
 

@@ -11,6 +11,7 @@ import {
     Select,
     Space,
     Statistic,
+    Switch,
     Table,
     Tag,
     Timeline,
@@ -34,6 +35,7 @@ import {
     listMarkingCodes,
     listMarkingDiscrepancies,
     setGisMtProductGroup,
+    setShipmentCodesAutoFifo,
     startGisMtAuth,
     startGisMtWithdraw,
 } from '../api/marking';
@@ -300,6 +302,20 @@ const MarkingCodesPage = () => {
             const { data } = await setGisMtProductGroup(productGroupDraft);
             setGisStatus(data || null);
             message.success('Товарная группа сохранена');
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail || 'Не удалось сохранить'
+            );
+        } finally {
+            setGisBusyKey(null);
+        }
+    };
+
+    const handleToggleAutoFifo = async (enabled) => {
+        setGisBusyKey('fifo');
+        try {
+            const { data } = await setShipmentCodesAutoFifo(enabled);
+            setGisStatus(data || null);
         } catch (err) {
             message.error(
                 err?.response?.data?.detail || 'Не удалось сохранить'
@@ -589,6 +605,20 @@ const MarkingCodesPage = () => {
                                     </Button>
                                 </Space.Compact>
                             </Popover>
+                        </Space>
+                        <Space wrap>
+                            <Switch
+                                checked={gisStatus?.shipment_codes_auto_fifo !== false}
+                                loading={gisBusyKey === 'fifo'}
+                                onChange={handleToggleAutoFifo}
+                            />
+                            <Text>
+                                Назначать коды при проведении отгрузки автоматически
+                            </Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                Выключите, когда коды сканируются при сборке: в УПД
+                                пойдут только отсканированные коды.
+                            </Text>
                         </Space>
                         {gisStatus?.last_error ? (
                             <Alert

@@ -13,6 +13,7 @@ import { scanFail, scanOk } from '../utils/scanFeedback';
 import { similarity } from '../utils/scanCatalog';
 import { normalizeScanCode } from '../utils/scanCode';
 import CameraScanModal from './CameraScanModal';
+import GisMtTokenTag from './GisMtTokenTag';
 
 const { Text, Title } = Typography;
 const FLUSH_MS = 700;
@@ -305,6 +306,7 @@ const ReceivingScanPage = () => {
                 : (plan.marking.started && plan.marking.missing === 0 ? 'success' : 'info')}
             message={<Space size={4} wrap>
                 Коды маркировки:
+                <GisMtTokenTag />
                 <Tag color="green">подтверждено {plan.marking.confirmed} из {plan.marking.expected}</Tag>
                 <Tag color={plan.marking.missing ? 'orange' : 'default'}>не найдено {plan.marking.missing}</Tag>
                 <Tag color={plan.marking.extra.length ? 'red' : 'default'}>лишних {plan.marking.extra.length}</Tag>

@@ -70,7 +70,13 @@ const ShipmentBoxes = ({ shipment }) => {
             const response = await scanIntoAssemblyBox(shipment.id, targetBox.id, code);
             await load();
             scanOk();
-            message.success(`Коробка ${targetBox.number}: ${response.data.title} +${response.data.added} шт.`);
+            if (response.data.marking_code) {
+                // блок «Коды маркировки» на этой же странице показывает счётчик
+                window.dispatchEvent(new CustomEvent('shipment-marking-changed'));
+            }
+            message.success(response.data.added
+                ? `Коробка ${targetBox.number}: ${response.data.title} +${response.data.added} шт.${response.data.marking_code ? ' Код маркировки принят.' : ''}`
+                : 'Код маркировки принят, позиция уже разложена по коробкам');
         } catch (error) {
             scanFail();
             message.error(error?.response?.data?.detail || 'Не удалось добавить по скану');
