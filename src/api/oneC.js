@@ -84,3 +84,9 @@ export const getSalesHistorySummary = () =>
 
 export const importSalesHistory = (formData) =>
     api.post('/1c/sales-history/import', formData, { timeout: 600000 });
+
+export const listOneCForeignDocuments = (params = {}) =>
+    api.get('/1c/enterprise-data/foreign-documents', { params });
+
+export const markOneCForeignDocumentReviewed = (documentId) =>
+    api.post(`/1c/enterprise-data/foreign-documents/${documentId}/reviewed`);

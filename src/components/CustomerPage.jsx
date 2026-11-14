@@ -1130,6 +1130,10 @@ const CustomerPage = () => {
 
                 customerForm.setFieldsValue({
                     name: customer.name,
+                    one_c_contract_name: customer.one_c_contract_name,
+                    one_c_contract_number: customer.one_c_contract_number,
+                    one_c_contract_date: customer.one_c_contract_date,
+                    one_c_contract_guid: customer.one_c_contract_guid,
                     legal_name: customer.legal_name,
                     label_name: customer.label_name,
                     email_contact: customer.email_contact,
@@ -2370,6 +2374,34 @@ const CustomerPage = () => {
                             tooltip="Если пусто или 0 — лимит суммы не применяется."
                         >
                             <InputNumber min={0} step={1000} style={{ width: '100%' }} />
+                        </Form.Item>
+
+                        <Form.Item
+                            name="one_c_contract_name"
+                            label="Договор в 1С"
+                            tooltip="Основной договор клиента для реализаций в УНФ. Без него расчёты в УНФ лягут «без договора»."
+                        >
+                            <Input maxLength={255} placeholder="Основной договор" />
+                        </Form.Item>
+
+                        <Form.Item name="one_c_contract_number" label="Номер договора">
+                            <Input maxLength={100} />
+                        </Form.Item>
+
+                        <Form.Item name="one_c_contract_date" label="Дата договора">
+                            <Input type="date" />
+                        </Form.Item>
+
+                        <Form.Item
+                            name="one_c_contract_guid"
+                            label="Идентификатор договора в 1С (UUID)"
+                            tooltip="Если договор уже есть в УНФ — обмен свяжет реализацию с ним. Пусто — договор будет создан обменом."
+                            rules={[{
+                                pattern: /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/,
+                                message: 'Введите UUID договора 1С',
+                            }]}
+                        >
+                            <Input placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" maxLength={36} />
                         </Form.Item>
 
                         <Form.Item

@@ -31,6 +31,7 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { Link } from 'react-router-dom';
+import OneCForeignDocuments from './OneCForeignDocuments';
 import {
     downloadOneCIncoming,
     downloadOneCExport,
@@ -775,6 +776,8 @@ const OneCExchangePage = () => {
                             onClick={handlePrepareReceipt}>Добавить в очередь</Button>
                     </Space>
                 </Card>
+                <OneCForeignDocuments />
+
                 <Card title="Перенос истории в УНФ">
                     <Space wrap>
                         <Button loading={historyLoading} onClick={handleHistoryAudit}>Проверить историю</Button>
