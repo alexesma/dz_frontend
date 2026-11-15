@@ -55,6 +55,12 @@ export const startDiadocOutboundRevoke = (documentId, data = {}) =>
         timeout: 120000,
     });
 
+export const getDiadocOutboundQueue = () =>
+    api.get('/diadoc/outbound-queue');
+
+export const runDiadocOutboundQueue = () =>
+    api.post('/diadoc/outbound-queue/run', null, { timeout: 180000 });
+
 export const startDiadocOutboundSendSigned = (documentId) =>
     api.post(
         `/diadoc/outbound-documents/${documentId}/send-signed/start`,

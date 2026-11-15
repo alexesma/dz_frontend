@@ -63,6 +63,7 @@ import {
 } from '../api/diadoc';
 import { getCustomersSummary } from '../api/customers';
 import { getAllProviders } from '../api/providers';
+import DiadocSigningQueue from './DiadocSigningQueue';
 import EtrnPanel from './EtrnPanel';
 
 const { Title, Text } = Typography;
@@ -272,6 +273,7 @@ const DiadocPage = () => {
     const [quickBindKey, setQuickBindKey] = useState(null);
     // Облачная подпись: задача, ожидающая SMS-код
     const [cloudSignTask, setCloudSignTask] = useState(null);
+    const [signingQueueVersion, setSigningQueueVersion] = useState(0);
     const [cloudSignCode, setCloudSignCode] = useState('');
     const [cloudSignSubmitting, setCloudSignSubmitting] = useState(false);
     const [cloudSignStartingKey, setCloudSignStartingKey] = useState(null);
@@ -327,6 +329,7 @@ const DiadocPage = () => {
                 inbound_sync_enabled: nextStatus?.inbound_sync_enabled ?? true,
                 inbound_download_content: nextStatus?.inbound_download_content ?? true,
                 inbound_process_enabled: nextStatus?.inbound_process_enabled ?? false,
+                outbound_auto_draft_enabled: nextStatus?.outbound_auto_draft_enabled ?? false,
                 inbound_sync_count: Math.min(Number(nextStatus?.inbound_sync_count || 50), 100),
             });
         } catch (err) {
@@ -554,6 +557,7 @@ const DiadocPage = () => {
                 await loadInbound();
             } else {
                 await loadOutbound(outboundFilters);
+                setSigningQueueVersion((value) => value + 1);
             }
         } catch (err) {
             // Код мог быть неверным — модал не закрываем, можно повторить.
@@ -1695,6 +1699,16 @@ const DiadocPage = () => {
                                 </Col>
                                 <Col xs={24} md={6}>
                                     <Form.Item
+                                        name="outbound_auto_draft_enabled"
+                                        label="УПД после проведения"
+                                        tooltip="Черновик формализованного УПД создаётся сам после проведения реализации и встаёт в очередь «К подписи». Берутся только реализации, проведённые после включения."
+                                        valuePropName="checked"
+                                    >
+                                        <Switch checkedChildren="Включено" unCheckedChildren="Выключено" />
+                                    </Form.Item>
+                                </Col>
+                                <Col xs={24} md={6}>
+                                    <Form.Item
                                         name="inbound_sync_count"
                                         label="Документов на страницу"
                                         rules={[{ required: true }]}
@@ -1711,6 +1725,17 @@ const DiadocPage = () => {
                     activeKey={activeTab}
                     onChange={handleTabChange}
                     items={[
+                        {
+                            key: 'signing',
+                            label: 'К подписи',
+                            children: (
+                                <DiadocSigningQueue
+                                    onSign={handleStartSendSigned}
+                                    signingKey={cloudSignStartingKey}
+                                    version={signingQueueVersion}
+                                />
+                            ),
+                        },
                         {
                             key: 'counteragents',
                             label: 'Контрагенты',

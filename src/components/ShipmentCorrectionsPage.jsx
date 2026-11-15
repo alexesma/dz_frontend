@@ -115,7 +115,8 @@ export default function ShipmentCorrectionsPage() {
         }
         setSelected(doc);
         setForm({
-            doc_number: doc.doc_number, doc_date: doc.doc_date,
+            // «б/н» — черновик без номера: порядковый присвоится при проведении
+            doc_number: doc.doc_number === 'б/н' ? '' : doc.doc_number, doc_date: doc.doc_date,
             basis_number: doc.basis_number, basis_date: doc.basis_date,
             basis_description: doc.basis_description, reason: doc.reason,
             document_function: doc.document_function,
@@ -227,7 +228,7 @@ export default function ShipmentCorrectionsPage() {
             </Space>
             {shipment && <>
                 <Space wrap style={{ marginBottom: 16 }}>
-                    <Input placeholder="Номер УКД" style={{ width: 150 }} value={form.doc_number} disabled={!editable}
+                    <Input placeholder="Номер УКД (авто)" title="Оставьте пустым — номер собственной серии присвоится при проведении" style={{ width: 170 }} value={form.doc_number} disabled={!editable}
                         onChange={(event) => setForm((old) => ({ ...old, doc_number: event.target.value }))} />
                     <DatePicker value={dayjs(form.doc_date)} disabled={!editable}
                         onChange={(value) => setForm((old) => ({ ...old, doc_date: value?.format('YYYY-MM-DD') || '' }))} />
