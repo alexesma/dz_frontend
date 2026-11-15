@@ -50,6 +50,7 @@ import {
     quarantineOneCEnterpriseHistoryProblems,
     resetOneCExport,
     retryOneCEvent,
+    retryOneCEnterpriseErrors,
     retryOneCEnterpriseEvent,
     restoreOneCEnterpriseEvent,
     sendOneCEnterpriseDataEvent,
@@ -272,6 +273,19 @@ const OneCExchangePage = () => {
             message.error(err?.response?.data?.detail || 'Не удалось отправить сообщение в УНФ');
         } finally {
             setSendingEventId(null);
+        }
+    };
+
+    const handleEnterpriseRetryAll = async () => {
+        setRetryingEnterpriseId('all');
+        try {
+            const { data } = await retryOneCEnterpriseErrors();
+            message.success(`Возвращено в очередь документов: ${data?.requeued || 0}`);
+            await loadStatus();
+        } catch (err) {
+            message.error(err?.response?.data?.detail || 'Не удалось повторить подготовку');
+        } finally {
+            setRetryingEnterpriseId(null);
         }
     };
 
@@ -639,6 +653,22 @@ const OneCExchangePage = () => {
         <div style={{ margin: 16 }}>
             <Space direction="vertical" size="large" style={{ width: '100%' }}>
                 <Card title="1С:Управление нашей фирмой — EnterpriseData">
+                    {enterpriseAutoStatus?.health?.stalled && (
+                        <Alert showIcon type="error" style={{ marginBottom: 12 }}
+                            message={`Обмен с УНФ стоит дольше ${enterpriseAutoStatus.health.stall_minutes} мин.`}
+                            description={(
+                                <Space direction="vertical" size={2}>
+                                    {enterpriseAutoStatus.health.reasons.map((reason) => (
+                                        <Text key={reason}>{reason}</Text>
+                                    ))}
+                                    <Text type="secondary">
+                                        Ждут отправки: {enterpriseAutoStatus.health.waiting_events},
+                                        с ошибкой подготовки: {enterpriseAutoStatus.health.error_events}.
+                                        Проверьте, что УНФ запущена и её сценарий обмена читает FTP.
+                                    </Text>
+                                </Space>
+                            )} />
+                    )}
                     <Alert showIcon type={enterpriseAutoStatus?.config?.enabled ? 'info' : 'warning'}
                         message={enterpriseAutoStatus?.config?.enabled ? 'Автоотправка EnterpriseData включена' : 'Автоотправка EnterpriseData выключена до подготовки истории'}
                         description="Подтверждение чтения сообщения не означает проведения документа в УНФ. Исторические остатки и документы переносятся отдельно; корректировки реализации эта УНФ через FTP не принимает." />
@@ -743,7 +773,13 @@ const OneCExchangePage = () => {
                     {enterpriseErrors.length > 0 && (
                         <Table size="small" style={{ marginTop: 12 }}
                             rowKey="id" pagination={{ pageSize: 10 }}
-                            title={() => `Ошибки подготовки EnterpriseData: ${enterpriseErrors.length}`}
+                            title={() => (
+                                <Space>
+                                    {`Ошибки подготовки EnterpriseData: ${enterpriseErrors.length}`}
+                                    <Button size="small" loading={retryingEnterpriseId === 'all'}
+                                        onClick={handleEnterpriseRetryAll}>Повторить все</Button>
+                                </Space>
+                            )}
                             dataSource={enterpriseErrors}
                             columns={[
                                 { title: 'Событие', dataIndex: 'id' },
