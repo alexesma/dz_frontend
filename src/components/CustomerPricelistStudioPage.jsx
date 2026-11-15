@@ -361,6 +361,7 @@ const CustomerPricelistStudioPage = () => {
                 getCustomersSummary({
                     page: 1,
                     page_size: 200,
+                    customer_group: 'wholesale',
                     sort_by: 'name',
                     sort_dir: 'asc',
                 }),

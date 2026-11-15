@@ -384,6 +384,12 @@ export const getReceivingPlan = (receiptId) =>
 export const countReceivedItem = (receiptId, data) =>
     api.post(`/receiving-scan/receipts/${receiptId}/count`, data);
 
+export const getDocumentNumbering = () =>
+    api.get('/inventory/document-numbering');
+
+export const updateDocumentNumbering = (kind, data) =>
+    api.put(`/inventory/document-numbering/${kind}`, data);
+
 export const getShipmentMarkingScan = (shipmentId) =>
     api.get(`/inventory/shipments/${shipmentId}/marking-scan`);
 
