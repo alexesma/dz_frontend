@@ -466,14 +466,18 @@ const OneCExchangePage = () => {
             width: 110,
             render: (_, row) => (
                 <Space size={0}>
-                    {row.event_type === 'posted' && !row.ed_message_no && ['shipment', 'supplier_receipt'].includes(row.entity_type) && (
+                    {row.event_type === 'posted' && !row.ed_unf_received_at && ['shipment', 'supplier_receipt'].includes(row.entity_type) && (
                         <Popconfirm
-                            title="Отправить этот документ в тестовую УНФ?"
-                            description="Файл будет размещён на FTP. Затем запустите синхронизацию в УНФ и проверьте результат."
+                            title={row.ed_message_no ? 'Повторно отправить документ в тестовую УНФ?' : 'Отправить этот документ в тестовую УНФ?'}
+                            description={row.ed_message_no
+                                ? `Предыдущее сообщение №${row.ed_message_no} уже прочитано, но результат проведения не получен. Будет создано новое сообщение.`
+                                : 'Файл будет размещён на FTP. Затем запустите синхронизацию в УНФ и проверьте результат.'}
                             onConfirm={() => handleEnterpriseSend(row.id)}
                         >
-                            <Tooltip title="Пробная отправка EnterpriseData">
-                                <Button type="text" loading={sendingEventId === row.id}>В УНФ</Button>
+                            <Tooltip title={row.ed_message_no ? 'Повторная отправка EnterpriseData' : 'Пробная отправка EnterpriseData'}>
+                                <Button type="text" loading={sendingEventId === row.id}>
+                                    {row.ed_message_no ? 'Повторить в УНФ' : 'В УНФ'}
+                                </Button>
                             </Tooltip>
                         </Popconfirm>
                     )}
