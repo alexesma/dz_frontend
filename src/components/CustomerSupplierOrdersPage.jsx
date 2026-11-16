@@ -14,7 +14,7 @@ import {
     Typography,
 } from 'antd';
 import dayjs from 'dayjs';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
     createManualSupplierOrder,
     getSupplierOrders,
@@ -28,12 +28,31 @@ const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
 const DEFAULT_FILTERS = {
+    providerId: null,
+    status: null,
     dateRange: null,
     totalSumMin: null,
     totalSumMax: null,
     rejectedSumMin: null,
     rejectedSumMax: null,
 };
+
+const filtersFromSearch = (searchParams) => ({
+    providerId: searchParams.get('provider_id')
+        ? Number(searchParams.get('provider_id')) : null,
+    status: searchParams.get('status') || null,
+    dateRange: searchParams.get('date_from') && searchParams.get('date_to')
+        ? [searchParams.get('date_from'), searchParams.get('date_to')]
+        : null,
+    totalSumMin: searchParams.get('total_sum_min') !== null
+        ? Number(searchParams.get('total_sum_min')) : null,
+    totalSumMax: searchParams.get('total_sum_max') !== null
+        ? Number(searchParams.get('total_sum_max')) : null,
+    rejectedSumMin: searchParams.get('rejected_sum_min') !== null
+        ? Number(searchParams.get('rejected_sum_min')) : null,
+    rejectedSumMax: searchParams.get('rejected_sum_max') !== null
+        ? Number(searchParams.get('rejected_sum_max')) : null,
+});
 
 const SUPPLIER_ORDER_STATUS_META = {
     NEW: { color: 'default', label: 'Новый' },
@@ -44,13 +63,20 @@ const SUPPLIER_ORDER_STATUS_META = {
 
 const CustomerSupplierOrdersPage = () => {
     const navigate = useNavigate();
+    const location = useLocation();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const initialFilters = useMemo(() => filtersFromSearch(searchParams), []); // eslint-disable-line react-hooks/exhaustive-deps
     const [orders, setOrders] = useState([]);
     const [providers, setProviders] = useState([]);
     const [loading, setLoading] = useState(false);
     const [sendingSelected, setSendingSelected] = useState(false);
     const [sendingScheduled, setSendingScheduled] = useState(false);
     const [selectedRowKeys, setSelectedRowKeys] = useState([]);
-    const [filters, setFilters] = useState(DEFAULT_FILTERS);
+    const [filters, setFilters] = useState(initialFilters);
+    const [appliedFilters, setAppliedFilters] = useState(initialFilters);
+    const [currentPage, setCurrentPage] = useState(() => (
+        Math.max(Number(searchParams.get('page') || 1), 1)
+    ));
     const [createOpen, setCreateOpen] = useState(false);
     const [creating, setCreating] = useState(false);
     const [formState, setFormState] = useState({
@@ -71,6 +97,12 @@ const CustomerSupplierOrdersPage = () => {
         setLoading(true);
         try {
             const params = {};
+            if (activeFilters.providerId) {
+                params.provider_id = activeFilters.providerId;
+            }
+            if (activeFilters.status) {
+                params.status = activeFilters.status;
+            }
             if (activeFilters.dateRange?.length === 2) {
                 params.date_from = activeFilters.dateRange[0];
                 params.date_to = activeFilters.dateRange[1];
@@ -101,8 +133,30 @@ const CustomerSupplierOrdersPage = () => {
     }, []);
 
     useEffect(() => {
-        fetchOrders(DEFAULT_FILTERS);
-    }, [fetchOrders]);
+        fetchOrders(appliedFilters);
+    }, [appliedFilters, fetchOrders]);
+
+    const writeListState = useCallback((nextFilters, page = 1) => {
+        const params = new URLSearchParams();
+        if (nextFilters.providerId) params.set('provider_id', nextFilters.providerId);
+        if (nextFilters.status) params.set('status', nextFilters.status);
+        if (nextFilters.dateRange?.length === 2) {
+            params.set('date_from', nextFilters.dateRange[0]);
+            params.set('date_to', nextFilters.dateRange[1]);
+        }
+        if (nextFilters.totalSumMin !== null) params.set('total_sum_min', nextFilters.totalSumMin);
+        if (nextFilters.totalSumMax !== null) params.set('total_sum_max', nextFilters.totalSumMax);
+        if (nextFilters.rejectedSumMin !== null) params.set('rejected_sum_min', nextFilters.rejectedSumMin);
+        if (nextFilters.rejectedSumMax !== null) params.set('rejected_sum_max', nextFilters.rejectedSumMax);
+        if (page > 1) params.set('page', page);
+        setSearchParams(params, { replace: true });
+    }, [setSearchParams]);
+
+    const applyFilters = () => {
+        setCurrentPage(1);
+        setAppliedFilters(filters);
+        writeListState(filters, 1);
+    };
 
     const dataSource = useMemo(() => {
         return (orders || []).map((order) => ({
@@ -263,7 +317,7 @@ const CustomerSupplierOrdersPage = () => {
                 message.success(`Отправлено ${sent} заказов`);
             }
             setSelectedRowKeys([]);
-            await fetchOrders(filters);
+            await fetchOrders(appliedFilters);
         } catch (err) {
             const detail = err?.response?.data?.detail;
             message.error(
@@ -288,7 +342,7 @@ const CustomerSupplierOrdersPage = () => {
             } else {
                 message.success(`Плановая отправка: отправлено ${sent}`);
             }
-            await fetchOrders(filters);
+            await fetchOrders(appliedFilters);
         } catch (err) {
             const detail = err?.response?.data?.detail;
             message.error(
@@ -432,7 +486,7 @@ const CustomerSupplierOrdersPage = () => {
                 providerId: null,
                 items: [{ oem: '', brand: '', name: '', quantity: 1, lookupResults: [] }],
             });
-            fetchOrders(filters);
+            fetchOrders(appliedFilters);
         } catch (err) {
             const detail =
                 err?.response?.data?.detail ||
@@ -452,6 +506,34 @@ const CustomerSupplierOrdersPage = () => {
                 Отказ учитывается только после явного ответа или отметки менеджера.
             </Text>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+                <Select
+                    allowClear
+                    showSearch
+                    optionFilterProp="label"
+                    style={{ minWidth: 220 }}
+                    placeholder="Поставщик"
+                    value={filters.providerId}
+                    onChange={(value) => setFilters((prev) => ({
+                        ...prev, providerId: value || null,
+                    }))}
+                    options={(providers || []).map((provider) => ({
+                        value: provider.id,
+                        label: provider.name,
+                    }))}
+                />
+                <Select
+                    allowClear
+                    style={{ minWidth: 180 }}
+                    placeholder="Статус"
+                    value={filters.status}
+                    onChange={(value) => setFilters((prev) => ({
+                        ...prev, status: value || null,
+                    }))}
+                    options={Object.entries(SUPPLIER_ORDER_STATUS_META).map(([value, meta]) => ({
+                        value,
+                        label: meta.label,
+                    }))}
+                />
                 <RangePicker
                     value={
                         filters.dateRange
@@ -510,7 +592,7 @@ const CustomerSupplierOrdersPage = () => {
                 />
                 <Button
                     type="primary"
-                    onClick={() => fetchOrders(filters)}
+                    onClick={applyFilters}
                 >
                     Применить
                 </Button>
@@ -518,7 +600,9 @@ const CustomerSupplierOrdersPage = () => {
                     onClick={() => {
                         const reset = { ...DEFAULT_FILTERS };
                         setFilters(reset);
-                        fetchOrders(reset);
+                        setAppliedFilters(reset);
+                        setCurrentPage(1);
+                        writeListState(reset, 1);
                     }}
                 >
                     Сбросить
@@ -564,10 +648,18 @@ const CustomerSupplierOrdersPage = () => {
                         ) {
                             return;
                         }
-                        navigate(`/customer-orders/suppliers/${record.id}`);
+                        const returnTo = `${location.pathname}${location.search}`;
+                        navigate(`/customer-orders/suppliers/${record.id}?returnTo=${encodeURIComponent(returnTo)}`);
                     },
                 })}
-                pagination={{ pageSize: 20 }}
+                pagination={{
+                    pageSize: 20,
+                    current: currentPage,
+                    onChange: (page) => {
+                        setCurrentPage(page);
+                        writeListState(appliedFilters, page);
+                    },
+                }}
             />
             <Modal
                 title="Новый заказ поставщику"

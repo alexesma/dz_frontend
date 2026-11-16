@@ -137,6 +137,18 @@ export const getCustomerOrderOemSuggestions = (q) =>
 export const getSupplierOrderDetail = (orderId) =>
     api.get(`/customer-orders/supplier/${orderId}`);
 
+export const getSupplierOrderCustomerItemOptions = (orderId, params = {}) =>
+    api.get(`/customer-orders/supplier/${orderId}/customer-item-options`, { params });
+
+export const addSupplierOrderItem = (orderId, payload) =>
+    api.post(`/customer-orders/supplier/${orderId}/items`, payload);
+
+export const updateSupplierOrderItem = (orderId, itemId, payload) =>
+    api.patch(`/customer-orders/supplier/${orderId}/items/${itemId}`, payload);
+
+export const deleteSupplierOrderItem = (orderId, itemId) =>
+    api.delete(`/customer-orders/supplier/${orderId}/items/${itemId}`);
+
 export const getSupplierOrders = (params) =>
     api.get('/customer-orders/supplier/list', { params });
 
