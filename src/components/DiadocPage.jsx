@@ -58,6 +58,7 @@ import {
     startDiadocInboundSign,
     startDiadocOutboundRevoke,
     startDiadocOutboundSendSigned,
+    startDiadocOutboundSendSignedBatch,
     syncDiadocInboundDocuments,
     syncDiadocOutboundStatuses,
 } from '../api/diadoc';
@@ -330,6 +331,7 @@ const DiadocPage = () => {
                 inbound_download_content: nextStatus?.inbound_download_content ?? true,
                 inbound_process_enabled: nextStatus?.inbound_process_enabled ?? false,
                 outbound_auto_draft_enabled: nextStatus?.outbound_auto_draft_enabled ?? false,
+                outbound_upd_email_enabled: nextStatus?.outbound_upd_email_enabled ?? false,
                 inbound_sync_count: Math.min(Number(nextStatus?.inbound_sync_count || 50), 100),
             });
         } catch (err) {
@@ -487,6 +489,27 @@ const DiadocPage = () => {
         }
     }, []);
 
+    // Пачка черновиков подписывается одним кодом из SMS.
+    const handleStartSendSignedBatch = useCallback(async (documentIds) => {
+        setCloudSignStartingKey('send:batch');
+        try {
+            const { data } = await startDiadocOutboundSendSignedBatch(documentIds);
+            setCloudSignCode('');
+            setCloudSignTask({
+                id: data.id,
+                title: `Подпись и отправка документов: ${documentIds.length}`,
+                kind: 'outbound',
+            });
+        } catch (err) {
+            message.error(
+                err?.response?.data?.detail ||
+                    'Не удалось запустить подписание пачки'
+            );
+        } finally {
+            setCloudSignStartingKey(null);
+        }
+    }, []);
+
     const handleStartSendSigned = useCallback(async (row) => {
         const startKey = `send:${row.id}`;
         setCloudSignStartingKey(startKey);
@@ -548,8 +571,18 @@ const DiadocPage = () => {
         }
         setCloudSignSubmitting(true);
         try {
-            await confirmDiadocCloudSignTask(cloudSignTask.id, code);
-            message.success('Подписано и отправлено в Диадок');
+            const { data: signed } = await confirmDiadocCloudSignTask(cloudSignTask.id, code);
+            if (signed?.failed?.length) {
+                message.warning(
+                    `Отправлено: ${signed.sent_document_ids?.length || 0}, не отправлено: ${signed.failed.length}. `
+                    + `${signed.failed[0].file_name || ''}: ${signed.failed[0].error}`,
+                    10,
+                );
+            } else if (signed?.documents_total > 1) {
+                message.success(`Подписано и отправлено документов: ${signed.sent_document_ids.length}`);
+            } else {
+                message.success('Подписано и отправлено в Диадок');
+            }
             const finishedKind = cloudSignTask.kind;
             setCloudSignTask(null);
             setCloudSignCode('');
@@ -1709,6 +1742,16 @@ const DiadocPage = () => {
                                 </Col>
                                 <Col xs={24} md={6}>
                                     <Form.Item
+                                        name="outbound_upd_email_enabled"
+                                        label="УПД в Excel на почту"
+                                        tooltip="После проведения реализации клиент получает письмо с УПД в Excel — и те, кому документ уходит по ЭДО, и те, у кого ЭДО нет. Берутся только реализации, проведённые после включения."
+                                        valuePropName="checked"
+                                    >
+                                        <Switch checkedChildren="Включено" unCheckedChildren="Выключено" />
+                                    </Form.Item>
+                                </Col>
+                                <Col xs={24} md={6}>
+                                    <Form.Item
                                         name="inbound_sync_count"
                                         label="Документов на страницу"
                                         rules={[{ required: true }]}
@@ -1731,6 +1774,7 @@ const DiadocPage = () => {
                             children: (
                                 <DiadocSigningQueue
                                     onSign={handleStartSendSigned}
+                                    onSignBatch={handleStartSendSignedBatch}
                                     signingKey={cloudSignStartingKey}
                                     version={signingQueueVersion}
                                 />

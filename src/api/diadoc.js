@@ -61,6 +61,13 @@ export const getDiadocOutboundQueue = () =>
 export const runDiadocOutboundQueue = () =>
     api.post('/diadoc/outbound-queue/run', null, { timeout: 180000 });
 
+export const startDiadocOutboundSendSignedBatch = (documentIds) =>
+    api.post(
+        '/diadoc/outbound-documents/send-signed-batch/start',
+        { document_ids: documentIds },
+        { timeout: 180000 },
+    );
+
 export const startDiadocOutboundSendSigned = (documentId) =>
     api.post(
         `/diadoc/outbound-documents/${documentId}/send-signed/start`,
