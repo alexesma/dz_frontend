@@ -208,6 +208,9 @@ const ProviderPage = () => {
     const [autopartOptions, setAutopartOptions] = useState([]);
     const [autopartSearching, setAutopartSearching] = useState(false);
     const inventoryRuleSearchTimer = useRef(null);
+    const [excludeAutopartOptions, setExcludeAutopartOptions] = useState([]);
+    const [excludeAutopartSearching, setExcludeAutopartSearching] = useState(false);
+    const excludeAutopartSearchTimer = useRef(null);
     const hasRunningPricelistReview = pricelistReviews.some(
         (review) => ['queued', 'processing'].includes(review.status)
     );
@@ -319,6 +322,9 @@ const ProviderPage = () => {
             if (inventoryRuleSearchTimer.current) {
                 clearTimeout(inventoryRuleSearchTimer.current);
             }
+            if (excludeAutopartSearchTimer.current) {
+                clearTimeout(excludeAutopartSearchTimer.current);
+            }
         };
     }, [isNew, providerId, loadInventoryRules]);
 
@@ -374,7 +380,29 @@ const ProviderPage = () => {
     const normalizeExcludeItem = (item) => {
         const brand = String(item?.brand ?? "").trim();
         const oem = String(item?.oem ?? "").trim();
-        return { brand, oem };
+        const name = String(item?.name ?? "").trim();
+        const numericId = Number(item?.autopart_id);
+        return {
+            ...(Number.isInteger(numericId) && numericId > 0
+                ? { autopart_id: numericId }
+                : {}),
+            brand,
+            oem,
+            name,
+        };
+    };
+
+    const excludeOptionFromItem = (item) => {
+        const normalized = normalizeExcludeItem(item);
+        const value = normalized.autopart_id
+            || `legacy:${normalized.brand}:${normalized.oem}`;
+        return {
+            value,
+            label: [normalized.oem, normalized.brand, normalized.name]
+                .filter(Boolean)
+                .join(" · "),
+            part: normalized,
+        };
     };
 
     const mergeExcludeItems = (currentItems, newItems) => {
@@ -383,11 +411,18 @@ const ProviderPage = () => {
             const normalized = normalizeExcludeItem(item);
             if (!normalized.brand || !normalized.oem) return;
             const key = `${normalized.brand.toUpperCase()}|${normalized.oem.toUpperCase()}`;
-            if (!map.has(key)) {
-                map.set(key, normalized);
-            }
+            map.set(key, normalized);
         });
         return Array.from(map.values());
+    };
+
+    const mergeExcludeOptions = (items) => {
+        const options = items.map(excludeOptionFromItem);
+        setExcludeAutopartOptions((current) => {
+            const map = new Map(current.map((option) => [option.value, option]));
+            options.forEach((option) => map.set(option.value, option));
+            return Array.from(map.values());
+        });
     };
 
     const parseStringList = (value) => String(value || "")
@@ -438,6 +473,7 @@ const ProviderPage = () => {
             const { data } = await parseProviderExcludePositions(file);
             const existing = configForm.getFieldValue("exclude_positions") || [];
             const merged = mergeExcludeItems(existing, data?.items || []);
+            mergeExcludeOptions(merged);
             configForm.setFieldsValue({ exclude_positions: merged });
             message.success("Список исключений обновлен");
         } catch (err) {
@@ -445,6 +481,32 @@ const ProviderPage = () => {
         } finally {
             setExcludeUploading(false);
         }
+    };
+
+    const handleExcludeAutopartSearch = (value) => {
+        if (excludeAutopartSearchTimer.current) {
+            clearTimeout(excludeAutopartSearchTimer.current);
+        }
+        const query = String(value || "").trim();
+        if (query.length < 2) return;
+        excludeAutopartSearchTimer.current = setTimeout(async () => {
+            setExcludeAutopartSearching(true);
+            try {
+                const { data } = await searchAutopartsByOem(query, 40);
+                setExcludeAutopartOptions((data || []).map((item) => (
+                    excludeOptionFromItem({
+                        autopart_id: item.id,
+                        brand: item.brand,
+                        oem: item.oem_number,
+                        name: item.name,
+                    })
+                )));
+            } catch {
+                setExcludeAutopartOptions([]);
+            } finally {
+                setExcludeAutopartSearching(false);
+            }
+        }, 300);
     };
 
     // --- загрузка данных при редактировании ---
@@ -825,10 +887,24 @@ const ProviderPage = () => {
     const openConfigModal = (config = null) => {
         setEditingConfig(config);
         if (config) {
+            const excludePositions = (config.exclude_positions || [])
+                .map(normalizeExcludeItem)
+                .filter((item) => item.brand && item.oem)
+                .map((item) => ({
+                    ...item,
+                    autopart_id: item.autopart_id
+                        || `legacy:${item.brand}:${item.oem}`,
+                }));
+            setExcludeAutopartOptions(
+                excludePositions.map(excludeOptionFromItem)
+            );
             setConfigNumberingFromOne(true);
             configForm.setFieldsValue({
                 ...config,
-                exclude_positions: config.exclude_positions || [],
+                order_emails: (config.order_emails || []).length
+                    ? config.order_emails
+                    : parseStringList(config.order_email_to),
+                exclude_positions: excludePositions,
                 excluded_brands: config.excluded_brands || [],
                 mailing_included_brands:
                     config.mailing_included_brands || [],
@@ -861,8 +937,10 @@ const ProviderPage = () => {
             });
         } else {
             configForm.resetFields();
+            setExcludeAutopartOptions([]);
             setConfigNumberingFromOne(true);
             configForm.setFieldsValue({
+                order_emails: [],
                 exclude_positions: [],
                 excluded_brands: [],
                 mailing_included_brands: [],
@@ -884,6 +962,13 @@ const ProviderPage = () => {
             const cleanedExcludePositions = (values.exclude_positions || [])
                 .map(normalizeExcludeItem)
                 .filter((item) => item.brand && item.oem);
+            const orderEmails = [
+                ...new Set(
+                    (values.order_emails || [])
+                        .map((email) => String(email || "").trim().toLowerCase())
+                        .filter(Boolean)
+                ),
+            ];
             const cleanedExcludedBrands = [
                 ...new Set(
                     (values.excluded_brands || [])
@@ -900,6 +985,7 @@ const ProviderPage = () => {
             ];
             const payload = {
                 ...values,
+                order_emails: orderEmails,
                 exclude_positions: cleanedExcludePositions,
                 excluded_brands: cleanedExcludedBrands,
                 mailing_included_brands: cleanedMailingIncludedBrands,
@@ -3887,6 +3973,44 @@ const ProviderPage = () => {
                         />
                     </Form.Item>
 
+                    <Divider>Отправка заказов поставщику</Divider>
+
+                    <Form.Item
+                        name="order_emails"
+                        label="Адреса получателей заказа"
+                        extra="Можно указать несколько адресов. Одно письмо с заказом будет отправлено всем выбранным получателям."
+                        rules={[
+                            {
+                                validator: (_, values) => {
+                                    const invalid = (values || []).find(
+                                        (value) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+                                            String(value || "").trim()
+                                        )
+                                    );
+                                    return invalid
+                                        ? Promise.reject(new Error(`Некорректный email: ${invalid}`))
+                                        : Promise.resolve();
+                                },
+                            },
+                        ]}
+                    >
+                        <Select
+                            mode="tags"
+                            allowClear
+                            tokenSeparators={[",", ";", " "]}
+                            placeholder="orders@supplier.ru"
+                            options={[]}
+                        />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="order_email_subject"
+                        label="Тема письма с заказом"
+                        extra="Если поставщик принимает заказ роботом, укажите требуемый код или шаблон темы."
+                    >
+                        <Input placeholder="По умолчанию: Заказ поставщику № …" />
+                    </Form.Item>
+
                     <Divider>Настройки парсинга</Divider>
 
                     <Form.Item label="Нумерация колонок и строк">
@@ -4063,17 +4187,16 @@ const ProviderPage = () => {
                     <Form.Item
                         name="excluded_brands"
                         label="Не загружать бренды"
-                        extra="Можно выбрать или ввести несколько брендов. Все позиции этих брендов будут удалены из нового прайса до его сохранения. Требуется настроенная колонка бренда."
+                        extra="Выберите бренды из справочника. Правило применяется ко всей группе синонимов бренда."
                     >
                         <Select
-                            mode="tags"
+                            mode="multiple"
                             allowClear
                             showSearch
                             optionFilterProp="label"
                             placeholder="Выберите бренды"
                             options={markupBrandOptions}
                             loading={markupBrandLoading}
-                            tokenSeparators={[","]}
                         />
                     </Form.Item>
 
@@ -4083,14 +4206,13 @@ const ProviderPage = () => {
                         extra="Белый список действует только при формировании клиентских прайсов. Прайс поставщика загружается и хранится полностью. Если список пустой, в рассылку доступны все бренды."
                     >
                         <Select
-                            mode="tags"
+                            mode="multiple"
                             allowClear
                             showSearch
                             optionFilterProp="label"
                             placeholder="Все бренды"
                             options={markupBrandOptions}
                             loading={markupBrandLoading}
-                            tokenSeparators={[","]}
                         />
                     </Form.Item>
 
@@ -4106,25 +4228,70 @@ const ProviderPage = () => {
                                     >
                                         <Form.Item
                                             {...field}
-                                            name={[field.name, "brand"]}
-                                            rules={[{ required: true, message: "Бренд" }]}
+                                            name={[field.name, "autopart_id"]}
+                                            rules={[
+                                                {
+                                                    required: true,
+                                                    message: "Выберите позицию из справочника",
+                                                },
+                                            ]}
+                                            style={{ minWidth: 560, marginBottom: 0 }}
                                         >
-                                            <Input placeholder="Бренд" />
+                                            <Select
+                                                showSearch
+                                                filterOption={false}
+                                                onSearch={handleExcludeAutopartSearch}
+                                                loading={excludeAutopartSearching}
+                                                options={excludeAutopartOptions}
+                                                placeholder="Начните вводить артикул"
+                                                notFoundContent={
+                                                    excludeAutopartSearching
+                                                        ? <Spin size="small" />
+                                                        : "Введите не менее двух символов артикула"
+                                                }
+                                                onChange={(_, option) => {
+                                                    const part = option?.part || {};
+                                                    configForm.setFieldValue(
+                                                        ["exclude_positions", field.name, "brand"],
+                                                        part.brand
+                                                    );
+                                                    configForm.setFieldValue(
+                                                        ["exclude_positions", field.name, "oem"],
+                                                        part.oem
+                                                    );
+                                                    configForm.setFieldValue(
+                                                        ["exclude_positions", field.name, "name"],
+                                                        part.name
+                                                    );
+                                                }}
+                                            />
                                         </Form.Item>
                                         <Form.Item
                                             {...field}
+                                            name={[field.name, "brand"]}
+                                            hidden
+                                        ><Input /></Form.Item>
+                                        <Form.Item
+                                            {...field}
                                             name={[field.name, "oem"]}
-                                            rules={[{ required: true, message: "Артикул" }]}
-                                        >
-                                            <Input placeholder="Артикул" />
-                                        </Form.Item>
+                                            hidden
+                                        ><Input /></Form.Item>
+                                        <Form.Item
+                                            {...field}
+                                            name={[field.name, "name"]}
+                                            hidden
+                                        ><Input /></Form.Item>
                                         <Button
                                             icon={<DeleteOutlined />}
                                             onClick={() => remove(field.name)}
                                         />
                                     </Space>
                                 ))}
-                                <Button type="dashed" onClick={() => add()} icon={<PlusOutlined />}>
+                                <Button
+                                    type="dashed"
+                                    onClick={() => add({})}
+                                    icon={<PlusOutlined />}
+                                >
                                     Добавить исключение
                                 </Button>
                             </>
