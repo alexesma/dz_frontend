@@ -1,0 +1,92 @@
+.supplier-order-detail-table .ant-table-cell {
+    overflow-wrap: anywhere;
+    vertical-align: top;
+}
+
+.supplier-order-main-cell,
+.supplier-order-response-cell,
+.supplier-order-timeline,
+.supplier-order-facts {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.supplier-order-ellipsis {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.supplier-order-customer-line,
+.supplier-order-response-heading,
+.supplier-order-inline-facts {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    min-width: 0;
+}
+
+.supplier-order-customer-line .ant-typography {
+    min-width: 0;
+    max-width: calc(100% - 64px);
+}
+
+.supplier-order-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.supplier-order-fact {
+    display: grid;
+    min-width: 0;
+    line-height: 1.35;
+}
+
+.supplier-order-fact .ant-typography {
+    margin: 0;
+}
+
+.supplier-order-response-heading {
+    flex-wrap: wrap;
+}
+
+.supplier-order-inline-facts {
+    flex-wrap: wrap;
+}
+
+.supplier-order-actions {
+    display: grid;
+    gap: 6px;
+}
+
+.supplier-order-actions .ant-btn {
+    width: 100%;
+    padding-inline: 5px;
+}
+
+.supplier-order-deadline {
+    border-bottom: 1px dotted currentcolor;
+    cursor: help;
+}
+
+@media (max-width: 900px) {
+    .supplier-order-detail-table .ant-table-thead {
+        display: none;
+    }
+
+    .supplier-order-detail-table .ant-table-row {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        border-bottom: 1px solid #f0f0f0;
+    }
+
+    .supplier-order-detail-table .ant-table-cell {
+        display: block;
+        width: auto !important;
+        border: 0;
+    }
+
+    .supplier-order-detail-table .ant-table-cell:first-child {
+        grid-column: 1 / -1;
+    }
+}

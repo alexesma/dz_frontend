@@ -22,7 +22,8 @@ import {
     sendScheduledSupplierOrders,
 } from '../api/customerOrders';
 import { getAutopartLookupByOem } from '../api/autoparts';
-import { getProviders } from '../api/providers';
+import { getAllProviders } from '../api/providers';
+import './CustomerSupplierOrdersPage.css';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -119,12 +120,8 @@ const CustomerSupplierOrdersPage = () => {
             if (activeFilters.rejectedSumMax !== null) {
                 params.rejected_sum_max = activeFilters.rejectedSumMax;
             }
-            const [ordersResp, providersResp] = await Promise.all([
-                getSupplierOrders(params),
-                getProviders({ page: 1, page_size: 100 }),
-            ]);
+            const ordersResp = await getSupplierOrders(params);
             setOrders(ordersResp.data || []);
-            setProviders(providersResp.data?.items || []);
         } catch {
             message.error('Не удалось загрузить заказы поставщикам');
         } finally {
@@ -132,9 +129,26 @@ const CustomerSupplierOrdersPage = () => {
         }
     }, []);
 
+    const fetchProviders = useCallback(async () => {
+        try {
+            const items = await getAllProviders({
+                has_pricelist_config: true,
+                sort_by: 'name',
+                sort_dir: 'asc',
+            });
+            setProviders(items || []);
+        } catch {
+            message.error('Не удалось загрузить поставщиков с прайсами');
+        }
+    }, []);
+
     useEffect(() => {
         fetchOrders(appliedFilters);
     }, [appliedFilters, fetchOrders]);
+
+    useEffect(() => {
+        fetchProviders();
+    }, [fetchProviders]);
 
     const writeListState = useCallback((nextFilters, page = 1) => {
         const params = new URLSearchParams();
@@ -179,102 +193,113 @@ const CustomerSupplierOrdersPage = () => {
 
     const columns = [
         {
-            title: 'Дата формирования',
-            dataIndex: 'created_at',
-            key: 'created_at',
-            width: 170,
-            render: formatDateTime,
+            title: 'Заказ',
+            key: 'order',
+            width: '15%',
+            render: (_, record) => (
+                <div className="supplier-orders-cell">
+                    <Text strong>#{record.id}</Text>
+                    <Text type="secondary">{formatDateTime(record.created_at)}</Text>
+                </div>
+            ),
         },
         {
-            title: '№ заказа',
-            dataIndex: 'id',
-            key: 'id',
-            width: 100,
-            render: (value) => `#${value}`,
-        },
-        {
-            title: 'Поставщик',
-            dataIndex: 'provider_id',
-            key: 'provider_id',
-            width: 180,
-            render: (value) => providerMap[value] || value,
-        },
-        {
-            title: 'Прайс',
-            dataIndex: 'provider_config_name',
-            key: 'provider_config_name',
-            width: 160,
-            render: (value, record) => {
-                // Заказ у поставщика может объединять позиции из разных
-                // прайсов — показываем реальные прайсы позиций.
+            title: 'Поставщик / прайс',
+            key: 'provider',
+            width: '25%',
+            render: (_, record) => {
                 const names = record.provider_config_names?.length
                     ? record.provider_config_names
-                    : (value ? [value] : []);
-                if (names.length) return names.join(', ');
-                return record.provider_config_id ? `#${record.provider_config_id}` : '—';
-            },
-        },
-        {
-            title: 'Сумма заказа',
-            dataIndex: 'total_sum',
-            key: 'total_sum',
-            width: 140,
-            render: formatMoney,
-        },
-        {
-            title: 'Статус',
-            dataIndex: 'status',
-            key: 'status',
-            width: 120,
-            render: (value) => {
-                const meta = SUPPLIER_ORDER_STATUS_META[value];
-                if (!meta) return value || '—';
-                return <Tag color={meta.color}>{meta.label}</Tag>;
-            },
-        },
-        {
-            title: 'Ожидает отправки',
-            key: 'age',
-            width: 150,
-            render: (_, record) => {
-                if (!['NEW', 'SCHEDULED', 'ERROR'].includes(record.status)) return '—';
-                const hours = Math.max(0, dayjs().diff(dayjs(record.created_at), 'hour'));
-                return hours >= 24 ? `${Math.floor(hours / 24)} д ${hours % 24} ч` : `${hours} ч`;
-            },
-        },
-        {
-            title: 'Подтверждённый отказ, %',
-            dataIndex: 'rejected_pct',
-            key: 'rejected_pct',
-            width: 100,
-            render: (value, record) => {
-                if (value === null || value === undefined) return '—';
-                const num = Number(value);
-                if (!Number.isFinite(num)) return '—';
-                const color = num >= 50 ? '#cf1322' : num >= 20 ? '#d46b08' : '#595959';
-                const formatSum = (amount) => Number(amount || 0).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
-                return <Tooltip title={
-                    <div>
-                        <div>Написал поставщик: {formatSum(record.rejected_by_supplier_sum)}</div>
-                        <div>Ввёл менеджер: {formatSum(record.rejected_by_manager_sum)}</div>
-                        <div>Не вошло в документы за 24 часа: {formatSum(record.rejected_by_document_timeout_sum)}</div>
-                        {Number(record.rejected_by_other_sum || 0) > 0 && <div>Без уточнённого источника: {formatSum(record.rejected_by_other_sum)}</div>}
+                    : (record.provider_config_name ? [record.provider_config_name] : []);
+                const priceNames = names.length
+                    ? names.join(', ')
+                    : (record.provider_config_id
+                        ? `Прайс #${record.provider_config_id}`
+                        : 'Общий заказ');
+                const providerName = providerMap[record.provider_id] || record.provider_id;
+                return (
+                    <div className="supplier-orders-cell">
+                        <Text strong ellipsis={{ tooltip: providerName }}>{providerName}</Text>
+                        <Text type="secondary" ellipsis={{ tooltip: priceNames }}>
+                            {priceNames}
+                        </Text>
                     </div>
-                }><span style={{ color, fontWeight: 600, cursor: 'help' }}>{num.toFixed(1)}%</span></Tooltip>;
+                );
             },
         },
         {
-            title: 'Ждём / просрочено',
-            key: 'response_wait',
-            width: 155,
-            render: (_, record) => `${record.awaiting_count || 0} / ${record.overdue_count || 0}`,
+            title: 'Сумма / статус',
+            key: 'summary',
+            width: '18%',
+            render: (_, record) => {
+                const meta = SUPPLIER_ORDER_STATUS_META[record.status];
+                return (
+                    <div className="supplier-orders-cell">
+                        <Text strong>{formatMoney(record.total_sum)} ₽</Text>
+                        <span>{meta
+                            ? <Tag color={meta.color}>{meta.label}</Tag>
+                            : (record.status || '—')}</span>
+                    </div>
+                );
+            },
         },
         {
-            title: 'Ошибка отправки',
-            dataIndex: 'last_send_error',
-            key: 'last_send_error',
-            width: 220,
-            render: (value) => value ? <Text type="danger" ellipsis={{ tooltip: value }}>{value}</Text> : '—',
+            title: 'Ответ поставщика',
+            key: 'response',
+            width: '19%',
+            render: (_, record) => {
+                const rejected = Number(record.rejected_pct);
+                const formatSum = (amount) => Number(amount || 0).toLocaleString(
+                    'ru-RU', { maximumFractionDigits: 2 }
+                );
+                const rejectedColor = rejected >= 50
+                    ? '#cf1322' : rejected >= 20 ? '#d46b08' : '#595959';
+                return (
+                    <div className="supplier-orders-cell">
+                        <Tooltip title={
+                            <div>
+                                <div>Написал поставщик: {formatSum(record.rejected_by_supplier_sum)}</div>
+                                <div>Ввёл менеджер: {formatSum(record.rejected_by_manager_sum)}</div>
+                                <div>Не вошло в документы за 24 часа: {formatSum(record.rejected_by_document_timeout_sum)}</div>
+                                {Number(record.rejected_by_other_sum || 0) > 0 && (
+                                    <div>Без уточнённого источника: {formatSum(record.rejected_by_other_sum)}</div>
+                                )}
+                            </div>
+                        }>
+                            <span style={{ color: rejectedColor, fontWeight: 600, cursor: 'help' }}>
+                                Отказ: {Number.isFinite(rejected) ? `${rejected.toFixed(1)}%` : '—'}
+                            </span>
+                        </Tooltip>
+                        <Text type="secondary">
+                            Ждём {record.awaiting_count || 0} · просрочено {record.overdue_count || 0}
+                        </Text>
+                    </div>
+                );
+            },
+        },
+        {
+            title: 'Отправка',
+            key: 'delivery',
+            width: '23%',
+            render: (_, record) => {
+                let age = 'Отправка завершена';
+                if (['NEW', 'SCHEDULED', 'ERROR'].includes(record.status)) {
+                    const hours = Math.max(0, dayjs().diff(dayjs(record.created_at), 'hour'));
+                    age = hours >= 24
+                        ? `Ожидает ${Math.floor(hours / 24)} д ${hours % 24} ч`
+                        : `Ожидает ${hours} ч`;
+                }
+                return (
+                    <div className="supplier-orders-cell">
+                        <Text>{age}</Text>
+                        {record.last_send_error ? (
+                            <Text type="danger" ellipsis={{ tooltip: record.last_send_error }}>
+                                {record.last_send_error}
+                            </Text>
+                        ) : <Text type="secondary">Ошибок нет</Text>}
+                    </div>
+                );
+            },
         },
     ];
 
@@ -625,9 +650,11 @@ const CustomerSupplierOrdersPage = () => {
                 </Button>
             </div>
             <Table
+                className="supplier-orders-table"
                 loading={loading}
                 dataSource={dataSource}
                 columns={columns}
+                tableLayout="fixed"
                 rowSelection={{
                     selectedRowKeys,
                     onChange: (keys) => {

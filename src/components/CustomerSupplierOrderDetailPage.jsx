@@ -25,6 +25,7 @@ import {
     updateSupplierOrderItem,
 } from '../api/customerOrders';
 import { getAutopartLookupByOem } from '../api/autoparts';
+import './CustomerSupplierOrderDetailPage.css';
 
 const { Title, Text } = Typography;
 
@@ -283,123 +284,146 @@ const CustomerSupplierOrderDetailPage = () => {
     const hint = (label, text) => (
         <Tooltip title={text}><span style={{ borderBottom: '1px dotted' }}>{label}</span></Tooltip>
     );
-    const labelled = (label, value) => (
-        <div style={{ whiteSpace: 'nowrap' }}>
-            <Text type="secondary">{label}: </Text>{value}
-        </div>
+    const fact = (label, value) => (
+        <span className="supplier-order-fact">
+            <Text type="secondary">{label}</Text>
+            <Text>{value}</Text>
+        </span>
     );
 
     const columns = [
         {
-            title: 'Позиция',
+            title: 'Позиция / клиент',
             key: 'item',
+            width: '29%',
             render: (_, record) => (
-                <div>
+                <div className="supplier-order-main-cell">
                     <Text strong>{record.brand} {record.oem}</Text>
-                    <div><Text type="secondary">{record.name || '—'}</Text></div>
-                </div>
-            ),
-        },
-        {
-            title: hint('Заказ', 'Что заказано у поставщика и по какой цене'),
-            key: 'order',
-            width: 110,
-            render: (_, record) => (
-                <div>
-                    {labelled('Кол-во', record.quantity)}
-                    {labelled('Цена', formatMoney(record.price))}
-                </div>
-            ),
-        },
-        {
-            title: hint('По заказу клиента', 'Заказано клиентом / сколько подтверждено к отгрузке / подтверждённый отказ'),
-            key: 'customer_qty',
-            width: 150,
-            render: (_, record) => (
-                <div>
-                    {labelled('Заказано', record.requested_qty ?? '—')}
-                    {labelled('Отгрузка', record.ship_qty ?? '—')}
-                    {labelled('Отказ', record.explicit_rejected_quantity ?? '—')}
-                </div>
-            ),
-        },
-        {
-            title: 'Клиент / заказ',
-            key: 'customer',
-            width: 210,
-            render: (_, record) => record.customer_order_id ? (
-                <div>
-                    <div>{record.customer_name || `Клиент #${record.customer_id}`}</div>
-                    <a
-                        href={`/customer-orders/${record.customer_order_id}`}
-                        target="_blank"
-                        rel="noreferrer"
+                    <Text
+                        type="secondary"
+                        className="supplier-order-ellipsis"
+                        ellipsis={{ tooltip: record.name || 'Без наименования' }}
                     >
-                        Заказ {record.customer_order_number || `#${record.customer_order_id}`}
-                    </a>
-                    <div><Text type="secondary">{formatDateTime(record.customer_received_at)}</Text></div>
+                        {record.name || 'Без наименования'}
+                    </Text>
+                    {record.customer_order_id ? (
+                        <div className="supplier-order-customer-line">
+                            <Text ellipsis={{ tooltip: record.customer_name }}>
+                                {record.customer_name || `Клиент #${record.customer_id}`}
+                            </Text>
+                            <a
+                                href={`/customer-orders/${record.customer_order_id}`}
+                                target="_blank"
+                                rel="noreferrer"
+                            >
+                                {record.customer_order_number || `#${record.customer_order_id}`}
+                            </a>
+                        </div>
+                    ) : <Text type="secondary">Ручная позиция</Text>}
                 </div>
-            ) : <Text type="secondary">Ручная позиция, без клиента</Text>,
+            ),
+        },
+        {
+            title: hint('Количество и цена', 'Заказ поставщику и связанные количества заказа клиента'),
+            key: 'quantities',
+            width: '19%',
+            render: (_, record) => (
+                <div className="supplier-order-facts">
+                    {fact('Поставщику', `${record.quantity} шт.`)}
+                    {fact('Цена', `${formatMoney(record.price)} ₽`)}
+                    {fact('Клиент заказал', record.requested_qty ?? '—')}
+                    {fact('К отгрузке', record.ship_qty ?? '—')}
+                    {Number(record.explicit_rejected_quantity || 0) > 0
+                        && fact('Отказ', record.explicit_rejected_quantity)}
+                </div>
+            ),
         },
         {
             title: hint('Ответ поставщика', 'Состояние ответа и на каком основании оно выставлено'),
             key: 'response',
-            width: 280,
+            width: '27%',
             render: (_, record) => {
                 const meta = RESPONSE_STATES[record.response_state] || RESPONSE_STATES.not_sent;
+                const source = RESPONSE_SOURCES[record.response_source] || (
+                    ['overdue', 'partially_received_overdue'].includes(record.response_state)
+                        ? 'Нет ответа по остатку к сроку' : null
+                );
+                const refusalSummary = Object.entries(record.refusal_sources || {})
+                    .map(([sourceKey, quantity]) => (
+                        `${RESPONSE_SOURCES[sourceKey] || sourceKey}: ${quantity}`
+                    ))
+                    .join(' · ');
+                const rawStatus = record.response_status_raw === 'автоотказ по документу'
+                    ? 'Строки нет в документе (историческая отметка)'
+                    : record.response_status_raw;
                 return (
-                    <div>
-                        <Tag color={meta.color}>{meta.label}</Tag>
-                        <div>{RESPONSE_SOURCES[record.response_source] || (
-                            ['overdue', 'partially_received_overdue'].includes(record.response_state)
-                                ? 'Нет ответа по остатку к сроку' : null
-                        )}</div>
-                        {record.response_status_raw && <div>{record.response_status_raw === 'автоотказ по документу'
-                            ? 'Строки нет в документе (историческая отметка)'
-                            : record.response_status_raw}</div>}
-                        {record.response_comment && !record.response_comment.startsWith('Авто-отказ: позиция отсутствует') && (
-                            <div>{record.response_comment}</div>
+                    <div className="supplier-order-response-cell">
+                        <div className="supplier-order-response-heading">
+                            <Tag color={meta.color}>{meta.label}</Tag>
+                            {source && <Text type="secondary">{source}</Text>}
+                        </div>
+                        <div className="supplier-order-inline-facts">
+                            {record.confirmed_quantity !== null
+                                && record.confirmed_quantity !== undefined
+                                && <Text>Подтверждено {record.confirmed_quantity}</Text>}
+                            {record.pending_quantity > 0
+                                && <Text type="secondary">Ждём {record.pending_quantity}</Text>}
+                        </div>
+                        {refusalSummary && (
+                            <Text
+                                type="danger"
+                                className="supplier-order-ellipsis"
+                                ellipsis={{ tooltip: `Отказ: ${refusalSummary}` }}
+                            >
+                                Отказ: {refusalSummary}
+                            </Text>
                         )}
-                        {record.confirmed_quantity !== null && record.confirmed_quantity !== undefined && (
-                            <div>Подтверждено: {record.confirmed_quantity}</div>
+                        {rawStatus && (
+                            <Text className="supplier-order-ellipsis" ellipsis={{ tooltip: rawStatus }}>
+                                {rawStatus}
+                            </Text>
                         )}
-                        {Object.entries(record.refusal_sources || {}).map(([source, quantity]) => (
-                            <div key={source}>Отказ {RESPONSE_SOURCES[source] || source}: {quantity}</div>
-                        ))}
-                        {record.pending_quantity > 0 && <div>Ждём: {record.pending_quantity}</div>}
-                        {record.document_refusal_due_at && <div>Отказ по документу после: {formatDateTime(record.document_refusal_due_at)}</div>}
+                        {record.response_comment
+                            && !record.response_comment.startsWith('Авто-отказ: позиция отсутствует')
+                            && (
+                                <Text
+                                    className="supplier-order-ellipsis"
+                                    ellipsis={{ tooltip: record.response_comment }}
+                                >
+                                    {record.response_comment}
+                                </Text>
+                            )}
                     </div>
                 );
             },
         },
         {
-            title: hint('Сроки', 'Срок ответа — до какого времени поставщик должен ответить. Подтвердить без ответа — если к этому времени ответа нет, позиция считается подтверждённой автоматически. Ответ получен — когда пришёл ответ.'),
-            key: 'dates',
-            width: 230,
+            title: hint('Сроки / поступление', 'Срок ответа, автоматическое подтверждение, фактический ответ и поступление'),
+            key: 'timeline',
+            width: editable ? '15%' : '25%',
             render: (_, record) => (
-                <div>
-                    {labelled('Срок ответа', formatDateTime(record.response_due_at))}
-                    {labelled('Авто-подтверждение', formatDateTime(record.auto_confirm_at))}
-                    {labelled('Ответ получен', formatDateTime(record.response_at))}
+                <div className="supplier-order-timeline">
+                    {record.response_due_at && fact('Ответ до', formatDateTime(record.response_due_at))}
+                    {record.auto_confirm_at && fact('Авто', formatDateTime(record.auto_confirm_at))}
+                    {record.response_at && fact('Ответ', formatDateTime(record.response_at))}
+                    {record.received_quantity ? fact(
+                        'Поступило',
+                        `${record.received_quantity} шт. · ${formatDateTime(record.received_at)}`
+                    ) : <Text type="secondary">Поступления нет</Text>}
+                    {record.document_refusal_due_at && (
+                        <Tooltip title={`Отказ по отсутствующим строкам после ${formatDateTime(record.document_refusal_due_at)}`}>
+                            <Text type="secondary" className="supplier-order-deadline">Срок документа</Text>
+                        </Tooltip>
+                    )}
                 </div>
             ),
-        },
-        {
-            title: 'Поступление',
-            key: 'receipt',
-            width: 150,
-            render: (_, record) => record.received_quantity
-                ? <div><div>{record.received_quantity} шт.</div>
-                    <Text type="secondary">{formatDateTime(record.received_at)}</Text></div>
-                : '—',
         },
         ...(editable ? [{
             title: 'Действия',
             key: 'actions',
-            fixed: 'right',
-            width: 160,
+            width: '10%',
             render: (_, record) => (
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div className="supplier-order-actions">
                     <Button size="small" onClick={() => openEditItem(record)}>Изменить</Button>
                     <Popconfirm
                         title="Удалить позицию?"
@@ -453,7 +477,7 @@ const CustomerSupplierOrderDetailPage = () => {
                         <Descriptions
                             bordered
                             size="small"
-                            column={{ xs: 1, sm: 1, md: 2 }}
+                            column={{ xs: 1, sm: 2, md: 3, xl: 4 }}
                             style={{ marginBottom: 16 }}
                         >
                             <Descriptions.Item label="Поставщик">
@@ -495,12 +519,13 @@ const CustomerSupplierOrderDetailPage = () => {
                             </Descriptions.Item>
                         </Descriptions>
                         <Table
+                            className="supplier-order-detail-table"
                             rowKey="id"
                             dataSource={order.items || []}
                             columns={columns}
                             pagination={false}
                             size="small"
-                            scroll={{ x: 1000 }}
+                            tableLayout="fixed"
                             rowClassName={(record) =>
                                 ['overdue', 'partially_received_overdue'].includes(record.response_state)
                                     ? 'row-auto-refused' : ''

@@ -8,6 +8,8 @@
         radial-gradient(circle at 94% 2%, rgba(37, 99, 235, 0.12), transparent 24rem),
         linear-gradient(145deg, #f7f9fc 0%, #eef3f8 55%, #f8fafc 100%);
     min-height: calc(100vh - 32px);
+    max-width: 100%;
+    overflow-x: hidden;
 }
 
 .studio-hero {
@@ -375,6 +377,48 @@
 .publication-rules-table .ant-table-cell {
     word-break: normal;
     overflow-wrap: normal;
+}
+
+.studio-fit-table .ant-table-cell {
+    overflow-wrap: anywhere;
+    vertical-align: top;
+}
+
+.studio-compact-stack {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.studio-compact-stack .ant-typography {
+    min-width: 0;
+    margin: 0;
+}
+
+.studio-switch-line {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.studio-table-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    align-items: center;
+}
+
+.studio-delivery-line {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 4px;
+    align-items: center;
+    min-width: 0;
+}
+
+.studio-delivery-line .ant-typography {
+    min-width: 0;
 }
 
 .publication-rule-position {

@@ -1,0 +1,36 @@
+.supplier-orders-table .ant-table-cell {
+    overflow-wrap: anywhere;
+}
+
+.supplier-orders-cell {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+}
+
+.supplier-orders-cell .ant-typography {
+    min-width: 0;
+    margin: 0;
+}
+
+@media (max-width: 900px) {
+    .supplier-orders-table .ant-table-thead {
+        display: none;
+    }
+
+    .supplier-orders-table .ant-table-row {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        border-bottom: 1px solid #f0f0f0;
+    }
+
+    .supplier-orders-table .ant-table-selection-column {
+        width: auto !important;
+    }
+
+    .supplier-orders-table .ant-table-cell {
+        display: block;
+        width: auto !important;
+        border: 0;
+    }
+}

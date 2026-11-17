@@ -362,6 +362,7 @@ const CustomerPricelistStudioPage = () => {
                     page: 1,
                     page_size: 200,
                     customer_group: 'wholesale',
+                    include_counts: false,
                     sort_by: 'name',
                     sort_dir: 'asc',
                 }),
@@ -2068,6 +2069,7 @@ const CustomerPricelistStudioPage = () => {
         {
             title: 'Источник',
             key: 'source',
+            width: '24%',
             render: (_, row) => (
                 <div>
                     <Text strong>{row.provider_name}</Text>
@@ -2076,51 +2078,64 @@ const CustomerPricelistStudioPage = () => {
             ),
         },
         {
-            title: 'Активен',
-            dataIndex: 'enabled',
-            width: 90,
-            render: (value, row) => (
-                <Switch checked={value} onChange={(checked) => handleSourceChange(row.id, { enabled: checked })} />
-            ),
-        },
-        {
-            title: 'Коэффициент',
-            dataIndex: 'markup',
-            width: 140,
-            render: (value, row) => (
-                <InputNumber
-                    min={0.01}
-                    step={0.01}
-                    value={value}
-                    onChange={(next) => handleSourceChange(row.id, { markup: next })}
-                    style={{ width: '100%' }}
-                />
-            ),
-        },
-        {
-            title: 'Маскировать',
-            dataIndex: 'mask_price_quantity',
-            width: 120,
-            render: (value, row) => (
-                <Switch checked={value} onChange={(checked) => handleSourceChange(row.id, { mask_price_quantity: checked })} />
-            ),
-        },
-        {
-            title: 'Марки автомобилей',
-            dataIndex: 'dz_expand_brands',
-            width: 160,
-            render: (value, row) => (
-                <Switch checked={value} onChange={(checked) => handleSourceChange(row.id, { dz_expand_brands: checked })} />
-            ),
-        },
-        {
-            title: 'Фильтры',
-            width: 190,
+            title: 'Работа источника',
+            key: 'source-settings',
+            width: '24%',
             render: (_, row) => (
-                <Space direction="vertical" size={4}>
-                    <Button icon={<FilterOutlined />} onClick={() => openSourceFilters(row)}>
-                        Настроить
-                    </Button>
+                <div className="studio-compact-stack">
+                    <span className="studio-switch-line">
+                        <Text type="secondary">Активен</Text>
+                        <Switch
+                            size="small"
+                            checked={row.enabled}
+                            onChange={(checked) => handleSourceChange(row.id, { enabled: checked })}
+                        />
+                    </span>
+                    <InputNumber
+                        min={0.01}
+                        step={0.01}
+                        addonBefore="Коэф."
+                        value={row.markup}
+                        onChange={(next) => handleSourceChange(row.id, { markup: next })}
+                        style={{ width: '100%' }}
+                    />
+                </div>
+            ),
+        },
+        {
+            title: 'Дополнительно',
+            key: 'source-flags',
+            width: '20%',
+            render: (_, row) => (
+                <div className="studio-compact-stack">
+                    <span className="studio-switch-line">
+                        <Text type="secondary">Маскировать</Text>
+                        <Switch
+                            size="small"
+                            checked={row.mask_price_quantity}
+                            onChange={(checked) => handleSourceChange(
+                                row.id, { mask_price_quantity: checked }
+                            )}
+                        />
+                    </span>
+                    <span className="studio-switch-line">
+                        <Text type="secondary">Марки авто</Text>
+                        <Switch
+                            size="small"
+                            checked={row.dz_expand_brands}
+                            onChange={(checked) => handleSourceChange(
+                                row.id, { dz_expand_brands: checked }
+                            )}
+                        />
+                    </span>
+                </div>
+            ),
+        },
+        {
+            title: 'Фильтры и сохранение',
+            width: '32%',
+            render: (_, row) => (
+                <div className="studio-table-actions">
                     {(row.additional_filters?.DRAGONZAP_MODE === 'transform_only'
                         || row.additional_filters?.DRAGONZAP_MODE === 'exclude'
                         || (row.brand_filters?.brands || []).length > 0
@@ -2129,18 +2144,18 @@ const CustomerPricelistStudioPage = () => {
                         || (row.additional_filters?.BRAND_FILTER_RULES || []).length > 0) && (
                         <Tag color="orange">Фильтр действует</Tag>
                     )}
-                </Space>
-            ),
-        },
-        {
-            title: '',
-            width: 230,
-            render: (_, row) => (
-                <Space size={4}>
                     {dirtySourceIds.has(row.id) && <Tag color="gold">Не сохранено</Tag>}
+                    <Button
+                        size="small"
+                        icon={<FilterOutlined />}
+                        onClick={() => openSourceFilters(row)}
+                    >
+                        Фильтры
+                    </Button>
                     <Button
                         title="Сохранить источник"
                         icon={<SaveOutlined />}
+                        size="small"
                         type={dirtySourceIds.has(row.id) ? 'primary' : 'default'}
                         loading={sourceSavingId === row.id}
                         disabled={sourceDeletingId === row.id}
@@ -2159,11 +2174,12 @@ const CustomerPricelistStudioPage = () => {
                             danger
                             title="Отключить источник"
                             icon={<DeleteOutlined />}
+                            size="small"
                             loading={sourceDeletingId === row.id}
                             disabled={sourceSavingId === row.id}
                         />
                     </Popconfirm>
-                </Space>
+                </div>
             ),
         },
     ];
@@ -2172,7 +2188,7 @@ const CustomerPricelistStudioPage = () => {
         {
             title: 'Фактическая позиция',
             key: 'source',
-            width: 280,
+            width: '22%',
             filters: Array.from(new Set(rules.map((rule) => rule.source_brand).filter(Boolean)))
                 .sort()
                 .map((brand) => ({ text: brand, value: brand })),
@@ -2190,7 +2206,7 @@ const CustomerPricelistStudioPage = () => {
         {
             title: 'Правило',
             dataIndex: 'mode',
-            width: 190,
+            width: '16%',
             filters: [
                 { text: 'Только выбранные кроссы', value: 'only_cross' },
                 { text: 'Исходная + кроссы', value: 'add_cross' },
@@ -2217,7 +2233,7 @@ const CustomerPricelistStudioPage = () => {
         {
             title: 'Публиковать как',
             key: 'target',
-            width: 390,
+            width: '30%',
             render: (_, row) => row.mode === 'hide' ? '—' : row.mode === 'price_only' ? (
                 <Text type="secondary">Та же позиция, меняется только цена</Text>
             ) : (
@@ -2243,7 +2259,7 @@ const CustomerPricelistStudioPage = () => {
         {
             title: 'Цена замены',
             dataIndex: 'fixed_price',
-            width: 190,
+            width: '16%',
             align: 'right',
             render: (value, row) => {
                 if (row.mode === 'hide') {
@@ -2268,111 +2284,107 @@ const CustomerPricelistStudioPage = () => {
             },
         },
         {
-            title: 'Изменено',
+            title: 'Изменено / действия',
             key: 'audit',
-            width: 180,
+            width: '16%',
             render: (_, row) => (
-                <div>
+                <div className="studio-compact-stack">
                     <div>{row.updated_by_name || 'Система'}</div>
                     <div className="muted-line">{formatMoscow(row.updated_at)}</div>
+                    <Space size={0}>
+                        <Button
+                            type="text"
+                            title="Изменить правило"
+                            icon={<EditOutlined />}
+                            onClick={() => handleEditRule(row)}
+                        />
+                        <Popconfirm
+                            title="Удалить правило?"
+                            onConfirm={() => handleDeleteRule(row.id)}
+                        >
+                            <Button danger type="text" icon={<StopOutlined />} />
+                        </Popconfirm>
+                    </Space>
                 </div>
-            ),
-        },
-        {
-            title: '',
-            width: 96,
-            render: (_, row) => (
-                <Space size={0}>
-                    <Button
-                        type="text"
-                        title="Изменить правило"
-                        icon={<EditOutlined />}
-                        onClick={() => handleEditRule(row)}
-                    />
-                    <Popconfirm title="Удалить правило?" onConfirm={() => handleDeleteRule(row.id)}>
-                        <Button danger type="text" icon={<StopOutlined />} />
-                    </Popconfirm>
-                </Space>
             ),
         },
     ];
 
     const draftColumns = [
         {
-            title: 'Версия',
-            dataIndex: 'id',
-            width: 100,
-            render: (value) => <Text strong>№{value}</Text>,
-        },
-        {
-            title: 'Состояние',
-            dataIndex: 'generation_status',
-            width: 170,
+            title: 'Версия / состояние',
+            key: 'version',
+            width: '17%',
             render: (_, row) => {
                 const status = effectiveDraftStatus(row);
                 const meta = STATUS_META[status] || { color: 'default', label: status };
-                return <Tag color={meta.color}>{meta.label}</Tag>;
+                return (
+                    <div className="studio-compact-stack">
+                        <Text strong>№{row.id}</Text>
+                        <span><Tag color={meta.color}>{meta.label}</Tag></span>
+                    </div>
+                );
             },
         },
         {
-            title: 'Сформирован',
-            dataIndex: 'generated_at',
-            width: 180,
-            render: (value) => formatMoscow(value),
+            title: 'Файл',
+            key: 'file',
+            width: '18%',
+            render: (_, row) => (
+                <div className="studio-compact-stack">
+                    <Text>{formatMoscow(row.generated_at)}</Text>
+                    <Text type="secondary">
+                        {Number(row.positions_count || 0).toLocaleString('ru-RU')} строк
+                    </Text>
+                </div>
+            ),
         },
         {
-            title: 'Строк',
-            dataIndex: 'positions_count',
-            width: 110,
-            render: (value) => Number(value || 0).toLocaleString('ru-RU'),
-        },
-        {
-            title: 'Каналы доставки',
+            title: 'Доставка / решение',
             key: 'delivery',
-            width: 330,
+            width: '37%',
             render: (_, row) => {
                 const channels = row.generation_summary?.delivery?.channels || [];
-                if (!channels.length) {
-                    return row.send_error
-                        ? <Text type="secondary">{row.send_error}</Text>
-                        : <Text type="secondary">Нет детализации</Text>;
-                }
+                const decision = row.decision_reason || row.send_error || (
+                    row.approved_by_name ? `Отправил: ${row.approved_by_name}` : null
+                );
                 return (
-                    <Space direction="vertical" size={2}>
-                        {channels.map((channel, index) => {
+                    <div className="studio-compact-stack">
+                        {channels.length ? channels.map((channel, index) => {
                             const meta = DELIVERY_STATUS_META[channel.status]
                                 || { color: 'default', label: channel.status };
                             const sender = channel.from_email || (
                                 channel.kind === 'relay' ? 'SMTP relay' : 'Прямой канал'
                             );
                             const recipients = deliveryRecipients(channel);
+                            const details = recipients
+                                ? `${sender} → ${recipients}`
+                                : sender;
                             return (
-                                <div key={`${channel.kind}-${sender}-${index}`}>
+                                <div className="studio-delivery-line" key={`${channel.kind}-${sender}-${index}`}>
                                     <Tag color={meta.color}>{meta.label}</Tag>
-                                    <Text>{sender}</Text>
-                                    {recipients && (
-                                        <div className="muted-line">Кому: {recipients}</div>
-                                    )}
+                                    <Text ellipsis={{ tooltip: details }}>{details}</Text>
                                 </div>
                             );
-                        })}
-                    </Space>
+                        }) : <Text type="secondary">Нет детализации доставки</Text>}
+                        {decision && (
+                            <Text
+                                type={row.send_error ? 'danger' : 'secondary'}
+                                ellipsis={{ tooltip: decision }}
+                            >
+                                {decision}
+                            </Text>
+                        )}
+                    </div>
                 );
             },
         },
         {
-            title: 'Решение',
-            key: 'decision',
-            render: (_, row) => row.decision_reason || row.send_error || (
-                row.approved_by_name ? `Отправил: ${row.approved_by_name}` : '—'
-            ),
-        },
-        {
             title: 'Действия',
             key: 'actions',
-            width: 330,
+            width: '28%',
             render: (_, row) => (
-                <Space wrap>
+                <div className="studio-table-actions">
                     <Button size="small" icon={<FileSearchOutlined />} onClick={() => setSelectedDraftId(row.id)}>
                         Проверить
                     </Button>
@@ -2400,7 +2412,7 @@ const CustomerPricelistStudioPage = () => {
                             </Button>
                         </>
                     )}
-                </Space>
+                </div>
             ),
         },
     ];
@@ -2409,7 +2421,7 @@ const CustomerPricelistStudioPage = () => {
         {
             title: 'Публикуемый бренд и артикул',
             key: 'published',
-            width: 250,
+            width: '31%',
             render: (_, row) => (
                 <div>
                     <Text strong>{row.advertised_brand} {row.advertised_oem}</Text>
@@ -2418,27 +2430,22 @@ const CustomerPricelistStudioPage = () => {
             ),
         },
         {
-            title: 'Кол-во',
-            dataIndex: 'quantity',
-            width: 90,
-            sorter: false,
-        },
-        {
-            title: 'Кратность',
-            dataIndex: 'multiplicity',
-            width: 100,
-            render: (value) => Number(value || 1),
-        },
-        {
-            title: 'Цена',
-            dataIndex: 'price',
-            width: 110,
-            render: (value) => `${Number(value || 0).toLocaleString('ru-RU')} ₽`,
+            title: 'Предложение',
+            key: 'offer',
+            width: '17%',
+            render: (_, row) => (
+                <div className="studio-compact-stack">
+                    <Text strong>{Number(row.price || 0).toLocaleString('ru-RU')} ₽</Text>
+                    <Text type="secondary">
+                        {row.quantity ?? 0} шт. · кратность {Number(row.multiplicity || 1)}
+                    </Text>
+                </div>
+            ),
         },
         {
             title: 'Получено из',
             key: 'actual',
-            width: 270,
+            width: '31%',
             render: (_, row) => row.source_autopart_id ? (
                 <div>
                     <Text>{row.actual_brand} {row.actual_oem}</Text>
@@ -2449,7 +2456,7 @@ const CustomerPricelistStudioPage = () => {
         {
             title: 'Преобразование',
             dataIndex: 'row_type',
-            width: 190,
+            width: '21%',
             render: (value, row) => {
                 const meta = ROW_TYPE_META[value] || { color: 'default', label: value };
                 const rule = row.publication_rule_id
@@ -2646,15 +2653,16 @@ const CustomerPricelistStudioPage = () => {
                                             </Space>
                                         </Card>
                                         <Table
+                                            className="studio-fit-table"
                                             rowKey="id"
                                             loading={loading}
                                             columns={sourceColumns}
                                             dataSource={normalizedSources}
                                             pagination={false}
+                                            tableLayout="fixed"
                                             locale={{
                                                 emptyText: 'Источники пока не подключены. Выберите прайс выше.',
                                             }}
-                                            scroll={{ x: 900 }}
                                         />
                                     </Space>
                                 ),
@@ -2785,7 +2793,7 @@ const CustomerPricelistStudioPage = () => {
                                             </Space>
                                         )}
                                         <Table
-                                            className="publication-rules-table"
+                                            className="publication-rules-table studio-fit-table"
                                             rowKey="id"
                                             columns={ruleColumns}
                                             dataSource={rules}
@@ -2801,7 +2809,6 @@ const CustomerPricelistStudioPage = () => {
                                             }}
                                             pagination={{ pageSize: 20 }}
                                             tableLayout="fixed"
-                                            scroll={{ x: 1250 }}
                                         />
                                     </>
                                 ),
@@ -2829,13 +2836,14 @@ const CustomerPricelistStudioPage = () => {
                                             </Space>
                                         </div>
                                         <Table
+                                            className="studio-fit-table"
                                             rowKey="id"
                                             columns={draftColumns}
                                             dataSource={drafts}
                                             loading={loading}
                                             pagination={{ pageSize: 10 }}
+                                            tableLayout="fixed"
                                             rowClassName={(row) => row.id === selectedDraftId ? 'selected-draft-row' : ''}
-                                            scroll={{ x: 1580 }}
                                         />
                                         {selectedDraft && (
                                             <Card className="draft-inspector" title={`Проверка версии №${selectedDraft.id}`}>
@@ -2992,6 +3000,7 @@ const CustomerPricelistStudioPage = () => {
                                                     </Card>
                                                 )}
                                                 <Table
+                                                    className="studio-fit-table"
                                                     rowKey="id"
                                                     columns={rowColumns}
                                                     rowClassName={(row) => (
@@ -3010,7 +3019,7 @@ const CustomerPricelistStudioPage = () => {
                                                         setDraftRowsPage(pagination.current || 1);
                                                         setDraftRowsPageSize(pagination.pageSize || 50);
                                                     }}
-                                                    scroll={{ x: 940 }}
+                                                    tableLayout="fixed"
                                                 />
                                             </Card>
                                         )}
