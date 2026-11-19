@@ -6,6 +6,7 @@ import {
     getEmailAccounts,
     disconnectGoogleOAuth,
     initGoogleOAuth,
+    migrateResendAccountsToSelectel,
     saveGoogleOAuthToken,
     testEmailAccount,
     updateEmailAccount,
@@ -21,7 +22,7 @@ const purposeOptions = [
 ];
 
 const transportOptions = [
-    { label: 'SMTP', value: 'smtp' },
+    { label: 'Обычная почта (IMAP/SMTP)', value: 'smtp' },
     { label: 'Gmail API', value: 'gmail_api' },
     { label: 'Resend API', value: 'resend_api' },
 ];
@@ -35,9 +36,14 @@ const EmailAccountsPage = () => {
     const [testResult, setTestResult] = useState(null);
     const [testSendOpen, setTestSendOpen] = useState(false);
     const [tokenLoading, setTokenLoading] = useState(false);
+    const [selectelOpen, setSelectelOpen] = useState(false);
+    const [selectelLoading, setSelectelLoading] = useState(false);
     const [form] = Form.useForm();
     const [testSendForm] = Form.useForm();
+    const [selectelForm] = Form.useForm();
     const transport = Form.useWatch('transport', form) || 'smtp';
+    const outboundTransport = Form.useWatch('outbound_transport', form)
+        || transport;
     const fetchAccounts = async () => {
         setLoading(true);
         try {
@@ -68,10 +74,15 @@ const EmailAccountsPage = () => {
                 transport: ['gmail_api', 'resend_api'].includes(record.transport)
                     ? record.transport
                     : 'smtp',
-                smtp_use_ssl: true,
-                imap_port: 993,
-                smtp_port: 465,
-                resend_timeout: 20,
+                outbound_transport: record.outbound_transport
+                    || record.transport
+                    || 'smtp',
+                smtp_username: record.smtp_username || '',
+                smtp_use_ssl: record.smtp_use_ssl !== false,
+                smtp_via_relay: record.smtp_via_relay !== false,
+                imap_port: record.imap_port || 993,
+                smtp_port: record.smtp_port || 465,
+                resend_timeout: record.resend_timeout || 20,
                 imap_folder: record.imap_folder || 'INBOX',
                 imap_additional_folders: record.imap_additional_folders || [],
                 google_refresh_token: '',
@@ -79,6 +90,7 @@ const EmailAccountsPage = () => {
         } else {
             form.setFieldsValue({
                 transport: 'smtp',
+                outbound_transport: 'smtp',
                 password: '',
                 imap_port: 993,
                 imap_folder: 'INBOX',
@@ -86,6 +98,8 @@ const EmailAccountsPage = () => {
                 smtp_port: 465,
                 resend_timeout: 20,
                 smtp_use_ssl: true,
+                smtp_username: '',
+                smtp_via_relay: true,
                 google_refresh_token: '',
                 purposes: [],
                 is_active: true,
@@ -126,6 +140,52 @@ const EmailAccountsPage = () => {
         }
     };
 
+    const applySelectelPreset = () => {
+        form.setFieldsValue({
+            outbound_transport: 'smtp',
+            smtp_host: 'smtp.mail.selcloud.ru',
+            smtp_port: 1127,
+            smtp_use_ssl: true,
+            smtp_via_relay: false,
+        });
+        message.success('Параметры Selectel заполнены');
+    };
+
+    const openSelectelMigration = () => {
+        const resendIds = accounts
+            .filter((account) => account.transport === 'resend_api')
+            .map((account) => account.id);
+        selectelForm.setFieldsValue({
+            account_ids: resendIds,
+            smtp_username: '',
+            smtp_password: '',
+        });
+        setSelectelOpen(true);
+    };
+
+    const handleSelectelMigration = async () => {
+        try {
+            const values = await selectelForm.validateFields();
+            setSelectelLoading(true);
+            const { data } = await migrateResendAccountsToSelectel(values);
+            message.success(
+                `Исходящая отправка через Selectel включена: ${data.length}`
+            );
+            setSelectelOpen(false);
+            selectelForm.resetFields();
+            await fetchAccounts();
+        } catch (error) {
+            if (error?.errorFields) return;
+            console.error('Selectel migration failed:', error);
+            message.error(
+                error?.response?.data?.detail
+                || 'Не удалось перевести аккаунты на Selectel'
+            );
+        } finally {
+            setSelectelLoading(false);
+        }
+    };
+
     const handleSaveGoogleToken = async () => {
         if (!editing) return;
         try {
@@ -162,7 +222,7 @@ const EmailAccountsPage = () => {
                 smtp: true,
             });
             const lines = [];
-            const inboundLabel = data.outbound_transport === 'resend_api'
+            const inboundLabel = editing.transport === 'resend_api'
                 ? 'Входящая почта (Resend receiving)'
                 : 'IMAP';
             if (data.imap_ok) {
@@ -321,13 +381,20 @@ const EmailAccountsPage = () => {
             title: 'Транспорт',
             dataIndex: 'transport',
             key: 'transport',
-            render: (value) => (
-                value === 'gmail_api'
-                    ? 'Gmail API'
-                    : value === 'resend_api'
-                        ? 'Resend API'
-                        : 'SMTP'
-            ),
+            render: (value, record) => {
+                const outgoing = record.outbound_transport || value || 'smtp';
+                const incomingLabel = value === 'resend_api'
+                    ? 'Resend'
+                    : value === 'gmail_api' ? 'Gmail' : 'IMAP';
+                const outgoingLabel = outgoing === 'resend_api'
+                    ? 'Resend'
+                    : outgoing === 'gmail_api'
+                        ? 'Gmail'
+                        : record.smtp_via_relay === false
+                            ? 'Selectel / SMTP напрямую'
+                            : 'SMTP через Relay';
+                return `Входящие: ${incomingLabel}; исходящие: ${outgoingLabel}`;
+            },
         },
         { title: 'SMTP host', dataIndex: 'smtp_host', key: 'smtp_host' },
         {
@@ -399,7 +466,18 @@ const EmailAccountsPage = () => {
         <div className="page-shell">
         <Card
             title="Почтовые аккаунты"
-            extra={<Button type="primary" onClick={() => openModal()}>Добавить аккаунт</Button>}
+            extra={(
+                <Space wrap>
+                    {accounts.some((account) => account.transport === 'resend_api') ? (
+                        <Button onClick={openSelectelMigration}>
+                            Перевести исходящие с Resend на Selectel
+                        </Button>
+                    ) : null}
+                    <Button type="primary" onClick={() => openModal()}>
+                        Добавить аккаунт
+                    </Button>
+                </Space>
+            )}
         >
             <Table
                 rowKey="id"
@@ -460,9 +538,17 @@ const EmailAccountsPage = () => {
                     </Form.Item>
                     <Form.Item
                         name="transport"
-                        label="Транспорт исходящей почты"
+                        label="Получение входящих писем"
                         initialValue="smtp"
-                        extra="SMTP подходит для обычной отправки. Gmail API нужен для @gmail.com. Resend API подходит для доменов, где отправка и прием идут через Resend по HTTPS."
+                        extra="Selectel не принимает входящие письма. До подключения другого почтового ящика оставьте Resend API для получения ответов."
+                    >
+                        <Select options={transportOptions} />
+                    </Form.Item>
+                    <Form.Item
+                        name="outbound_transport"
+                        label="Отправка исходящих писем"
+                        initialValue="smtp"
+                        extra="Для Selectel выберите SMTP. Адрес отправителя останется тем же."
                     >
                         <Select options={transportOptions} />
                     </Form.Item>
@@ -498,13 +584,61 @@ const EmailAccountsPage = () => {
                             <Input value="Входящие письма будут забираться через Resend Receiving API" readOnly />
                         </Form.Item>
                     )}
-                    {transport === 'smtp' ? (
+                    {transport === 'resend_api'
+                    || outboundTransport === 'resend_api' ? (
                         <>
+                            <Form.Item
+                                name="resend_api_key"
+                                label="Resend API key"
+                                extra={editing?.has_resend_api_key
+                                    ? 'API key сохранён. Оставьте поле пустым, чтобы не менять его.'
+                                    : 'API key нужен для получения писем через Resend.'}
+                            >
+                                <Input.Password
+                                    placeholder="re_..."
+                                    autoComplete="new-password"
+                                />
+                            </Form.Item>
+                            <Form.Item
+                                name="resend_timeout"
+                                label="Resend timeout (сек)"
+                                initialValue={20}
+                            >
+                                <InputNumber style={{ width: '100%' }} min={5} max={120} />
+                            </Form.Item>
+                        </>
+                    ) : null}
+                    {outboundTransport === 'smtp' ? (
+                        <>
+                            <Alert
+                                style={{ marginBottom: 16 }}
+                                type="info"
+                                showIcon
+                                message="Прямая отправка через Selectel"
+                                description={(
+                                    <Space direction="vertical" size="small">
+                                        <span>
+                                            Сервер: smtp.mail.selcloud.ru, порт: 1127,
+                                            защищённое соединение: включено.
+                                        </span>
+                                        <Button size="small" onClick={applySelectelPreset}>
+                                            Заполнить параметры Selectel
+                                        </Button>
+                                    </Space>
+                                )}
+                            />
                             <Form.Item name="smtp_host" label="SMTP host"> 
                                 <Input />
                             </Form.Item>
                             <Form.Item name="smtp_port" label="SMTP port" initialValue={465}> 
                                 <InputNumber style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item
+                                name="smtp_username"
+                                label="SMTP логин"
+                                extra="Логин из почтового ресурса Selectel. Если не заполнен, используется Email выше."
+                            >
+                                <Input autoComplete="username" />
                             </Form.Item>
                             <Form.Item
                                 name="smtp_use_ssl"
@@ -514,8 +648,17 @@ const EmailAccountsPage = () => {
                             >
                                 <Switch />
                             </Form.Item>
+                            <Form.Item
+                                name="smtp_via_relay"
+                                label="Отправлять через Windows Relay"
+                                extra="Для Selectel выключите: DragonZap будет отправлять письма прямо с сервера."
+                                valuePropName="checked"
+                                initialValue
+                            >
+                                <Switch />
+                            </Form.Item>
                         </>
-                    ) : transport === 'gmail_api' ? (
+                    ) : outboundTransport === 'gmail_api' ? (
                         <>
                             <Form.Item
                                 label="Gmail API"
@@ -539,28 +682,6 @@ const EmailAccountsPage = () => {
                                     placeholder="1//0g..."
                                     autoComplete="new-password"
                                 />
-                            </Form.Item>
-                        </>
-                    ) : transport === 'resend_api' ? (
-                        <>
-                            <Form.Item
-                                name="resend_api_key"
-                                label="Resend API key"
-                                extra={editing?.has_resend_api_key
-                                    ? 'API key сохранён. Оставьте поле пустым, чтобы не менять его.'
-                                    : 'API key из панели Resend. Для приема писем домен должен быть включен на Receiving, для отправки — Verified на Sending.'}
-                            >
-                                <Input.Password
-                                    placeholder="re_..."
-                                    autoComplete="new-password"
-                                />
-                            </Form.Item>
-                            <Form.Item
-                                name="resend_timeout"
-                                label="Resend timeout (сек)"
-                                initialValue={20}
-                            >
-                                <InputNumber style={{ width: '100%' }} min={5} max={120} />
                             </Form.Item>
                         </>
                     ) : null}
@@ -608,6 +729,55 @@ const EmailAccountsPage = () => {
                             )}
                         />
                     ) : null}
+                </Form>
+            </Modal>
+            <Modal
+                open={selectelOpen}
+                title="Перевести исходящую почту на Selectel"
+                onCancel={() => setSelectelOpen(false)}
+                onOk={handleSelectelMigration}
+                confirmLoading={selectelLoading}
+                okText="Перевести"
+                cancelText="Отмена"
+                destroyOnClose
+            >
+                <Alert
+                    style={{ marginBottom: 16 }}
+                    type="warning"
+                    showIcon
+                    message="Входящие письма пока останутся в Resend"
+                    description="Selectel работает только на отправку. Адреса отправителей сохранятся, а все выбранные аккаунты будут использовать единый SMTP-ресурс Selectel."
+                />
+                <Form form={selectelForm} layout="vertical">
+                    <Form.Item
+                        name="account_ids"
+                        label="Адреса для перевода"
+                        rules={[{ required: true, message: 'Выберите хотя бы один адрес' }]}
+                    >
+                        <Select
+                            mode="multiple"
+                            options={accounts
+                                .filter((account) => account.transport === 'resend_api')
+                                .map((account) => ({
+                                    value: account.id,
+                                    label: account.email,
+                                }))}
+                        />
+                    </Form.Item>
+                    <Form.Item
+                        name="smtp_username"
+                        label="Логин ресурса Selectel"
+                        rules={[{ required: true, message: 'Укажите логин Selectel' }]}
+                    >
+                        <Input autoComplete="username" />
+                    </Form.Item>
+                    <Form.Item
+                        name="smtp_password"
+                        label="Пароль ресурса Selectel"
+                        rules={[{ required: true, message: 'Укажите пароль Selectel' }]}
+                    >
+                        <Input.Password autoComplete="new-password" />
+                    </Form.Item>
                 </Form>
             </Modal>
             <Modal

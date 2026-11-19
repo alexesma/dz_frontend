@@ -1,3 +1,4 @@
+import GisMtDocumentStatus from './GisMtDocumentStatus';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     Alert,
@@ -871,6 +872,7 @@ const DiadocPage = () => {
                     <Tag color={STATUS_COLORS[value] || 'default'}>
                         {SYNC_RESULT_LABELS[value] || value}
                     </Tag>
+                    <GisMtDocumentStatus document={row} />
                     {row.direction === 'supplier' && <Tag color="geekblue">поставщик</Tag>}
                     {row.direction === 'customer' && (
                         <Tooltip title="Документ по нашей продаже клиенту: поступление не создаётся">
@@ -1146,6 +1148,7 @@ const DiadocPage = () => {
                     <Tag color={STATUS_COLORS[value] || 'default'}>
                         {SYNC_RESULT_LABELS[value] || value}
                     </Tag>
+                    <GisMtDocumentStatus document={row} />
                     {row.docflow_status_text ? (
                         <Text type="secondary" style={{ fontSize: 12 }}>
                             {row.docflow_status_text}

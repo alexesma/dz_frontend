@@ -105,6 +105,15 @@ const deriveVatPayerFromPriceType = (typePrice) => typePrice === "Wholesale";
 // поставщика, а перепутанные колонки цены и количества. Совпадает с
 // порогом на бэкенде (QUANTITY_ROUNDED_SHARE_LIMIT).
 const QUANTITY_ROUNDED_SHARE_LIMIT = 0.1;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const normalizeEmailTags = (values = [], pendingValue = "") => [
+    ...new Set(
+        [...values, pendingValue]
+            .map((email) => String(email || "").trim().toLowerCase())
+            .filter(Boolean)
+    ),
+];
 
 // Итог загрузки прайса. Массовое округление остатков показываем
 // предупреждением: раньше такая подмена колонок просто срывала загрузку
@@ -217,6 +226,7 @@ const ProviderPage = () => {
 
     const [configModalVisible, setConfigModalVisible] = useState(false);
     const [editingConfig, setEditingConfig] = useState(null);
+    const [pendingOrderEmail, setPendingOrderEmail] = useState("");
 
     const [abbrModalVisible, setAbbrModalVisible] = useState(false);
     const [editingAbbr, setEditingAbbr] = useState(null);
@@ -885,6 +895,7 @@ const ProviderPage = () => {
 
     // --- конфиги ---
     const openConfigModal = (config = null) => {
+        setPendingOrderEmail("");
         setEditingConfig(config);
         if (config) {
             const excludePositions = (config.exclude_positions || [])
@@ -962,13 +973,21 @@ const ProviderPage = () => {
             const cleanedExcludePositions = (values.exclude_positions || [])
                 .map(normalizeExcludeItem)
                 .filter((item) => item.brand && item.oem);
-            const orderEmails = [
-                ...new Set(
-                    (values.order_emails || [])
-                        .map((email) => String(email || "").trim().toLowerCase())
-                        .filter(Boolean)
-                ),
-            ];
+            // Ant Design keeps the text currently being typed in a tags
+            // Select outside the form value until Enter is pressed. Include
+            // it explicitly so clicking "Обновить" cannot silently discard
+            // the last recipient.
+            const orderEmails = normalizeEmailTags(
+                values.order_emails || [],
+                pendingOrderEmail
+            );
+            const invalidOrderEmail = orderEmails.find(
+                (email) => !EMAIL_PATTERN.test(email)
+            );
+            if (invalidOrderEmail) {
+                message.error(`Некорректный email: ${invalidOrderEmail}`);
+                return;
+            }
             const cleanedExcludedBrands = [
                 ...new Set(
                     (values.excluded_brands || [])
@@ -1029,6 +1048,7 @@ const ProviderPage = () => {
             }
             setConfigModalVisible(false);
             setEditingConfig(null);
+            setPendingOrderEmail("");
             configForm.resetFields();
 
             // обновляем данные
@@ -1040,6 +1060,17 @@ const ProviderPage = () => {
         } finally {
             setConfigSaving(false);
         }
+    };
+
+    const commitPendingOrderEmail = () => {
+        const pending = pendingOrderEmail.trim();
+        if (!pending) return;
+        const current = configForm.getFieldValue("order_emails") || [];
+        configForm.setFieldValue(
+            "order_emails",
+            normalizeEmailTags(current, pending)
+        );
+        setPendingOrderEmail("");
     };
 
     const getPriceInMailboxLabel = (accountId) => {
@@ -3860,6 +3891,7 @@ const ProviderPage = () => {
                 onCancel={() => {
                     setConfigModalVisible(false);
                     setEditingConfig(null);
+                    setPendingOrderEmail("");
                     configForm.resetFields();
                 }}
                 footer={null}
@@ -3983,7 +4015,7 @@ const ProviderPage = () => {
                             {
                                 validator: (_, values) => {
                                     const invalid = (values || []).find(
-                                        (value) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+                                        (value) => !EMAIL_PATTERN.test(
                                             String(value || "").trim()
                                         )
                                     );
@@ -4000,6 +4032,9 @@ const ProviderPage = () => {
                             tokenSeparators={[",", ";", " "]}
                             placeholder="orders@supplier.ru"
                             options={[]}
+                            searchValue={pendingOrderEmail}
+                            onSearch={setPendingOrderEmail}
+                            onBlur={commitPendingOrderEmail}
                         />
                     </Form.Item>
 
@@ -4324,6 +4359,7 @@ const ProviderPage = () => {
                                 onClick={() => {
                                     setConfigModalVisible(false);
                                     setEditingConfig(null);
+                                    setPendingOrderEmail("");
                                     configForm.resetFields();
                                 }}
                             >

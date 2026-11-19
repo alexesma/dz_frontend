@@ -28,6 +28,7 @@ import {
 import dayjs from 'dayjs';
 import {
     checkGisMtCodes,
+    checkWithdrawalResult,
     confirmGisMtTask,
     getGisMtStatus,
     getMarkingCodeMovements,
@@ -48,6 +49,7 @@ const STATUS_META = {
     reserved: { label: 'В резерве', color: 'blue' },
     shipped: { label: 'Отгружен', color: 'purple' },
     returned_to_supplier: { label: 'Возврат поставщику', color: 'gold' },
+    withdrawal_pending: { label: 'Ожидает подтверждения вывода', color: 'gold' },
     withdrawn: { label: 'Выведен из оборота', color: 'orange' },
     error: { label: 'Ошибка', color: 'red' },
 };
@@ -147,6 +149,7 @@ const MarkingCodesPage = () => {
     const [smsCode, setSmsCode] = useState('');
     const [smsSubmitting, setSmsSubmitting] = useState(false);
     // Вывод из оборота
+    const [recoveryIds, setRecoveryIds] = useState({});
     const [withdrawOpen, setWithdrawOpen] = useState(false);
     const [withdrawAction, setWithdrawAction] = useState('OWN_USE');
 
@@ -280,8 +283,11 @@ const MarkingCodesPage = () => {
         }
         setSmsSubmitting(true);
         try {
-            await confirmGisMtTask(smsTask.id, code);
-            message.success('Операция подтверждена');
+            const { data } = await confirmGisMtTask(smsTask.id, code);
+            if (data.state === 'gis_pending') message.info('Заявление принято. Ожидается результат ГИС МТ');
+            else if (data.state === 'gis_unknown') message.warning('Результат отправки неизвестен. Сверьте заявление в журнале');
+            else if (data.state === 'gis_rejected') message.error(data.error_details || 'Заявление отклонено');
+            else message.success('Операция подтверждена');
             setSmsTask(null);
             setSmsCode('');
             setSelectedIds([]);
@@ -620,6 +626,43 @@ const MarkingCodesPage = () => {
                                 пойдут только отсканированные коды.
                             </Text>
                         </Space>
+                        {gisStatus?.withdrawals?.length > 0 && (
+                            <Table
+                                size="small" rowKey="id" dataSource={gisStatus.withdrawals}
+                                pagination={{ pageSize: 5, hideOnSinglePage: true }}
+                                columns={[
+                                    { title: 'Заявление на вывод', dataIndex: 'number' },
+                                    { title: 'ID ГИС МТ', dataIndex: 'document_id' },
+                                    { title: 'Результат', render: (_, row) => (
+                                        <Space direction="vertical" size={0}>
+                                            <Text>{({ completed: 'Вывод подтверждён', gis_pending: 'Ожидает подтверждения',
+                                                gis_rejected: 'Отклонено', gis_unknown: 'Требует сверки' })[row.state]}</Text>
+                                            <Text type="secondary">{row.gis_status}</Text>
+                                            {row.error && <Text type="warning">{row.error}</Text>}
+                                        </Space>
+                                    ) },
+                                    { title: '', render: (_, row) => ['gis_pending', 'gis_unknown'].includes(row.state) && (
+                                        <Space>
+                                            {row.state === 'gis_unknown' && <Input placeholder="ID заявления из ГИС МТ"
+                                                value={recoveryIds[row.id] || ''}
+                                                onChange={(e) => setRecoveryIds({ ...recoveryIds, [row.id]: e.target.value })} />}
+                                            <Button disabled={!tokenActive || (row.state === 'gis_unknown' && !recoveryIds[row.id]?.trim())}
+                                                loading={gisBusyKey === row.id} onClick={async () => {
+                                                    setGisBusyKey(row.id);
+                                                    try {
+                                                        await checkWithdrawalResult(row.id, recoveryIds[row.id]?.trim());
+                                                        await load();
+                                                    } catch (err) {
+                                                        message.error(err?.response?.data?.detail || 'Ошибка проверки заявления');
+                                                    } finally {
+                                                        setGisBusyKey(null);
+                                                    }
+                                                }}>Проверить</Button>
+                                        </Space>
+                                    ) },
+                                ]}
+                            />
+                        )}
                         {gisStatus?.last_error ? (
                             <Alert
                                 type="error"

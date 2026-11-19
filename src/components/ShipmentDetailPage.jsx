@@ -1,3 +1,4 @@
+import GisMtDocumentStatus from './GisMtDocumentStatus';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     Alert,
@@ -535,8 +536,13 @@ const ShipmentDetailPage = () => {
     const handleUnpost = async () => {
         setUnposting(true);
         try {
-            await unpostShipment(id);
-            message.success('Проведение отменено');
+            const { data: unposted } = await unpostShipment(id);
+            message.success(
+                unposted?.upd_drafts_discarded
+                    ? 'Проведение отменено, черновик УПД снят'
+                    : 'Проведение отменено'
+            );
+            (unposted?.upd_warnings || []).forEach((text) => message.warning(text, 12));
             fetchShipment();
         } catch (err) {
             message.error(err?.response?.data?.detail || 'Ошибка отмены проведения');
@@ -968,6 +974,7 @@ const ShipmentDetailPage = () => {
                         <Descriptions.Item label="Диадок">
                             {latestDiadocDoc ? (
                                 <Space size={[4, 4]} wrap>
+                                    <GisMtDocumentStatus document={latestDiadocDoc} />
                                     <Tag color={DIADOC_COLORS[latestDiadocDoc.status] || 'default'}>
                                         {DIADOC_LABELS[latestDiadocDoc.status] || latestDiadocDoc.status}
                                     </Tag>

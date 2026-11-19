@@ -38,6 +38,10 @@ export const startGisMtWithdraw = (ids, action, documentNumber = null) =>
         { timeout: 120000 }
     );
 
+export const checkWithdrawalResult = (id, documentId) =>
+    api.post(`/inventory/gis-mt/withdraw/${id}/check`, { document_id: documentId || null },
+        { timeout: 120000 });
+
 export const confirmGisMtTask = (taskId, code) =>
     api.post(`/diadoc/cloud-sign-tasks/${taskId}/confirm`, { code }, {
         timeout: 120000,

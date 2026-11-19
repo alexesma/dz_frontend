@@ -7,6 +7,8 @@ export const updateEmailAccount = (id, data) => api.patch(`/email-accounts/${id}
 export const deleteEmailAccount = (id) => api.delete(`/email-accounts/${id}`);
 export const testEmailAccount = (id, data) =>
     api.post(`/email-accounts/${id}/test`, data);
+export const migrateResendAccountsToSelectel = (data) =>
+    api.post('/email-accounts/migrate-resend-to-selectel', data);
 
 export const initGoogleOAuth = (id) =>
     api.post(`/email-accounts/${id}/google-oauth/init`);

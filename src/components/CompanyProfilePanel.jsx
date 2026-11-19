@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Alert, Button, Col, Collapse, DatePicker, Divider, Form, Input, Row, Switch, message } from 'antd';
+import { Alert, Button, Col, Collapse, DatePicker, Divider, Form, Input, Row, Select, Switch, message } from 'antd';
 import dayjs from 'dayjs';
 
 import { getCompanyProfile, updateCompanyProfile } from '../api/settings';
@@ -28,6 +28,8 @@ const CompanyProfilePanel = () => {
             form.setFieldsValue({
                 ...data,
                 ogrn_assigned_at: data.ogrn_assigned_at ? dayjs(data.ogrn_assigned_at) : null,
+                // с сервера ставка приходит строкой «22.00»
+                vat_rate: data.vat_rate == null ? 22 : Number(data.vat_rate),
             });
             setPrefilled(!!data.prefilled);
             setUpdatedAt(data.updated_at || null);
@@ -76,7 +78,7 @@ const CompanyProfilePanel = () => {
                     ? 'Профиль ещё не сохранялся: поля предзаполнены из настроек Диадока. Проверьте и сохраните.'
                     : (updatedAt ? `Последнее сохранение: ${dayjs(updatedAt).format('DD.MM.YYYY HH:mm')}` : undefined)} />
             <Form form={form} layout="vertical" onFinish={save} disabled={!loaded}
-                initialValues={{ is_individual_entrepreneur: false, vat_payer: true }}>
+                initialValues={{ is_individual_entrepreneur: false, vat_payer: true, vat_rate: 22 }}>
                 <Row gutter={16}>
                     <Col xs={24} md={8}>
                         <Form.Item name="is_individual_entrepreneur" label="Индивидуальный предприниматель" valuePropName="checked">
@@ -86,6 +88,22 @@ const CompanyProfilePanel = () => {
                     <Col xs={24} md={8}>
                         <Form.Item name="vat_payer" label="Плательщик НДС" valuePropName="checked">
                             <Switch />
+                        </Form.Item>
+                    </Col>
+                    <Col xs={24} md={8}>
+                        <Form.Item noStyle shouldUpdate={(prev, next) => prev.vat_payer !== next.vat_payer}>
+                            {({ getFieldValue }) => (
+                                <Form.Item
+                                    name="vat_rate"
+                                    label="Ставка НДС"
+                                    tooltip="Организация оформляет реализации только под эту ставку: документ с другой ставкой провести нельзя."
+                                >
+                                    <Select
+                                        disabled={!getFieldValue('vat_payer')}
+                                        options={[22, 20, 10, 7, 5, 0].map((rate) => ({ value: rate, label: `${rate} %` }))}
+                                    />
+                                </Form.Item>
+                            )}
                         </Form.Item>
                     </Col>
                 </Row>

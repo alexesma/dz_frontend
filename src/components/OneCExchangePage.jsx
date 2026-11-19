@@ -33,6 +33,7 @@ import dayjs from 'dayjs';
 import { Link } from 'react-router-dom';
 import DocumentNumberingCard from './DocumentNumberingCard';
 import OneCForeignDocuments from './OneCForeignDocuments';
+import UnfStockReconciliationCard from './UnfStockReconciliationCard';
 import {
     downloadOneCIncoming,
     downloadOneCExport,
@@ -466,7 +467,7 @@ const OneCExchangePage = () => {
             width: 110,
             render: (_, row) => (
                 <Space size={0}>
-                    {row.event_type === 'posted' && !row.ed_unf_received_at && ['shipment', 'supplier_receipt'].includes(row.entity_type) && (
+                    {row.event_type === 'posted' && !row.ed_unf_received_at && ['shipment', 'supplier_receipt', 'stock_document'].includes(row.entity_type) && (
                         <Popconfirm
                             title={row.ed_message_no ? 'Повторно отправить документ в тестовую УНФ?' : 'Отправить этот документ в тестовую УНФ?'}
                             description={row.ed_message_no
@@ -820,6 +821,8 @@ const OneCExchangePage = () => {
                 <DocumentNumberingCard />
 
                 <OneCForeignDocuments />
+
+                <UnfStockReconciliationCard />
 
                 <Card title="Перенос истории в УНФ">
                     <Space wrap>

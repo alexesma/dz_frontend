@@ -139,15 +139,27 @@ export const downloadDiadocPrintForm = async (messageId, entityId) => {
         responseType: 'blob',
         timeout: 180000,
     });
-    const url = URL.createObjectURL(response.data);
+    saveDiadocBlob(response.data, `diadoc_${String(messageId).slice(0, 8)}.pdf`);
+};
+
+export const downloadGisReceipt = async (row, receipt) => {
+    const response = await api.get(
+        `/diadoc/documents/${encodeURIComponent(row.message_id)}/${encodeURIComponent(receipt.entity_id)}/content`,
+        { params: { box_id_guid: row.from_box_id_guid || row.box_id_guid, filename: receipt.filename }, responseType: 'blob' },
+    );
+    saveDiadocBlob(response.data, receipt.filename);
+};
+
+function saveDiadocBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `diadoc_${String(messageId).slice(0, 8)}.pdf`;
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-};
+}
 
 // ── ЭТрН (электронная транспортная накладная) ────────────────────────────
 export const listEtrnDirectory = (name, params = {}) =>

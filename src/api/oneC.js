@@ -93,3 +93,15 @@ export const listOneCForeignDocuments = (params = {}) =>
 
 export const markOneCForeignDocumentReviewed = (documentId) =>
     api.post(`/1c/enterprise-data/foreign-documents/${documentId}/reviewed`);
+
+export const getUnfStockReconciliation = () =>
+    api.get('/1c/stock-reconciliation');
+
+export const runUnfStockReconciliation = () =>
+    api.post('/1c/stock-reconciliation/run');
+
+export const uploadUnfStockReport = (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/1c/stock-reconciliation/upload', formData, { timeout: 180000 });
+};
