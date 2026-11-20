@@ -26,6 +26,7 @@ import {
     Switch,
     Radio,
     Alert,
+    Tabs,
 } from "antd";
 import {
     SaveOutlined,
@@ -200,7 +201,20 @@ const ProviderPage = () => {
     const { user } = useAuth();
     const { providerId: providerIdParam } = useParams();
     const navigate = useNavigate();
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const [providerFormTab, setProviderFormTab] = useState("main");
+    const pageTab = ["main", "prices", "responses", "rules"].includes(
+        searchParams.get("tab")
+    )
+        ? searchParams.get("tab")
+        : (searchParams.get("pricelist_review") ? "prices" : "main");
+    const handlePageTabChange = (key) => {
+        setSearchParams((current) => {
+            const next = new URLSearchParams(current);
+            next.set("tab", key);
+            return next;
+        }, { replace: true });
+    };
     const pricelistReviewsCardRef = useRef(null);
 
     const isNew = !providerIdParam || providerIdParam.toLowerCase() === "create";
@@ -2390,156 +2404,89 @@ const ProviderPage = () => {
 
     const configColumns = [
         {
-            title: "Название прайса",
-            dataIndex: "name_price",
+            title: "Прайс",
             key: "name_price",
-            render: (text, record) => {
+            width: 260,
+            render: (_, record) => {
                 const проблема = intakeProblemByConfig.get(record.id);
                 return (
                     <div>
-                        {text || <span style={{ color: "#ccc" }}>—</span>}
+                        <Text strong>
+                            {record.name_price || <span style={{ color: "#ccc" }}>—</span>}
+                        </Text>
                         {проблема && (
-                            <div style={{ marginTop: 4 }}>
-                                <Tooltip title={проблема.message}>
-                                    <Tag color="warning" style={{ margin: 0 }}>
-                                        {проблема.outcome === "quantity_rounded"
-                                            ? "остатки округлены"
-                                            : "прайс не загружен"}
-                                    </Tag>
-                                </Tooltip>
-                            </div>
+                            <Tooltip title={проблема.message}>
+                                <Tag color="warning" style={{ marginLeft: 8 }}>
+                                    {проблема.outcome === "quantity_rounded"
+                                        ? "остатки округлены"
+                                        : "прайс не загружен"}
+                                </Tag>
+                            </Tooltip>
                         )}
+                        <div style={{ fontSize: 12, color: "#666" }}>
+                            {record.name_mail
+                                ? `Письмо: ${record.name_mail}`
+                                : "Письмо: —"}
+                        </div>
+                        <div style={{ fontSize: 12, color: "#666" }}>
+                            {getPriceInMailboxLabel(record.incoming_email_account_id)}
+                        </div>
                     </div>
                 );
             },
         },
         {
-            title: "Название письма",
-            dataIndex: "name_mail",
-            key: "name_mail",
-            render: (text) => text || <span style={{ color: "#ccc" }}>—</span>,
-        },
-        {
-            title: "Почтовый ящик",
-            dataIndex: "incoming_email_account_id",
-            key: "incoming_email_account_id",
-            render: (value) => getPriceInMailboxLabel(value),
-        },
-        {
-            title: "URL файла",
-            dataIndex: "file_url",
-            key: "file_url",
-            render: (text) => text || <span style={{ color: "#ccc" }}>—</span>,
-        },
-        {
-            title: "Строка начала",
-            dataIndex: "start_row",
-            key: "start_row",
-        },
-        {
-            title: "Колонки",
-            key: "columns",
+            title: "Статус",
+            key: "status",
+            width: 190,
             render: (_, record) => (
-                <div>
-                    <div>OEM: {record.oem_col}</div>
-                    <div>Кол-во: {record.qty_col}</div>
-                    <div>Цена: {record.price_col}</div>
-                    {record.multiplicity_col !== null
-                        && record.multiplicity_col !== undefined && (
-                        <div>Кратность: {record.multiplicity_col}</div>
+                <Space direction="vertical" size={4}>
+                    <Space size={8}>
+                        <Switch
+                            size="small"
+                            checked={Boolean(record.is_active)}
+                            onChange={(checked) =>
+                                handleToggleConfigActive(record.id, checked)
+                            }
+                        />
+                        <span>Активна</span>
+                    </Space>
+                    <Space size={8}>
+                        <Switch
+                            size="small"
+                            checked={!record.autopurchase_blocked}
+                            onChange={(checked) =>
+                                handleToggleConfigAutopurchaseBlocked(
+                                    record.id,
+                                    !checked
+                                )
+                            }
+                        />
+                        <span>Автозаказ</span>
+                    </Space>
+                    {providerData?.provider?.is_own_price && (
+                        <Space size={8}>
+                            <Switch
+                                size="small"
+                                checked={Boolean(record.use_for_order_insights)}
+                                disabled={!record.is_active}
+                                onChange={(checked) =>
+                                    handleToggleConfigUseForOrderInsights(
+                                        record.id,
+                                        checked
+                                    )
+                                }
+                            />
+                            <span>Для сводки заказа</span>
+                        </Space>
                     )}
-                    {record.name_col !== null && record.name_col !== undefined && (
-                        <div>Название: {record.name_col}</div>
-                    )}
-                    {record.brand_col !== null && record.brand_col !== undefined && (
-                        <div>Бренд: {record.brand_col}</div>
-                    )}
-                </div>
-            ),
-        },
-        {
-            title: "Доставка (дни)",
-            key: "delivery",
-            render: (_, record) => (
-                <span>
-                    {record.min_delivery_day ?? 1} - {record.max_delivery_day ?? 3}
-                </span>
-            ),
-        },
-        {
-            title: "Исключения",
-            key: "exclusions",
-            render: (_, record) => (
-                <Space direction="vertical" size={0}>
-                    <Text>
-                        Бренды: {(record.excluded_brands || []).length}
-                    </Text>
-                    <Text type="secondary">
-                        Позиции: {(record.exclude_positions || []).length}
-                    </Text>
-                    <Text type="secondary">
-                        В рассылку: {(record.mailing_included_brands || []).length
-                            ? `${record.mailing_included_brands.length} брендов`
-                            : "все бренды"}
-                    </Text>
                 </Space>
             ),
         },
         {
-            title: "Активна",
-            dataIndex: "is_active",
-            key: "is_active",
-            render: (isActive, record) => (
-                <Switch
-                    checked={Boolean(isActive)}
-                    onChange={(checked) =>
-                        handleToggleConfigActive(record.id, checked)
-                    }
-                    checkedChildren="Вкл"
-                    unCheckedChildren="Выкл"
-                />
-            ),
-        },
-        {
-            title: "Автозаказ",
-            dataIndex: "autopurchase_blocked",
-            key: "autopurchase_blocked",
-            render: (blocked, record) => (
-                <Switch
-                    checked={!blocked}
-                    onChange={(checked) =>
-                        handleToggleConfigAutopurchaseBlocked(
-                            record.id,
-                            !checked
-                        )
-                    }
-                    checkedChildren="Можно"
-                    unCheckedChildren="Блок"
-                />
-            ),
-        },
-        ...(providerData?.provider?.is_own_price ? [{
-            title: "Для сводки заказа",
-            dataIndex: "use_for_order_insights",
-            key: "use_for_order_insights",
-            render: (enabled, record) => (
-                <Switch
-                    checked={Boolean(enabled)}
-                    disabled={!record.is_active}
-                    onChange={(checked) =>
-                        handleToggleConfigUseForOrderInsights(
-                            record.id,
-                            checked
-                        )
-                    }
-                    checkedChildren="Да"
-                    unCheckedChildren="Нет"
-                />
-            ),
-        }] : []),
-        {
             title: "Последний прайс",
             key: "latest_pricelist",
+            width: 150,
             render: (_, record) => {
                 if (!record.latest_pricelist) {
                     return <Tag color="default">Нет прайсов</Tag>;
@@ -2559,32 +2506,33 @@ const ProviderPage = () => {
         {
             title: "Действия",
             key: "actions",
-            width: 220,
+            width: 150,
+            fixed: "right",
             render: (_, record) => (
-                <Space size="small" wrap className="table-actions">
-                    <Button
-                        icon={<UploadOutlined />}
-                        size="small"
-                        onClick={() => openUploadModal(record.id)}
-                    >
-                        Загрузить файл
-                    </Button>
-                    <Button
-                        type="default"
-                        size="small"
-                        icon={<CloudDownloadOutlined />}
-                        loading={downloading[record.id]}
-                        onClick={() => handleDownloadPricelist(record.id)}
-                        title="Скачать прайс-лист из email"
-                    >
-                        Загрузить из почты
-                    </Button>
-                    <Button
-                        type="primary"
-                        size="small"
-                        icon={<EditOutlined />}
-                        onClick={() => openConfigModal(record)}
-                    />
+                <Space size={4} className="table-actions">
+                    <Tooltip title="Загрузить файл">
+                        <Button
+                            icon={<UploadOutlined />}
+                            size="small"
+                            onClick={() => openUploadModal(record.id)}
+                        />
+                    </Tooltip>
+                    <Tooltip title="Скачать прайс-лист из почты">
+                        <Button
+                            size="small"
+                            icon={<CloudDownloadOutlined />}
+                            loading={downloading[record.id]}
+                            onClick={() => handleDownloadPricelist(record.id)}
+                        />
+                    </Tooltip>
+                    <Tooltip title="Изменить">
+                        <Button
+                            type="primary"
+                            size="small"
+                            icon={<EditOutlined />}
+                            onClick={() => openConfigModal(record)}
+                        />
+                    </Tooltip>
                     <Popconfirm
                         title="Удалить конфигурацию?"
                         description="Удалить конфигурацию и связанные прайс-листы? Действие необратимо"
@@ -2599,93 +2547,105 @@ const ProviderPage = () => {
         },
     ];
 
+    const renderConfigDetails = (record) => {
+        const cols = [
+            ["OEM", record.oem_col],
+            ["Кол-во", record.qty_col],
+            ["Цена", record.price_col],
+            ["Кратность", record.multiplicity_col],
+            ["Название", record.name_col],
+            ["Бренд", record.brand_col],
+        ].filter(([, value]) => value !== null && value !== undefined);
+        const mailingBrands = (record.mailing_included_brands || []).length;
+        return (
+            <div
+                style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gap: "8px 24px",
+                }}
+            >
+                <div>
+                    <Text type="secondary">Строка начала: </Text>
+                    {record.start_row ?? "—"}
+                </div>
+                <div>
+                    <Text type="secondary">Колонки: </Text>
+                    {cols.map(([label, value]) => `${label} ${value}`).join(", ") || "—"}
+                </div>
+                <div>
+                    <Text type="secondary">Доставка (дни): </Text>
+                    {record.min_delivery_day ?? 1} – {record.max_delivery_day ?? 3}
+                </div>
+                <div>
+                    <Text type="secondary">Исключения: </Text>
+                    бренды {(record.excluded_brands || []).length}, позиции{" "}
+                    {(record.exclude_positions || []).length}
+                </div>
+                <div>
+                    <Text type="secondary">В рассылку: </Text>
+                    {mailingBrands ? `${mailingBrands} брендов` : "все бренды"}
+                </div>
+                <div style={{ wordBreak: "break-all" }}>
+                    <Text type="secondary">URL файла: </Text>
+                    {record.file_url || "—"}
+                </div>
+            </div>
+        );
+    };
+
+    const renderResponseMailbox = (record) => {
+        const accountName = record?.inbox_email_account_name;
+        const accountEmail = record?.inbox_email_account_email;
+        if (accountName || accountEmail) {
+            if (accountName && accountEmail) {
+                return `${accountName} (${accountEmail})`;
+            }
+            return accountName || accountEmail;
+        }
+        const value = record?.inbox_email_account_id;
+        if (!value) return <span style={{ color: "#999" }}>По умолчанию (orders_out)</span>;
+        const account = responseEmailAccounts.find((item) => item.id === value);
+        return account ? `${account.name} (${account.email})` : `ID ${value}`;
+    };
+
     const responseConfigColumns = [
         {
-            title: "Название",
-            dataIndex: "name",
+            title: "Конфигурация",
             key: "name",
+            width: 280,
+            render: (_, record) => (
+                <div>
+                    <Text strong>{record.name}</Text>
+                    <div style={{ fontSize: 12, color: "#666" }}>
+                        {record.response_type === "file" ? "Файл" : "Текст письма"}
+                    </div>
+                </div>
+            ),
         },
         {
-            title: "Почтовый ящик",
-            dataIndex: "inbox_email_account_id",
-            key: "inbox_email_account_id",
+            title: "Откуда",
+            key: "source",
             render: (_, record) => {
-                const accountName = record?.inbox_email_account_name;
-                const accountEmail = record?.inbox_email_account_email;
-                if (accountName || accountEmail) {
-                    if (accountName && accountEmail) {
-                        return `${accountName} (${accountEmail})`;
-                    }
-                    return accountName || accountEmail;
-                }
-                const value = record?.inbox_email_account_id;
-                if (!value) return <span style={{ color: "#999" }}>По умолчанию (orders_out)</span>;
-                const account = responseEmailAccounts.find((item) => item.id === value);
-                return account ? `${account.name} (${account.email})` : `ID ${value}`;
+                const senders = record.sender_emails || [];
+                return (
+                    <div style={{ wordBreak: "break-word" }}>
+                        <div>{renderResponseMailbox(record)}</div>
+                        <div style={{ fontSize: 12, color: "#666" }}>
+                            Отправители:{" "}
+                            {senders.length
+                                ? senders.join(", ")
+                                : <span style={{ color: "#999" }}>любой</span>}
+                        </div>
+                    </div>
+                );
             },
         },
         {
-            title: "Отправители",
-            dataIndex: "sender_emails",
-            key: "sender_emails",
-            render: (value) => {
-                const items = value || [];
-                if (!items.length) return <span style={{ color: "#999" }}>Любой</span>;
-                return items.join(", ");
-            },
-        },
-        {
-            title: "Тема (regex)",
-            dataIndex: "subject_pattern",
-            key: "subject_pattern",
-            render: (value) =>
-                value
-                    ? value
-                    : <span style={{ color: "#999" }}>Любая</span>,
-        },
-        {
-            title: "Тип",
-            dataIndex: "response_type",
-            key: "response_type",
-            render: (value) => (value === "file" ? "Файл" : "Текст письма"),
-        },
-        {
-            title: "Режим исключений",
-            dataIndex: "auto_confirm_unmentioned_items",
-            key: "auto_confirm_unmentioned_items",
-            render: (value) => (value ? "Включен" : "Выключен"),
-        },
-        {
-            title: "Таймер без ответа",
-            dataIndex: "auto_confirm_after_minutes",
-            key: "auto_confirm_after_minutes",
-            render: (value, record) => value
-                ? `${value} + ${record.auto_confirm_grace_minutes ?? 0} мин`
-                : "—",
-        },
-        {
-            title: "Режим файла",
-            dataIndex: "file_payload_type",
-            key: "file_payload_type",
-            render: (value, record) => {
-                if (record?.response_type !== "file") return "—";
-                return value === "document" ? "Документ" : "Ответ";
-            },
-        },
-        {
-            title: "Логика после артикула",
-            dataIndex: "value_after_article_type",
-            key: "value_after_article_type",
-            render: (value) => {
-                if (value === "number") return "Число";
-                if (value === "text") return "Текст";
-                return "Число или текст";
-            },
-        },
-        {
-            title: "Активна",
+            title: "Статус",
             dataIndex: "is_active",
             key: "is_active",
+            width: 110,
             render: (value) => (
                 <Tag color={value ? "green" : "default"}>
                     {value ? "Включена" : "Отключена"}
@@ -2695,15 +2655,18 @@ const ProviderPage = () => {
         {
             title: "Действия",
             key: "actions",
-            width: 120,
+            width: 100,
+            fixed: "right",
             render: (_, record) => (
-                <Space size="small" wrap className="table-actions">
-                    <Button
-                        type="primary"
-                        size="small"
-                        icon={<EditOutlined />}
-                        onClick={() => openResponseConfigModal(record)}
-                    />
+                <Space size={4} className="table-actions">
+                    <Tooltip title="Изменить">
+                        <Button
+                            type="primary"
+                            size="small"
+                            icon={<EditOutlined />}
+                            onClick={() => openResponseConfigModal(record)}
+                        />
+                    </Tooltip>
                     <Popconfirm
                         title="Удалить конфигурацию ответа?"
                         description="Действие необратимо"
@@ -2717,6 +2680,47 @@ const ProviderPage = () => {
             ),
         },
     ];
+
+    const renderResponseConfigDetails = (record) => {
+        const afterArticle = {
+            number: "Число",
+            text: "Текст",
+        }[record.value_after_article_type] || "Число или текст";
+        return (
+            <div
+                style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                    gap: "8px 24px",
+                }}
+            >
+                <div style={{ wordBreak: "break-all" }}>
+                    <Text type="secondary">Тема (regex): </Text>
+                    {record.subject_pattern || "любая"}
+                </div>
+                <div>
+                    <Text type="secondary">Режим исключений: </Text>
+                    {record.auto_confirm_unmentioned_items ? "включен" : "выключен"}
+                </div>
+                <div>
+                    <Text type="secondary">Таймер без ответа: </Text>
+                    {record.auto_confirm_after_minutes
+                        ? `${record.auto_confirm_after_minutes} + ${record.auto_confirm_grace_minutes ?? 0} мин`
+                        : "—"}
+                </div>
+                <div>
+                    <Text type="secondary">Режим файла: </Text>
+                    {record.response_type !== "file"
+                        ? "—"
+                        : (record.file_payload_type === "document" ? "документ" : "ответ")}
+                </div>
+                <div>
+                    <Text type="secondary">Логика после артикула: </Text>
+                    {afterArticle}
+                </div>
+            </div>
+        );
+    };
 
     const sourceUsageColumns = [
         {
@@ -2883,6 +2887,17 @@ const ProviderPage = () => {
                     : `Поставщик: ${providerData?.provider?.name ?? "..."}`}
             </Title>
 
+            <Tabs
+                activeKey={isNew ? "main" : pageTab}
+                onChange={handlePageTabChange}
+                tabBarStyle={isNew ? { display: "none" } : undefined}
+                items={[
+                    {
+                        key: "main",
+                        label: "Поставщик",
+                        forceRender: true,
+                        children: (
+                            <>
             {/* Форма поставщика */}
             <Card title="Основная информация" style={{ marginBottom: 20 }}>
                 <Form
@@ -2904,11 +2919,48 @@ const ProviderPage = () => {
                                     </ul>
                                 ),
                             });
-                            providerForm.scrollToField(errorFields[0].name);
+                            const failedField = String(errorFields[0].name?.[0] ?? "");
+            const requisiteFields = [
+                "legal_name", "label_name", "company_type", "legal_address",
+                "postal_address", "phone", "additional_phone", "vat_rate",
+                "credit_limit", "bank_bik", "bank_name", "bank_city",
+                "bank_account", "correspondent_account",
+                "one_c_contract_name", "one_c_contract_number",
+                "one_c_contract_date", "one_c_contract_guid",
+            ];
+            const orderFields = [
+                "split_orders_by_pricelist", "order_schedule_enabled",
+                "order_stub_enabled", "order_stub_email",
+                "order_schedule_days", "order_schedule_times",
+                "return_allowed", "return_window_days",
+                "return_blocked_brands", "return_request_email",
+            ];
+            if (requisiteFields.includes(failedField)) {
+                setProviderFormTab("requisites");
+            } else if (orderFields.includes(failedField)) {
+                setProviderFormTab("orders");
+            } else {
+                setProviderFormTab("main");
+            }
+            window.setTimeout(
+                () => providerForm.scrollToField(errorFields[0].name),
+                100
+            );
                         }
                     }}
                     scrollToFirstError
                 >
+                    <Tabs
+                        activeKey={providerFormTab}
+                        onChange={setProviderFormTab}
+                        items={[
+                            {
+                                key: "main",
+                                label: "Основное",
+                                forceRender: true,
+                                children: (
+                                    <>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", columnGap: 16 }}>
                     <Form.Item
                         name="name"
                         label="Название"
@@ -2974,6 +3026,7 @@ const ProviderPage = () => {
                         />
                     </Form.Item>
 
+                    </div>
                     <Divider orientation="left">
                         Роль товара при поступлении
                     </Divider>
@@ -3016,6 +3069,8 @@ const ProviderPage = () => {
                         />
                     </Form.Item>
 
+                    <Divider orientation="left">Контакты и реквизиты</Divider>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", columnGap: 16 }}>
                     <Form.Item
                         name="email_contact"
                         label="Контактный Email"
@@ -3044,6 +3099,70 @@ const ProviderPage = () => {
                         <Input placeholder="770101001" maxLength={32} />
                     </Form.Item>
 
+                    </div>
+                    <Divider orientation="left">Описание</Divider>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", columnGap: 16 }}>
+
+                    <Form.Item name="description" label="Описание">
+                        <Input.TextArea rows={3} placeholder="Описание поставщика" />
+                    </Form.Item>
+
+                    <Form.Item name="comment" label="Комментарий">
+                        <Input.TextArea rows={2} placeholder="Дополнительные комментарии" />
+                    </Form.Item>
+
+                    </div>
+                    <Divider orientation="left">Флаги</Divider>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", columnGap: 16 }}>
+                    <Form.Item
+                        name="is_own_price"
+                        label="Наш прайс"
+                        valuePropName="checked"
+                    >
+                        <Switch />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="is_vat_payer"
+                        label="Плательщик НДС"
+                        valuePropName="checked"
+                        extra="Заполняется автоматически по типу цены поставщика."
+                    >
+                        <Switch disabled />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="autopurchase_blocked"
+                        label="Исключить поставщика из автозаказа"
+                        valuePropName="checked"
+                        extra={
+                            "Если включено, автозаказ не будет выбирать этого " +
+                            "поставщика среди site-предложений и конфигов."
+                        }
+                    >
+                        <Switch checkedChildren="Блок" unCheckedChildren="Можно" />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="autopurchase_block_reason"
+                        label="Причина исключения из автозаказа"
+                    >
+                        <Input.TextArea
+                            rows={2}
+                            placeholder="Например: временно не заказываем, плохое исполнение, ручная проверка"
+                        />
+                    </Form.Item>
+
+                    </div>
+                                    </>
+                                ),
+                            },
+                            {
+                                key: "requisites",
+                                label: "Реквизиты",
+                                forceRender: true,
+                                children: (
+                                    <>
                     {user?.role === "admin" && <>
                     <Divider orientation="left">Договор для обмена с 1С:УНФ</Divider>
                     <Alert
@@ -3162,96 +3281,17 @@ const ProviderPage = () => {
                         </Form.Item>
                     </Space>
 
-                    <Divider orientation="left">Возвраты (рекламации)</Divider>
-
-                    <Form.Item
-                        name="return_allowed"
-                        label="Принимает возвраты"
-                        valuePropName="checked"
-                        extra="Если выключено — система не будет предлагать оформлять возврат этому поставщику."
-                    >
-                        <Switch />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="return_window_days"
-                        label="Срок возврата поставщику, дней"
-                        extra="Сколько дней от нашего поступления поставщик принимает возврат. Пусто — ограничение по сроку не проверяется."
-                    >
-                        <InputNumber min={0} step={1} style={{ width: "100%" }} placeholder="напр. 30" />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="return_blocked_brands"
-                        label="Бренды без возврата"
-                        extra="Бренды, которые этот поставщик не принимает обратно. Введите и нажмите Enter."
-                    >
-                        <Select
-                            mode="tags"
-                            tokenSeparators={[",", " "]}
-                            placeholder="напр. LUK, SACHS"
-                            style={{ width: "100%" }}
-                        />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="return_request_email"
-                        label="Email для запросов возврата"
-                        extra="На этот адрес уйдёт письмо с просьбой согласовать возврат."
-                    >
-                        <Input placeholder="returns@supplier.ru" />
-                    </Form.Item>
-
-                    <Divider />
-
-                    <Form.Item name="description" label="Описание">
-                        <Input.TextArea rows={3} placeholder="Описание поставщика" />
-                    </Form.Item>
-
-                    <Form.Item name="comment" label="Комментарий">
-                        <Input.TextArea rows={2} placeholder="Дополнительные комментарии" />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="is_own_price"
-                        label="Наш прайс"
-                        valuePropName="checked"
-                    >
-                        <Switch />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="is_vat_payer"
-                        label="Плательщик НДС"
-                        valuePropName="checked"
-                        extra="Заполняется автоматически по типу цены поставщика."
-                    >
-                        <Switch disabled />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="autopurchase_blocked"
-                        label="Исключить поставщика из автозаказа"
-                        valuePropName="checked"
-                        extra={
-                            "Если включено, автозаказ не будет выбирать этого " +
-                            "поставщика среди site-предложений и конфигов."
-                        }
-                    >
-                        <Switch checkedChildren="Блок" unCheckedChildren="Можно" />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="autopurchase_block_reason"
-                        label="Причина исключения из автозаказа"
-                    >
-                        <Input.TextArea
-                            rows={2}
-                            placeholder="Например: временно не заказываем, плохое исполнение, ручная проверка"
-                        />
-                    </Form.Item>
-
-                    <Divider>Формирование и отправка заказов</Divider>
+                                    </>
+                                ),
+                            },
+                            {
+                                key: "orders",
+                                label: "Заказы и возвраты",
+                                forceRender: true,
+                                children: (
+                                    <>
+                    <Divider orientation="left">Формирование и отправка заказов</Divider>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", columnGap: 16 }}>
                     <Form.Item
                         name="split_orders_by_pricelist"
                         label="Отдельный заказ по каждому прайсу"
@@ -3300,6 +3340,8 @@ const ProviderPage = () => {
                             disabled={user?.role !== "admin"}
                         />
                     </Form.Item>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", columnGap: 16 }}>
                     <Form.Item name="order_schedule_days" label="Дни недели">
                         <Select
                             mode="multiple"
@@ -3315,7 +3357,57 @@ const ProviderPage = () => {
                         />
                     </Form.Item>
 
-                    <Form.Item>
+                    </div>
+                    <Divider orientation="left">Возвраты (рекламации)</Divider>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", columnGap: 16 }}>
+                    <Form.Item
+                        name="return_allowed"
+                        label="Принимает возвраты"
+                        valuePropName="checked"
+                        extra="Если выключено — система не будет предлагать оформлять возврат этому поставщику."
+                    >
+                        <Switch />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="return_window_days"
+                        label="Срок возврата поставщику, дней"
+                        extra="Сколько дней от нашего поступления поставщик принимает возврат. Пусто — ограничение по сроку не проверяется."
+                    >
+                        <InputNumber min={0} step={1} style={{ width: "100%" }} placeholder="напр. 30" />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="return_blocked_brands"
+                        label="Бренды без возврата"
+                        extra="Бренды, которые этот поставщик не принимает обратно. Введите и нажмите Enter."
+                    >
+                        <Select
+                            mode="tags"
+                            tokenSeparators={[",", " "]}
+                            placeholder="напр. LUK, SACHS"
+                            style={{ width: "100%" }}
+                        />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="return_request_email"
+                        label="Email для запросов возврата"
+                        extra="На этот адрес уйдёт письмо с просьбой согласовать возврат."
+                    >
+                        <Input placeholder="returns@supplier.ru" />
+                    </Form.Item>
+
+                    </div>
+                                    </>
+                                ),
+                            },
+                        ]}
+                    />
+
+                    <Form.Item
+                        style={{ position: "sticky", bottom: 0, zIndex: 5, background: "var(--ant-color-bg-container, #fff)", padding: "12px 0", margin: 0, borderTop: "1px solid #f0f0f0" }}
+                    >
                         {isNew ? (
                             <Button
                                 type="primary"
@@ -3346,9 +3438,305 @@ const ProviderPage = () => {
                 </Form>
             </Card>
 
-            {/* Блоки только для существующего поставщика */}
-            {!isNew && providerData && (
-                <>
+                            </>
+                        ),
+                    },
+                    ...(!isNew && providerData ? [
+                    {
+                        key: "prices",
+                        label: `Прайс-листы (${(providerData.pricelist_configs || []).length})`,
+                        children: (
+                            <>
+                    {/* Конфигурации прайс-листов */}
+                    <Card
+                        title="Конфигурации прайс-листов"
+                        extra={
+                            <Button type="primary" icon={<PlusOutlined />} onClick={() => openConfigModal()}>
+                                Добавить конфигурацию
+                            </Button>
+                        }
+                    >
+                        {intakeProblems.length > 0 && (
+                            <Alert
+                                showIcon
+                                type="warning"
+                                style={{ marginBottom: 16 }}
+                                message={
+                                    intakeProblems.length === 1
+                                        ? "Одна конфигурация требует внимания"
+                                        : `Конфигураций требует внимания: ${intakeProblems.length}`
+                                }
+                                description={
+                                    <div>
+                                        {intakeProblems.map((проблема) => (
+                                            <div
+                                                key={проблема.provider_config_id}
+                                                style={{ marginBottom: 8 }}
+                                            >
+                                                <Text strong>
+                                                    {проблема.config_name
+                                                        || `конфигурация ${проблема.provider_config_id}`}
+                                                </Text>
+                                                {проблема.detected_at && (
+                                                    <Text type="secondary">
+                                                        {" · "}
+                                                        {new Date(проблема.detected_at)
+                                                            .toLocaleString("ru-RU")}
+                                                    </Text>
+                                                )}
+                                                <div>{проблема.message}</div>
+                                                {проблема.outcome === "no_matching_email" && (
+                                                    <Text type="secondary">
+                                                        Писем от поставщика просмотрено:{" "}
+                                                        {проблема.emails_seen}, подошло:{" "}
+                                                        {проблема.emails_matched}. Шаблон имени
+                                                        файла: {проблема.filename_pattern || "не задан"}
+                                                        {проблема.subject_pattern
+                                                            ? `, тема письма: ${проблема.subject_pattern}`
+                                                            : ", тема письма не задана"}
+                                                        .
+                                                    </Text>
+                                                )}
+                                                {проблема.outcome === "only_already_loaded_emails" && (
+                                                    <Text type="secondary">
+                                                        Уже загружавшихся писем пропущено:{" "}
+                                                        {проблема.skipped_old_uid}.
+                                                    </Text>
+                                                )}
+                                                {проблема.rounding_warning
+                                                    && проблема.outcome !== "quantity_rounded" && (
+                                                    <div>
+                                                        <Text type="secondary">
+                                                            {проблема.rounding_warning}
+                                                        </Text>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                }
+                            />
+                        )}
+                        <Table
+                            rowKey="id"
+                            columns={configColumns}
+                            dataSource={providerData.pricelist_configs || []}
+                            pagination={false}
+                            size="middle"
+                            locale={{ emptyText: "Конфигурации не настроены" }}
+                            expandable={{
+                                expandedRowRender: renderConfigDetails,
+                                expandRowByClick: false,
+                            }}
+                        />
+                    </Card>
+
+                    {user?.role === 'admin' ? (
+                        <div ref={pricelistReviewsCardRef}>
+                            <Card
+                                title={(
+                                    <Space>
+                                        <span>Проверка обновлений прайса</span>
+                                        {pricelistReviews.some(
+                                            (row) => row.status === 'pending'
+                                        ) ? (
+                                                <Tag color="orange">
+                                                    Ожидают решения:{' '}
+                                                    {pricelistReviews.filter(
+                                                        (row) => (
+                                                            row.status
+                                                            === 'pending'
+                                                        )
+                                                    ).length}
+                                                </Tag>
+                                            ) : null}
+                                        {hasRunningPricelistReview ? (
+                                            <Tag color="processing">
+                                                Фоновая публикация выполняется
+                                            </Tag>
+                                        ) : null}
+                                    </Space>
+                                )}
+                                style={{ marginBottom: 20 }}
+                                extra={(
+                                    <Button
+                                        size="small"
+                                        onClick={loadPricelistReviews}
+                                        loading={pricelistReviewsLoading}
+                                    >
+                                        Обновить
+                                    </Button>
+                                )}
+                            >
+                                <Alert
+                                    type="info"
+                                    showIcon
+                                    style={{ marginBottom: 16 }}
+                                    message="Скачать и проверить не изменяет действующий прайс"
+                                    description="Файл скачивается в исходном виде. После сверки выберите «Принять и опубликовать» либо «Отклонить» и укажите причину."
+                                />
+                                <Table
+                                    rowKey="id"
+                                    loading={pricelistReviewsLoading}
+                                    columns={pricelistReviewColumns}
+                                    dataSource={pricelistReviews}
+                                    pagination={{ pageSize: 10 }}
+                                    expandable={{
+                                        expandedRowKeys:
+                                            expandedPricelistReviewIds,
+                                        onExpandedRowsChange:
+                                            setExpandedPricelistReviewIds,
+                                        expandedRowRender:
+                                            renderPricelistReviewDetails,
+                                        rowExpandable: (row) => (
+                                            (row.reasons || []).length > 0
+                                            || (row.examples || []).length > 0
+                                        ),
+                                    }}
+                                    locale={{
+                                        emptyText: (
+                                            'Заблокированных обновлений пока нет'
+                                        ),
+                                    }}
+                                    scroll={{ x: 1180 }}
+                                />
+                            </Card>
+                        </div>
+                    ) : null}
+
+                    <Card
+                        title="Использование в прайсах клиентов"
+                        style={{ marginTop: 16 }}
+                    >
+                        <Table
+                            rowKey="source_id"
+                            columns={sourceUsageColumns}
+                            dataSource={
+                                providerData.customer_pricelist_sources_usage
+                                || []
+                            }
+                            pagination={{ pageSize: 10 }}
+                            size="middle"
+                            locale={{
+                                emptyText: (
+                                    "Этот поставщик пока не добавлен "
+                                    + "в источники клиентских прайсов"
+                                ),
+                            }}
+                            scroll={{ x: "max-content" }}
+                        />
+                    </Card>
+
+                    <ProviderPricelistAnalyticsSection
+                        providerId={providerId}
+                        refreshKey={analyticsRefreshKey}
+                    />
+
+                    <ProviderPricelistExplorer
+                        providerId={providerId}
+                        configs={providerData.pricelist_configs || []}
+                    />
+
+                    <Card title="История оповещений о просрочке" style={{ marginTop: 16 }}>
+                        <Table
+                            rowKey="id"
+                            loading={alertsLoading}
+                            dataSource={staleAlerts}
+                            pagination={{ pageSize: 10 }}
+                            columns={[
+                                {
+                                    title: "Дата",
+                                    dataIndex: "created_at",
+                                    key: "created_at",
+                                    render: (value) => formatMoscow(value),
+                                },
+                                {
+                                    title: "Прайс",
+                                    dataIndex: "provider_config_id",
+                                    key: "provider_config_id",
+                                    render: (value) => {
+                                        const cfg = providerData?.pricelist_configs?.find(
+                                            (c) => c.id === value
+                                        );
+                                        return cfg?.name_price || `#${value}`;
+                                    },
+                                },
+                                {
+                                    title: "Дней без обновления",
+                                    dataIndex: "days_diff",
+                                    key: "days_diff",
+                                },
+                                {
+                                    title: "Последний прайс",
+                                    dataIndex: "last_price_date",
+                                    key: "last_price_date",
+                                },
+                            ]}
+                            scroll={{ x: 'max-content' }}
+                        />
+                    </Card>
+
+                    {/* Информация о последнем письме */}
+                    {providerData.provider?.last_email_uid && (
+                        <Card title="Последний Email UID" style={{ marginTop: 20 }}>
+                            <div>
+                                <Text strong>UID: </Text>
+                                <Text>{providerData.provider.last_email_uid.uid}</Text>
+                            </div>
+                            {providerData.provider.last_email_uid.updated_at && (
+                                <div>
+                                    <Text strong>Обновлен: </Text>
+                                    <Text>
+                                        {formatMoscow(
+                                            providerData.provider.last_email_uid.updated_at
+                                        )}
+                                    </Text>
+                                </div>
+                            )}
+                        </Card>
+                    )}
+                            </>
+                        ),
+                    },
+                    {
+                        key: "responses",
+                        label: `Ответы поставщика (${(providerData.supplier_response_configs || []).length})`,
+                        children: (
+                            <>
+                    <Card
+                        title="Конфигурации ответов поставщиков"
+                        style={{ marginTop: 16 }}
+                        extra={
+                            <Button
+                                type="primary"
+                                icon={<PlusOutlined />}
+                                onClick={() => openResponseConfigModal()}
+                            >
+                                Добавить конфигурацию
+                            </Button>
+                        }
+                    >
+                        <Table
+                            rowKey="id"
+                            columns={responseConfigColumns}
+                            dataSource={providerData.supplier_response_configs || []}
+                            pagination={false}
+                            size="middle"
+                            locale={{ emptyText: "Конфигурации ответов не настроены" }}
+                            expandable={{
+                                expandedRowRender: renderResponseConfigDetails,
+                            }}
+                        />
+                    </Card>
+
+                            </>
+                        ),
+                    },
+                    {
+                        key: "rules",
+                        label: "Правила и связи",
+                        children: (
+                            <>
                     <Card
                         title="Точные правила по номенклатуре"
                         style={{ marginBottom: 20 }}
@@ -3567,277 +3955,12 @@ const ProviderPage = () => {
                         />
                     </Card>
 
-                    {user?.role === 'admin' ? (
-                        <div ref={pricelistReviewsCardRef}>
-                            <Card
-                                title={(
-                                    <Space>
-                                        <span>Проверка обновлений прайса</span>
-                                        {pricelistReviews.some(
-                                            (row) => row.status === 'pending'
-                                        ) ? (
-                                                <Tag color="orange">
-                                                    Ожидают решения:{' '}
-                                                    {pricelistReviews.filter(
-                                                        (row) => (
-                                                            row.status
-                                                            === 'pending'
-                                                        )
-                                                    ).length}
-                                                </Tag>
-                                            ) : null}
-                                        {hasRunningPricelistReview ? (
-                                            <Tag color="processing">
-                                                Фоновая публикация выполняется
-                                            </Tag>
-                                        ) : null}
-                                    </Space>
-                                )}
-                                style={{ marginBottom: 20 }}
-                                extra={(
-                                    <Button
-                                        size="small"
-                                        onClick={loadPricelistReviews}
-                                        loading={pricelistReviewsLoading}
-                                    >
-                                        Обновить
-                                    </Button>
-                                )}
-                            >
-                                <Alert
-                                    type="info"
-                                    showIcon
-                                    style={{ marginBottom: 16 }}
-                                    message="Скачать и проверить не изменяет действующий прайс"
-                                    description="Файл скачивается в исходном виде. После сверки выберите «Принять и опубликовать» либо «Отклонить» и укажите причину."
-                                />
-                                <Table
-                                    rowKey="id"
-                                    loading={pricelistReviewsLoading}
-                                    columns={pricelistReviewColumns}
-                                    dataSource={pricelistReviews}
-                                    pagination={{ pageSize: 10 }}
-                                    expandable={{
-                                        expandedRowKeys:
-                                            expandedPricelistReviewIds,
-                                        onExpandedRowsChange:
-                                            setExpandedPricelistReviewIds,
-                                        expandedRowRender:
-                                            renderPricelistReviewDetails,
-                                        rowExpandable: (row) => (
-                                            (row.reasons || []).length > 0
-                                            || (row.examples || []).length > 0
-                                        ),
-                                    }}
-                                    locale={{
-                                        emptyText: (
-                                            'Заблокированных обновлений пока нет'
-                                        ),
-                                    }}
-                                    scroll={{ x: 1180 }}
-                                />
-                            </Card>
-                        </div>
-                    ) : null}
-
-                    {/* Конфигурации прайс-листов */}
-                    <Card
-                        title="Конфигурации прайс-листов"
-                        extra={
-                            <Button type="primary" icon={<PlusOutlined />} onClick={() => openConfigModal()}>
-                                Добавить конфигурацию
-                            </Button>
-                        }
-                    >
-                        {intakeProblems.length > 0 && (
-                            <Alert
-                                showIcon
-                                type="warning"
-                                style={{ marginBottom: 16 }}
-                                message={
-                                    intakeProblems.length === 1
-                                        ? "Одна конфигурация требует внимания"
-                                        : `Конфигураций требует внимания: ${intakeProblems.length}`
-                                }
-                                description={
-                                    <div>
-                                        {intakeProblems.map((проблема) => (
-                                            <div
-                                                key={проблема.provider_config_id}
-                                                style={{ marginBottom: 8 }}
-                                            >
-                                                <Text strong>
-                                                    {проблема.config_name
-                                                        || `конфигурация ${проблема.provider_config_id}`}
-                                                </Text>
-                                                {проблема.detected_at && (
-                                                    <Text type="secondary">
-                                                        {" · "}
-                                                        {new Date(проблема.detected_at)
-                                                            .toLocaleString("ru-RU")}
-                                                    </Text>
-                                                )}
-                                                <div>{проблема.message}</div>
-                                                {проблема.outcome === "no_matching_email" && (
-                                                    <Text type="secondary">
-                                                        Писем от поставщика просмотрено:{" "}
-                                                        {проблема.emails_seen}, подошло:{" "}
-                                                        {проблема.emails_matched}. Шаблон имени
-                                                        файла: {проблема.filename_pattern || "не задан"}
-                                                        {проблема.subject_pattern
-                                                            ? `, тема письма: ${проблема.subject_pattern}`
-                                                            : ", тема письма не задана"}
-                                                        .
-                                                    </Text>
-                                                )}
-                                                {проблема.outcome === "only_already_loaded_emails" && (
-                                                    <Text type="secondary">
-                                                        Уже загружавшихся писем пропущено:{" "}
-                                                        {проблема.skipped_old_uid}.
-                                                    </Text>
-                                                )}
-                                                {проблема.rounding_warning
-                                                    && проблема.outcome !== "quantity_rounded" && (
-                                                    <div>
-                                                        <Text type="secondary">
-                                                            {проблема.rounding_warning}
-                                                        </Text>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                }
-                            />
-                        )}
-                        <Table
-                            rowKey="id"
-                            columns={configColumns}
-                            dataSource={providerData.pricelist_configs || []}
-                            pagination={false}
-                            size="middle"
-                            locale={{ emptyText: "Конфигурации не настроены" }}
-                            scroll={{ x: 'max-content' }}
-                        />
-                    </Card>
-
-                    <Card
-                        title="Конфигурации ответов поставщиков"
-                        style={{ marginTop: 16 }}
-                        extra={
-                            <Button
-                                type="primary"
-                                icon={<PlusOutlined />}
-                                onClick={() => openResponseConfigModal()}
-                            >
-                                Добавить конфигурацию
-                            </Button>
-                        }
-                    >
-                        <Table
-                            rowKey="id"
-                            columns={responseConfigColumns}
-                            dataSource={providerData.supplier_response_configs || []}
-                            pagination={false}
-                            size="middle"
-                            locale={{ emptyText: "Конфигурации ответов не настроены" }}
-                            scroll={{ x: 'max-content' }}
-                        />
-                    </Card>
-
-                    <Card
-                        title="Использование в прайсах клиентов"
-                        style={{ marginTop: 16 }}
-                    >
-                        <Table
-                            rowKey="source_id"
-                            columns={sourceUsageColumns}
-                            dataSource={
-                                providerData.customer_pricelist_sources_usage
-                                || []
-                            }
-                            pagination={{ pageSize: 10 }}
-                            size="middle"
-                            locale={{
-                                emptyText: (
-                                    "Этот поставщик пока не добавлен "
-                                    + "в источники клиентских прайсов"
-                                ),
-                            }}
-                            scroll={{ x: "max-content" }}
-                        />
-                    </Card>
-
-                    <ProviderPricelistAnalyticsSection
-                        providerId={providerId}
-                        refreshKey={analyticsRefreshKey}
-                    />
-
-                    <ProviderPricelistExplorer
-                        providerId={providerId}
-                        configs={providerData.pricelist_configs || []}
-                    />
-
-                    <Card title="История оповещений о просрочке" style={{ marginTop: 16 }}>
-                        <Table
-                            rowKey="id"
-                            loading={alertsLoading}
-                            dataSource={staleAlerts}
-                            pagination={{ pageSize: 10 }}
-                            columns={[
-                                {
-                                    title: "Дата",
-                                    dataIndex: "created_at",
-                                    key: "created_at",
-                                    render: (value) => formatMoscow(value),
-                                },
-                                {
-                                    title: "Прайс",
-                                    dataIndex: "provider_config_id",
-                                    key: "provider_config_id",
-                                    render: (value) => {
-                                        const cfg = providerData?.pricelist_configs?.find(
-                                            (c) => c.id === value
-                                        );
-                                        return cfg?.name_price || `#${value}`;
-                                    },
-                                },
-                                {
-                                    title: "Дней без обновления",
-                                    dataIndex: "days_diff",
-                                    key: "days_diff",
-                                },
-                                {
-                                    title: "Последний прайс",
-                                    dataIndex: "last_price_date",
-                                    key: "last_price_date",
-                                },
-                            ]}
-                            scroll={{ x: 'max-content' }}
-                        />
-                    </Card>
-
-                    {/* Информация о последнем письме */}
-                    {providerData.provider?.last_email_uid && (
-                        <Card title="Последний Email UID" style={{ marginTop: 20 }}>
-                            <div>
-                                <Text strong>UID: </Text>
-                                <Text>{providerData.provider.last_email_uid.uid}</Text>
-                            </div>
-                            {providerData.provider.last_email_uid.updated_at && (
-                                <div>
-                                    <Text strong>Обновлен: </Text>
-                                    <Text>
-                                        {formatMoscow(
-                                            providerData.provider.last_email_uid.updated_at
-                                        )}
-                                    </Text>
-                                </div>
-                            )}
-                        </Card>
-                    )}
-                </>
-            )}
+                            </>
+                        ),
+                    },
+                    ] : []),
+                ]}
+            />
 
             <Modal
                 title={
