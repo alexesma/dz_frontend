@@ -112,7 +112,7 @@ const ShipmentMarkingScan = ({ shipmentId, status, isAdmin }) => {
                 <Space size={4} wrap>
                     <Tag>нужно {state.expected}</Tag>
                     <Tag color={unscanned ? 'orange' : 'green'}>отсканировано {state.scanned}</Tag>
-                    {posted && <Tag color={missing ? 'red' : 'green'}>в УПД пойдёт {state.assigned}</Tag>}
+                    {posted && <Tag color={missing ? 'red' : 'green'}>назначено {state.assigned}</Tag>}
                 </Space>
                 {posted && missing > 0 && (
                     <Alert
@@ -126,7 +126,7 @@ const ShipmentMarkingScan = ({ shipmentId, status, isAdmin }) => {
                         type="warning"
                         showIcon
                         message="Часть кодов назначена автоматически и не подтверждена сканом"
-                        description="В УПД могут уйти коды не тех штук, что лежат в посылке. Отсканируйте собранные штуки — код заменится на отсканированный."
+                        description="Для отправки УПД отсканируйте каждую собранную штуку. Если взяли другой экземпляр, скан заменит автоматически назначенный код."
                     />
                 )}
                 {!posted && status === 'draft' && (
@@ -191,7 +191,7 @@ const ShipmentMarkingScan = ({ shipmentId, status, isAdmin }) => {
                             ),
                         },
                         ...(posted ? [{
-                            title: 'В УПД',
+                            title: 'Назначено',
                             width: 100,
                             render: (_, row) => (
                                 <Tag color={row.assigned === row.quantity ? 'green' : 'red'}>

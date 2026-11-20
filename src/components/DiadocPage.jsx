@@ -464,6 +464,10 @@ const DiadocPage = () => {
                 // Подпись подтверждает приёмку: сначала сверяем документ
                 // с проведённым поступлением.
                 const { data: acceptance } = await getDiadocInboundAcceptance(row.id);
+                if (acceptance?.can_sign_incoming === false) {
+                    message.error(acceptance.sign_block_reason);
+                    return;
+                }
                 if (acceptance?.has_discrepancies) {
                     setAcceptanceTarget({ row, acceptance });
                     return;
@@ -594,7 +598,10 @@ const DiadocPage = () => {
                 setSigningQueueVersion((value) => value + 1);
             }
         } catch (err) {
-            // Код мог быть неверным — модал не закрываем, можно повторить.
+            if (err?.response?.headers?.['x-cloud-sign-state'] === 'error') {
+                setCloudSignTask(null);
+                setCloudSignCode('');
+            }
             message.error(
                 err?.response?.data?.detail ||
                     'Не удалось подтвердить подпись. Проверьте код.'

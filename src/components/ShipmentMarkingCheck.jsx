@@ -6,6 +6,12 @@ import { SafetyCertificateOutlined } from '@ant-design/icons';
 import { checkDiadocShipmentMarking } from '../api/diadoc';
 
 const { Text } = Typography;
+const gisStatus = {
+    no_codes: 'В отгрузке отсутствуют назначенные коды.',
+    verified: 'ГИС МТ подтвердил статус и владельца каждого кода.',
+    rejected: 'ГИС МТ не подтвердил статус или владельца одного или нескольких кодов.',
+    deferred: 'Проверка ГИС МТ отложена. Отправка УПД заблокирована.',
+};
 
 // Проверка кодов маркировки отгрузки перед отправкой УПД клиенту.
 const ShipmentMarkingCheck = ({ shipmentId }) => {
@@ -13,6 +19,7 @@ const ShipmentMarkingCheck = ({ shipmentId }) => {
     const [result, setResult] = useState(null);
 
     const run = async () => {
+        setResult(null);
         setLoading(true);
         try {
             const { data } = await checkDiadocShipmentMarking(shipmentId);
@@ -35,8 +42,7 @@ const ShipmentMarkingCheck = ({ shipmentId }) => {
                     Проверить КИЗ
                 </Button>
                 <Text type="secondary">
-                    Коды маркировки подставляются в УПД автоматически; проверка сверяет
-                    их количество и (после входа в ГИС МТ) статус и владельца.
+                    Перед подписью и отправкой УПД проверяются сканы, статус кодов и ИНН владельца в ГИС МТ.
                 </Text>
             </Space>
             {result && (result.status === 'none' ? (
@@ -53,9 +59,7 @@ const ShipmentMarkingCheck = ({ shipmentId }) => {
                     description={(
                         <Space direction="vertical" size={4}>
                             <Text type="secondary">
-                                {result.gis_checked
-                                    ? 'Сверено с ГИС МТ.'
-                                    : 'Сверка с ГИС МТ не выполнялась (нужен вход в ГИС МТ).'}
+                                {gisStatus[result.gis_state] || (result.gis_checked ? 'Получен ответ ГИС МТ.' : 'Сверка с ГИС МТ не выполнена.')}
                             </Text>
                             {result.issues.length > 0 && (
                                 <ul style={{ paddingLeft: 18, margin: 0 }}>

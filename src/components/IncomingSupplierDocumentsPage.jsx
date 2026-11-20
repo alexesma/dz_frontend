@@ -621,6 +621,7 @@ const IncomingSupplierDocumentsPage = () => {
         const initItems = {};
         (detailReceipt.items || []).forEach((item) => {
             initItems[item.id] = {
+                autopart_id: item.autopart_id,
                 oem_number: item.oem_number || '',
                 brand_name: item.brand_name || '',
                 autopart_name: item.autopart_name || '',
@@ -1727,6 +1728,11 @@ const IncomingSupplierDocumentsPage = () => {
                                                 )}
                                             >
                                                 Возврат поставщику
+                                            </Button>
+                                        )}
+                                        {!editMode && isDraft && detailReceipt.items?.some((line) => line.marking_codes?.length) && (
+                                            <Button onClick={() => navigate(`/warehouse/receiving-scan?receipt=${detailReceipt.id}`)}>
+                                                Сверить коды сканером
                                             </Button>
                                         )}
                                         {!editMode && isDraft && (

@@ -182,9 +182,9 @@ const ReceivingScanPage = () => {
                 content: data.document_has_codes
                     ? 'Лишний код: в документе поставщика его нет'
                     : 'Код записан. В документе поставщика кодов маркировки нет' });
+            return;
         }
         if (data.autopart_id) await pickProduct(data.autopart_id, data.code);
-        else if (!confirmed) { setShowAll(false); setUnknown(code); }
         else scanOk();
     }, [receiptId, pickProduct, flushCounts, reload]);
 
