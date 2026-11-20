@@ -21,7 +21,13 @@ import {
 } from 'antd';
 import {
     BarChartOutlined,
+    CheckCircleOutlined,
+    CloseCircleOutlined,
     SearchOutlined,
+    ShopOutlined,
+    SortAscendingOutlined,
+    SortDescendingOutlined,
+    SyncOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -951,18 +957,25 @@ const CustomerOrderDetailPage = () => {
             ),
         },
         {
-            title: 'Кол-во',
+            title: <Tooltip title="Заказано / отгружено; красным — отказ">Заказ / отгр.</Tooltip>,
             key: 'quantities',
-            width: 92,
+            width: 118,
             align: 'right',
             render: (_, record) => (
                 <div className="customer-order-number-cell">
-                    <div><Text type="secondary">заказ:</Text> {record.requested_qty}</div>
+                    <div>
+                        {record.requested_qty} / {record.ship_qty ?? '—'}
+                        {!!record.reject_qty && (
+                            <Text type="danger"> −{record.reject_qty}</Text>
+                        )}
+                    </div>
                     {splitRowTotals.get(record.row_index)?.count > 1 && (
-                        <div><Text type="secondary">из строки:</Text> {splitRowTotals.get(record.row_index).quantity}</div>
+                        <div>
+                            <Text type="secondary" style={{ fontSize: 11 }}>
+                                из строки: {splitRowTotals.get(record.row_index).quantity}
+                            </Text>
+                        </div>
                     )}
-                    <div><Text type="secondary">отгр.:</Text> {record.ship_qty ?? '—'}</div>
-                    {!!record.reject_qty && <div><Text type="danger">отказ: {record.reject_qty}</Text></div>}
                 </div>
             ),
         },
@@ -996,11 +1009,28 @@ const CustomerOrderDetailPage = () => {
         {
             title: 'Действия',
             key: 'actions',
-            width: 170,
+            width: 84,
             render: (_, record) => (
                 <div className="table-actions customer-order-row-actions">
-                    <Button size="small" onClick={() => handleOwnStock(record)} loading={!!updatingItems[record.id]}>Наш склад</Button>
-                    <Button danger size="small" onClick={() => handleReject(record)} loading={!!updatingItems[record.id]}>Отказать</Button>
+                    <Tooltip title="Наш склад">
+                        <Button
+                            size="small"
+                            aria-label="Наш склад"
+                            icon={<ShopOutlined />}
+                            onClick={() => handleOwnStock(record)}
+                            loading={!!updatingItems[record.id]}
+                        />
+                    </Tooltip>
+                    <Tooltip title="Отказать">
+                        <Button
+                            danger
+                            size="small"
+                            aria-label="Отказать"
+                            icon={<CloseCircleOutlined />}
+                            onClick={() => handleReject(record)}
+                            loading={!!updatingItems[record.id]}
+                        />
+                    </Tooltip>
                 </div>
             ),
         },
@@ -1008,59 +1038,55 @@ const CustomerOrderDetailPage = () => {
 
     const rejectColumns = [
         {
-            title: 'OEM',
-            dataIndex: 'oem',
-            key: 'oem',
-            width: 140,
-            render: (value) => <span title={`В заказе: ${value}`}>{displayOem(value)}</span>,
+            title: 'Позиция',
+            key: 'part',
+            width: '18%',
+            render: (_, record) => (
+                <div className="customer-order-part-cell">
+                    <Text strong title={`В заказе: ${record.oem}`}>{displayOem(record.oem)}</Text>
+                    <Text type="secondary" title={`В заказе: ${record.brand}`}>
+                        {displayBrand(record.brand)}
+                    </Text>
+                </div>
+            ),
         },
         {
-            title: 'Бренд',
-            dataIndex: 'brand',
-            key: 'brand',
-            width: 120,
-            render: (value) => <span title={`В заказе: ${value}`}>{displayBrand(value)}</span>,
-        },
-        {
-            title: 'Запрошено',
-            dataIndex: 'requested_qty',
-            key: 'requested_qty',
-            width: 100,
-        },
-        {
-            title: 'Отгружено',
-            dataIndex: 'ship_qty',
-            key: 'ship_qty',
-            width: 100,
-            render: (value) => value ?? 0,
-        },
-        {
-            title: 'Отказано',
-            dataIndex: 'reject_qty',
-            key: 'reject_qty',
-            width: 100,
-            render: (value) => value ?? 0,
+            title: (
+                <Tooltip title="Запрошено / отгружено / отказано">Запр. / отгр. / отк.</Tooltip>
+            ),
+            key: 'quantities',
+            width: 150,
+            align: 'right',
+            render: (_, record) => (
+                <span style={{ whiteSpace: 'nowrap' }}>
+                    {record.requested_qty} / {record.ship_qty ?? 0} /{' '}
+                    <Text type="danger">{record.reject_qty ?? 0}</Text>
+                </span>
+            ),
         },
         {
             title: 'Причина',
             dataIndex: 'reject_reason_text',
             key: 'reject_reason_text',
-            render: (value, record) =>
-                value || (
-                    record.status === 'REJECTED'
-                        ? 'Причина не сохранена или заказ обработан до обновления.'
-                        : 'Частичный отказ без сохраненной причины.'
-                ),
+            render: (value, record) => (
+                <span style={{ overflowWrap: 'break-word' }}>
+                    {value || (
+                        record.status === 'REJECTED'
+                            ? 'Причина не сохранена или заказ обработан до обновления.'
+                            : 'Частичный отказ без сохраненной причины.'
+                    )}
+                </span>
+            ),
         },
         {
             title: 'Действие',
             key: 'price_override_action',
-            width: 230,
+            width: 270,
             render: (_, record) => {
                 if (record.status !== 'REJECTED'
                     || !RECHECKABLE_REASONS.has(record.reject_reason_code)) return '—';
                 return (
-                    <Space size="small">
+                    <Space size={4} wrap>
                         <Popconfirm
                             title="Проверить предложение сейчас?"
                             description="Если цена и остаток подходят, позиция будет добавлена в заказ на поставку или сборку."
@@ -1068,14 +1094,21 @@ const CustomerOrderDetailPage = () => {
                             okText="Проверить"
                             cancelText="Отмена"
                         >
-                            <Button size="small" loading={updatingItems[record.id]}>
-                                Проверить сейчас
+                            <Button
+                                size="small"
+                                icon={<SyncOutlined />}
+                                style={{ whiteSpace: 'nowrap' }}
+                                loading={updatingItems[record.id]}
+                            >
+                                Проверить
                             </Button>
                         </Popconfirm>
                         {record.reject_reason_code === 'PRICE_TOO_HIGH' && (
                             <Button
                                 type="primary"
                                 size="small"
+                                icon={<CheckCircleOutlined />}
+                                style={{ whiteSpace: 'nowrap' }}
                                 onClick={() => handleOpenPriceOverride(record)}
                             >
                                 Принять цену
@@ -1193,23 +1226,54 @@ const CustomerOrderDetailPage = () => {
                 )}
                 {order ? (
                     <>
-                        <Descriptions
-                            bordered
-                            size="small"
-                            column={{ xs: 1, sm: 1, md: 2 }}
-                            style={{ marginBottom: 16 }}
-                        >
-                            <Descriptions.Item label="Дата">
-                                {formatDateTime(order.received_at)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Статус">
-                                {ORDER_STATUS_LABELS[order.status] || order.status}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Номер">
-                                {order.order_number || order.id}
-                            </Descriptions.Item>
+                        <div className="customer-order-metrics">
+                            <div className="customer-order-metric">
+                                <span>Дата</span>
+                                <b>{formatDateTime(order.received_at)}</b>
+                            </div>
+                            <div className="customer-order-metric">
+                                <span>Статус</span>
+                                <b>{ORDER_STATUS_LABELS[order.status] || order.status}</b>
+                            </div>
+                            <div className="customer-order-metric">
+                                <span>Номер</span>
+                                <b>{order.order_number || order.id}</b>
+                            </div>
+                            <div className="customer-order-metric">
+                                <span>Клиент</span>
+                                <Button
+                                    type="link"
+                                    style={{ padding: 0, height: 'auto', justifyContent: 'flex-start', fontWeight: 600 }}
+                                    onClick={() => navigate(`/customers/${order.customer_id}/edit`)}
+                                >
+                                    {customerMap[order.customer_id] || order.customer_id}
+                                </Button>
+                            </div>
+                            <div className="customer-order-metric">
+                                <span>Сумма заказа</span>
+                                <b>{formatMoney(summary.totalSum)}</b>
+                            </div>
+                            <div className="customer-order-metric">
+                                <span>Наш склад</span>
+                                <b>{formatMoney(summary.stockSum)}</b>
+                            </div>
+                            <div className="customer-order-metric">
+                                <span>Поставщики</span>
+                                <b>{formatMoney(summary.supplierSum)}</b>
+                            </div>
+                            <div
+                                className={`customer-order-metric${summary.rejectedSum > 0 ? ' is-danger' : ''}`}
+                            >
+                                <span>Отказ</span>
+                                <b>
+                                    {formatMoney(summary.rejectedSum)}
+                                    {' · '}
+                                    {summary.rejectedPct.toFixed(1)}%
+                                </b>
+                            </div>
+                        </div>
                             {order.pricelist_routing?.selected_order_config_id && (
-                                <Descriptions.Item label="Прайс заказа">
+                                <div className="customer-order-extra"><Text type="secondary">Прайс заказа: </Text>
                                     {order.pricelist_routing.candidates?.find((candidate) => (
                                         candidate.order_config_id === order.pricelist_routing.selected_order_config_id
                                     ))?.name}
@@ -1219,10 +1283,10 @@ const CustomerOrderDetailPage = () => {
                                         : order.pricelist_routing.basis === 'lowest_rejection'
                                             ? 'Минимальный ожидаемый отказ'
                                             : 'Определён по позициям и ценам'}
-                                </Descriptions.Item>
+                                </div>
                             )}
                             {order.pricelist_routing?.comparison === 'latest_pricelists' && (
-                                <Descriptions.Item label="Ожидаемые отказы при выборе прайса">
+                                <div className="customer-order-extra"><Text type="secondary">Ожидаемые отказы при выборе прайса: </Text>
                                     <Space direction="vertical" size={0}>
                                         {order.pricelist_routing.candidates?.map((candidate) => (
                                             <Text key={candidate.order_config_id}>
@@ -1232,49 +1296,24 @@ const CustomerOrderDetailPage = () => {
                                             </Text>
                                         ))}
                                     </Space>
-                                </Descriptions.Item>
+                                </div>
                             )}
-                            <Descriptions.Item label="Клиент">
-                                <Button
-                                    type="link"
-                                    style={{ padding: 0, height: 'auto' }}
-                                    onClick={() => navigate(`/customers/${order.customer_id}/edit`)}
-                                >
-                                    {customerMap[order.customer_id] || order.customer_id}
-                                </Button>
-                            </Descriptions.Item>
                             {order.external_source === 'PARTS_SOFT' && (
-                                <Descriptions.Item label="Происхождение" span={2}>
+                                <div className="customer-order-extra"><Text type="secondary">Происхождение: </Text>
                                     {order.import_origin === 'partssoft_recovery' && (
                                         <Tag color="blue">Восстановлен из Parts-Soft</Tag>
                                     )}
                                     {order.external_order_id
                                         ? ` Заказ сайта #${order.external_order_id}`
                                         : ''}
-                                </Descriptions.Item>
+                                </div>
                             )}
-                            <Descriptions.Item label="Сумма заказа">
-                                {formatMoney(summary.totalSum)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Наш склад">
-                                {formatMoney(summary.stockSum)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Поставщики">
-                                {formatMoney(summary.supplierSum)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Отказ, сумма">
-                                {formatMoney(summary.rejectedSum)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Отказ, %">
-                                {summary.rejectedPct.toFixed(1)}%
-                            </Descriptions.Item>
                             {order.error_details && (
-                                <Descriptions.Item label="Ошибка" span={2}>
+                                <div className="customer-order-extra"><Text type="secondary">Ошибка: </Text>
                                     {order.error_details}
-                                </Descriptions.Item>
+                                </div>
                             )}
-                        </Descriptions>
-                        <Card size="small" style={{ marginBottom: 12 }}>
+                        <Card size="small" styles={{ body: { padding: 8 } }} style={{ marginBottom: 8 }}>
                             <Space wrap size={8}>
                                 <Input
                                     allowClear
@@ -1282,7 +1321,7 @@ const CustomerOrderDetailPage = () => {
                                     placeholder="Артикул, бренд, название"
                                     value={itemView.search}
                                     onChange={(event) => updateItemView('search', event.target.value)}
-                                    style={{ width: 230 }}
+                                    style={{ width: 210 }}
                                 />
                                 <Select
                                     mode="multiple"
@@ -1295,7 +1334,7 @@ const CustomerOrderDetailPage = () => {
                                     options={orderProviderOptions}
                                     value={itemView.supplierIds}
                                     onChange={(value) => updateItemView('supplierIds', value)}
-                                    style={{ minWidth: 190, maxWidth: 330 }}
+                                    style={{ minWidth: 170, maxWidth: 300 }}
                                 />
                                 <Select
                                     aria-label="Фильтр по статусу"
@@ -1305,7 +1344,7 @@ const CustomerOrderDetailPage = () => {
                                         { value: 'all', label: 'Все статусы' },
                                         ...Object.entries(ITEM_STATUS_LABELS).map(([value, label]) => ({ value, label })),
                                     ]}
-                                    style={{ width: 150 }}
+                                    style={{ width: 135 }}
                                 />
                                 <InputNumber
                                     min={0}
@@ -1313,7 +1352,7 @@ const CustomerOrderDetailPage = () => {
                                     placeholder="Цена от"
                                     value={itemView.minPrice}
                                     onChange={(value) => updateItemView('minPrice', value)}
-                                    style={{ width: 110 }}
+                                    style={{ width: 96 }}
                                 />
                                 <InputNumber
                                     min={0}
@@ -1321,7 +1360,7 @@ const CustomerOrderDetailPage = () => {
                                     placeholder="Цена до"
                                     value={itemView.maxPrice}
                                     onChange={(value) => updateItemView('maxPrice', value)}
-                                    style={{ width: 110 }}
+                                    style={{ width: 96 }}
                                 />
                                 <Select
                                     aria-label="Сортировать позиции по"
@@ -1338,19 +1377,21 @@ const CustomerOrderDetailPage = () => {
                                         { value: 'rejected', label: 'Отказано' },
                                         { value: 'status', label: 'Статус' },
                                     ]}
-                                    style={{ width: 175 }}
+                                    style={{ width: 150 }}
                                 />
-                                <Select
-                                    aria-label="Направление сортировки"
-                                    value={itemView.sortDirection}
-                                    disabled={itemView.sortBy === 'original'}
-                                    onChange={(value) => updateItemView('sortDirection', value)}
-                                    options={[
-                                        { value: 'asc', label: 'По возрастанию' },
-                                        { value: 'desc', label: 'По убыванию' },
-                                    ]}
-                                    style={{ width: 170 }}
-                                />
+                                <Tooltip title={itemView.sortDirection === 'asc' ? 'По возрастанию' : 'По убыванию'}>
+                                    <Button
+                                        aria-label="Направление сортировки"
+                                        disabled={itemView.sortBy === 'original'}
+                                        icon={itemView.sortDirection === 'asc'
+                                            ? <SortAscendingOutlined />
+                                            : <SortDescendingOutlined />}
+                                        onClick={() => updateItemView(
+                                            'sortDirection',
+                                            itemView.sortDirection === 'asc' ? 'desc' : 'asc',
+                                        )}
+                                    />
+                                </Tooltip>
                                 <Button onClick={() => setItemView(INITIAL_ITEM_VIEW)}>
                                     Сбросить
                                 </Button>
@@ -1360,7 +1401,7 @@ const CustomerOrderDetailPage = () => {
                             </Space>
                         </Card>
                         <Table
-                            className="customer-order-items-table"
+                            className="compact-table customer-order-items-table"
                             rowKey="id"
                             dataSource={visibleItems}
                             columns={columns}
@@ -1376,12 +1417,13 @@ const CustomerOrderDetailPage = () => {
                                 style={{ marginTop: 16 }}
                             >
                                 <Table
+                                    className="compact-table customer-order-items-table"
                                     rowKey="id"
                                     dataSource={rejectedItems}
                                     columns={rejectColumns}
                                     pagination={false}
                                     size="small"
-                                    scroll={{ x: 'max-content' }}
+                                    tableLayout="fixed"
                                 />
                             </Card>
                         )}
