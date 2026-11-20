@@ -63,7 +63,7 @@ const ProviderPricelistAnalyticsSection = ({ providerId, refreshKey = 0 }) => {
                 title: "OEM",
                 dataIndex: "oem_number",
                 key: "oem_number",
-                width: 160,
+                width: '16%',
             },
             {
                 title: "Бренд / позиция",
@@ -79,20 +79,20 @@ const ProviderPricelistAnalyticsSection = ({ providerId, refreshKey = 0 }) => {
                 title: "Падение остатков",
                 dataIndex: "quantity_drop",
                 key: "quantity_drop",
-                width: 140,
+                width: '14%',
                 render: (value) => formatNumber(value),
             },
             {
                 title: "Было → стало",
                 key: "qtys",
-                width: 150,
+                width: '16%',
                 render: (_, record) => `${formatNumber(record.old_quantity)} → ${formatNumber(record.new_quantity)}`,
             },
             {
                 title: "Текущая цена",
                 dataIndex: "new_price",
                 key: "new_price",
-                width: 130,
+                width: '14%',
                 render: (value) => formatPrice(value),
             },
         ],
@@ -105,7 +105,7 @@ const ProviderPricelistAnalyticsSection = ({ providerId, refreshKey = 0 }) => {
                 title: "OEM",
                 dataIndex: "oem_number",
                 key: "oem_number",
-                width: 160,
+                width: '16%',
             },
             {
                 title: "Бренд / позиция",
@@ -120,14 +120,14 @@ const ProviderPricelistAnalyticsSection = ({ providerId, refreshKey = 0 }) => {
             {
                 title: "Цена",
                 key: "prices",
-                width: 180,
+                width: '20%',
                 render: (_, record) => `${formatPrice(record.old_price)} → ${formatPrice(record.new_price)}`,
             },
             {
                 title: "Изм. цены",
                 dataIndex: "price_diff_pct",
                 key: "price_diff_pct",
-                width: 130,
+                width: '14%',
                 render: (value) => (
                     <Text type={Number(value) >= 0 ? "danger" : "success"}>
                         {formatPercent(value)}
@@ -137,7 +137,7 @@ const ProviderPricelistAnalyticsSection = ({ providerId, refreshKey = 0 }) => {
             {
                 title: "Остаток",
                 key: "qtys",
-                width: 150,
+                width: '16%',
                 render: (_, record) => `${formatNumber(record.old_quantity)} → ${formatNumber(record.new_quantity)}`,
             },
         ],
@@ -198,7 +198,7 @@ const ProviderPricelistAnalyticsSection = ({ providerId, refreshKey = 0 }) => {
                                             dataSource={item.top_turnover_positions || []}
                                             pagination={false}
                                             locale={{ emptyText: "Нет заметных падений остатков между двумя последними прайсами" }}
-                                            scroll={{ x: 860 }}
+                                            tableLayout="fixed"
                                         />
                                     </div>
 
@@ -213,7 +213,7 @@ const ProviderPricelistAnalyticsSection = ({ providerId, refreshKey = 0 }) => {
                                             dataSource={item.sharpest_price_changes || []}
                                             pagination={false}
                                             locale={{ emptyText: "Нет заметных изменений цены между двумя последними прайсами" }}
-                                            scroll={{ x: 920 }}
+                                            tableLayout="fixed"
                                         />
                                     </div>
                                 </Space>

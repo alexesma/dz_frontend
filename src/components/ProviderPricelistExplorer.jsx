@@ -5,6 +5,7 @@ import {
     Col,
     Collapse,
     Empty,
+    Grid,
     Input,
     InputNumber,
     Row,
@@ -166,6 +167,8 @@ const PriceHistoryTip = ({ providerId, configId, row, children }) => {
 };
 
 const ProviderPricelistExplorer = ({ providerId, configs = [] }) => {
+    const screens = Grid.useBreakpoint();
+    const wide = Boolean(screens.xl);
     const [pricelists, setPricelists] = useState([]);
     const [configId, setConfigId] = useState(null);
     const [pricelistId, setPricelistId] = useState(null);
@@ -301,7 +304,7 @@ const ProviderPricelistExplorer = ({ providerId, configs = [] }) => {
         {
             title: 'Артикул',
             key: 'oem',
-            width: 170,
+            width: wide ? '14%' : '19%',
             sorter: true,
             sortOrder: sort[0] === 'oem' ? (sort[1] === 'asc' ? 'ascend' : 'descend') : null,
             render: (_, row) => (
@@ -321,9 +324,9 @@ const ProviderPricelistExplorer = ({ providerId, configs = [] }) => {
             sorter: true,
             sortOrder: sort[0] === 'brand' ? (sort[1] === 'asc' ? 'ascend' : 'descend') : null,
             render: (_, row) => (
-                <div style={{ minWidth: 160 }}>
+                <div>
                     <div><Text strong>{row.brand_name}</Text></div>
-                    <Text type="secondary" ellipsis={{ tooltip: row.name }} style={{ maxWidth: 260, display: 'inline-block' }}>
+                    <Text type="secondary" ellipsis={{ tooltip: row.name }} style={{ maxWidth: '100%', display: 'block' }}>
                         {row.name || '—'}
                     </Text>
                 </div>
@@ -333,7 +336,7 @@ const ProviderPricelistExplorer = ({ providerId, configs = [] }) => {
             title: 'Цена',
             key: 'price',
             align: 'right',
-            width: 120,
+            width: wide ? '10%' : '15%',
             sorter: true,
             sortOrder: sort[0] === 'price' ? (sort[1] === 'asc' ? 'ascend' : 'descend') : null,
             render: (_, row) => (
@@ -349,7 +352,8 @@ const ProviderPricelistExplorer = ({ providerId, configs = [] }) => {
             title: 'Δ цены',
             key: 'price_change_pct',
             align: 'right',
-            width: 100,
+            hidden: !wide,
+            width: '8%',
             sorter: true,
             sortOrder: sort[0] === 'price_change_pct' ? (sort[1] === 'asc' ? 'ascend' : 'descend') : null,
             render: (_, row) => {
@@ -370,7 +374,7 @@ const ProviderPricelistExplorer = ({ providerId, configs = [] }) => {
             title: 'Остаток',
             key: 'quantity',
             align: 'right',
-            width: 110,
+            width: wide ? '9%' : '11%',
             sorter: true,
             sortOrder: sort[0] === 'quantity' ? (sort[1] === 'asc' ? 'ascend' : 'descend') : null,
             render: (_, row) => (
@@ -388,7 +392,8 @@ const ProviderPricelistExplorer = ({ providerId, configs = [] }) => {
             title: 'Сумма',
             key: 'stock_value',
             align: 'right',
-            width: 120,
+            hidden: !wide,
+            width: '10%',
             sorter: true,
             sortOrder: sort[0] === 'stock_value' ? (sort[1] === 'asc' ? 'ascend' : 'descend') : null,
             render: (_, row) => money(row.stock_value),
@@ -397,7 +402,8 @@ const ProviderPricelistExplorer = ({ providerId, configs = [] }) => {
             title: <Tooltip title="Проданные нами штуки за 30 / 90 дней">Продано 30/90</Tooltip>,
             key: 'sold_30d',
             align: 'right',
-            width: 110,
+            hidden: !wide,
+            width: '9%',
             sorter: true,
             sortOrder: sort[0] === 'sold_30d' ? (sort[1] === 'asc' ? 'ascend' : 'descend') : null,
             render: (_, row) => (
@@ -409,7 +415,7 @@ const ProviderPricelistExplorer = ({ providerId, configs = [] }) => {
         {
             title: <Tooltip title="Оценка рекомендации из сводки оборота, 0–100">Интерес</Tooltip>,
             key: 'score',
-            width: 130,
+            width: wide ? '10%' : '12%',
             sorter: true,
             sortOrder: sort[0] === 'score' ? (sort[1] === 'asc' ? 'ascend' : 'descend') : null,
             render: (_, row) => (
@@ -424,7 +430,7 @@ const ProviderPricelistExplorer = ({ providerId, configs = [] }) => {
             title: <Tooltip title="Минимальная цена среди актуальных предложений и цена этой позиции относительно неё">К рынку</Tooltip>,
             key: 'vs_market_pct',
             align: 'right',
-            width: 130,
+            width: wide ? '10%' : '14%',
             sorter: true,
             sortOrder: sort[0] === 'vs_market_pct' ? (sort[1] === 'asc' ? 'ascend' : 'descend') : null,
             render: (_, row) => {
@@ -657,7 +663,31 @@ const ProviderPricelistExplorer = ({ providerId, configs = [] }) => {
                         columns={columns}
                         dataSource={data?.rows || []}
                         onChange={onTableChange}
-                        scroll={{ x: 'max-content' }}
+                        tableLayout="fixed"
+                        expandable={wide ? undefined : {
+                            expandedRowRender: (row) => (
+                                <Space size="large" wrap>
+                                    {hasCompare && (
+                                        <span>
+                                            <Text type="secondary">Δ цены: </Text>
+                                            {row.is_new
+                                                ? 'новая'
+                                                : (row.price_change_pct == null
+                                                    ? '—'
+                                                    : pct(row.price_change_pct))}
+                                        </span>
+                                    )}
+                                    <span>
+                                        <Text type="secondary">Сумма: </Text>
+                                        {money(row.stock_value)}
+                                    </span>
+                                    <span>
+                                        <Text type="secondary">Продано 30/90: </Text>
+                                        {int(row.sold_qty_30d)} / {int(row.sold_qty_90d)}
+                                    </span>
+                                </Space>
+                            ),
+                        }}
                         pagination={{
                             current: page,
                             pageSize,

@@ -2187,12 +2187,12 @@ const ProviderPage = () => {
         {
             title: 'Бренд',
             dataIndex: 'brand',
-            width: 130,
+            width: '14%',
         },
         {
             title: 'Артикул',
             dataIndex: 'oem_number',
-            width: 160,
+            width: '16%',
         },
         {
             title: 'Наименование',
@@ -2203,27 +2203,27 @@ const ProviderPage = () => {
         {
             title: 'Остаток',
             dataIndex: 'quantity',
-            width: 90,
+            width: '9%',
             align: 'right',
         },
         {
             title: 'Было',
             dataIndex: 'previous_price',
-            width: 125,
+            width: '12%',
             align: 'right',
             render: formatReviewMoney,
         },
         {
             title: 'Стало',
             dataIndex: 'price',
-            width: 125,
+            width: '12%',
             align: 'right',
             render: formatReviewMoney,
         },
         {
             title: 'Изменение',
             dataIndex: 'change_type',
-            width: 120,
+            width: '12%',
             render: (value, row) => {
                 if (value === 'new') return <Tag color="blue">Новая</Tag>;
                 if (value === 'price_changed') {
@@ -2260,7 +2260,7 @@ const ProviderPage = () => {
         {
             title: 'Статус и решение',
             key: 'status',
-            width: 240,
+            width: '26%',
             render: (_, row) => {
                 const meta = pricelistReviewStatusMeta[row.status] || {
                     label: row.status,
@@ -2299,7 +2299,7 @@ const ProviderPage = () => {
         {
             title: 'Объём',
             key: 'volume',
-            width: 150,
+            width: '16%',
             render: (_, row) => (
                 <Space direction="vertical" size={0}>
                     <Text>
@@ -2322,8 +2322,7 @@ const ProviderPage = () => {
         {
             title: 'Действия',
             key: 'actions',
-            width: 130,
-            fixed: 'right',
+            width: '12%',
             render: (_, row) => (
                 <Space size={4}>
                     <Tooltip title="Скачать и проверить">
@@ -2395,7 +2394,7 @@ const ProviderPage = () => {
                 columns={pricelistReviewExampleColumns}
                 dataSource={row.examples || []}
                 locale={{ emptyText: 'Примеры не сформированы' }}
-                scroll={{ x: 950 }}
+                tableLayout="fixed"
             />
         </Space>
     );
@@ -2814,14 +2813,14 @@ const ProviderPage = () => {
             title: "Источник",
             dataIndex: "source_system",
             key: "source_system",
-            width: 140,
+            width: '14%',
             render: (value) => <Tag color="geekblue">{value || "—"}</Tag>,
         },
         {
             title: "External supplier_id",
             dataIndex: "external_supplier_id",
             key: "external_supplier_id",
-            width: 180,
+            width: '18%',
             render: (value) => value ?? <Text type="secondary">Не задан</Text>,
         },
         {
@@ -2834,7 +2833,7 @@ const ProviderPage = () => {
             title: "Статус",
             dataIndex: "is_active",
             key: "is_active",
-            width: 120,
+            width: '10%',
             render: (value) => (
                 <Tag color={value ? "green" : "default"}>
                     {value ? "Активна" : "Отключена"}
@@ -2844,7 +2843,7 @@ const ProviderPage = () => {
         {
             title: "Действия",
             key: "actions",
-            width: 140,
+            width: '14%',
             render: (_, record) => (
                 <Space size="small">
                     <Button
@@ -3589,6 +3588,7 @@ const ProviderPage = () => {
                                     rowKey="id"
                                     loading={pricelistReviewsLoading}
                                     columns={pricelistReviewColumns}
+                                    tableLayout="fixed"
                                     dataSource={pricelistReviews}
                                     pagination={{ pageSize: 10 }}
                                     expandable={{
@@ -3683,7 +3683,6 @@ const ProviderPage = () => {
                                     key: "last_price_date",
                                 },
                             ]}
-                            scroll={{ x: 'max-content' }}
                         />
                     </Card>
 
@@ -3772,7 +3771,7 @@ const ProviderPage = () => {
                             loading={inventoryRulesLoading}
                             dataSource={inventoryRules}
                             pagination={{ pageSize: 10, hideOnSinglePage: true }}
-                            scroll={{ x: 760 }}
+                            tableLayout="fixed"
                             columns={[
                                 {
                                     title: "Номенклатура",
@@ -3793,7 +3792,7 @@ const ProviderPage = () => {
                                 {
                                     title: "Роль",
                                     dataIndex: "inventory_role",
-                                    width: 190,
+                                    width: '16%',
                                     render: (value) => (
                                         <Tag color={
                                             value === "dragonzap_material"
@@ -3814,7 +3813,7 @@ const ProviderPage = () => {
                                 {
                                     title: "Изменено",
                                     key: "updated",
-                                    width: 170,
+                                    width: '14%',
                                     render: (_, rule) => (
                                         <Space direction="vertical" size={0}>
                                             <Text>
@@ -3829,7 +3828,7 @@ const ProviderPage = () => {
                                 {
                                     title: "Статус",
                                     dataIndex: "is_active",
-                                    width: 110,
+                                    width: '10%',
                                     render: (value) => (
                                         <Tag color={value ? "green" : "default"}>
                                             {value ? "Активно" : "Выключено"}
@@ -3839,7 +3838,7 @@ const ProviderPage = () => {
                                 {
                                     title: "Действия",
                                     key: "actions",
-                                    width: 120,
+                                    width: '10%',
                                     render: (_, rule) => user?.role === "admin" ? (
                                         <Space>
                                             <Button
@@ -3962,7 +3961,7 @@ const ProviderPage = () => {
                             pagination={false}
                             size="middle"
                             locale={{ emptyText: "Внешние связки не настроены" }}
-                            scroll={{ x: "max-content" }}
+                            tableLayout="fixed"
                         />
                     </Card>
 
