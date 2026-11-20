@@ -51,7 +51,7 @@ import {
     sendInvoiceEmail,
 } from '../api/finance';
 import { fetchAllCustomersBrief } from '../api/customers';
-import { getProviders } from '../api/providers';
+import { getAllProviders } from '../api/providers';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -919,12 +919,14 @@ const FinancePage = () => {
             try {
                 // Клиентов — кратким списком: обычная ручка тянет их
                 // прайсы целиком, а в выпадающих нужны имя и номер.
-                const [customerRows, pRes] = await Promise.all([
+                // Поставщиков ручка отдаёт страницами (не больше 100),
+                // поэтому забираем все страницы целиком.
+                const [customerRows, providerRows] = await Promise.all([
                     fetchAllCustomersBrief(),
-                    getProviders(),
+                    getAllProviders(),
                 ]);
                 setCustomers(customerRows);
-                setProviders(pRes.data || []);
+                setProviders(providerRows);
             } catch {
                 message.error('Ошибка загрузки справочников');
             } finally {

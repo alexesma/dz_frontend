@@ -24,7 +24,7 @@ import {
     listSupplierReturns,
 } from '../api/inventory';
 import { fetchAllCustomersBrief } from '../api/customers';
-import { getProviders } from '../api/providers';
+import { getAllProviders } from '../api/providers';
 import { getWarehouses } from '../api/storage';
 import useAuth from '../context/useAuth';
 
@@ -71,10 +71,6 @@ const toOptions = (rows = [], labelField = 'name') =>
         label: row[labelField] || `#${row.id}`,
     }));
 
-const normalizePagedItems = (payload) => (
-    Array.isArray(payload) ? payload : (payload?.items || [])
-);
-
 const fmtDate = (value) => (value ? dayjs(value).format('DD.MM.YYYY HH:mm') : '—');
 
 const ReturnsPage = () => {
@@ -97,13 +93,13 @@ const ReturnsPage = () => {
         try {
             // Клиентов берём кратким списком: обычная ручка тянет их
             // прайсы целиком, а здесь нужны только имя и идентификатор.
-            const [customerRows, providerRes, warehouseRes] = await Promise.all([
+            const [customerRows, providerRows, warehouseRes] = await Promise.all([
                 fetchAllCustomersBrief(),
-                getProviders({ page_size: 200 }),
+                getAllProviders(),
                 getWarehouses({ limit: 200 }),
             ]);
             setCustomers(toOptions(customerRows));
-            setProviders(toOptions(normalizePagedItems(providerRes.data)));
+            setProviders(toOptions(providerRows));
             setWarehouses(
                 (warehouseRes.data?.items || warehouseRes.data || []).map((item) => ({
                     value: item.id,

@@ -59,7 +59,7 @@ import {
     getDiadocSupplierReturnOutboundReadiness,
     listDiadocOutboundDocuments,
 } from '../api/diadoc';
-import { getProviders } from '../api/providers';
+import { getAllProviders } from '../api/providers';
 import { getWarehouses } from '../api/storage';
 import useAuth from '../context/useAuth';
 
@@ -94,10 +94,6 @@ const DIADOC_LABELS = {
     delivered: 'Доставлен',
     error: 'Ошибка',
 };
-
-const normalizePagedItems = (payload) => (
-    Array.isArray(payload) ? payload : (payload?.items || [])
-);
 
 const fmtDate = (value) => (value ? dayjs(value).format('DD.MM.YYYY HH:mm') : '—');
 
@@ -134,10 +130,10 @@ const ReturnDetailPage = ({ kind }) => {
         try {
             // Клиентов — кратким списком: обычная ручка тянет их прайсы
             // целиком, а здесь нужны только имя и идентификатор.
-            const [warehouseRes, customerRows, providerRes] = await Promise.all([
+            const [warehouseRes, customerRows, providerRows] = await Promise.all([
                 getWarehouses({ limit: 200 }),
                 fetchAllCustomersBrief(),
-                getProviders({ page_size: 200 }),
+                getAllProviders(),
             ]);
             setWarehouses(
                 (warehouseRes.data?.items || warehouseRes.data || []).map((item) => ({
@@ -149,7 +145,7 @@ const ReturnDetailPage = ({ kind }) => {
                 value: item.id,
                 label: item.name,
             })));
-            setProviders(normalizePagedItems(providerRes.data).map((item) => ({
+            setProviders(providerRows.map((item) => ({
                 value: item.id,
                 label: item.name,
             })));
