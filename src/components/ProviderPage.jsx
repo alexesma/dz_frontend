@@ -115,6 +115,20 @@ const normalizeEmailTags = (values = [], pendingValue = "") => [
     ),
 ];
 
+const formatApiErrorDetail = (detail, fallback) => {
+    if (typeof detail === "string" && detail.trim()) return detail;
+    if (Array.isArray(detail)) {
+        const messages = detail
+            .map((item) => item?.msg || item?.message)
+            .filter(Boolean);
+        if (messages.length) return messages.join("; ");
+    }
+    if (detail && typeof detail === "object") {
+        return detail.msg || detail.message || fallback;
+    }
+    return fallback;
+};
+
 // Итог загрузки прайса. Массовое округление остатков показываем
 // предупреждением: раньше такая подмена колонок просто срывала загрузку
 // молча, и поставщик выпадал из обновлений на месяцы.
@@ -972,7 +986,15 @@ const ProviderPage = () => {
         try {
             const cleanedExcludePositions = (values.exclude_positions || [])
                 .map(normalizeExcludeItem)
-                .filter((item) => item.brand && item.oem);
+                .filter((item) => item.brand && item.oem)
+                .map((item) => ({
+                    ...item,
+                    // Existing JSON stores this id as text.  Ant Design
+                    // Select returns a number, so normalise the wire format.
+                    ...(item.autopart_id
+                        ? { autopart_id: String(item.autopart_id) }
+                        : {}),
+                }));
             // Ant Design keeps the text currently being typed in a tags
             // Select outside the form value until Enter is pressed. Include
             // it explicitly so clicking "Обновить" cannot silently discard
@@ -1056,7 +1078,9 @@ const ProviderPage = () => {
         } catch (err) {
             console.error(err);
             const detail = err?.response?.data?.detail;
-            message.error(detail || "Ошибка сохранения конфигурации");
+            message.error(
+                formatApiErrorDetail(detail, "Ошибка сохранения конфигурации")
+            );
         } finally {
             setConfigSaving(false);
         }
