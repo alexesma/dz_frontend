@@ -2243,37 +2243,63 @@ const ProviderPage = () => {
 
     const pricelistReviewColumns = [
         {
-            title: 'Получен',
-            dataIndex: 'created_at',
-            width: 145,
-            render: formatMoscow,
-        },
-        {
-            title: 'Конфигурация / файл',
+            title: 'Обновление',
             key: 'source',
             render: (_, row) => (
                 <Space direction="vertical" size={0}>
                     <Text strong>{row.config_name}</Text>
-                    <Text type="secondary">{row.source_filename}</Text>
+                    <Text type="secondary" style={{ wordBreak: 'break-all' }}>
+                        {row.source_filename}
+                    </Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                        Получен: {formatMoscow(row.created_at)}
+                    </Text>
                 </Space>
             ),
         },
         {
-            title: 'Статус',
-            dataIndex: 'status',
-            width: 135,
-            render: (value) => {
-                const meta = pricelistReviewStatusMeta[value] || {
-                    label: value,
+            title: 'Статус и решение',
+            key: 'status',
+            width: 240,
+            render: (_, row) => {
+                const meta = pricelistReviewStatusMeta[row.status] || {
+                    label: row.status,
                     color: 'default',
                 };
-                return <Tag color={meta.color}>{meta.label}</Tag>;
+                return (
+                    <Space direction="vertical" size={2}>
+                        <Tag color={meta.color} style={{ margin: 0 }}>
+                            {meta.label}
+                        </Tag>
+                        {row.decided_at ? (
+                            <>
+                                <Text style={{ fontSize: 12 }}>
+                                    {row.decided_by_name || 'Пользователь удалён'}
+                                    {', '}
+                                    {formatMoscow(row.decided_at)}
+                                </Text>
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                    {row.decision_reason || '—'}
+                                </Text>
+                                {row.published_pricelist_id ? (
+                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                        Прайс #{row.published_pricelist_id}
+                                    </Text>
+                                ) : null}
+                            </>
+                        ) : (
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                Решение не принято
+                            </Text>
+                        )}
+                    </Space>
+                );
             },
         },
         {
             title: 'Объём',
             key: 'volume',
-            width: 185,
+            width: 150,
             render: (_, row) => (
                 <Space direction="vertical" size={0}>
                     <Text>
@@ -2294,39 +2320,20 @@ const ProviderPage = () => {
             ),
         },
         {
-            title: 'Решение',
-            key: 'decision',
-            render: (_, row) => (
-                row.decided_at ? (
-                    <Space direction="vertical" size={0}>
-                        <Text>{row.decided_by_name || 'Пользователь удалён'}</Text>
-                        <Text type="secondary">{formatMoscow(row.decided_at)}</Text>
-                        <Text>{row.decision_reason || '—'}</Text>
-                        {row.published_pricelist_id ? (
-                            <Text type="secondary">
-                                Прайс #{row.published_pricelist_id}
-                            </Text>
-                        ) : null}
-                    </Space>
-                ) : (
-                    <Text type="secondary">Решение не принято</Text>
-                )
-            ),
-        },
-        {
             title: 'Действия',
             key: 'actions',
-            width: 340,
+            width: 130,
+            fixed: 'right',
             render: (_, row) => (
-                <Space wrap>
-                    <Button
-                        size="small"
-                        icon={<DownloadOutlined />}
-                        loading={pricelistReviewActionId === row.id}
-                        onClick={() => handleDownloadPricelistReview(row)}
-                    >
-                        Скачать и проверить
-                    </Button>
+                <Space size={4}>
+                    <Tooltip title="Скачать и проверить">
+                        <Button
+                            size="small"
+                            icon={<DownloadOutlined />}
+                            loading={pricelistReviewActionId === row.id}
+                            onClick={() => handleDownloadPricelistReview(row)}
+                        />
+                    </Tooltip>
                     {row.status === 'pending' ? (
                         <>
                             <Popconfirm
@@ -2336,23 +2343,23 @@ const ProviderPage = () => {
                                 cancelText="Отмена"
                                 onConfirm={() => handleApprovePricelistReview(row)}
                             >
+                                <Tooltip title="Принять и опубликовать">
+                                    <Button
+                                        size="small"
+                                        type="primary"
+                                        icon={<CheckCircleOutlined />}
+                                        loading={pricelistReviewActionId === row.id}
+                                    />
+                                </Tooltip>
+                            </Popconfirm>
+                            <Tooltip title="Отклонить">
                                 <Button
                                     size="small"
-                                    type="primary"
-                                    icon={<CheckCircleOutlined />}
-                                    loading={pricelistReviewActionId === row.id}
-                                >
-                                    Принять и опубликовать
-                                </Button>
-                            </Popconfirm>
-                            <Button
-                                size="small"
-                                danger
-                                icon={<CloseCircleOutlined />}
-                                onClick={() => openRejectPricelistReview(row)}
-                            >
-                                Отклонить
-                            </Button>
+                                    danger
+                                    icon={<CloseCircleOutlined />}
+                                    onClick={() => openRejectPricelistReview(row)}
+                                />
+                            </Tooltip>
                         </>
                     ) : null}
                 </Space>
@@ -2406,7 +2413,7 @@ const ProviderPage = () => {
         {
             title: "Прайс",
             key: "name_price",
-            width: 260,
+            width: 340,
             render: (_, record) => {
                 const проблема = intakeProblemByConfig.get(record.id);
                 return (
@@ -2613,7 +2620,7 @@ const ProviderPage = () => {
         {
             title: "Конфигурация",
             key: "name",
-            width: 280,
+            width: 200,
             render: (_, record) => (
                 <div>
                     <Text strong>{record.name}</Text>
@@ -2626,16 +2633,19 @@ const ProviderPage = () => {
         {
             title: "Откуда",
             key: "source",
+            width: 380,
             render: (_, record) => {
                 const senders = record.sender_emails || [];
                 return (
-                    <div style={{ wordBreak: "break-word" }}>
+                    <div>
                         <div>{renderResponseMailbox(record)}</div>
                         <div style={{ fontSize: 12, color: "#666" }}>
                             Отправители:{" "}
-                            {senders.length
-                                ? senders.join(", ")
-                                : <span style={{ color: "#999" }}>любой</span>}
+                            {senders.length ? senders.map((email, index) => (
+                                <span key={email} style={{ whiteSpace: "nowrap" }}>
+                                    {email}{index < senders.length - 1 ? ", " : ""}
+                                </span>
+                            )) : <span style={{ color: "#999" }}>любой</span>}
                         </div>
                     </div>
                 );
@@ -2728,18 +2738,14 @@ const ProviderPage = () => {
             key: "customer",
             render: (_, record) => (
                 <div>
-                    <div>{record.customer_name || `Клиент #${record.customer_id}`}</div>
-                    <Text type="secondary">ID: {record.customer_id}</Text>
-                </div>
-            ),
-        },
-        {
-            title: "Конфиг клиента",
-            key: "customer_config",
-            render: (_, record) => (
-                <div>
-                    <div>{record.customer_config_name || `Конфиг #${record.customer_config_id}`}</div>
-                    <Text type="secondary">ID: {record.customer_config_id}</Text>
+                    <Text strong>
+                        {record.customer_name || `Клиент #${record.customer_id}`}
+                    </Text>
+                    <div style={{ fontSize: 12, color: "#666" }}>
+                        Конфиг клиента:{" "}
+                        {record.customer_config_name
+                            || `#${record.customer_config_id}`}
+                    </div>
                 </div>
             ),
         },
@@ -2747,37 +2753,15 @@ const ProviderPage = () => {
             title: "Конфиг поставщика",
             key: "provider_config",
             render: (_, record) => (
-                <div>
-                    <div>{record.provider_config_name || `Конфиг #${record.provider_config_id}`}</div>
-                    <Text type="secondary">ID: {record.provider_config_id}</Text>
-                </div>
+                record.provider_config_name
+                || `Конфиг #${record.provider_config_id}`
             ),
-        },
-        {
-            title: "Наценка",
-            dataIndex: "markup",
-            key: "markup",
-            render: (value) => Number(value || 1).toFixed(3),
-        },
-        {
-            title: "Маскировка",
-            dataIndex: "mask_price_quantity",
-            key: "mask_price_quantity",
-            render: (value) => (
-                <Tag color={value ? "blue" : "default"}>
-                    {value ? "Цена/остаток" : "Нет"}
-                </Tag>
-            ),
-        },
-        {
-            title: "Фильтры",
-            key: "filters",
-            render: (_, record) => formatSourceUsageFilters(record),
         },
         {
             title: "Включено",
             dataIndex: "enabled",
             key: "enabled",
+            width: 100,
             render: (value) => (
                 <Tag color={value ? "green" : "default"}>
                     {value ? "Да" : "Нет"}
@@ -2787,17 +2771,43 @@ const ProviderPage = () => {
         {
             title: "Действия",
             key: "actions",
-            width: 90,
+            width: 100,
+            fixed: "right",
             render: (_, record) => (
-                <Button
-                    type="primary"
-                    size="small"
-                    icon={<EditOutlined />}
-                    onClick={() => openSourceUsageModal(record)}
-                />
+                <Tooltip title="Изменить">
+                    <Button
+                        type="primary"
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={() => openSourceUsageModal(record)}
+                    />
+                </Tooltip>
             ),
         },
     ];
+
+    const renderSourceUsageDetails = (record) => (
+        <div
+            style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: "8px 24px",
+            }}
+        >
+            <div>
+                <Text type="secondary">Наценка: </Text>
+                {Number(record.markup || 1).toFixed(3)}
+            </div>
+            <div>
+                <Text type="secondary">Маскировка: </Text>
+                {record.mask_price_quantity ? "цена/остаток" : "нет"}
+            </div>
+            <div>
+                <Text type="secondary">Фильтры: </Text>
+                {formatSourceUsageFilters(record)}
+            </div>
+        </div>
+    );
 
     const externalReferenceColumns = [
         {
@@ -3598,7 +3608,6 @@ const ProviderPage = () => {
                                             'Заблокированных обновлений пока нет'
                                         ),
                                     }}
-                                    scroll={{ x: 1180 }}
                                 />
                             </Card>
                         </div>
@@ -3623,7 +3632,9 @@ const ProviderPage = () => {
                                     + "в источники клиентских прайсов"
                                 ),
                             }}
-                            scroll={{ x: "max-content" }}
+                            expandable={{
+                                expandedRowRender: renderSourceUsageDetails,
+                            }}
                         />
                     </Card>
 
