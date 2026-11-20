@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CustomerPricelistProgressModal from './CustomerPricelistProgressModal';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
     Alert,
     Card,
@@ -20,6 +20,7 @@ import {
     Descriptions,
     Tag,
     Switch,
+    Tabs,
     Tooltip,
     Typography,
 } from 'antd';
@@ -280,6 +281,18 @@ const FilterRuleValueSelect = ({
 const CustomerPage = () => {
     const { user } = useAuth();
     const { customerId: customerIdParam } = useParams();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const [customerFormTab, setCustomerFormTab] = useState('main');
+    const pageTab = ['main', 'prices', 'links'].includes(searchParams.get('tab'))
+        ? searchParams.get('tab')
+        : 'main';
+    const handlePageTabChange = (key) => {
+        setSearchParams((current) => {
+            const next = new URLSearchParams(current);
+            next.set('tab', key);
+            return next;
+        }, { replace: true });
+    };
     const navigate = useNavigate();
 
     const isNew = !customerIdParam || customerIdParam.toLowerCase() === 'create';
@@ -1955,77 +1968,75 @@ const CustomerPage = () => {
     // Колонки таблицы конфигураций
     const configColumns = [
         {
-            title: 'Название',
-            dataIndex: 'name',
+            title: 'Конфигурация',
             key: 'name',
-        },
-        {
-            title: 'Обработка заказов',
-            key: 'orders',
+            width: 240,
             render: (_, record) => {
                 const exists = orderConfigs.some(
                     (cfg) => cfg.pricelist_config_id === record.id
                 );
                 return (
-                    <Tag color={exists ? 'green' : 'default'}>
-                        {exists ? 'Настроена' : 'Нет'}
-                    </Tag>
+                    <div>
+                        <Text strong>{record.name}</Text>
+                        <div>
+                            <Tag color={exists ? 'green' : 'default'} style={{ marginTop: 4 }}>
+                                {exists ? 'Заказы настроены' : 'Заказы: нет'}
+                            </Tag>
+                        </div>
+                    </div>
                 );
             },
         },
         {
-            title: 'Источники',
-            key: 'sources',
-            render: (_, record) => (
-                <Tag color="blue">
-                    {record.sources?.length ?? 0}
-                </Tag>
-            ),
-        },
-        {
-            title: 'Фильтры',
-            key: 'filters',
+            title: 'Состав',
+            key: 'composition',
+            width: 190,
             render: (_, record) => {
                 const details = describeConfigFilters(record);
                 return (
-                    <Tooltip
-                        placement="top"
-                        styles={{ root: { maxWidth: 520 } }}
-                        title={details.length ? (
-                            <Space direction="vertical" size={2}>
-                                {details.map((detail, index) => (
-                                    <span key={`${index}-${detail}`}>{detail}</span>
-                                ))}
-                            </Space>
-                        ) : 'Фильтры не настроены'}
-                    >
-                        <Tag
-                            color={details.length ? 'orange' : 'default'}
-                            style={{ cursor: 'help' }}
-                        >
-                            {details.length}
+                    <Space direction="vertical" size={4}>
+                        <Tag color="blue" style={{ margin: 0 }}>
+                            Источников: {record.sources?.length ?? 0}
                         </Tag>
-                    </Tooltip>
+                        <Tooltip
+                            placement="top"
+                            styles={{ root: { maxWidth: 520 } }}
+                            title={details.length ? (
+                                <Space direction="vertical" size={2}>
+                                    {details.map((detail, index) => (
+                                        <span key={`${index}-${detail}`}>{detail}</span>
+                                    ))}
+                                </Space>
+                            ) : 'Фильтры не настроены'}
+                        >
+                            <Tag
+                                color={details.length ? 'orange' : 'default'}
+                                style={{ margin: 0, cursor: 'help' }}
+                            >
+                                Фильтров: {details.length}
+                            </Tag>
+                        </Tooltip>
+                    </Space>
                 );
             },
         },
         {
-            title: 'Расписание',
+            title: 'Отправка',
             key: 'schedule',
             render: (_, record) => (
-                <span>{formatSchedule(record)}</span>
+                <div>
+                    <div>{formatSchedule(record)}</div>
+                    <div style={{ fontSize: 12, color: '#666' }}>
+                        Последняя: {formatLastSentAt(record.last_sent_at)}
+                    </div>
+                </div>
             ),
-        },
-        {
-            title: 'Последняя успешная отправка',
-            dataIndex: 'last_sent_at',
-            key: 'last_sent_at',
-            render: (value) => <span>{formatLastSentAt(value)}</span>,
         },
         {
             title: 'Активна',
             dataIndex: 'is_active',
             key: 'is_active',
+            width: 100,
             render: (enabled) => (
                 <Tag color={enabled ? 'green' : 'default'}>
                     {enabled ? 'Да' : 'Нет'}
@@ -2035,42 +2046,46 @@ const CustomerPage = () => {
         {
             title: 'Действия',
             key: 'actions',
-            width: 260,
+            width: 160,
             render: (_, record) => (
-                <Space size="small" wrap className="table-actions">
-                    <Button
-                        type="primary"
-                        size="small"
-                        icon={<EditOutlined />}
-                        onClick={() => openConfigModal(record)}
-                    />
-                    <Button
-                        type="default"
-                        size="small"
-                        icon={<SettingOutlined />}
-                        onClick={() => openSourcesModal(record)}
-                    />
-                    <Button
-                        type="default"
-                        size="small"
-                        icon={<CopyOutlined />}
-                        title="Копировать конфигурацию"
-                        onClick={() => openCopyConfigModal(record)}
-                    />
-                    <Button
-                        type="default"
-                        size="small"
-                        icon={<DownloadOutlined />}
-                        title="Скачать готовый прайс или обновить"
-                        onClick={() => setPricelistTask({ config: record, intent: 'download' })}
-                    />
-                    <Button
-                        type="primary"
-                        size="small"
-                        icon={<SendOutlined />}
-                        title="Отправить прайс получателям"
-                        onClick={() => setPricelistTask({ config: record, intent: 'send' })}
-                    />
+                <Space size={4} wrap className="table-actions">
+                    <Tooltip title="Изменить">
+                        <Button
+                            type="primary"
+                            size="small"
+                            icon={<EditOutlined />}
+                            onClick={() => openConfigModal(record)}
+                        />
+                    </Tooltip>
+                    <Tooltip title="Источники">
+                        <Button
+                            size="small"
+                            icon={<SettingOutlined />}
+                            onClick={() => openSourcesModal(record)}
+                        />
+                    </Tooltip>
+                    <Tooltip title="Копировать конфигурацию">
+                        <Button
+                            size="small"
+                            icon={<CopyOutlined />}
+                            onClick={() => openCopyConfigModal(record)}
+                        />
+                    </Tooltip>
+                    <Tooltip title="Скачать готовый прайс или обновить">
+                        <Button
+                            size="small"
+                            icon={<DownloadOutlined />}
+                            onClick={() => setPricelistTask({ config: record, intent: 'download' })}
+                        />
+                    </Tooltip>
+                    <Tooltip title="Отправить прайс получателям">
+                        <Button
+                            type="primary"
+                            size="small"
+                            icon={<SendOutlined />}
+                            onClick={() => setPricelistTask({ config: record, intent: 'send' })}
+                        />
+                    </Tooltip>
                     <Popconfirm
                         title="Удалить конфигурацию?"
                         description="Удалить конфигурацию и связанные прайс-листы? Действие необратимо"
@@ -2163,6 +2178,17 @@ const CustomerPage = () => {
                     : `Клиент: ${customerData?.customer?.name ?? '...'}`}
             </h2>
 
+            <Tabs
+                activeKey={isNew ? 'main' : pageTab}
+                onChange={handlePageTabChange}
+                tabBarStyle={isNew ? { display: 'none' } : undefined}
+                items={[
+                    {
+                        key: 'main',
+                        label: 'Клиент',
+                        forceRender: true,
+                        children: (
+                            <>
             {/* Форма клиента */}
             <Card title="Основная информация" style={{ marginBottom: 20 }}>
                 <Form
@@ -2184,7 +2210,28 @@ const CustomerPage = () => {
                                     </ul>
                                 ),
                             });
-                            customerForm.scrollToField(errorFields[0].name);
+                            const failedField = String(errorFields[0].name?.[0] ?? '');
+                            const requisiteFields = [
+                                'legal_name', 'label_name', 'inn', 'kpp', 'company_type',
+                                'vat_rate', 'legal_address', 'postal_address', 'bank_bik',
+                                'bank_name', 'bank_city', 'bank_account',
+                                'correspondent_account', 'registration_source',
+                            ];
+                            const creditFields = [
+                                'credit_control_mode', 'credit_limit', 'one_c_contract_name',
+                                'one_c_contract_number', 'one_c_contract_date',
+                                'one_c_contract_guid', 'payment_terms_days',
+                                'return_window_days',
+                            ];
+                            setCustomerFormTab(
+                                requisiteFields.includes(failedField)
+                                    ? 'requisites'
+                                    : (creditFields.includes(failedField) ? 'credit' : 'main')
+                            );
+                            window.setTimeout(
+                                () => customerForm.scrollToField(errorFields[0].name),
+                                100
+                            );
                         }
                     }}
                     scrollToFirstError
@@ -2194,6 +2241,17 @@ const CustomerPage = () => {
                         credit_limit: null,
                     }}
                 >
+                    <Tabs
+                        activeKey={customerFormTab}
+                        onChange={setCustomerFormTab}
+                        items={[
+                            {
+                                key: 'main',
+                                label: 'Основное',
+                                forceRender: true,
+                                children: (
+                                    <>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', columnGap: 16 }}>
                     <Form.Item
                         name="name"
                         label="Логин / название в системе"
@@ -2226,14 +2284,12 @@ const CustomerPage = () => {
                         <Input placeholder="contact@customer.com" />
                     </Form.Item>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
                         <Form.Item name="phone" label="Телефон">
                             <Input placeholder="+7 495 000-00-00" />
                         </Form.Item>
                         <Form.Item name="additional_phone" label="Дополнительный телефон">
                             <Input placeholder="+7 999 000-00-00" />
                         </Form.Item>
-                    </div>
 
                     <Form.Item
                         name="email_outgoing_price"
@@ -2243,6 +2299,25 @@ const CustomerPage = () => {
                         <Input placeholder="prices@customer.com" />
                     </Form.Item>
 
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', columnGap: 16 }}>
+                    <Form.Item name="description" label="Описание">
+                        <Input.TextArea rows={3} placeholder="Описание клиента" />
+                    </Form.Item>
+
+                    <Form.Item name="comment" label="Комментарий">
+                        <Input.TextArea rows={2} placeholder="Дополнительные комментарии" />
+                    </Form.Item>
+                    </div>
+                                    </>
+                                ),
+                            },
+                            {
+                                key: 'requisites',
+                                label: 'Реквизиты',
+                                forceRender: true,
+                                children: (
+                                    <>
                     <Divider orientation="left">Юридические реквизиты</Divider>
 
                     <Form.Item name="legal_name" label="Юридическое название">
@@ -2343,6 +2418,15 @@ const CustomerPage = () => {
                         </>
                     )}
 
+                                    </>
+                                ),
+                            },
+                            {
+                                key: 'credit',
+                                label: 'Кредит и договор',
+                                forceRender: true,
+                                children: (
+                                    <>
                     <Divider orientation="left">Кредитная политика</Divider>
 
                     <Alert
@@ -2421,15 +2505,15 @@ const CustomerPage = () => {
                         </Form.Item>
                     </div>
 
-                    <Form.Item name="description" label="Описание">
-                        <Input.TextArea rows={3} placeholder="Описание клиента" />
-                    </Form.Item>
+                                    </>
+                                ),
+                            },
+                        ]}
+                    />
 
-                    <Form.Item name="comment" label="Комментарий">
-                        <Input.TextArea rows={2} placeholder="Дополнительные комментарии" />
-                    </Form.Item>
-
-                    <Form.Item>
+                    <Form.Item
+                        style={{ position: 'sticky', bottom: 0, zIndex: 5, background: 'var(--ant-color-bg-container, #fff)', padding: '12px 0', margin: 0, borderTop: '1px solid #f0f0f0' }}
+                    >
                         <Button
                             type="primary"
                             htmlType="submit"
@@ -2442,6 +2526,58 @@ const CustomerPage = () => {
                 </Form>
             </Card>
 
+                            </>
+                        ),
+                    },
+                    ...(!isNew && customerData ? [
+                        {
+                            key: 'prices',
+                            label: `Прайс-листы (${(customerData.pricelist_configs || []).length})`,
+                            children: (
+                                <>
+            {/* Конфигурации прайс-листов */}
+            {!isNew && customerData && (
+                <Card
+                    title="Конфигурации прайс-листов"
+                    extra={
+                        <Space wrap>
+                            {user?.role === 'admin' && (
+                                <Button
+                                    onClick={() => navigate('/admin/customer-pricelists')}
+                                >
+                                    Управление прайсами
+                                </Button>
+                            )}
+                            <Button
+                                type="primary"
+                                icon={<PlusOutlined />}
+                                onClick={() => openConfigModal()}
+                            >
+                                Добавить конфигурацию
+                            </Button>
+                        </Space>
+                    }
+                >
+                    <Table
+                        className="compact-table"
+                        rowKey="id"
+                        columns={configColumns}
+                        dataSource={customerData.pricelist_configs || []}
+                        pagination={false}
+                        size="middle"
+                        locale={{ emptyText: 'Конфигурации не настроены' }}
+                    />
+                </Card>
+            )}
+
+                                </>
+                            ),
+                        },
+                        {
+                            key: 'links',
+                            label: 'Почты и связи',
+                            children: (
+                                <>
             {!isNew && (
                 <Card
                     title="Почты для рекламаций"
@@ -2511,40 +2647,12 @@ const CustomerPage = () => {
                 </Card>
             )}
 
-            {/* Конфигурации прайс-листов */}
-            {!isNew && customerData && (
-                <Card
-                    title="Конфигурации прайс-листов"
-                    extra={
-                        <Space wrap>
-                            {user?.role === 'admin' && (
-                                <Button
-                                    onClick={() => navigate('/admin/customer-pricelists')}
-                                >
-                                    Управление прайсами
-                                </Button>
-                            )}
-                            <Button
-                                type="primary"
-                                icon={<PlusOutlined />}
-                                onClick={() => openConfigModal()}
-                            >
-                                Добавить конфигурацию
-                            </Button>
-                        </Space>
-                    }
-                >
-                    <Table
-                        rowKey="id"
-                        columns={configColumns}
-                        dataSource={customerData.pricelist_configs || []}
-                        pagination={false}
-                        size="middle"
-                        locale={{ emptyText: 'Конфигурации не настроены' }}
-                        scroll={{ x: 'max-content' }}
-                    />
-                </Card>
-            )}
+                                </>
+                            ),
+                        },
+                    ] : []),
+                ]}
+            />
 
             {/* Конфигурации заказов теперь редактируются внутри конфигурации прайса */}
 
@@ -3573,6 +3681,7 @@ const CustomerPage = () => {
             >
                 <Spin spinning={sourcesLoading}>
                     <Table
+                        className="compact-table"
                         rowKey="id"
                         dataSource={sources}
                         pagination={false}
@@ -3662,7 +3771,6 @@ const CustomerPage = () => {
                         ]}
                         locale={{ emptyText: 'Источники не добавлены' }}
                         style={{ marginBottom: 16 }}
-                        scroll={{ x: 'max-content' }}
                     />
 
                     <Divider>{editingSource ? 'Редактирование источника' : 'Добавление источника'}</Divider>

@@ -2388,6 +2388,7 @@ const ProviderPage = () => {
                 Примеры позиций для проверки
             </Text>
             <Table
+                className="compact-table"
                 rowKey={(item) => `${item.brand}-${item.oem_number}`}
                 size="small"
                 pagination={false}
@@ -3527,6 +3528,7 @@ const ProviderPage = () => {
                             />
                         )}
                         <Table
+                            className="compact-table"
                             rowKey="id"
                             columns={configColumns}
                             dataSource={providerData.pricelist_configs || []}
@@ -3585,6 +3587,7 @@ const ProviderPage = () => {
                                     description="Файл скачивается в исходном виде. После сверки выберите «Принять и опубликовать» либо «Отклонить» и укажите причину."
                                 />
                                 <Table
+                                    className="compact-table"
                                     rowKey="id"
                                     loading={pricelistReviewsLoading}
                                     columns={pricelistReviewColumns}
@@ -3618,6 +3621,7 @@ const ProviderPage = () => {
                         style={{ marginTop: 16 }}
                     >
                         <Table
+                            className="compact-table"
                             rowKey="source_id"
                             columns={sourceUsageColumns}
                             dataSource={
@@ -3650,6 +3654,7 @@ const ProviderPage = () => {
 
                     <Card title="История оповещений о просрочке" style={{ marginTop: 16 }}>
                         <Table
+                            className="compact-table"
                             rowKey="id"
                             loading={alertsLoading}
                             dataSource={staleAlerts}
@@ -3727,6 +3732,7 @@ const ProviderPage = () => {
                         }
                     >
                         <Table
+                            className="compact-table"
                             rowKey="id"
                             columns={responseConfigColumns}
                             dataSource={providerData.supplier_response_configs || []}
@@ -3766,6 +3772,7 @@ const ProviderPage = () => {
                             назначается: она появляется только после выпуска.
                         </Text>
                         <Table
+                            className="compact-table"
                             style={{ marginTop: 16 }}
                             rowKey="id"
                             loading={inventoryRulesLoading}
@@ -3955,6 +3962,7 @@ const ProviderPage = () => {
                             description="Используйте этот блок, когда заказы с сайта и ручной поставщик по факту один и тот же контрагент. Это помогает автосопоставлять tracking, приходы и документы."
                         />
                         <Table
+                            className="compact-table"
                             rowKey="id"
                             columns={externalReferenceColumns}
                             dataSource={providerData.external_references || []}
@@ -4921,6 +4929,7 @@ const ProviderPage = () => {
                                 </Button>
                             </Space>
                             <Table
+                                className="compact-table"
                                 size="small"
                                 rowKey="id"
                                 loading={responseImportErrorsLoading}
@@ -5090,6 +5099,7 @@ const ProviderPage = () => {
                                 </Button>
                             </Space>
                             <Table
+                                className="compact-table"
                                 size="small"
                                 rowKey="id"
                                 loading={responseMessagesLoading}

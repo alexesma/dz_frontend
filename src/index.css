@@ -1816,3 +1816,18 @@ body {
     width: 24px;
   }
 }
+
+/* Компактные таблицы страниц поставщика и клиента: заголовки не рвутся по
+   буквам и не растягивают шапку по вертикали, длинное обрезается. */
+.compact-table .ant-table-thead > tr > th {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    word-break: normal;
+    overflow-wrap: normal;
+}
+
+.compact-table .ant-table-thead .ant-table-column-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

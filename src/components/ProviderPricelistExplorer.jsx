@@ -304,7 +304,7 @@ const ProviderPricelistExplorer = ({ providerId, configs = [] }) => {
         {
             title: 'Артикул',
             key: 'oem',
-            width: wide ? '14%' : '19%',
+            width: wide ? '14%' : '18%',
             sorter: true,
             sortOrder: sort[0] === 'oem' ? (sort[1] === 'asc' ? 'ascend' : 'descend') : null,
             render: (_, row) => (
@@ -374,7 +374,7 @@ const ProviderPricelistExplorer = ({ providerId, configs = [] }) => {
             title: 'Остаток',
             key: 'quantity',
             align: 'right',
-            width: wide ? '9%' : '11%',
+            width: wide ? '9%' : '13%',
             sorter: true,
             sortOrder: sort[0] === 'quantity' ? (sort[1] === 'asc' ? 'ascend' : 'descend') : null,
             render: (_, row) => (
@@ -415,7 +415,7 @@ const ProviderPricelistExplorer = ({ providerId, configs = [] }) => {
         {
             title: <Tooltip title="Оценка рекомендации из сводки оборота, 0–100">Интерес</Tooltip>,
             key: 'score',
-            width: wide ? '10%' : '12%',
+            width: wide ? '10%' : '13%',
             sorter: true,
             sortOrder: sort[0] === 'score' ? (sort[1] === 'asc' ? 'ascend' : 'descend') : null,
             render: (_, row) => (
@@ -657,6 +657,7 @@ const ProviderPricelistExplorer = ({ providerId, configs = [] }) => {
                     />
 
                     <Table
+                        className="compact-table"
                         rowKey="autopart_id"
                         size="small"
                         loading={loading}

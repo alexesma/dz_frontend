@@ -192,6 +192,7 @@ const ProviderPricelistAnalyticsSection = ({ providerId, refreshKey = 0 }) => {
                                             Самые оборачиваемые позиции
                                         </Title>
                                         <Table
+                                            className="compact-table"
                                             size="small"
                                             rowKey={(record) => `turnover-${item.config_id}-${record.autopart_id}`}
                                             columns={turnoverColumns}
@@ -207,6 +208,7 @@ const ProviderPricelistAnalyticsSection = ({ providerId, refreshKey = 0 }) => {
                                             Самые резкие изменения цены
                                         </Title>
                                         <Table
+                                            className="compact-table"
                                             size="small"
                                             rowKey={(record) => `price-${item.config_id}-${record.autopart_id}`}
                                             columns={priceChangeColumns}
