@@ -8,7 +8,7 @@ import api from '../api.js';
  * Список входящих писем.
  * @param {Object} params
  * @param {number|null} params.email_account_id
- * @param {number} params.days  1..7
+ * @param {number} params.days  1..366; либо date_from+date_to
  * @param {number} params.page
  * @param {number} params.page_size
  * @param {boolean} params.only_unprocessed

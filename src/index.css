@@ -2137,3 +2137,40 @@ body {
   justify-content: space-between;
   margin: 16px 0 6px;
 }
+
+/* Входящие письма */
+.inbox-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.inbox-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 4px 0;
+}
+
+.inbox-cell-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.inbox-cell-sub {
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+.inbox-subject {
+  color: #1677ff;
+  cursor: pointer;
+}
+
+.inbox-subject:hover {
+  text-decoration: underline;
+}

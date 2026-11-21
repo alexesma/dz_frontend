@@ -5,15 +5,17 @@ import {
     Button,
     Card,
     Collapse,
+    DatePicker,
     Divider,
+    Dropdown,
     Drawer,
     Form,
     Input,
     InputNumber,
     Modal,
     Radio,
+    Segmented,
     Select,
-    Slider,
     Space,
     Steps,
     Spin,
@@ -26,6 +28,8 @@ import {
 import {
     CheckCircleOutlined,
     ClockCircleOutlined,
+    CloseCircleOutlined,
+    EllipsisOutlined,
     FileOutlined,
     InfoCircleOutlined,
     PaperClipOutlined,
@@ -35,6 +39,7 @@ import {
     SettingOutlined,
     UserOutlined,
 } from '@ant-design/icons';
+import dayjs from 'dayjs';
 import { getEmailAccounts } from '../api/emailAccounts';
 import {
     forceProcessInboxEmail,
@@ -220,6 +225,10 @@ const InboxPage = () => {
     const [accounts, setAccounts] = useState([]);
     const [selectedAccountId, setSelectedAccountId] = useState(null);
     const [days, setDays] = useState(DEFAULT_DAYS);
+    const [range, setRange] = useState(null); // [dayjs, dayjs] вместо «N дней»
+    const [statusFilter, setStatusFilter] = useState('');
+    const [statusCounts, setStatusCounts] = useState({});
+    const [moreFilters, setMoreFilters] = useState(false);
     const [subjectContains, setSubjectContains] = useState('');
     const [senderContains, setSenderContains] = useState('');
     const [selectedCustomerId, setSelectedCustomerId] = useState(null);
@@ -317,7 +326,7 @@ const InboxPage = () => {
     // Загрузка писем
     const loadEmails = useCallback(
         async (nextPage = 1, nextSize = pageSize, overrides = {}) => {
-            setLoadingEmails(true);
+            if (!overrides.silent) setLoadingEmails(true);
             try {
                 const effectiveSubject =
                     overrides.subjectContains ?? subjectContains;
@@ -328,7 +337,13 @@ const InboxPage = () => {
                     overrides.selectedProviderId ?? selectedProviderId;
                 const { data } = await getInboxEmails({
                     email_account_id: selectedAccountId ?? undefined,
-                    days,
+                    ...(range?.[0] && range?.[1]
+                        ? {
+                            date_from: range[0].format('YYYY-MM-DD'),
+                            date_to: range[1].format('YYYY-MM-DD'),
+                        }
+                        : { days }),
+                    status: statusFilter || undefined,
                     page: nextPage,
                     page_size: nextSize,
                     subject_contains: effectiveSubject.trim() || undefined,
@@ -338,6 +353,7 @@ const InboxPage = () => {
                 });
                 setEmails(data.items || []);
                 setTotal(data.total || 0);
+                setStatusCounts(data.status_counts || {});
             } catch {
                 message.error('Не удалось загрузить письма');
             } finally {
@@ -347,6 +363,8 @@ const InboxPage = () => {
         [
             selectedAccountId,
             days,
+            range,
+            statusFilter,
             pageSize,
             subjectContains,
             senderContains,
@@ -358,7 +376,18 @@ const InboxPage = () => {
     useEffect(() => {
         setPage(1);
         loadEmails(1, pageSize);
-    }, [selectedAccountId, days]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [selectedAccountId, days, range, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Новые письма появляются сами: тихое обновление раз в минуту,
+    // пока вкладка видна и ничего не открыто.
+    useEffect(() => {
+        const timer = setInterval(() => {
+            if (document.visibilityState !== 'visible') return;
+            if (drawerOpen || ruleModalOpen || page !== 1) return;
+            loadEmails(1, pageSize, { silent: true });
+        }, 60000);
+        return () => clearInterval(timer);
+    }, [drawerOpen, ruleModalOpen, page, pageSize, loadEmails]);
 
     const handleApplySearchFilters = () => {
         setPage(1);
@@ -599,7 +628,7 @@ const InboxPage = () => {
         try {
             const { data } = await fetchInboxEmails({
                 email_account_id: selectedAccountId ?? null,
-                days,
+                days: Math.min(days, 7), // с почтового сервера — не глубже недели
             });
             message.success(
                 `Загружено: ${data.fetched} писем, ` +
@@ -995,14 +1024,21 @@ const InboxPage = () => {
         }
     };
 
-    // Колонки таблицы
+    // Колонки таблицы: фиксированная раскладка, длинное обрезается с подсказкой
     const columns = [
         {
-            title: 'Статус',
+            title: '',
             key: 'status',
-            width: 70,
+            width: 44,
             align: 'center',
             render: (_, record) => {
+                if (record.processing_error) {
+                    return (
+                        <Tooltip title={`Ошибка: ${record.processing_error}`}>
+                            <CloseCircleOutlined style={{ color: '#cf1322', fontSize: 16 }} />
+                        </Tooltip>
+                    );
+                }
                 if (record.processed) {
                     return (
                         <Tooltip title="Обработано">
@@ -1027,74 +1063,74 @@ const InboxPage = () => {
         {
             title: 'От кого',
             key: 'from',
-            width: 220,
+            width: '24%',
             render: (_, record) => (
-                <div>
-                    {record.from_name && (
-                        <div style={{ fontWeight: 500 }}>{record.from_name}</div>
-                    )}
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                        {record.from_email}
-                    </Text>
-                </div>
+                <Tooltip title={`${record.from_name || ''} ${record.from_email}`}>
+                    <div style={{ minWidth: 0 }}>
+                        {record.from_name && (
+                            <div className="inbox-cell-line" style={{ fontWeight: 500 }}>
+                                {record.from_name}
+                            </div>
+                        )}
+                        <div className="inbox-cell-line inbox-cell-sub">{record.from_email}</div>
+                    </div>
+                </Tooltip>
             ),
         },
         {
             title: 'Тема',
             key: 'subject',
             render: (_, record) => (
-                <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                    <Text
-                        style={{ cursor: 'pointer', color: '#1677ff' }}
-                        onClick={() => handleOpenDetail(record.id)}
-                    >
-                        {record.subject || '(без темы)'}
-                    </Text>
+                <div style={{ minWidth: 0 }}>
+                    <Tooltip title={record.subject}>
+                        <div
+                            className="inbox-cell-line inbox-subject"
+                            onClick={() => handleOpenDetail(record.id)}
+                        >
+                            {record.subject || '(без темы)'}
+                        </div>
+                    </Tooltip>
                     {record.has_attachments && (
-                        <Space size={4}>
-                            <PaperClipOutlined style={{ color: '#8c8c8c' }} />
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                                {record.attachment_info?.length || 0} вложений
-                            </Text>
-                        </Space>
+                        <div className="inbox-cell-line inbox-cell-sub">
+                            <PaperClipOutlined /> {record.attachment_info?.length || 0}
+                            {record.attachment_info?.[0]?.name
+                                ? ` · ${record.attachment_info[0].name}`
+                                : ''}
+                        </div>
                     )}
-                </Space>
+                </div>
             ),
         },
         {
             title: 'Получено',
             dataIndex: 'received_at',
             key: 'received_at',
-            width: 160,
+            width: 156,
             render: (val) => (
-                <Text style={{ fontSize: 12 }}>{formatMoscow(val)}</Text>
+                <Text style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{formatMoscow(val)}</Text>
             ),
         },
         {
             title: 'Правило',
             key: 'rule',
-            width: 160,
+            width: 170,
             render: (_, record) => {
                 if (!record.rule_type) {
                     return <Text type="secondary" style={{ fontSize: 12 }}>—</Text>;
                 }
                 return (
-                    <Space direction="vertical" size={2}>
-                        <Tag color={RULE_COLORS[record.rule_type]}>
+                    <Space size={4} wrap={false} style={{ whiteSpace: 'nowrap' }}>
+                        <Tag color={RULE_COLORS[record.rule_type]} style={{ margin: 0 }}>
                             {RULE_LABELS[record.rule_type]}
                         </Tag>
                         {record.rule_auto_detected && (
                             <Tooltip title="Назначено системой автоматически">
-                                <Tag icon={<RobotOutlined />} color="purple" style={{ fontSize: 11 }}>
-                                    авто
-                                </Tag>
+                                <RobotOutlined style={{ color: '#722ed1' }} />
                             </Tooltip>
                         )}
                         {!record.rule_auto_detected && record.rule_set_by_id && (
                             <Tooltip title="Назначено менеджером">
-                                <Tag icon={<UserOutlined />} style={{ fontSize: 11 }}>
-                                    вручную
-                                </Tag>
+                                <UserOutlined style={{ color: '#8c8c8c' }} />
                             </Tooltip>
                         )}
                     </Space>
@@ -1102,47 +1138,46 @@ const InboxPage = () => {
             },
         },
         {
-            title: 'Действие',
+            title: '',
             key: 'action',
-            width: 360,
+            width: 150,
             render: (_, record) => {
                 const mode = forceProcessingIds[record.id];
-                const loadingCheck = mode === 'check';
-                const loadingReprocess = mode === 'reprocess';
                 const loadingAny = Boolean(mode);
+                const menuItems = FORCE_PROCESS_RULES.has(record.rule_type)
+                    ? [
+                        {
+                            key: 'check',
+                            label: 'Проверить (без сброса дедупликации)',
+                            disabled: loadingAny,
+                            onClick: ({ domEvent }) => handleForceProcess(record, domEvent, false),
+                        },
+                        {
+                            key: 'reprocess',
+                            label: 'Повторно обработать (со сбросом)',
+                            disabled: loadingAny,
+                            onClick: ({ domEvent }) => handleForceProcess(record, domEvent, true),
+                        },
+                    ]
+                    : [];
                 return (
-                    <Space size={8} wrap>
+                    <Space size={4} style={{ whiteSpace: 'nowrap' }}>
                         <Button
                             size="small"
                             type={record.rule_type ? 'default' : 'primary'}
                             onClick={(e) => handleOpenRuleModal(record, e)}
                         >
-                            {record.rule_type ? 'Изменить правило' : 'Назначить правило'}
+                            {record.rule_type ? 'Правило' : 'Назначить'}
                         </Button>
-                        {FORCE_PROCESS_RULES.has(record.rule_type) && (
-                            <>
-                                <Tooltip title="Запустить обработку без сброса дедупликации">
-                                    <Button
-                                        size="small"
-                                        loading={loadingCheck}
-                                        disabled={loadingAny}
-                                        onClick={(e) => handleForceProcess(record, e, false)}
-                                    >
-                                        Проверить
-                                    </Button>
-                                </Tooltip>
-                                <Tooltip title="Запустить повторную обработку со сбросом дедупликации">
-                                    <Button
-                                        size="small"
-                                        icon={<ReloadOutlined />}
-                                        loading={loadingReprocess}
-                                        disabled={loadingAny}
-                                        onClick={(e) => handleForceProcess(record, e, true)}
-                                    >
-                                        Повторно обработать
-                                    </Button>
-                                </Tooltip>
-                            </>
+                        {menuItems.length > 0 && (
+                            <Dropdown menu={{ items: menuItems }} trigger={['click']}>
+                                <Button
+                                    size="small"
+                                    icon={<EllipsisOutlined />}
+                                    loading={loadingAny}
+                                    aria-label="Ещё действия"
+                                />
+                            </Dropdown>
                         )}
                     </Space>
                 );
@@ -1168,105 +1203,79 @@ const InboxPage = () => {
 
     return (
         <div style={{ padding: '0 0 24px 0' }}>
-            {/* Заголовок и фильтры */}
-            <Card
-                bodyStyle={{ padding: '16px 20px' }}
-                style={{ marginBottom: 16, borderRadius: 8 }}
-            >
-                <div
-                    style={{
-                        display: 'flex',
-                        gap: 16,
-                        flexWrap: 'wrap',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                    }}
-                >
-                    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-                        {/* Выбор ящика */}
-                        <div>
-                            <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>
-                                Почтовый ящик
-                            </div>
-                            <Select
-                                style={{ minWidth: 260 }}
-                                value={selectedAccountId}
-                                onChange={(val) => {
-                                    setSelectedAccountId(val);
-                                }}
-                                options={accountOptions}
-                                placeholder="Выберите ящик"
-                            />
-                        </div>
-
-                        {/* Глубина */}
-                        <div style={{ minWidth: 220 }}>
-                            <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>
-                                Глубина: <b>{days} {days === 1 ? 'день' : days < 5 ? 'дня' : 'дней'}</b>
-                            </div>
-                            <Slider
-                                min={1}
-                                max={7}
-                                value={days}
-                                onChange={setDays}
-                                marks={{ 1: '1д', 3: '3д', 7: '7д' }}
-                                style={{ margin: '4px 0 0 0' }}
-                            />
-                        </div>
-                    </div>
-
-                    <Button
-                        type="primary"
-                        icon={<ReloadOutlined />}
-                        loading={fetchingFromServer}
-                        onClick={handleFetchFromServer}
-                    >
-                        Загрузить с сервера
+            {/* Фильтры */}
+            <Card bodyStyle={{ padding: '12px 16px' }} style={{ marginBottom: 12, borderRadius: 8 }}>
+                <div className="inbox-filters">
+                    <Select
+                        style={{ width: 240 }}
+                        value={selectedAccountId}
+                        onChange={setSelectedAccountId}
+                        options={accountOptions}
+                        placeholder="Почтовый ящик"
+                    />
+                    <Segmented
+                        value={range ? 'range' : days}
+                        onChange={(value) => {
+                            if (value !== 'range') {
+                                setRange(null);
+                                setDays(value);
+                            }
+                        }}
+                        options={[
+                            { value: 1, label: '1 д' },
+                            { value: 3, label: '3 д' },
+                            { value: 7, label: '7 д' },
+                            { value: 30, label: '30 д' },
+                            ...(range ? [{ value: 'range', label: 'Даты' }] : []),
+                        ]}
+                    />
+                    <DatePicker.RangePicker
+                        value={range}
+                        onChange={(value) => setRange(value && value[0] && value[1] ? value : null)}
+                        format="DD.MM.YYYY"
+                        allowClear
+                        placeholder={['Получено с', 'по']}
+                        style={{ width: 240 }}
+                        maxDate={dayjs()}
+                    />
+                    <Input
+                        allowClear
+                        style={{ width: 220 }}
+                        value={subjectContains}
+                        placeholder="Тема содержит"
+                        onChange={(e) => setSubjectContains(e.target.value)}
+                        onPressEnter={handleApplySearchFilters}
+                    />
+                    <Input
+                        allowClear
+                        style={{ width: 200 }}
+                        value={senderContains}
+                        placeholder="Отправитель"
+                        onChange={(e) => setSenderContains(e.target.value)}
+                        onPressEnter={handleApplySearchFilters}
+                    />
+                    <Button type="primary" onClick={handleApplySearchFilters}>Найти</Button>
+                    <Button onClick={handleResetSearchFilters}>Сбросить</Button>
+                    <Button type="link" onClick={() => setMoreFilters((v) => !v)}>
+                        {moreFilters ? 'Меньше' : 'Клиент / поставщик'}
                     </Button>
+                    <Tooltip title="Забрать новые письма с почтовых серверов (не глубже 7 дней)">
+                        <Button
+                            icon={<ReloadOutlined />}
+                            loading={fetchingFromServer}
+                            onClick={handleFetchFromServer}
+                            style={{ marginLeft: 'auto' }}
+                        >
+                            Загрузить с сервера
+                        </Button>
+                    </Tooltip>
                 </div>
-
-                <div
-                    style={{
-                        marginTop: 12,
-                        display: 'flex',
-                        gap: 12,
-                        flexWrap: 'wrap',
-                        alignItems: 'flex-end',
-                    }}
-                >
-                    <div style={{ minWidth: 220, flex: '1 1 280px' }}>
-                        <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>
-                            Тема содержит
-                        </div>
-                        <Input
-                            allowClear
-                            value={subjectContains}
-                            placeholder="Например: заказ, прайс, ответ"
-                            onChange={(e) => setSubjectContains(e.target.value)}
-                            onPressEnter={handleApplySearchFilters}
-                        />
-                    </div>
-
-                    <div style={{ minWidth: 220, flex: '1 1 260px' }}>
-                        <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>
-                            Адрес отправителя
-                        </div>
-                        <Input
-                            allowClear
-                            value={senderContains}
-                            placeholder="Например: @yandex.ru"
-                            onChange={(e) => setSenderContains(e.target.value)}
-                            onPressEnter={handleApplySearchFilters}
-                        />
-                    </div>
-
-                    <div style={{ minWidth: 220, flex: '1 1 260px' }}>
-                        <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>
-                            Клиент
-                        </div>
+                {moreFilters && (
+                    <div className="inbox-filters" style={{ marginTop: 8 }}>
                         <Select
                             allowClear
                             showSearch
+                            style={{ width: 280 }}
                             optionFilterProp="label"
                             loading={loadingOptions}
                             value={selectedCustomerId}
@@ -1274,15 +1283,10 @@ const InboxPage = () => {
                             options={customerFilterOptions}
                             onChange={(val) => setSelectedCustomerId(val)}
                         />
-                    </div>
-
-                    <div style={{ minWidth: 220, flex: '1 1 300px' }}>
-                        <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>
-                            Поставщик
-                        </div>
                         <Select
                             allowClear
                             showSearch
+                            style={{ width: 300 }}
                             optionFilterProp="label"
                             loading={loadingOptions}
                             value={selectedProviderId}
@@ -1291,35 +1295,39 @@ const InboxPage = () => {
                             onChange={(val) => setSelectedProviderId(val)}
                         />
                     </div>
-
-                    <Space>
-                        <Button type="primary" onClick={handleApplySearchFilters}>
-                            Найти
-                        </Button>
-                        <Button onClick={handleResetSearchFilters}>
-                            Сбросить
-                        </Button>
-                    </Space>
-                </div>
+                )}
             </Card>
 
             {/* Таблица писем */}
             <Card
                 title={
-                    <Space>
+                    <div className="inbox-title">
                         <span>Входящие письма</span>
-                        <Badge count={total} style={{ backgroundColor: '#1677ff' }} />
-                    </Space>
+                        <Segmented
+                            size="small"
+                            value={statusFilter}
+                            onChange={setStatusFilter}
+                            options={[
+                                { value: '', label: `Все ${Object.values(statusCounts).reduce((a, b) => a + b, 0)}` },
+                                { value: 'no_rule', label: `Без правила ${statusCounts.no_rule || 0}` },
+                                { value: 'pending', label: `Ждут обработки ${statusCounts.pending || 0}` },
+                                { value: 'error', label: `Ошибки ${statusCounts.error || 0}` },
+                                { value: 'processed', label: `Обработаны ${statusCounts.processed || 0}` },
+                            ]}
+                        />
+                    </div>
                 }
                 bodyStyle={{ padding: 0 }}
                 style={{ borderRadius: 8 }}
             >
                 <Table
+                    className="compact-table inbox-table"
                     rowKey="id"
                     loading={loadingEmails}
                     dataSource={emails}
                     columns={columns}
-                    size="middle"
+                    size="small"
+                    tableLayout="fixed"
                     pagination={{
                         current: page,
                         pageSize,
