@@ -33,7 +33,7 @@ import {
     exportShipmentProfitReport,
     getShipmentProfitReport,
 } from '../api/inventory';
-import { getCustomers } from '../api/customers';
+import { fetchAllCustomersBrief } from '../api/customers';
 import { getAllProviders } from '../api/providers';
 
 const { RangePicker } = DatePicker;
@@ -130,7 +130,7 @@ const ShipmentProfitReportPage = () => {
         });
         Promise.all([
             getAllProviders({ page_size: 100 }),
-            getCustomers({ page_size: 200 }),
+            fetchAllCustomersBrief(),
         ])
             .then(([providers, customersResponse]) => {
                 setProviderOptions(
@@ -139,7 +139,7 @@ const ShipmentProfitReportPage = () => {
                         label: provider.name,
                     }))
                 );
-                const customers = customersResponse?.data?.items || customersResponse?.data || [];
+                const customers = customersResponse || [];
                 setCustomerOptions(
                     (customers || []).map((customer) => ({
                         value: customer.id,

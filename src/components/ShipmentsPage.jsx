@@ -31,7 +31,7 @@ import {
 import dayjs from 'dayjs';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { searchAutopartsByOem } from '../api/autoparts';
-import { getCustomers } from '../api/customers';
+import { fetchAllCustomersBrief } from '../api/customers';
 import {
     bulkSyncShipments,
     createShipment,
@@ -174,11 +174,11 @@ const ShipmentsPage = ({ title = 'Накладные на отгрузку' }) =
 
     useEffect(() => {
         Promise.all([
-            getCustomers({ page_size: 200 }),
+            fetchAllCustomersBrief(),
             getAllProviders({ page_size: 100 }),
         ])
             .then(([customersResponse, providers]) => {
-                const customers = customersResponse?.data?.items || customersResponse?.data || [];
+                const customers = customersResponse || [];
                 setCustomerOptions(
                     (customers || []).map((customer) => ({
                         value: customer.id,
