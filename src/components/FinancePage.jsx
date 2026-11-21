@@ -26,12 +26,14 @@ import {
     DollarOutlined,
     EditOutlined,
     MailOutlined,
+    PercentageOutlined,
     PlusOutlined,
     PrinterOutlined,
     ReloadOutlined,
     WarningOutlined,
 } from '@ant-design/icons';
 import BankStatementsTab from './BankStatementsTab';
+import DepositsTab from './DepositsTab';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { usePrintDelivery } from '../utils/usePrintDelivery';
@@ -973,6 +975,11 @@ const FinancePage = () => {
             label:    <span><BankOutlined /> Выписки банка</span>,
             children: <BankStatementsTab />,
         },
+        {
+            key:      'deposits',
+            label:    <span><PercentageOutlined /> Депозиты</span>,
+            children: <DepositsTab />,
+        },
     ];
 
     return (
@@ -981,7 +988,7 @@ const FinancePage = () => {
                 <DollarOutlined style={{ marginRight: 8 }} />
                 Финансы
             </Title>
-            <Tabs defaultActiveKey="invoices" items={tabs} destroyInactiveTabPane={false} />
+            <Tabs defaultActiveKey="invoices" size="small" items={tabs} destroyInactiveTabPane={false} />
         </div>
     );
 };
