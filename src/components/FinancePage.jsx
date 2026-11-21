@@ -27,6 +27,7 @@ import {
     EditOutlined,
     MailOutlined,
     PercentageOutlined,
+    PieChartOutlined,
     PlusOutlined,
     PrinterOutlined,
     ReloadOutlined,
@@ -34,6 +35,7 @@ import {
 } from '@ant-design/icons';
 import BankStatementsTab from './BankStatementsTab';
 import DepositsTab from './DepositsTab';
+import ExpensesTab from './ExpensesTab';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { usePrintDelivery } from '../utils/usePrintDelivery';
@@ -979,6 +981,11 @@ const FinancePage = () => {
             key:      'deposits',
             label:    <span><PercentageOutlined /> Депозиты</span>,
             children: <DepositsTab />,
+        },
+        {
+            key:      'expenses',
+            label:    <span><PieChartOutlined /> Расходы</span>,
+            children: <ExpensesTab />,
         },
     ];
 

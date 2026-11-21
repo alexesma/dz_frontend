@@ -1967,3 +1967,173 @@ body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Финансы: расходы и статьи */
+.exp-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
+.exp-chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 4px 0 6px;
+}
+
+.exp-chart {
+  position: relative;
+  background: #fafbfc;
+  border: 1px solid #eef0f3;
+  border-radius: 8px;
+  padding: 6px 4px 2px;
+}
+
+.exp-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 260px;
+}
+
+.exp-chart-empty {
+  padding: 28px 0;
+  text-align: center;
+  color: #8c8c8c;
+  font-size: 13px;
+  background: #fafbfc;
+  border: 1px dashed #dfe3e8;
+  border-radius: 8px;
+}
+
+.exp-tooltip {
+  position: absolute;
+  top: 8px;
+  transform: translateX(-50%);
+  min-width: 170px;
+  max-width: 260px;
+  background: #fff;
+  border: 1px solid #e6e8ec;
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  padding: 6px 10px;
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.exp-tooltip-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.exp-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.exp-tooltip-row > span:last-child {
+  margin-left: auto;
+  padding-left: 8px;
+}
+
+.exp-tooltip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.exp-tooltip-total {
+  border-top: 1px solid #eef0f3;
+  margin-top: 4px;
+  padding-top: 4px;
+  font-weight: 600;
+}
+
+.exp-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin: 8px 0 12px;
+}
+
+.exp-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 2px 8px;
+  border: 1px solid #e6e8ec;
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.exp-legend-item.off {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+.exp-share {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.exp-share-bar {
+  flex: 1 1 auto;
+  min-width: 40px;
+  height: 6px;
+  background: #eef0f3;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.exp-share-bar > div {
+  height: 100%;
+  border-radius: 3px;
+}
+
+.exp-metric-click {
+  cursor: pointer;
+}
+
+.exp-metric-click:hover {
+  border-color: #d48806;
+}
+
+.exp-picker-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.exp-picker-add .ant-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.exp-color-input {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.exp-rules-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 16px 0 6px;
+}

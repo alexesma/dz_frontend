@@ -50,6 +50,13 @@ import dayjs from 'dayjs';
 import api from '../api';
 import { fetchAllCustomersBrief } from '../api/customers';
 import { getAllProviders } from '../api/providers';
+import { CategorizeFields, CategoryTag } from './BankCategoryParts';
+import {
+    categorizeMessage,
+    categorizeTransaction,
+    initialCategorize,
+    useBankCategories,
+} from './bankCategoryUtils';
 
 const { Title, Text, Paragraph } = Typography;
 const { Option } = Select;
@@ -71,8 +78,6 @@ const listStatements   = (params = {}) => api.get('/finance/bank-statements', { 
 const deleteStatement  = (id)          => api.delete(`/finance/bank-statements/${id}`);
 const listTransactions = (id, params)  => api.get(`/finance/bank-statements/${id}/transactions`, { params });
 const autoMatchStmt    = (id)          => api.post(`/finance/bank-statements/${id}/auto-match`);
-const matchTransaction = (stmtId, txnId, data) =>
-    api.patch(`/finance/bank-statements/${stmtId}/transactions/${txnId}`, data);
 const listBankAccounts = ()            => api.get('/finance/bank-accounts');
 const updateBankAccount = (id, data)   => api.patch(`/finance/bank-accounts/${id}`, data);
 const getSuggestions = (stmtId, txnId) =>
@@ -238,8 +243,9 @@ const UploadModal = ({ open, onClose, onUploaded, bankAccounts }) => {
 
 // ── Match transaction modal ───────────────────────────────────────────────────
 
-const MatchModal = ({ open, onClose, onSaved, txn, stmtId, partners }) => {
+const MatchModal = ({ open, onClose, onSaved, txn, stmtId, partners, categories, onCategoriesChanged }) => {
     const [mode,        setMode]        = useState('partner'); // 'partner' | 'ignore'
+    const [category,    setCategory]    = useState({});
     const [partner,     setPartner]     = useState(null);      // 'customer:12' | 'provider:5'
     const [remember,    setRemember]    = useState(true);
     const [note,        setNote]        = useState('');
@@ -248,7 +254,8 @@ const MatchModal = ({ open, onClose, onSaved, txn, stmtId, partners }) => {
 
     useEffect(() => {
         if (!open || !txn) return;
-        setMode('partner');
+        setMode(txn.category ? 'ignore' : 'partner');
+        setCategory(initialCategorize(txn));
         setPartner(null);
         setRemember(true);
         setNote('');
@@ -270,11 +277,17 @@ const MatchModal = ({ open, onClose, onSaved, txn, stmtId, partners }) => {
         setSaving(true);
         try {
             if (mode === 'ignore') {
-                await matchTransaction(stmtId, txn.id, {
-                    ignore: true,
-                    match_note: note || 'Пропущено вручную',
+                if (!category.code) {
+                    message.warning('Выберите статью, например «Аренда» или «Сайт»');
+                    setSaving(false);
+                    return;
+                }
+                const res = await categorizeTransaction(stmtId, txn.id, {
+                    category_code: category.code,
+                    remember: category.remember,
+                    apply_to_past: true,
                 });
-                message.success('Операция пропущена');
+                message.success(categorizeMessage(res.data));
             } else {
                 if (!partner) {
                     message.warning('Выберите клиента или поставщика');
@@ -343,7 +356,7 @@ const MatchModal = ({ open, onClose, onSaved, txn, stmtId, partners }) => {
                 onChange={setMode}
                 options={[
                     { value: 'partner', label: 'На клиента / поставщика' },
-                    { value: 'ignore',  label: 'Не торговая операция' },
+                    { value: 'ignore',  label: 'Налоги, аренда, сайт…' },
                 ]}
                 style={{ margin: '12px 0' }}
             />
@@ -392,13 +405,25 @@ const MatchModal = ({ open, onClose, onSaved, txn, stmtId, partners }) => {
                 </Space>
             )}
 
-            <Input.TextArea
-                rows={2}
-                placeholder="Комментарий (необязательно)"
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                style={{ marginTop: 12 }}
-            />
+            {mode === 'ignore' && (
+                <CategorizeFields
+                    txn={txn}
+                    value={category}
+                    onChange={setCategory}
+                    categories={categories}
+                    onCategoriesChanged={onCategoriesChanged}
+                />
+            )}
+
+            {mode === 'partner' && (
+                <Input.TextArea
+                    rows={2}
+                    placeholder="Комментарий (необязательно)"
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    style={{ marginTop: 12 }}
+                />
+            )}
         </Modal>
     );
 };
@@ -477,6 +502,7 @@ const TransactionsDrawer = ({ open, onClose, statement, partners, onChanged }) =
     const [loading,   setLoading]   = useState(false);
     const [filter,    setFilter]    = useState({ direction: null, status: null });
     const [matchModal, setMatchModal] = useState({ open: false, txn: null });
+    const { categories, byCode, reload: reloadCategories } = useBankCategories();
 
     const load = useCallback(async () => {
         if (!statement) return;
@@ -559,10 +585,14 @@ const TransactionsDrawer = ({ open, onClose, statement, partners, onChanged }) =
             width: 150,
             render: (v, rec) => (
                 <div style={{ minWidth: 0 }}>
-                    <Badge
-                        status={STATUS_COLORS[v] === 'success' ? 'success' : STATUS_COLORS[v] === 'warning' ? 'warning' : 'default'}
-                        text={<Text style={{ fontSize: 12, ...nowrap }}>{STATUS_LABELS[v] || v}</Text>}
-                    />
+                    {rec.category ? (
+                        <CategoryTag code={rec.category} byCode={byCode} />
+                    ) : (
+                        <Badge
+                            status={STATUS_COLORS[v] === 'success' ? 'success' : STATUS_COLORS[v] === 'warning' ? 'warning' : 'default'}
+                            text={<Text style={{ fontSize: 12, ...nowrap }}>{STATUS_LABELS[v] || v}</Text>}
+                        />
+                    )}
                     {rec.match_note && (
                         <Tooltip title={rec.match_note}>
                             <Text type="secondary" style={{ fontSize: 11, ...clip }}>{rec.match_note}</Text>
@@ -575,17 +605,19 @@ const TransactionsDrawer = ({ open, onClose, statement, partners, onChanged }) =
             title: '',
             width: 52,
             align: 'center',
-            render: (_, rec) =>
+            render: (_, rec) => (
                 rec.status === 'unmatched' ? (
-                    <Tooltip title="Разнести на клиента или поставщика">
+                    <Tooltip title="Разнести: клиент, поставщик или статья расхода">
                         <Button size="small" type="primary" ghost icon={<LinkOutlined />}
                             onClick={() => setMatchModal({ open: true, txn: rec })} />
                     </Tooltip>
                 ) : (
-                    <Tooltip title={rec.match_note}>
-                        <CheckCircleOutlined style={{ color: rec.status === 'matched' ? '#27ae60' : '#faad14' }} />
+                    <Tooltip title="Изменить разноску">
+                        <Button size="small" type="text" icon={<EditOutlined />}
+                            onClick={() => setMatchModal({ open: true, txn: rec })} />
                     </Tooltip>
-                ),
+                )
+            ),
         },
     ];
 
@@ -673,6 +705,8 @@ const TransactionsDrawer = ({ open, onClose, statement, partners, onChanged }) =
                 txn={matchModal.txn}
                 stmtId={statement?.id}
                 partners={partners}
+                categories={categories}
+                onCategoriesChanged={reloadCategories}
             />
         </>
     );
