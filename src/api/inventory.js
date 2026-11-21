@@ -289,8 +289,8 @@ export const approveCustomerReturn = (id) =>
 export const shipCustomerReturn = (id) =>
     api.post(`/inventory/customer-returns/${id}/ship/`);
 
-export const confirmCustomerReturn = (id) =>
-    api.post(`/inventory/customer-returns/${id}/confirm/`);
+export const confirmCustomerReturn = (id, scans) =>
+    api.post(`/inventory/customer-returns/${id}/confirm/`, scans);
 
 export const rejectCustomerReturn = (id) =>
     api.post(`/inventory/customer-returns/${id}/reject/`);
@@ -322,8 +322,8 @@ export const deleteSupplierReturnItem = (docId, itemId) =>
 export const approveSupplierReturn = (id) =>
     api.post(`/inventory/supplier-returns/${id}/approve/`);
 
-export const shipSupplierReturn = (id) =>
-    api.post(`/inventory/supplier-returns/${id}/ship/`);
+export const shipSupplierReturn = (id, scans) =>
+    api.post(`/inventory/supplier-returns/${id}/ship/`, scans);
 
 export const confirmSupplierReturn = (id) =>
     api.post(`/inventory/supplier-returns/${id}/confirm/`);

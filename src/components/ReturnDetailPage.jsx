@@ -105,6 +105,7 @@ const ReturnDetailPage = ({ kind }) => {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [detail, setDetail] = useState(null);
+    const [scanText, setScanText] = useState({});
     const [addOpen, setAddOpen] = useState(false);
     const [sourceLoading, setSourceLoading] = useState(false);
     const [sourceItems, setSourceItems] = useState([]);
@@ -383,16 +384,19 @@ const ReturnDetailPage = ({ kind }) => {
     }, [docId, isCustomer, loadDetail]);
 
     const runAction = async (action) => {
+        const scans = Object.fromEntries((detail.items || [])
+            .map((row) => [row.id, (scanText[row.id] || '').split(/\r?\n/).map((v) => v.trim()).filter(Boolean)])
+            .filter(([, codes]) => codes.length));
         setSaving(true);
         try {
             if (isCustomer) {
                 if (action === 'approve') await approveCustomerReturn(docId);
                 if (action === 'ship') await shipCustomerReturn(docId);
-                if (action === 'confirm') await confirmCustomerReturn(docId);
+                if (action === 'confirm') await confirmCustomerReturn(docId, scans);
                 if (action === 'reject') await rejectCustomerReturn(docId);
             } else {
                 if (action === 'approve') await approveSupplierReturn(docId);
-                if (action === 'ship') await shipSupplierReturn(docId);
+                if (action === 'ship') await shipSupplierReturn(docId, scans);
                 if (action === 'confirm') await confirmSupplierReturn(docId);
                 if (action === 'reject') await rejectSupplierReturn(docId);
             }
@@ -519,6 +523,7 @@ const ReturnDetailPage = ({ kind }) => {
         signatureForm,
     ]);
 
+    const scanningReturn = detail?.status === 'approved' || (isCustomer && detail?.status === 'shipped');
     const itemColumns = useMemo(() => [
         {
             title: 'Источник',
@@ -546,6 +551,22 @@ const ReturnDetailPage = ({ kind }) => {
             title: 'Количество',
             dataIndex: 'quantity',
             width: 110,
+        },
+        {
+            title: 'Коды маркировки',
+            key: 'marking_codes',
+            render: (_, row) => scanningReturn ? (
+                <Input.TextArea
+                    aria-label={`Коды маркировки строки ${row.id}`}
+                    placeholder="Сканируйте по одному коду на строку"
+                    autoSize={{ minRows: 1, maxRows: 5 }}
+                    value={scanText[row.id] || ''}
+                    onChange={(event) => {
+                        const value = event.target.value;
+                        setScanText((prev) => ({ ...prev, [row.id]: value }));
+                    }}
+                />
+            ) : (row.marking_codes || []).join(', ') || '—',
         },
         {
             title: 'Цена',
@@ -585,7 +606,7 @@ const ReturnDetailPage = ({ kind }) => {
                 </Popconfirm>
             ),
         }] : []),
-    ], [handleDeleteItem, isEditable]);
+    ], [handleDeleteItem, isEditable, scanText, scanningReturn]);
 
     if (loading && !detail) {
         return <Spin fullscreen />;
