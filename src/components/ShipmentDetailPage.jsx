@@ -56,6 +56,7 @@ import {
 import { searchAutopartsByOem } from '../api/autoparts';
 import { getStorageLocations, getWarehouses } from '../api/storage';
 import useAuth from '../context/useAuth';
+import ImportedShipmentLines from './ImportedShipmentLines';
 import ShipmentBoxes from './ShipmentBoxes';
 import ShipmentMarkingCheck from './ShipmentMarkingCheck';
 import ShipmentMarkingScan from './ShipmentMarkingScan';
@@ -1129,15 +1130,6 @@ const ShipmentDetailPage = () => {
                         showIcon
                     />
                 )}
-                {isImported && (
-                    <Alert
-                        type="info"
-                        message="Реализация загружена из УПД Диадока (оформлена вне системы)"
-                        description="Остатки и резервы не затронуты, в 1С и ЭДО она повторно не отправляется. Строки, которых нет в номенклатуре, указаны в примечании."
-                        style={{ marginBottom: 12 }}
-                        showIcon
-                    />
-                )}
                 {isPosted && (
                     <Alert
                         type="success"
@@ -1146,6 +1138,9 @@ const ShipmentDetailPage = () => {
                         showIcon
                     />
                 )}
+                {isImported ? (
+                    <ImportedShipmentLines shipment={shipment} onChanged={fetchShipment} />
+                ) : (
                 <Table
                     rowKey="id"
                     columns={itemColumns}
@@ -1176,6 +1171,7 @@ const ShipmentDetailPage = () => {
                         ) : null
                     }
                 />
+                )}
             </Card>
 
             <ShipmentMarkingScan
