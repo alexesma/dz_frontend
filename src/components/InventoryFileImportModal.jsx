@@ -5,7 +5,7 @@
  * Применение идёт в фоне на сервере, здесь показывается ход выполнения.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Button, Descriptions, Modal, Popconfirm, Progress, Space, Typography, Upload, message } from 'antd';
+import { Alert, Button, Collapse, Descriptions, Modal, Popconfirm, Progress, Space, Table, Typography, Upload, message } from 'antd';
 import { InboxOutlined } from '@ant-design/icons';
 import api from '../api';
 
@@ -121,7 +121,46 @@ const InventoryFileImportModal = ({ open, onClose, onDone }) => {
                     <Descriptions.Item label="Старых мест удалить">{n(report.old_locations_to_delete)}</Descriptions.Item>
                     <Descriptions.Item label="Позиций будет обнулено">{n(report.positions_zeroed)} ({n(report.quantity_zeroed)} шт.)</Descriptions.Item>
                     <Descriptions.Item label="Без места («BEZ MESTA»)">{n(report.no_location_rows)}</Descriptions.Item>
+                    <Descriptions.Item label="Вне загрузки (др. склады, системные)">{n(report.out_of_scope_quantity)} шт.</Descriptions.Item>
+                    <Descriptions.Item label="Резервов под заказы">{n(report.reserved_quantity)} шт., без остатка: {n(report.reserved_conflicts)} поз.</Descriptions.Item>
+                    <Descriptions.Item label="Остаток по складам" span={2}>
+                        {Object.entries(report.stock_by_warehouse || {}).map(([k, v]) => `${k}: ${n(v)}`).join(' · ') || '—'}
+                    </Descriptions.Item>
                 </Descriptions>
+            )}
+            {report && (
+                <Collapse
+                    size="small"
+                    style={{ marginBottom: 12 }}
+                    items={[
+                        {
+                            key: 'zeroed',
+                            label: `Что обнулится: крупнейшие позиции (больше 1000 шт.: ${n(report.zeroed_over_1000)})`,
+                            children: (
+                                <Table
+                                    size="small"
+                                    rowKey={(r) => `${r.brand}-${r.article}`}
+                                    pagination={false}
+                                    dataSource={report.top_zeroed || []}
+                                    columns={[
+                                        { title: 'Бренд', dataIndex: 'brand', width: 110 },
+                                        { title: 'Артикул', dataIndex: 'article', width: 140 },
+                                        { title: 'Название', dataIndex: 'name', ellipsis: true },
+                                        { title: 'Шт.', dataIndex: 'quantity', width: 80, align: 'right', render: n },
+                                        { title: 'Места', dataIndex: 'locations', width: 130, render: (v) => (v || []).join(', ') },
+                                    ]}
+                                />
+                            ),
+                        },
+                        ...(report.skipped_count ? [{
+                            key: 'skipped',
+                            label: `Пропущено (ошибочный бренд): ${n(report.skipped_count)}`,
+                            children: (report.skipped_positions || []).map((r) => (
+                                <div key={`${r.brand}-${r.article}`}>{r.brand} · {r.article} · {r.name} · {r.quantity} шт.</div>
+                            )),
+                        }] : []),
+                    ]}
+                />
             )}
 
             {job && (
