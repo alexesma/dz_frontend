@@ -5,9 +5,10 @@
  * Применение идёт в фоне на сервере, здесь показывается ход выполнения.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Button, Collapse, Descriptions, Modal, Popconfirm, Progress, Space, Switch, Table, Typography, Upload, message } from 'antd';
+import { Alert, Button, Collapse, Descriptions, Modal, Popconfirm, Progress, Select, Space, Switch, Table, Typography, Upload, message } from 'antd';
 import { InboxOutlined } from '@ant-design/icons';
 import api from '../api';
+import { lookupBrands } from '../api/brands';
 
 const { Text } = Typography;
 const n = (v) => Number(v || 0).toLocaleString('ru-RU');
@@ -17,18 +18,21 @@ const InventoryFileImportModal = ({ open, onClose, onDone }) => {
     const [report, setReport] = useState(null);
     const [checking, setChecking] = useState(false);
     const [zeroMissing, setZeroMissing] = useState(false);
+    const [decisions, setDecisions] = useState({}); // ключ бренда -> {action, brand_id}
+    const [found, setFound] = useState({}); // результаты поиска брендов по ключу
     const [job, setJob] = useState(null);
     const timer = useRef(null);
 
     useEffect(() => () => clearTimeout(timer.current), []);
     useEffect(() => {
-        if (!open) { setFile(null); setReport(null); setJob(null); }
+        if (!open) { setFile(null); setReport(null); setJob(null); setDecisions({}); setFound({}); }
     }, [open]);
 
     const form = (extra = {}) => {
         const data = new FormData();
         data.append('file', file);
         data.append('zero_missing', zeroMissing ? 'true' : 'false');
+        data.append('brand_decisions', JSON.stringify(decisions));
         Object.entries(extra).forEach(([k, v]) => data.append(k, v));
         return data;
     };
@@ -68,6 +72,30 @@ const InventoryFileImportModal = ({ open, onClose, onDone }) => {
         } catch (err) {
             message.error(err?.response?.data?.detail || 'Не удалось запустить');
         }
+    };
+
+    const searchBrand = async (key, q) => {
+        if (!q || q.length < 2) return;
+        try {
+            const res = await lookupBrands(q, 20, [], true);
+            setFound((prev) => ({
+                ...prev,
+                [key]: (res.data || []).map((b) => ({ value: `map:${b.id}`, label: b.name })),
+            }));
+        } catch { /* ignore */ }
+    };
+
+    const choose = (key, value) => {
+        if (value === 'create') setDecisions((p) => { const n2 = { ...p }; delete n2[key]; return n2; });
+        else if (value === 'skip') setDecisions((p) => ({ ...p, [key]: { action: 'skip' } }));
+        else setDecisions((p) => ({ ...p, [key]: { action: 'map', brand_id: Number(String(value).split(':')[1]) } }));
+        setReport((r) => r); // решения применяются при следующей проверке
+    };
+
+    const decisionValue = (key) => {
+        const d = decisions[key];
+        if (!d) return 'create';
+        return d.action === 'skip' ? 'skip' : `map:${d.brand_id}`;
     };
 
     const running = job && !['done', 'error'].includes(job.state);
@@ -129,7 +157,7 @@ const InventoryFileImportModal = ({ open, onClose, onDone }) => {
                     <Descriptions.Item label="Позиций в файле">{n(report.positions)}</Descriptions.Item>
                     <Descriptions.Item label="Найдено в номенклатуре">{n(report.matched_positions)}</Descriptions.Item>
                     <Descriptions.Item label="Будет создано позиций">{n(report.new_autoparts)}</Descriptions.Item>
-                    <Descriptions.Item label="Новых брендов">{n(report.new_brands_count)}</Descriptions.Item>
+                    <Descriptions.Item label="Новых брендов (создадутся)">{n(report.new_brands_count)}</Descriptions.Item>
                     <Descriptions.Item label="Количество в файле">{n(report.file_quantity)}</Descriptions.Item>
                     <Descriptions.Item label="Сейчас в системе">{n(report.current_quantity)}</Descriptions.Item>
                     <Descriptions.Item label="Мест в файле / новых">{n(report.file_locations)} / {n(report.new_locations)}</Descriptions.Item>
@@ -147,7 +175,50 @@ const InventoryFileImportModal = ({ open, onClose, onDone }) => {
                 <Collapse
                     size="small"
                     style={{ marginBottom: 12 }}
+                    defaultActiveKey={['brands']}
                     items={[
+                        ...((report.new_brands || []).length ? [{
+                            key: 'brands',
+                            label: `Новые бренды: ${n(report.new_brands.length)} — выберите, что делать (после выбора нажмите «Проверить»)`,
+                            children: (
+                                <Table
+                                    size="small"
+                                    rowKey="key"
+                                    pagination={false}
+                                    dataSource={report.new_brands}
+                                    columns={[
+                                        { title: 'Бренд в файле', dataIndex: 'name', width: 150 },
+                                        { title: 'Поз. / шт.', width: 80, render: (_, r) => `${r.positions} / ${r.quantity}` },
+                                        {
+                                            title: 'Решение',
+                                            render: (_, r) => (
+                                                <Select
+                                                    showSearch
+                                                    filterOption={false}
+                                                    style={{ width: '100%' }}
+                                                    value={decisionValue(r.key)}
+                                                    onSearch={(q) => searchBrand(r.key, q)}
+                                                    onChange={(v) => choose(r.key, v)}
+                                                    options={[
+                                                        { value: 'create', label: 'Создать как новый бренд' },
+                                                        { value: 'skip', label: 'Отказ (не загружать позиции)' },
+                                                        ...((r.suggestions || []).length ? [{
+                                                            label: 'Похожие в системе',
+                                                            options: r.suggestions.map((b) => ({ value: `map:${b.id}`, label: `Сопоставить: ${b.name}` })),
+                                                        }] : []),
+                                                        ...((found[r.key] || []).length ? [{
+                                                            label: 'Найдено поиском',
+                                                            options: found[r.key].map((b) => ({ value: b.value, label: `Сопоставить: ${b.label}` })),
+                                                        }] : []),
+                                                    ]}
+                                                    placeholder="Введите название бренда для поиска"
+                                                />
+                                            ),
+                                        },
+                                    ]}
+                                />
+                            ),
+                        }] : []),
                         {
                             key: 'zeroed',
                             label: `${report.zero_missing ? 'Что обнулится' : 'Нет в файле (останутся)'}: крупнейшие позиции (больше 1000 шт.: ${n(report.zeroed_over_1000)})`,
