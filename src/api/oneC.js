@@ -105,3 +105,12 @@ export const uploadUnfStockReport = (file) => {
     formData.append('file', file);
     return api.post('/1c/stock-reconciliation/upload', formData, { timeout: 180000 });
 };
+
+export const getOneCOpeningBalancePreview = () =>
+    api.get('/1c/enterprise-data/opening-balance/preview');
+
+export const createOneCOpeningBalance = (documentDate) =>
+    api.post('/1c/enterprise-data/opening-balance', {
+        document_date: documentDate,
+        confirm: 'OPENING',
+    });

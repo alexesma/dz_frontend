@@ -50,6 +50,8 @@ import {
     importSalesHistory,
     prepareOneCEnterpriseReceipt,
     quarantineOneCEnterpriseHistoryProblems,
+    getOneCOpeningBalancePreview,
+    createOneCOpeningBalance,
     resetOneCExport,
     retryOneCEvent,
     retryOneCEnterpriseErrors,
@@ -111,6 +113,10 @@ const OneCExchangePage = () => {
     const [historyBackfilling, setHistoryBackfilling] = useState(false);
     const [historyQuarantining, setHistoryQuarantining] = useState(false);
     const [restoringEnterpriseId, setRestoringEnterpriseId] = useState(null);
+    const [openingPreview, setOpeningPreview] = useState(null);
+    const [openingLoading, setOpeningLoading] = useState(false);
+    const [openingCreating, setOpeningCreating] = useState(false);
+    const [openingDate, setOpeningDate] = useState(dayjs('2026-11-21'));
     const [statusLoading, setStatusLoading] = useState(false);
     const [period, setPeriod] = useState([
         dayjs().startOf('month'),
@@ -326,6 +332,31 @@ const OneCExchangePage = () => {
             message.error(err?.response?.data?.detail || 'Не удалось подготовить историю');
         } finally {
             setHistoryBackfilling(false);
+        }
+    };
+
+    const handleOpeningPreview = async () => {
+        setOpeningLoading(true);
+        try {
+            const { data } = await getOneCOpeningBalancePreview();
+            setOpeningPreview(data);
+        } catch (err) {
+            message.error(err?.response?.data?.detail || 'Не удалось собрать остатки');
+        } finally {
+            setOpeningLoading(false);
+        }
+    };
+
+    const handleOpeningCreate = async () => {
+        setOpeningCreating(true);
+        try {
+            const { data } = await createOneCOpeningBalance(openingDate.format('YYYY-MM-DD'));
+            message.success(`Документ №${data.document_id} поставлен в очередь обмена (строк: ${data.lines})`);
+            await Promise.all([handleOpeningPreview(), loadStatus()]);
+        } catch (err) {
+            message.error(err?.response?.data?.detail || 'Не удалось создать документ остатков');
+        } finally {
+            setOpeningCreating(false);
         }
     };
 
@@ -863,6 +894,43 @@ const OneCExchangePage = () => {
                                 { key: 'quarantine', label: 'В карантине обмена', children: historyAudit.quarantined_event_count ?? 0 },
                             ]} />
                     )}
+                    <Card size="small" title="Начальные остатки основного склада" style={{ marginTop: 16 }}>
+                        <Space wrap>
+                            <DatePicker value={openingDate} onChange={(v) => v && setOpeningDate(v)}
+                                format="DD.MM.YYYY" allowClear={false} />
+                            <Button loading={openingLoading} onClick={handleOpeningPreview}>Собрать предпросмотр</Button>
+                            <Popconfirm
+                                title="Создать документ оприходования и поставить в очередь 1С?"
+                                description="Остатки в нашей системе не изменятся. Документ создаётся один раз."
+                                okText="Создать" cancelText="Отмена"
+                                onConfirm={handleOpeningCreate}
+                                disabled={!openingPreview || openingPreview.existing_document_id}
+                            >
+                                <Button type="primary" loading={openingCreating}
+                                    disabled={!openingPreview || !!openingPreview.existing_document_id}>
+                                    Выгрузить остатки в 1С
+                                </Button>
+                            </Popconfirm>
+                        </Space>
+                        {openingPreview && (
+                            <Descriptions size="small" column={2} style={{ marginTop: 12 }}
+                                items={[
+                                    { key: 'wh', label: 'Склад', children: openingPreview.warehouse?.name },
+                                    { key: 'pos', label: 'Позиций', children: openingPreview.positions },
+                                    { key: 'lines', label: 'Строк документа', children: openingPreview.lines },
+                                    { key: 'qty', label: 'Штук', children: openingPreview.quantity },
+                                    { key: 'amt', label: 'Сумма по себестоимости, ₽', children: openingPreview.amount },
+                                    { key: 'gtd', label: 'Строк с ГТД', children: openingPreview.lines_with_gtd },
+                                    { key: 'nocost', label: 'Штук без себестоимости', children: openingPreview.quantity_without_cost },
+                                    { key: 'short', label: 'Позиций, где партий меньше остатка', children: openingPreview.positions_lots_short },
+                                    { key: 'over', label: 'Позиций, где партий больше остатка', children: openingPreview.positions_lots_over },
+                                ]} />
+                        )}
+                        {openingPreview?.existing_document_id && (
+                            <Alert showIcon type="info" style={{ marginTop: 12 }}
+                                message={`Документ остатков уже создан (№${openingPreview.existing_document_id}); повторно выгружать нельзя`} />
+                        )}
+                    </Card>
                     {enterpriseExcluded.length > 0 && (
                         <Table size="small" style={{ marginTop: 12 }}
                             rowKey="id" dataSource={enterpriseExcluded}
