@@ -67,8 +67,8 @@ const { Option } = Select;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const STATUS_COLORS = { draft: 'default', posted: 'success', cancelled: 'error' };
-const STATUS_LABELS = { draft: 'Черновик', posted: 'Проведён', cancelled: 'Отменён' };
+const STATUS_COLORS = { draft: 'default', posted: 'success', cancelled: 'error', imported: 'purple' };
+const STATUS_LABELS = { draft: 'Черновик', posted: 'Проведён', cancelled: 'Отменён', imported: 'Из Диадока' };
 const DIADOC_COLORS = { draft: 'default', sent: 'success', error: 'error' };
 const DIADOC_LABELS = { draft: 'Черновик', sent: 'Отправлен', error: 'Ошибка' };
 
@@ -480,6 +480,7 @@ const ShipmentDetailPage = () => {
     const isDraft     = shipment?.status === 'draft';
     const isPosted    = shipment?.status === 'posted';
     const isCancelled = shipment?.status === 'cancelled';
+    const isImported  = shipment?.status === 'imported';
     const latestDiadocDoc = diadocDocs[0] || null;
 
     const handleAddItem = async (data) => {
@@ -1124,6 +1125,15 @@ const ShipmentDetailPage = () => {
                     <Alert
                         type="warning"
                         message="Накладная отменена"
+                        style={{ marginBottom: 12 }}
+                        showIcon
+                    />
+                )}
+                {isImported && (
+                    <Alert
+                        type="info"
+                        message="Реализация загружена из УПД Диадока (оформлена вне системы)"
+                        description="Остатки и резервы не затронуты, в 1С и ЭДО она повторно не отправляется. Строки, которых нет в номенклатуре, указаны в примечании."
                         style={{ marginBottom: 12 }}
                         showIcon
                     />

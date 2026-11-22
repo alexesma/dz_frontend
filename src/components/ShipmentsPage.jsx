@@ -54,8 +54,8 @@ const { RangePicker } = DatePicker;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const STATUS_COLORS = { draft: 'default', posted: 'success', cancelled: 'error' };
-const STATUS_LABELS = { draft: 'Черновик', posted: 'Проведён', cancelled: 'Отменён' };
+const STATUS_COLORS = { draft: 'default', posted: 'success', cancelled: 'error', imported: 'purple' };
+const STATUS_LABELS = { draft: 'Черновик', posted: 'Проведён', cancelled: 'Отменён', imported: 'Из Диадока' };
 
 const fmtDate = (d) => (d ? dayjs(d).format('DD.MM.YYYY HH:mm') : '—');
 
@@ -677,6 +677,7 @@ const ShipmentsPage = ({ title = 'Накладные на отгрузку' }) =
                             <Option value="draft">Черновик</Option>
                             <Option value="posted">Проведён</Option>
                             <Option value="cancelled">Отменён</Option>
+                            <Option value="imported">Из Диадока</Option>
                         </Select>
                     </Form.Item>
                     <Form.Item name="doc_number" style={{ marginBottom: 4 }}>
