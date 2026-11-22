@@ -414,6 +414,9 @@ const NomenclaturePage = () => {
 
     // Initial fetch and page-change fetch
     useEffect(() => {
+        // Во всплывающем окне нужна только карточка: полный каталог (сотни
+        // тысяч позиций с подсчётом) не загружаем — это и тормозило открытие.
+        if (embedded) return;
         fetchList(
             qOem, qName, qBrand, page, sourceFilter, contentFilter,
             linksFilter, turnoverFilter, hsFilter,
@@ -1450,7 +1453,7 @@ const NomenclaturePage = () => {
                     title="Карточка номенклатуры"
                     onCancel={() => { setSelectedRow(null); setDetail(null); }}
                     footer={null}
-                    styles={{ body: { maxHeight: '78vh', overflowY: 'auto' } }}
+                    styles={{ body: { maxHeight: embedded ? 'calc(100vh - 130px)' : '78vh', overflowY: 'auto' } }}
                 >
                     {detailLoading ? (
                         <Spin tip="Загрузка..." style={{ display: 'block', textAlign: 'center', padding: 24 }} />
@@ -1611,7 +1614,9 @@ const NomenclaturePage = () => {
                 title={editingId ? 'Редактирование позиции' : 'Новая позиция'}
                 centered
                 mask={!embedded}
-                width={embedded ? 'calc(100vw - 24px)' : 1180}
+                width={embedded ? '100vw' : 1180}
+                style={embedded ? { top: 0, paddingBottom: 0, maxWidth: '100vw' } : undefined}
+                wrapClassName={embedded ? 'embedded-autopart-modal' : undefined}
                 loading={drawerLoading}
                 footer={
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>

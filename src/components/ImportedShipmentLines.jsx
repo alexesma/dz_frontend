@@ -18,6 +18,15 @@ const { Text } = Typography;
 const money = (v) =>
     v != null ? Number(v).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
 
+// НДС строки: из УПД, а если его там нет — считаем из суммы с НДС и ставки.
+const lineVat = (row) => {
+    if (row.import_vat_amount != null) return Number(row.import_vat_amount);
+    const gross = Number(row.price || 0) * row.quantity;
+    const rate = Number(row.vat_rate || 0);
+    if (!gross) return null;
+    return gross - gross / (1 + rate / 100);
+};
+
 const CodesTag = ({ codes }) => {
     const list = codes || [];
     if (!list.length) return <Text type="secondary">—</Text>;
@@ -118,7 +127,7 @@ const ReviewTable = ({ shipment, onChanged }) => {
 const ImportedShipmentLines = ({ shipment, onChanged }) => {
     const items = shipment.items || [];
     const total = items.reduce((sum, it) => sum + Number(it.price || 0) * it.quantity, 0);
-    const vatTotal = items.reduce((sum, it) => sum + Number(it.import_vat_amount || 0), 0);
+    const vatTotal = items.reduce((sum, it) => sum + (lineVat(it) || 0), 0);
 
     const one = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 };
     const columns = [
@@ -134,6 +143,7 @@ const ImportedShipmentLines = ({ shipment, onChanged }) => {
                         </Tooltip>
                         <Text strong>{row.stock_autopart_oem}</Text>
                         {row.stock_autopart_brand && <Tag style={{ margin: '0 0 0 6px', fontSize: 11 }}>{row.stock_autopart_brand}</Tag>}
+                        <OpenProductButton autopartId={row.autopart_id} onSaved={onChanged} />
                     </div>
                     <Tooltip title={row.stock_autopart_name}>
                         <div style={{ ...one, fontSize: 12, color: '#8c8c8c' }}>{row.stock_autopart_name}</div>
@@ -156,13 +166,13 @@ const ImportedShipmentLines = ({ shipment, onChanged }) => {
         { title: 'Кол', dataIndex: 'quantity', width: 46, align: 'right' },
         { title: 'Цена', dataIndex: 'price', width: 80, align: 'right', render: (v) => <span style={{ whiteSpace: 'nowrap' }}>{money(v)}</span> },
         {
-            title: 'НДС',
+            title: <Tooltip title="Сумма НДС в строке, под ней ставка"><span>НДС</span></Tooltip>,
             width: 82,
             align: 'right',
             render: (_, row) => (
                 <div style={{ whiteSpace: 'nowrap' }}>
-                    <div style={{ fontSize: 12 }}>{money(row.import_vat_amount)}</div>
-                    <div style={{ fontSize: 11, color: '#8c8c8c' }}>{Number(row.vat_rate)} %</div>
+                    <div style={{ fontSize: 12 }}>{money(lineVat(row))} ₽</div>
+                    <div style={{ fontSize: 11, color: '#8c8c8c' }}>ставка {Number(row.vat_rate)} %</div>
                 </div>
             ),
         },
@@ -181,12 +191,6 @@ const ImportedShipmentLines = ({ shipment, onChanged }) => {
                 ) : <Text type="secondary">—</Text>,
         },
         { title: 'Маркир.', dataIndex: 'import_marking_codes', width: 70, render: (v) => <CodesTag codes={v} /> },
-        {
-            title: '',
-            width: 36,
-            align: 'center',
-            render: (_, row) => <OpenProductButton autopartId={row.autopart_id} onSaved={onChanged} />,
-        },
     ];
 
     return (
@@ -214,7 +218,7 @@ const ImportedShipmentLines = ({ shipment, onChanged }) => {
                         <Table.Summary.Cell index={2} />
                         <Table.Summary.Cell index={3} align="right"><Text strong>{money(vatTotal)}</Text></Table.Summary.Cell>
                         <Table.Summary.Cell index={4} align="right"><Text strong>{money(total)}</Text></Table.Summary.Cell>
-                        <Table.Summary.Cell index={5} colSpan={3} />
+                        <Table.Summary.Cell index={5} colSpan={2} />
                     </Table.Summary.Row>
                 )}
             />

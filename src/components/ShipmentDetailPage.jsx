@@ -409,15 +409,16 @@ const ShipmentDetailPage = () => {
         return fallback;
     };
 
-    const fetchShipment = useCallback(async () => {
-        setLoading(true);
+    const fetchShipment = useCallback(async (silent = false) => {
+        // silent: обновить данные без полноэкранного спиннера (после правки товара).
+        if (!silent) setLoading(true);
         try {
             const res = await getShipment(id);
             setShipment(res.data);
         } catch {
             message.error('Ошибка загрузки накладной');
         } finally {
-            setLoading(false);
+            if (!silent) setLoading(false);
         }
     }, [id]);
 
@@ -463,11 +464,11 @@ const ShipmentDetailPage = () => {
     useEffect(() => {
         if (!id || !canUseDiadoc) return;
         loadDiadocDocs();
-        loadDiadocReadiness();
-    }, [canUseDiadoc, id, loadDiadocDocs, loadDiadocReadiness]);
+    }, [canUseDiadoc, id, loadDiadocDocs]);
 
     useEffect(() => {
-        if (!id || !canUseDiadoc || !shipment) return;
+        // Готовность к Диадоку тяжёлая и не нужна для импортных реализаций.
+        if (!id || !canUseDiadoc || !shipment || shipment.status === 'imported') return;
         loadDiadocReadiness();
     }, [
         canUseDiadoc,
@@ -703,6 +704,7 @@ const ShipmentDetailPage = () => {
                                 {row.stock_autopart_brand || row.autopart_brand}
                             </Tag>
                         )}
+                        <OpenProductButton autopartId={row.autopart_id} onSaved={() => fetchShipment(true)} />
                     </div>
                     <Tooltip title={row.autopart_name}>
                         <div style={{ ...oneLine, fontSize: 12, color: '#8c8c8c' }}>{row.autopart_name}</div>
@@ -761,13 +763,13 @@ const ShipmentDetailPage = () => {
             width: '14%',
             ellipsis: true,
         },
+        ...(isDraft ? [
         {
             title: '',
             key: 'actions',
-            width: isDraft ? 96 : 40,
+            width: isDraft ? 64 : 0,
             render: (_, row) => (
                 <Space size={0}>
-                    <OpenProductButton autopartId={row.autopart_id} onSaved={fetchShipment} />
                     {isDraft && (
                         <>
                             <Tooltip title="Редактировать строку">
@@ -790,7 +792,8 @@ const ShipmentDetailPage = () => {
                     )}
                 </Space>
             ),
-        },
+        }
+        ] : []),
     ];
 
     if (loading) {
@@ -1149,7 +1152,7 @@ const ShipmentDetailPage = () => {
                     />
                 )}
                 {isImported ? (
-                    <ImportedShipmentLines shipment={shipment} onChanged={fetchShipment} />
+                    <ImportedShipmentLines shipment={shipment} onChanged={() => fetchShipment(true)} />
                 ) : (
                 <Table
                     rowKey="id"

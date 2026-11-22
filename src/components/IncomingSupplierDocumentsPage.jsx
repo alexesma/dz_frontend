@@ -1016,6 +1016,7 @@ const IncomingSupplierDocumentsPage = () => {
                         <div style={oneLine}>
                             <Text strong>{row.oem_number || '—'}</Text>
                             {row.brand_name && <Tag style={{ margin: '0 0 0 6px', fontSize: 11 }}>{row.brand_name}</Tag>}
+                            <OpenProductButton autopartId={row.autopart_id} onSaved={() => reloadDetail(detailReceipt.id)} />
                         </div>
                         <Tooltip title={row.autopart_name}>
                             <div style={{ ...oneLine, fontSize: 12, color: '#8c8c8c' }}>{row.autopart_name || '—'}</div>
@@ -1104,13 +1105,12 @@ const IncomingSupplierDocumentsPage = () => {
         const vatCols = [];
         const extraCols = [];
 
-        const actionCol = [{
+        const actionCol = isDraft ? [{
             title: '',
             key: 'del',
-            width: isDraft ? 72 : 36,
+            width: 40,
             render: (_, row) => (
                 <Space size={0}>
-                    <OpenProductButton autopartId={row.autopart_id} onSaved={() => detailReceipt && reloadDetail(detailReceipt.id)} />
                     {isDraft && (
                         <Popconfirm
                             title="Удалить строку?"
@@ -1122,7 +1122,7 @@ const IncomingSupplierDocumentsPage = () => {
                     )}
                 </Space>
             ),
-        }];
+        }] : [];
 
         if (!editMode) {
             return [...baseColsView, ...vatCols, ...extraCols, ...actionCol];
@@ -1153,17 +1153,25 @@ const IncomingSupplierDocumentsPage = () => {
             {
                 title: 'Позиция', key: 'position', width: '26%',
                 render: (_, row) => (
-                    <ArticleSearchCell
-                        currentOem={editedItems[row.id]?.oem_number ?? row.oem_number}
-                        currentBrand={editedItems[row.id]?.brand_name ?? row.brand_name}
-                        currentName={editedItems[row.id]?.autopart_name ?? row.autopart_name}
-                        onSelect={(part) => {
-                            setItemField(row.id, 'autopart_id', part.id);
-                            setItemField(row.id, 'oem_number', part.oem_number);
-                            setItemField(row.id, 'brand_name', part.brand);
-                            setItemField(row.id, 'autopart_name', part.name || '');
-                        }}
-                    />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <ArticleSearchCell
+                                currentOem={editedItems[row.id]?.oem_number ?? row.oem_number}
+                                currentBrand={editedItems[row.id]?.brand_name ?? row.brand_name}
+                                currentName={editedItems[row.id]?.autopart_name ?? row.autopart_name}
+                                onSelect={(part) => {
+                                    setItemField(row.id, 'autopart_id', part.id);
+                                    setItemField(row.id, 'oem_number', part.oem_number);
+                                    setItemField(row.id, 'brand_name', part.brand);
+                                    setItemField(row.id, 'autopart_name', part.name || '');
+                                }}
+                            />
+                        </div>
+                        <OpenProductButton
+                            autopartId={editedItems[row.id]?.autopart_id ?? row.autopart_id}
+                            onSaved={() => reloadDetail(detailReceipt.id)}
+                        />
+                    </div>
                 ),
             },
             {
@@ -1614,7 +1622,7 @@ const IncomingSupplierDocumentsPage = () => {
                                             <Table.Summary.Cell index={isVatPayer ? 5 : 4} align="right">
                                                 {formatMoney(isVatPayer ? total : sum)}
                                             </Table.Summary.Cell>
-                                            <Table.Summary.Cell index={isVatPayer ? 6 : 5} colSpan={3} />
+                                            <Table.Summary.Cell index={isVatPayer ? 6 : 5} colSpan={isDraft ? 3 : 2} />
                                         </Table.Summary.Row>
                                     );
                                 }}

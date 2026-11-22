@@ -38,7 +38,10 @@ export const AutopartPopup = ({ autopartId, open, onClose, onSaved }) => {
             width="min(1240px, 98vw)"
             centered
             destroyOnClose
-            styles={{ body: { padding: 0, height: '86vh', position: 'relative' }, content: { padding: 0 } }}
+            styles={{
+                body: { padding: 0, height: '90vh', position: 'relative' },
+                content: { padding: 0, background: 'transparent', boxShadow: 'none' },
+            }}
         >
             {open && (
                 <>
