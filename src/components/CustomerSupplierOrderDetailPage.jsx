@@ -1,3 +1,4 @@
+import { OpenProductButton } from './AutopartPopup';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     Button,
@@ -298,7 +299,10 @@ const CustomerSupplierOrderDetailPage = () => {
             width: '29%',
             render: (_, record) => (
                 <div className="supplier-order-main-cell">
-                    <Text strong>{record.brand} {record.oem}</Text>
+                    <Space size={2}>
+                        <Text strong>{record.brand} {record.oem}</Text>
+                        <OpenProductButton autopartId={record.autopart_id} onSaved={fetchData} />
+                    </Space>
                     <Text
                         type="secondary"
                         className="supplier-order-ellipsis"

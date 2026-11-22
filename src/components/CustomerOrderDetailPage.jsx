@@ -1,3 +1,4 @@
+import { OpenProductButton } from './AutopartPopup';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     Alert,
@@ -912,6 +913,7 @@ const CustomerOrderDetailPage = () => {
                         <Tooltip title="Искать в прайсах и на сайте">
                             <Button type="text" size="small" icon={<SearchOutlined />} onClick={() => openAutopartSearch(record)} />
                         </Tooltip>
+                        <OpenProductButton autopartId={record.autopart_id} onSaved={fetchData} />
                     </Space>
                     <div className="customer-order-line" title={record.name || ''}>
                         <Button type="link" size="small" style={{ padding: 0, height: 'auto' }} onClick={() => loadStats('brand', record.brand, record.brand)}>

@@ -1,3 +1,4 @@
+import { OpenProductButton } from './AutopartPopup';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     Alert,
@@ -226,6 +227,7 @@ const OrderDetailPage = () => {
                 <div>
                     <div style={{ fontWeight: 700 }}>
                         {row.brand_name || '—'} {row.oem_number || '—'}
+                        <OpenProductButton autopartId={row.autopart_id} onSaved={loadOrder} />
                     </div>
                     <div style={{ color: '#64748b', fontSize: 12 }}>
                         {row.autopart_name || '—'}
