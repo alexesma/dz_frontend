@@ -683,7 +683,7 @@ const OneCExchangePage = () => {
         (autoTypes.send_stock_documents && (historyAudit?.additional_documents?.stock_documents?.without_event ?? 0) > 0)
     );
     const stockWriteOffSupported = Boolean(
-        enterpriseStatus?.negotiated_sending?.includes('Документ.СписаниеТоваров')
+        enterpriseStatus?.negotiated_sending?.includes('Документ.ОприходованиеТоваров')
     );
 
     return (
@@ -790,8 +790,14 @@ const OneCExchangePage = () => {
                     />
                     {enterpriseStatus && !stockWriteOffSupported && (
                         <Alert showIcon type="warning" style={{ marginTop: 12 }}
-                            message="Складские списания пока не согласованы УНФ"
-                            description="Оприходование поддерживается, но УНФ не объявила приём списаний. Поэтому автоматическая передача складских корректировок отключена." />
+                            message="Оприходование пока не согласовано УНФ"
+                            description="УНФ не объявила приём оприходования, поэтому передача складских документов отключена." />
+                    )}
+                    {enterpriseStatus && stockWriteOffSupported
+                        && !enterpriseStatus?.negotiated_sending?.includes('Документ.СписаниеТоваров') && (
+                        <Alert showIcon type="info" style={{ marginTop: 12 }}
+                            message="Списания УНФ не принимает"
+                            description="Оприходования (в том числе начальные остатки) передаются; складские списания будут остановлены с ошибкой." />
                     )}
                     {dispatchResult && (
                         <Alert showIcon style={{ marginTop: 12 }}
