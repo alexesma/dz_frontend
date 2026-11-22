@@ -263,7 +263,11 @@ const ShipmentsPage = ({ title = 'Накладные на отгрузку' }) =
             setDiadocReadinessByShipmentId({});
             return;
         }
+        // Импортные реализации (из УПД Диадока) уже оформлены вне системы:
+        // «готовность к отправке» для них не считается (иначе всегда «не готов»,
+        // потому что документ не проведён у нас).
         const shipmentIds = (shipmentRows || [])
+            .filter((row) => row?.status !== 'imported')
             .map((row) => Number(row?.id))
             .filter((value) => Number.isFinite(value));
         if (!shipmentIds.length) {
@@ -426,145 +430,168 @@ const ShipmentsPage = ({ title = 'Накладные на отгрузку' }) =
         }
     };
 
+    const oneLine = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 };
+    const money = (v) => Number(v || 0).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    const diadocCell = (row) => {
+        if (row.status === 'imported') {
+            return row.source_diadoc_document_id ? (
+                <Button
+                    type="link"
+                    size="small"
+                    style={{ padding: 0, height: 'auto', fontSize: 12 }}
+                    onClick={(e) => { e.stopPropagation(); navigate(`/documents/diadoc?tab=outbound&outgoingId=${row.source_diadoc_document_id}`); }}
+                >
+                    УПД в Диадоке #{row.source_diadoc_document_id}
+                </Button>
+            ) : <Text type="secondary" style={{ fontSize: 12 }}>УПД в Диадоке</Text>;
+        }
+        const diadocDoc = diadocByShipmentId[row.id];
+        const readiness = diadocReadinessByShipmentId[row.id];
+        const readinessTag = readiness ? (
+            readiness.ready_formalized ? (
+                <Tag color="success" style={{ margin: 0, fontSize: 11 }}>УПД готов</Tag>
+            ) : readiness.ready_nonformalized ? (
+                <Tag color="gold" style={{ margin: 0, fontSize: 11 }}>Только черновик</Tag>
+            ) : (
+                <Tag style={{ margin: 0, fontSize: 11 }}>Не готов</Tag>
+            )
+        ) : null;
+        if (!diadocDoc) return readinessTag || null;
+        return (
+            <Space size={4} wrap={false}>
+                <Tag color={DIADOC_COLORS[diadocDoc.status] || 'default'} style={{ margin: 0, fontSize: 11 }}>
+                    {DIADOC_LABELS[diadocDoc.status] || diadocDoc.status}
+                </Tag>
+                <Button
+                    type="link"
+                    size="small"
+                    style={{ padding: 0, height: 'auto', fontSize: 12 }}
+                    onClick={(e) => { e.stopPropagation(); navigate(`/documents/diadoc?tab=outbound&outgoingId=${diadocDoc.id}`); }}
+                >
+                    #{diadocDoc.id}
+                </Button>
+            </Space>
+        );
+    };
+
     const columns = [
         {
             title: 'Номер',
             dataIndex: 'doc_number',
-            width: 130,
+            width: 134,
             render: (num, row) => (
-                <Button type="link" size="small" onClick={() => navigate(`/warehouse/shipments/${row.id}`)}>
+                <Button type="link" size="small" style={{ padding: 0 }} onClick={() => navigate(`/warehouse/shipments/${row.id}`)}>
                     {num || `#${row.id}`}
                 </Button>
             ),
         },
         {
-            title: 'Статус',
-            dataIndex: 'status',
-            width: 110,
-            render: (s) => (
-                <Tag color={STATUS_COLORS[s] || 'default'}>{STATUS_LABELS[s] || s}</Tag>
-            ),
-        },
-        {
-            title: 'Дата документа',
+            title: 'Дата',
             dataIndex: 'doc_date',
-            width: 140,
-            render: fmtDate,
+            width: 92,
+            render: (v, row) => (
+                <div style={{ whiteSpace: 'nowrap' }}>
+                    <div>{v ? dayjs(v).format('DD.MM.YYYY') : '—'}</div>
+                    {row.posted_at && (
+                        <Tooltip title={`Проведён ${fmtDate(row.posted_at)}`}>
+                            <div style={{ fontSize: 11, color: '#8c8c8c' }}>пров. {dayjs(row.posted_at).format('DD.MM')}</div>
+                        </Tooltip>
+                    )}
+                </div>
+            ),
         },
         {
             title: 'Клиент',
             dataIndex: 'customer_name',
-            width: 260,
-            render: (v) => (v
-                ? <span style={{ wordBreak: 'normal', overflowWrap: 'break-word' }}>{v}</span>
-                : <Text type="secondary">—</Text>),
+            render: (v, row) => {
+                const sub = [row.warehouse_name, row.reason].filter(Boolean).join(' · ');
+                return (
+                    <div style={{ minWidth: 0 }}>
+                        <Tooltip title={v}>
+                            <div style={oneLine}>{v || <Text type="secondary">—</Text>}</div>
+                        </Tooltip>
+                        {sub && (
+                            <Tooltip title={sub}>
+                                <div style={{ ...oneLine, fontSize: 11, color: '#8c8c8c' }}>{sub}</div>
+                            </Tooltip>
+                        )}
+                    </div>
+                );
+            },
         },
         {
-            title: 'Заказ клиента',
+            title: 'Заказ',
             dataIndex: 'customer_order_ids',
-            width: 120,
+            width: 86,
             render: (values, row) => {
                 const ids = values?.length ? values : (
                     row.customer_order_id ? [row.customer_order_id] : []
                 );
                 return ids.length
-                    ? <Space wrap size={0}>{ids.map((id) => <Tag key={id}>#{id}</Tag>)}</Space>
+                    ? <Space wrap size={0}>{ids.map((id) => <Tag key={id} style={{ margin: 0 }}>#{id}</Tag>)}</Space>
                     : <Text type="secondary">—</Text>;
             },
         },
         {
-            title: 'Склад',
-            dataIndex: 'warehouse_name',
-            width: 150,
-            render: (v) => v || <Text type="secondary">—</Text>,
-        },
-        {
-            title: 'Строк',
+            title: 'Поз.',
             dataIndex: 'item_count',
-            width: 70,
+            width: 52,
             align: 'right',
-            render: (v) => <Tag>{v ?? '—'}</Tag>,
+            render: (v) => <Text>{v ?? '—'}</Text>,
         },
         {
-            title: 'Причина',
-            dataIndex: 'reason',
-            ellipsis: true,
-            render: (v) => v || '',
+            title: 'Сумма',
+            dataIndex: 'total_amount',
+            width: 104,
+            align: 'right',
+            render: (v) => <Text strong style={{ whiteSpace: 'nowrap' }}>{money(v)}</Text>,
         },
         {
-            title: 'Проведён',
-            dataIndex: 'posted_at',
-            width: 140,
-            render: fmtDate,
+            title: 'Статус',
+            dataIndex: 'status',
+            width: 168,
+            render: (s, row) => (
+                <div style={{ minWidth: 0 }}>
+                    <Tag color={STATUS_COLORS[s] || 'default'} style={{ margin: 0 }}>{STATUS_LABELS[s] || s}</Tag>
+                    {canUseDiadoc && <div style={{ marginTop: 2 }}>{diadocCell(row)}</div>}
+                </div>
+            ),
         },
         {
             title: '1С',
             dataIndex: 'sync_status',
-            width: 110,
+            width: 104,
             render: (status, row) => (
-                <Space size={4}>
-                    <Badge status={SYNC_COLORS[status] || 'default'} />
-                    <Text style={{ fontSize: 12 }}>{SYNC_LABELS[status] || status}</Text>
-                    {status !== 'synced' && (
-                        <Tooltip title="Отметить синхронизованным">
-                            <Button
-                                type="link"
-                                size="small"
-                                loading={syncing[row.id]}
-                                icon={<CheckCircleOutlined />}
-                                onClick={() => handleSyncOne(row)}
-                            />
-                        </Tooltip>
-                    )}
-                </Space>
+                row.status === 'imported' ? <Text type="secondary" style={{ fontSize: 12 }}>—</Text> : (
+                    <Space size={2} wrap={false}>
+                        <Badge status={SYNC_COLORS[status] || 'default'} />
+                        <Text style={{ fontSize: 12 }}>{SYNC_LABELS[status] || status}</Text>
+                        {status !== 'synced' && (
+                            <Tooltip title="Отметить синхронизованным">
+                                <Button
+                                    type="text"
+                                    size="small"
+                                    loading={syncing[row.id]}
+                                    icon={<CheckCircleOutlined />}
+                                    onClick={() => handleSyncOne(row)}
+                                />
+                            </Tooltip>
+                        )}
+                    </Space>
+                )
             ),
         },
-        ...(canUseDiadoc ? [{
-            title: 'Диадок',
-            key: 'diadoc',
-            width: 150,
-            render: (_, row) => {
-                const diadocDoc = diadocByShipmentId[row.id];
-                const readiness = diadocReadinessByShipmentId[row.id];
-                const readinessTag = readiness ? (
-                    readiness.ready_formalized ? (
-                        <Tag color="success">УПД готов</Tag>
-                    ) : readiness.ready_nonformalized ? (
-                        <Tag color="gold">Только черновик</Tag>
-                    ) : (
-                        <Tag color="default">Не готов</Tag>
-                    )
-                ) : null;
-                if (!diadocDoc) {
-                    return readinessTag || <Text type="secondary">—</Text>;
-                }
-                return (
-                    <Space direction="vertical" size={0}>
-                        {readinessTag}
-                        <Tag color={DIADOC_COLORS[diadocDoc.status] || 'default'}>
-                            {DIADOC_LABELS[diadocDoc.status] || diadocDoc.status}
-                        </Tag>
-                        <Button
-                            type="link"
-                            size="small"
-                            style={{ padding: 0 }}
-                            onClick={() => navigate(`/documents/diadoc?tab=outbound&outgoingId=${diadocDoc.id}`)}
-                        >
-                            Документ #{diadocDoc.id}
-                        </Button>
-                    </Space>
-                );
-            },
-        }] : []),
         {
             title: '',
             key: 'actions',
-            width: 100,
+            width: 72,
             render: (_, row) => (
-                <Space>
+                <Space size={0}>
                     <Tooltip title="Открыть">
                         <Button
                             size="small"
+                            type="text"
                             icon={<EyeOutlined />}
                             onClick={() => navigate(`/warehouse/shipments/${row.id}`)}
                         />
@@ -577,7 +604,7 @@ const ShipmentsPage = ({ title = 'Накладные на отгрузку' }) =
                             onConfirm={() => handleDelete(row.id)}
                         >
                             <Tooltip title="Удалить">
-                                <Button size="small" icon={<DeleteOutlined />} danger />
+                                <Button size="small" type="text" icon={<DeleteOutlined />} danger />
                             </Tooltip>
                         </Popconfirm>
                     )}
@@ -611,6 +638,7 @@ const ShipmentsPage = ({ title = 'Накладные на отгрузку' }) =
                     <Space style={{ marginTop: 4 }}>
                         <Tag>Черновиков: {draftCount}</Tag>
                         <Tag color="success">Проведено: {postedCount}</Tag>
+                        <Tag color="processing">Сумма на странице: {money(data.reduce((sum, r) => sum + Number(r.total_amount || 0), 0))}</Tag>
                     </Space>
                 </Col>
                 <Col>
@@ -755,7 +783,8 @@ const ShipmentsPage = ({ title = 'Накладные на отгрузку' }) =
                         setPageSize(ps);
                     },
                 }}
-                scroll={{ x: 1400 }}
+                tableLayout="fixed"
+                className="compact-table"
                 onRow={(row) => ({
                     onDoubleClick: () => navigate(`/warehouse/shipments/${row.id}`),
                     style: { cursor: 'pointer' },
