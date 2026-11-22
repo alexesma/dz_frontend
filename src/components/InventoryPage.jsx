@@ -31,6 +31,8 @@ import {
     ReloadOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import InventoryFileImportModal from './InventoryFileImportModal';
+import useAuth from '../context/useAuth';
 
 import {
     cancelInventorySession,
@@ -411,6 +413,8 @@ function NewSessionModal({ open, onClose, onCreated }) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function InventoryPage() {
+    const { user } = useAuth();
+    const [importOpen, setImportOpen] = useState(false);
     const [sessions, setSessions] = useState([]);
     const [loading, setLoading] = useState(false);
     const [newModalOpen, setNewModalOpen] = useState(false);
@@ -522,6 +526,9 @@ export default function InventoryPage() {
                         <Button icon={<ReloadOutlined />} onClick={fetchSessions}>
                             Обновить
                         </Button>
+                        {user?.role === 'admin' && (
+                            <Button onClick={() => setImportOpen(true)}>Загрузить из файла</Button>
+                        )}
                         <Button
                             type="primary"
                             icon={<PlusOutlined />}
@@ -541,6 +548,11 @@ export default function InventoryPage() {
                 size="small"
                 pagination={{ pageSize: 20 }}
                 locale={{ emptyText: 'Сеансов инвентаризации нет' }}
+            />
+            <InventoryFileImportModal
+                open={importOpen}
+                onClose={() => setImportOpen(false)}
+                onDone={fetchSessions}
             />
 
             <NewSessionModal
