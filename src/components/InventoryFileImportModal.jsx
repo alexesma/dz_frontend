@@ -5,7 +5,7 @@
  * Применение идёт в фоне на сервере, здесь показывается ход выполнения.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Button, Collapse, Descriptions, Modal, Popconfirm, Progress, Space, Table, Typography, Upload, message } from 'antd';
+import { Alert, Button, Collapse, Descriptions, Modal, Popconfirm, Progress, Space, Switch, Table, Typography, Upload, message } from 'antd';
 import { InboxOutlined } from '@ant-design/icons';
 import api from '../api';
 
@@ -16,6 +16,7 @@ const InventoryFileImportModal = ({ open, onClose, onDone }) => {
     const [file, setFile] = useState(null);
     const [report, setReport] = useState(null);
     const [checking, setChecking] = useState(false);
+    const [zeroMissing, setZeroMissing] = useState(false);
     const [job, setJob] = useState(null);
     const timer = useRef(null);
 
@@ -27,6 +28,7 @@ const InventoryFileImportModal = ({ open, onClose, onDone }) => {
     const form = (extra = {}) => {
         const data = new FormData();
         data.append('file', file);
+        data.append('zero_missing', zeroMissing ? 'true' : 'false');
         Object.entries(extra).forEach(([k, v]) => data.append(k, v));
         return data;
     };
@@ -91,6 +93,19 @@ const InventoryFileImportModal = ({ open, onClose, onDone }) => {
                 <p className="ant-upload-drag-icon"><InboxOutlined /></p>
                 <p>Перетащите файл «Инвентаризация.xlsx» или нажмите для выбора</p>
             </Upload.Dragger>
+            <div style={{ margin: '12px 0 4px' }}>
+                <Space>
+                    <Switch checked={zeroMissing} onChange={(v) => { setZeroMissing(v); setReport(null); }} disabled={running} />
+                    <Text>Обнулять то, чего нет в файле</Text>
+                </Space>
+                <div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                        {zeroMissing
+                            ? 'Строгий режим: всё, чего нет в файле, списывается.'
+                            : 'Мягкий режим (рекомендуется): ничего не списывается. Позиции из файла ставятся на места из файла, остальное из старых ячеек переносится в «Приёмку».'}
+                    </Text>
+                </div>
+            </div>
             <Space style={{ margin: '12px 0' }}>
                 <Button type="primary" onClick={check} loading={checking} disabled={!file || running}>
                     Проверить (без изменений)
@@ -119,7 +134,7 @@ const InventoryFileImportModal = ({ open, onClose, onDone }) => {
                     <Descriptions.Item label="Сейчас в системе">{n(report.current_quantity)}</Descriptions.Item>
                     <Descriptions.Item label="Мест в файле / новых">{n(report.file_locations)} / {n(report.new_locations)}</Descriptions.Item>
                     <Descriptions.Item label="Старых мест удалить">{n(report.old_locations_to_delete)}</Descriptions.Item>
-                    <Descriptions.Item label="Позиций будет обнулено">{n(report.positions_zeroed)} ({n(report.quantity_zeroed)} шт.)</Descriptions.Item>
+                    <Descriptions.Item label={report.zero_missing ? 'Позиций будет обнулено' : 'Позиций нет в файле (не списываются)'}>{n(report.positions_zeroed)} ({n(report.quantity_zeroed)} шт.; в ячейках {n(report.absent_in_cells_qty)}, в «Приёмке» {n(report.absent_in_receiving_qty)})</Descriptions.Item>
                     <Descriptions.Item label="Без места («BEZ MESTA»)">{n(report.no_location_rows)}</Descriptions.Item>
                     <Descriptions.Item label="Вне загрузки (др. склады, системные)">{n(report.out_of_scope_quantity)} шт.</Descriptions.Item>
                     <Descriptions.Item label="Резервов под заказы">{n(report.reserved_quantity)} шт., без остатка: {n(report.reserved_conflicts)} поз.</Descriptions.Item>
@@ -135,7 +150,7 @@ const InventoryFileImportModal = ({ open, onClose, onDone }) => {
                     items={[
                         {
                             key: 'zeroed',
-                            label: `Что обнулится: крупнейшие позиции (больше 1000 шт.: ${n(report.zeroed_over_1000)})`,
+                            label: `${report.zero_missing ? 'Что обнулится' : 'Нет в файле (останутся)'}: крупнейшие позиции (больше 1000 шт.: ${n(report.zeroed_over_1000)})`,
                             children: (
                                 <Table
                                     size="small"
