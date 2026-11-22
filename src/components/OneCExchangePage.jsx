@@ -910,6 +910,13 @@ const OneCExchangePage = () => {
                                 { title: 'Строк без цены', dataIndex: 'items' },
                             ]} />
                     )}
+                    {(historyAudit?.providers_placeholder_contract || []).length > 0 && (
+                        <Paragraph type="warning">
+                            Договор-заглушка, заменить до боевого режима ({historyAudit.providers_placeholder_contract.length}):{' '}
+                            {historyAudit.providers_placeholder_contract.slice(0, 10).map((item) => item.name).join(', ')}
+                            {historyAudit.providers_placeholder_contract.length > 10 ? '…' : ''}
+                        </Paragraph>
+                    )}
                     {(historyAudit?.providers_missing_contract || []).length > 0 && (
                         <Paragraph type="warning">
                             Нет договора: {historyAudit.providers_missing_contract.slice(0, 10).map((item) => `${item.name} (${item.posted_receipts})`).join(', ')}
