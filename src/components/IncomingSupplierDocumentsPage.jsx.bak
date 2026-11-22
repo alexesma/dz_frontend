@@ -1,0 +1,1954 @@
+import { OpenProductButton } from './AutopartPopup';
+import React, {
+    useCallback, useEffect, useRef, useState,
+} from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import dayjs from 'dayjs';
+import {
+    Alert,
+    AutoComplete,
+    Button,
+    Card,
+    Col,
+    DatePicker,
+    Descriptions,
+    Empty,
+    Form,
+    Input,
+    InputNumber,
+    Modal,
+    Popconfirm,
+    Row,
+    Select,
+    Space,
+    Spin,
+    Table,
+    Tag,
+    Tooltip,
+    Typography,
+    message,
+} from 'antd';
+import {
+    DeleteOutlined,
+    EditOutlined,
+    FileTextOutlined,
+    LinkOutlined,
+    PlusOutlined,
+    PrinterOutlined,
+    RollbackOutlined,
+    SaveOutlined,
+} from '@ant-design/icons';
+
+import { searchAutopartsByOem } from '../api/autoparts';
+import { getAllProviders } from '../api/providers';
+import { getWarehouses } from '../api/storage';
+import {
+    addSupplierReceiptItems,
+    createManualSupplierReceipt,
+    deleteSupplierReceipt,
+    deleteSupplierReceiptItem,
+    getSupplierReceipt,
+    getSupplierReceipts,
+    postSupplierReceipt,
+    relinkSupplierReceipt,
+    sendSupplierReceiptUpdEmail,
+    unpostSupplierReceipt,
+    updateCrossDockingDocument,
+    updateSupplierReceipt,
+    updateSupplierReceiptItem,
+} from '../api/customerOrders';
+import { listDiadocInboundDocuments } from '../api/diadoc';
+import useAuth from '../context/useAuth';
+import CrossDockingLabelsModal from './CrossDockingLabelsModal';
+import ReceiptMarkingPanel, { ReceiptMarkingBadge } from './ReceiptMarkingPanel';
+import { markingItemBadge } from './receiptMarkingUtils';
+import { usePrintDelivery } from '../utils/usePrintDelivery';
+
+const { Title, Text } = Typography;
+const { RangePicker } = DatePicker;
+const { TextArea } = Input;
+
+const VAT_RATE = 0.22;
+
+const getDefaultDateRange = () => {
+    const today = dayjs();
+    return [today.subtract(7, 'day').startOf('day'), today.endOf('day')];
+};
+
+const formatMoney = (value) => {
+    if (value === null || value === undefined) return '—';
+    const num = Number(value);
+    if (Number.isNaN(num)) return '—';
+    return num.toFixed(2);
+};
+
+const DIADOC_STATUS_COLORS = {
+    synced: 'blue',
+    registered: 'processing',
+    processed: 'success',
+    error: 'error',
+};
+
+const DIADOC_STATUS_LABELS = {
+    synced: 'Синхронизирован',
+    registered: 'Зарегистрирован',
+    processed: 'Обработан',
+    error: 'Ошибка',
+};
+
+const getLineTotalWithVat = (row) => {
+    if (row?.total_price_with_vat != null) {
+        const total = Number(row.total_price_with_vat);
+        return total > 0 ? total : null;
+    }
+    const quantity = Number(row?.received_quantity || 0);
+    const price = Number(row?.price || 0);
+    const total = quantity * price;
+    return total > 0 ? total : null;
+};
+
+// ─── Label print styles injected once ────────────────────────────────────────
+const LABEL_STYLE_ID = 'label-print-style';
+function ensureLabelPrintStyle() {
+    if (document.getElementById(LABEL_STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = LABEL_STYLE_ID;
+    style.innerHTML = `
+@media print {
+    body > *:not(#label-print-root) { display: none !important; }
+    #label-print-root { display: block !important; }
+    @page { size: 58mm 40mm; margin: 1mm; }
+    .label-card {
+        width: 56mm; height: 38mm;
+        border: 0.3mm solid #000;
+        padding: 1.5mm;
+        box-sizing: border-box;
+        font-family: Arial, sans-serif;
+        font-size: 7pt;
+        page-break-after: always;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+    .label-oem { font-size: 11pt; font-weight: bold; }
+    .label-brand { font-size: 9pt; font-weight: bold; }
+    .label-name { font-size: 6pt; overflow: hidden; max-height: 8mm; }
+    .label-qty { font-size: 9pt; }
+    .label-footer { font-size: 5.5pt; color: #333; }
+}
+@media screen {
+    .label-card {
+        width: 174px; height: 113px;
+        border: 1px solid #d9d9d9;
+        border-radius: 4px;
+        padding: 6px;
+        box-sizing: border-box;
+        font-family: Arial, sans-serif;
+        font-size: 10px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        background: #fff;
+    }
+    .label-oem { font-size: 14px; font-weight: bold; }
+    .label-brand { font-size: 12px; font-weight: bold; }
+    .label-name { font-size: 9px; overflow: hidden; max-height: 24px; line-height: 1.2; }
+    .label-qty { font-size: 12px; font-weight: 600; }
+    .label-footer { font-size: 8px; color: #666; margin-top: 2px; }
+}
+    `;
+    document.head.appendChild(style);
+}
+
+// ─── Single label card ────────────────────────────────────────────────────────
+const LabelCard = ({ item, receipt }) => (
+    <div className="label-card">
+        <div>
+            <div className="label-oem">{item.oem_number || '—'}</div>
+            <div className="label-brand">{item.brand_name || '—'}</div>
+            <div className="label-name">{item.autopart_name || ''}</div>
+        </div>
+        <div>
+            <div className="label-qty">
+                Кол-во: <b>{item.received_quantity}</b>
+                {item.price ? `  Цена: ${formatMoney(item.price)}` : ''}
+            </div>
+            <div className="label-footer">
+                {receipt.provider_name || ''}
+                {receipt.document_number ? ` · УПД ${receipt.document_number}` : ''}
+                {receipt.document_date
+                    ? ` · ${dayjs(receipt.document_date).format('DD.MM.YYYY')}`
+                    : ''}
+            </div>
+        </div>
+    </div>
+);
+
+// ─── Label print modal ────────────────────────────────────────────────────────
+const LabelModal = ({ open, receipt, onClose }) => {
+    const { printHtml } = usePrintDelivery();
+    useEffect(() => {
+        if (open) ensureLabelPrintStyle();
+    }, [open]);
+
+    if (!receipt) return null;
+    const items = receipt.items || [];
+
+    const handlePrint = async () => {
+        const root = document.getElementById('label-print-root');
+        if (!root) return;
+        const css = document.getElementById(LABEL_STYLE_ID)?.innerHTML || '';
+        const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><style>${css}</style></head><body>${root.outerHTML}</body></html>`;
+        try {
+            await printHtml(html, `Этикетки поступления #${receipt.id}`, () => {
+                root.style.display = 'block';
+                window.print();
+                root.style.display = 'none';
+                return true;
+            });
+        } catch (error) {
+            message.error(error?.response?.data?.detail || error.message);
+        }
+    };
+
+    return (
+        <>
+            {/* Hidden print root rendered outside modal */}
+            <div
+                id="label-print-root"
+                style={{ display: 'none', position: 'fixed', top: 0, left: 0, zIndex: 99999 }}
+            >
+                {items.map((item) => (
+                    <LabelCard key={item.id} item={item} receipt={receipt} />
+                ))}
+            </div>
+
+            <Modal
+                open={open}
+                onCancel={onClose}
+                title={`Печать этикеток — документ #${receipt.id}`}
+                footer={
+                    <Space>
+                        <Button icon={<PrinterOutlined />} type="primary" onClick={handlePrint}>
+                            Печать ({items.length} этик.)
+                        </Button>
+                        <Button onClick={onClose}>Закрыть</Button>
+                    </Space>
+                }
+                width={700}
+            >
+                <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+                    Размер этикетки: 58 × 40 мм. Предпросмотр:
+                </Text>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, maxHeight: 400, overflowY: 'auto' }}>
+                    {items.map((item) => (
+                        <LabelCard key={item.id} item={item} receipt={receipt} />
+                    ))}
+                </div>
+            </Modal>
+        </>
+    );
+};
+
+// ─── Article search cell ───────────────────────────────────────────────────────
+const ArticleSearchCell = ({ currentOem, currentBrand, currentName, onSelect }) => {
+    const [searching, setSearching] = useState(false);
+    const [query, setQuery] = useState('');
+    const [options, setOptions] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const debounceRef = useRef(null);
+
+    const handleSearch = useCallback((val) => {
+        setQuery(val);
+        clearTimeout(debounceRef.current);
+        if (!val || val.length < 2) { setOptions([]); return; }
+        debounceRef.current = setTimeout(async () => {
+            setLoading(true);
+            try {
+                const res = await searchAutopartsByOem(val, 20);
+                setOptions((res.data || []).map((part) => ({
+                    value: String(part.id),
+                    label: (
+                        <div style={{ lineHeight: 1.4 }}>
+                            <span style={{ fontWeight: 600, fontSize: 12 }}>{part.oem_number}</span>
+                            <span style={{ color: '#888', fontSize: 11, marginLeft: 6 }}>{part.brand}</span>
+                            <br />
+                            <span style={{ fontSize: 11, color: '#555' }}>{part.name || '—'}</span>
+                        </div>
+                    ),
+                    data: part,
+                })));
+            } catch {
+                setOptions([]);
+            } finally {
+                setLoading(false);
+            }
+        }, 300);
+    }, []);
+
+    const handleSelect = (_, option) => {
+        onSelect(option.data);
+        setSearching(false);
+        setQuery('');
+        setOptions([]);
+    };
+
+    if (searching) {
+        return (
+            <AutoComplete
+                autoFocus
+                size="small"
+                style={{ width: '100%', minWidth: 200 }}
+                options={options}
+                value={query}
+                placeholder="Введите артикул..."
+                onChange={handleSearch}
+                onSelect={handleSelect}
+                onBlur={() => { setSearching(false); setQuery(''); setOptions([]); }}
+                notFoundContent={loading
+                    ? <Spin size="small" />
+                    : query.length >= 2 ? 'Не найдено' : 'Введите от 2 символов'}
+                popupMatchSelectWidth={320}
+            />
+        );
+    }
+
+    return (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+            <div style={{ flex: 1, lineHeight: 1.3, minWidth: 0 }}>
+                <div style={{ fontWeight: 500, fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {currentOem || '—'}
+                    {currentBrand && (
+                        <span style={{ color: '#888', marginLeft: 6, fontSize: 11 }}>{currentBrand}</span>
+                    )}
+                </div>
+                <div style={{ fontSize: 11, color: '#555', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {currentName || '—'}
+                </div>
+            </div>
+            <Button
+                type="text"
+                size="small"
+                icon={<EditOutlined style={{ fontSize: 11 }} />}
+                onClick={() => setSearching(true)}
+                style={{ flexShrink: 0, padding: '0 2px' }}
+                title="Изменить позицию"
+            />
+        </div>
+    );
+};
+
+// ─── Main page ─────────────────────────────────────────────────────────────────
+const IncomingSupplierDocumentsPage = () => {
+    const { user } = useAuth();
+    const canUseDiadoc = user?.role === 'admin';
+    const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const [providers, setProviders] = useState([]);
+    const [warehouses, setWarehouses] = useState([]);
+    const [rows, setRows] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [diadocByReceiptId, setDiadocByReceiptId] = useState({});
+    const [postingId, setPostingId] = useState(null);
+    const [unpostingId, setUnpostingId] = useState(null);
+    const [deletingId, setDeletingId] = useState(null);
+    const [sendingUpdId, setSendingUpdId] = useState(null);
+    const [filters, setFilters] = useState({
+        providerId: null,
+        dateRange: getDefaultDateRange(),
+        status: 'all',
+    });
+
+    // Detail modal
+    const [detailVisible, setDetailVisible] = useState(false);
+    const [detailLoading, setDetailLoading] = useState(false);
+    const [detailReceipt, setDetailReceipt] = useState(null);
+
+    // Edit mode
+    const [editMode, setEditMode] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [headerForm] = Form.useForm();
+    // editedItems: { [itemId]: { price, received_quantity, comment, gtd_code, country_name, oem_number, brand_name, autopart_name, warehouse_id } }
+    const [editedItems, setEditedItems] = useState({});
+    const [newItems, setNewItems] = useState([]); // rows being added
+    const newItemKeyRef = useRef(0);
+
+    // Label modal
+    const [labelVisible, setLabelVisible] = useState(false);
+    const [crossDockingLabelsVisible, setCrossDockingLabelsVisible] = useState(false);
+    const [documentPendingVisible, setDocumentPendingVisible] = useState(false);
+    const [documentPendingNumber, setDocumentPendingNumber] = useState('');
+    const [documentPendingDate, setDocumentPendingDate] = useState(dayjs());
+    const [documentPendingSaving, setDocumentPendingSaving] = useState(false);
+
+    // Create document modal
+    const [createVisible, setCreateVisible] = useState(false);
+    const [createForm] = Form.useForm();
+    const [createSaving, setCreateSaving] = useState(false);
+    const [createItems, setCreateItems] = useState([]);
+    const createItemKeyRef = useRef(0);
+
+    const addCreateItem = useCallback(() => {
+        setCreateItems((prev) => [...prev, {
+            _key: createItemKeyRef.current++,
+            autopart_id: null, oem_number: '', brand_name: '', autopart_name: '',
+            received_quantity: 1, price: null, comment: '', warehouse_id: null,
+        }]);
+    }, []);
+
+    const updateCreateItem = useCallback((key, field, value) => {
+        setCreateItems((prev) => prev.map((it) => (it._key === key ? { ...it, [field]: value } : it)));
+    }, []);
+
+    const removeCreateItem = useCallback((key) => {
+        setCreateItems((prev) => prev.filter((it) => it._key !== key));
+    }, []);
+
+    const getProviderDefaultWarehouseId = useCallback((providerId) => {
+        if (!providerId) return null;
+        const provider = providers.find((item) => item.id === providerId);
+        return provider?.default_warehouse_id || null;
+    }, [providers]);
+
+    const loadDiadocReceiptLinks = useCallback(async (receiptRows = []) => {
+        if (!canUseDiadoc) {
+            setDiadocByReceiptId({});
+            return;
+        }
+        const receiptIds = new Set(
+            (receiptRows || [])
+                .map((row) => Number(row?.id))
+                .filter((value) => Number.isFinite(value))
+        );
+        if (!receiptIds.size) {
+            setDiadocByReceiptId({});
+            return;
+        }
+        try {
+            const response = await listDiadocInboundDocuments({
+                registered_only: true,
+                limit: 300,
+            });
+            const mapping = {};
+            (response.data || []).forEach((doc) => {
+                (doc.supplier_receipt_ids || []).forEach((receiptId) => {
+                    if (!receiptIds.has(receiptId) || mapping[receiptId]) return;
+                    mapping[receiptId] = doc;
+                });
+            });
+            setDiadocByReceiptId(mapping);
+        } catch (err) {
+            console.error('Failed to load Diadoc inbound links for receipts', err);
+        }
+    }, [canUseDiadoc]);
+
+    // ── load providers ──────────────────────────────────────────────────────
+    useEffect(() => {
+        getAllProviders({ sort_by: 'name', sort_dir: 'asc' })
+            .then((items) => setProviders(items || []))
+            .catch(() => message.error('Не удалось загрузить поставщиков'));
+        getWarehouses({ include_inactive: true })
+            .then(({ data }) => setWarehouses(data || []))
+            .catch(() => message.error('Не удалось загрузить склады'));
+    }, []);
+
+    // ── fetch list ──────────────────────────────────────────────────────────
+    const fetchDocuments = useCallback(async () => {
+        setLoading(true);
+        try {
+            const params = {};
+            if (filters.providerId) params.provider_id = filters.providerId;
+            if (filters.dateRange?.length === 2) {
+                params.date_from = filters.dateRange[0].format('YYYY-MM-DD');
+                params.date_to = filters.dateRange[1].format('YYYY-MM-DD');
+            }
+            if (filters.status === 'draft') params.posted = false;
+            else if (filters.status === 'posted') params.posted = true;
+            const response = await getSupplierReceipts(params);
+            const receiptRows = response.data || [];
+            setRows(receiptRows);
+            loadDiadocReceiptLinks(receiptRows);
+        } catch {
+            message.error('Не удалось загрузить документы поступления');
+        } finally {
+            setLoading(false);
+        }
+    }, [filters, loadDiadocReceiptLinks]);
+
+    useEffect(() => {
+        fetchDocuments();
+    }, [fetchDocuments]);
+
+    // ── auto-open receipt from ?openId= URL param (redirect from SupplierReceiptsPage) ──
+    useEffect(() => {
+        const openId = searchParams.get('openId');
+        if (!openId) return;
+        // Remove the param so it doesn't re-trigger on re-render
+        setSearchParams({}, { replace: true });
+        handleOpenDetail(Number(openId));
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ── open detail ─────────────────────────────────────────────────────────
+    const handleOpenDetail = useCallback(async (receiptId) => {
+        setDetailVisible(true);
+        setDetailLoading(true);
+        setDetailReceipt(null);
+        setEditMode(false);
+        setEditedItems({});
+        setNewItems([]);
+        try {
+            const { data } = await getSupplierReceipt(receiptId);
+            setDetailReceipt(data);
+        } catch {
+            message.error('Не удалось загрузить документ');
+            setDetailVisible(false);
+        } finally {
+            setDetailLoading(false);
+        }
+    }, []);
+
+    const [relinking, setRelinking] = useState(false);
+
+    const handleRelink = async (receiptId) => {
+        setRelinking(true);
+        try {
+            const { data: preview } = await relinkSupplierReceipt(receiptId, false);
+            if (!preview.matches.length) {
+                Modal.info({
+                    title: 'Подходящих заказов не найдено',
+                    content: preview.unmatched.length
+                        ? `Без заказа: ${preview.unmatched.join(', ')}`
+                        : 'Все строки уже привязаны.',
+                });
+                return;
+            }
+            Modal.confirm({
+                title: `Привязать к заказам: ${preview.matches.length} поз.`,
+                width: 640,
+                okText: 'Привязать',
+                cancelText: 'Отмена',
+                content: (
+                    <div>
+                        {preview.matches.map((m) => (
+                            <div key={m.supplier_order_item_id}>
+                                {m.oem_number} ({m.brand_name || '—'}) — {m.received_quantity} шт
+                                {' → заказ #'}{m.supplier_order_id}
+                                {m.excess ? `, излишек ${m.excess} шт останется без заказа` : ''}
+                            </div>
+                        ))}
+                        {preview.unmatched.length > 0 && (
+                            <div style={{ marginTop: 8, color: '#999' }}>
+                                Без заказа: {preview.unmatched.join(', ')}
+                            </div>
+                        )}
+                        {preview.skipped_customer_linked > 0 && (
+                            <div style={{ marginTop: 8, color: '#999' }}>
+                                Пропущено позиций заказов под клиентов: {preview.skipped_customer_linked}
+                            </div>
+                        )}
+                    </div>
+                ),
+                onOk: async () => {
+                    await relinkSupplierReceipt(receiptId, true);
+                    message.success('Строки привязаны к заказам');
+                    await reloadDetail(receiptId);
+                },
+            });
+        } catch (error) {
+            message.error(error?.response?.data?.detail || 'Не удалось перепроверить заказы');
+        } finally {
+            setRelinking(false);
+        }
+    };
+
+    const reloadDetail = useCallback(async (receiptId) => {
+        try {
+            const { data } = await getSupplierReceipt(receiptId);
+            setDetailReceipt(data);
+            return data;
+        } catch {
+            message.error('Не удалось обновить документ');
+            return null;
+        }
+    }, []);
+
+    const openDocumentPendingModal = useCallback(() => {
+        if (!detailReceipt) return;
+        setDocumentPendingNumber(detailReceipt.document_number || '');
+        setDocumentPendingDate(
+            detailReceipt.document_date ? dayjs(detailReceipt.document_date) : dayjs()
+        );
+        setDocumentPendingVisible(true);
+    }, [detailReceipt]);
+
+    const handleResolveDocumentPending = async () => {
+        const normalizedNumber = documentPendingNumber.trim();
+        if (!normalizedNumber) {
+            message.warning('Укажите номер входящего документа');
+            return;
+        }
+        setDocumentPendingSaving(true);
+        try {
+            await updateCrossDockingDocument(detailReceipt.id, {
+                document_pending: false,
+                document_number: normalizedNumber,
+                document_date: documentPendingDate
+                    ? documentPendingDate.format('YYYY-MM-DD')
+                    : null,
+            });
+            await reloadDetail(detailReceipt.id);
+            await fetchDocuments();
+            setDocumentPendingVisible(false);
+            message.success('Входящий документ зарегистрирован, DOC_PENDING снят');
+        } catch (error) {
+            message.error(
+                error?.response?.data?.detail || 'Не удалось зарегистрировать документ'
+            );
+        } finally {
+            setDocumentPendingSaving(false);
+        }
+    };
+
+    // ── edit mode helpers ───────────────────────────────────────────────────
+    const enterEditMode = () => {
+        if (!detailReceipt) return;
+        headerForm.setFieldsValue({
+            warehouse_id: detailReceipt.warehouse_id ?? undefined,
+            document_number: detailReceipt.document_number || '',
+            document_date: detailReceipt.document_date
+                ? dayjs(detailReceipt.document_date) : null,
+            comment: detailReceipt.comment || '',
+        });
+        const initItems = {};
+        (detailReceipt.items || []).forEach((item) => {
+            initItems[item.id] = {
+                autopart_id: item.autopart_id,
+                oem_number: item.oem_number || '',
+                brand_name: item.brand_name || '',
+                autopart_name: item.autopart_name || '',
+                received_quantity: item.received_quantity,
+                price: item.price != null ? Number(item.price) : null,
+                total_price_with_vat: item.total_price_with_vat != null
+                    ? Number(item.total_price_with_vat) : null,
+                gtd_code: item.gtd_code || '',
+                country_name: item.country_name || '',
+                comment: item.comment || '',
+                warehouse_id: item.warehouse_id ?? null,
+            };
+        });
+        setEditedItems(initItems);
+        setNewItems([]);
+        setEditMode(true);
+    };
+
+    const cancelEditMode = () => {
+        setEditMode(false);
+        setEditedItems({});
+        setNewItems([]);
+    };
+
+    const setItemField = (itemId, field, value) => {
+        setEditedItems((prev) => ({
+            ...prev,
+            [itemId]: { ...prev[itemId], [field]: value },
+        }));
+    };
+
+    const addNewItemRow = () => {
+        const key = `new_${newItemKeyRef.current++}`;
+        setNewItems((prev) => [...prev, {
+            _key: key,
+            oem_number: '', brand_name: '', autopart_name: '',
+            received_quantity: 1, price: null, total_price_with_vat: null,
+            gtd_code: '', country_name: '', comment: '',
+            warehouse_id: null,
+        }]);
+    };
+
+    const updateNewItem = (key, field, value) => {
+        setNewItems((prev) => prev.map((r) => r._key === key ? { ...r, [field]: value } : r));
+    };
+
+    const removeNewItem = (key) => {
+        setNewItems((prev) => prev.filter((r) => r._key !== key));
+    };
+
+    // ── save edit ───────────────────────────────────────────────────────────
+    const handleSave = async () => {
+        if (!detailReceipt) return;
+        setSaving(true);
+        try {
+            const headerVals = await headerForm.validateFields();
+            // save header
+            await updateSupplierReceipt(detailReceipt.id, {
+                warehouse_id: headerVals.warehouse_id || null,
+                document_number: headerVals.document_number || null,
+                document_date: headerVals.document_date
+                    ? headerVals.document_date.format('YYYY-MM-DD') : null,
+                comment: headerVals.comment || null,
+            });
+
+            // save changed items
+            for (const [idStr, fields] of Object.entries(editedItems)) {
+                await updateSupplierReceiptItem(Number(idStr), {
+                    autopart_id: fields.autopart_id ?? null,
+                    oem_number: fields.oem_number || null,
+                    brand_name: fields.brand_name || null,
+                    autopart_name: fields.autopart_name || null,
+                    received_quantity: fields.received_quantity,
+                    price: fields.price != null ? fields.price : null,
+                    total_price_with_vat: fields.total_price_with_vat != null
+                        ? fields.total_price_with_vat : null,
+                    gtd_code: fields.gtd_code || null,
+                    country_name: fields.country_name || null,
+                    comment: fields.comment || null,
+                    warehouse_id: fields.warehouse_id ?? null,
+                });
+            }
+
+            // add new items
+            if (newItems.length > 0) {
+                await addSupplierReceiptItems(
+                    detailReceipt.id,
+                    newItems.map((item) => ({
+                        supplier_order_item_id: item.supplier_order_item_id ?? null,
+                        autopart_id: item.autopart_id ?? null,
+                        oem_number: item.oem_number || null,
+                        brand_name: item.brand_name || null,
+                        autopart_name: item.autopart_name || null,
+                        received_quantity: item.received_quantity,
+                        price: item.price != null ? item.price : null,
+                        total_price_with_vat: item.total_price_with_vat != null
+                            ? item.total_price_with_vat : null,
+                        gtd_code: item.gtd_code || null,
+                        country_name: item.country_name || null,
+                        comment: item.comment || null,
+                        warehouse_id: item.warehouse_id ?? null,
+                    })),
+                );
+            }
+
+            message.success('Документ сохранён');
+            setEditMode(false);
+            setEditedItems({});
+            setNewItems([]);
+            await reloadDetail(detailReceipt.id);
+            fetchDocuments();
+        } catch (err) {
+            message.error(err?.response?.data?.detail || 'Не удалось сохранить');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    // ── delete item ─────────────────────────────────────────────────────────
+    const handleDeleteItem = async (itemId) => {
+        try {
+            const updated = await deleteSupplierReceiptItem(itemId);
+            setDetailReceipt(updated.data);
+            setEditedItems((prev) => {
+                const next = { ...prev };
+                delete next[itemId];
+                return next;
+            });
+            message.success('Строка удалена');
+        } catch (err) {
+            message.error(err?.response?.data?.detail || 'Не удалось удалить строку');
+        }
+    };
+
+    // ── post / unpost ───────────────────────────────────────────────────────
+    const handlePost = async (receiptId) => {
+        setPostingId(receiptId);
+        try {
+            await postSupplierReceipt(receiptId);
+            message.success(`Документ #${receiptId} проведен`);
+            fetchDocuments();
+            if (detailReceipt?.id === receiptId) await reloadDetail(receiptId);
+            // Offer to print labels after posting
+            Modal.confirm({
+                title: 'Документ проведён',
+                content: 'Распечатать этикетки для полученных позиций?',
+                okText: 'Печать',
+                cancelText: 'Пропустить',
+                onOk: () => setLabelVisible(true),
+            });
+        } catch (err) {
+            message.error(err?.response?.data?.detail || 'Не удалось провести документ');
+        } finally {
+            setPostingId(null);
+        }
+    };
+
+    const handleUnpost = async (receiptId) => {
+        setUnpostingId(receiptId);
+        try {
+            await unpostSupplierReceipt(receiptId);
+            message.success(`Документ #${receiptId} распроведен`);
+            fetchDocuments();
+            if (detailReceipt?.id === receiptId) await reloadDetail(receiptId);
+        } catch (err) {
+            message.error(err?.response?.data?.detail || 'Не удалось распровести документ');
+        } finally {
+            setUnpostingId(null);
+        }
+    };
+
+    const handleSendUpdEmail = async (receiptId) => {
+        setSendingUpdId(receiptId);
+        try {
+            const { data } = await sendSupplierReceiptUpdEmail(receiptId);
+            const target = data?.to_email ? ` на ${data.to_email}` : '';
+            message.success(`УПД отправлен${target}`);
+        } catch (err) {
+            message.error(err?.response?.data?.detail || 'Не удалось отправить УПД');
+        } finally {
+            setSendingUpdId(null);
+        }
+    };
+
+    // ── delete receipt ──────────────────────────────────────────────────────
+    const performDelete = async (receiptId) => {
+        setDeletingId(receiptId);
+        try {
+            await deleteSupplierReceipt(receiptId);
+            message.success(`Документ #${receiptId} удален`);
+            fetchDocuments();
+            if (detailReceipt?.id === receiptId) setDetailVisible(false);
+        } catch (err) {
+            message.error(err?.response?.data?.detail || 'Не удалось удалить документ');
+        } finally {
+            setDeletingId(null);
+        }
+    };
+
+
+    // ── create manual receipt ───────────────────────────────────────────────
+    const handleCreateSubmit = async () => {
+        setCreateSaving(true);
+        try {
+            const values = await createForm.validateFields();
+            const items = createItems.map((item) => ({
+                autopart_id: item.autopart_id ?? null,
+                oem_number: item.oem_number || null,
+                brand_name: item.brand_name || null,
+                autopart_name: item.autopart_name || null,
+                received_quantity: item.received_quantity || 0,
+                price: item.price != null ? item.price : null,
+                comment: item.comment || null,
+                warehouse_id: item.warehouse_id ?? null,
+            }));
+            const payload = {
+                provider_id: values.provider_id,
+                warehouse_id: values.warehouse_id || null,
+                document_number: values.document_number || null,
+                document_date: values.document_date
+                    ? values.document_date.format('YYYY-MM-DD') : null,
+                comment: values.comment || null,
+                post_now: false,
+                items,
+            };
+            const { data } = await createManualSupplierReceipt(payload);
+            message.success(`Документ #${data.id} создан`);
+            createForm.resetFields();
+            setCreateItems([]);
+            setCreateVisible(false);
+            fetchDocuments();
+            handleOpenDetail(data.id);
+        } catch (err) {
+            if (err?.errorFields) return; // form validation
+            message.error(err?.response?.data?.detail || 'Не удалось создать документ');
+        } finally {
+            setCreateSaving(false);
+        }
+    };
+
+    // ── list columns ────────────────────────────────────────────────────────
+    const columns = [
+        {
+            title: 'ID', dataIndex: 'id', key: 'id', width: 70,
+            render: (v) => `#${v}`,
+        },
+        {
+            title: 'Поставщик', dataIndex: 'provider_name', key: 'provider_name',
+            width: 200, ellipsis: true, render: (v) => v || '—',
+        },
+        {
+            title: 'Склад', dataIndex: 'warehouse_name', key: 'warehouse_name',
+            width: 160, ellipsis: true, render: (v) => v || '—',
+        },
+        {
+            title: 'Статус', key: 'status', width: 110,
+            render: (_, row) => (
+                <Space direction="vertical" size={2}>
+                    {row.posted_at
+                        ? <Tag color="green">Проведен</Tag>
+                        : <Tag color="gold">Документ</Tag>}
+                    {(row.items || []).some((item) => item.document_pending) && (
+                        <Tag color="orange">DOC_PENDING</Tag>
+                    )}
+                    {(row.has_price_alert || (row.items || []).some((item) => item.price_exceeds_order)) && (
+                        <Tooltip title="Есть позиции, где цена в документе выше цены в заказе более чем на 1 ₽">
+                            <Tag color="red">Цена выше заказа</Tag>
+                        </Tooltip>
+                    )}
+                    <ReceiptMarkingBadge receipt={row} />
+                </Space>
+            ),
+        },
+        {
+            title: 'Документ', key: 'document', width: 200,
+            render: (_, row) => {
+                const num = row.document_number || 'б/н';
+                const dt = row.document_date ? dayjs(row.document_date).format('DD.MM.YYYY') : '—';
+                return `${num} · ${dt}`;
+            },
+        },
+        ...(canUseDiadoc ? [{
+            title: 'Источник', key: 'source', width: 180,
+            render: (_, row) => {
+                const doc = diadocByReceiptId[row.id];
+                if (!doc) {
+                    return <Text type="secondary">Почта / вручную</Text>;
+                }
+                return (
+                    <Space size={[4, 4]} wrap>
+                        <Tag color="blue">Диадок</Tag>
+                        <Tag color={DIADOC_STATUS_COLORS[doc.status] || 'default'}>
+                            {DIADOC_STATUS_LABELS[doc.status] || doc.status}
+                        </Tag>
+                        <Button
+                            type="link"
+                            size="small"
+                            style={{ padding: 0 }}
+                            onClick={() => navigate(`/documents/diadoc?tab=inbound&incomingId=${doc.id}`)}
+                        >
+                            #{doc.id}
+                        </Button>
+                    </Space>
+                );
+            },
+        }] : []),
+        {
+            title: 'Создан', dataIndex: 'created_at', key: 'created_at', width: 130,
+            render: (v) => v ? dayjs(v).format('DD.MM.YY HH:mm') : '—',
+        },
+        {
+            title: 'Строк', key: 'items_count', width: 70, align: 'right',
+            render: (_, row) => row.items?.length || 0,
+        },
+        {
+            title: 'Сумма', key: 'total_sum', width: 110, align: 'right',
+            render: (_, row) => {
+                const sum = (row.items || []).reduce((s, item) => {
+                    const lineTotal = getLineTotalWithVat(item);
+                    return s + (lineTotal ?? 0);
+                }, 0);
+                return sum > 0 ? formatMoney(sum) : '—';
+            },
+        },
+        {
+            title: 'Действия', key: 'actions', width: 280,
+            render: (_, row) => (
+                <Space size="small" wrap onClick={(e) => e.stopPropagation()}>
+                    <Button size="small" icon={<FileTextOutlined />}
+                        onClick={() => handleOpenDetail(row.id)}>
+                        Открыть
+                    </Button>
+                    {row.posted_at ? (
+                        <Button size="small" onClick={() => handleUnpost(row.id)}
+                            loading={unpostingId === row.id}>
+                            Распровести
+                        </Button>
+                    ) : (
+                        <Button size="small" type="primary" onClick={() => handlePost(row.id)}
+                            loading={postingId === row.id}>
+                            Провести
+                        </Button>
+                    )}
+                    <Button
+                        size="small"
+                        onClick={() => handleSendUpdEmail(row.id)}
+                        loading={sendingUpdId === row.id}
+                    >
+                        УПД на почту
+                    </Button>
+                    {!row.posted_at && (
+                        <Popconfirm
+                            title="Удалить документ?"
+                            okText="Удалить" okButtonProps={{ danger: true }}
+                            cancelText="Отмена"
+                            onConfirm={() => performDelete(row.id)}
+                        >
+                            <Button size="small" danger loading={deletingId === row.id}>
+                                Удалить
+                            </Button>
+                        </Popconfirm>
+                    )}
+                </Space>
+            ),
+        },
+    ];
+
+    // ── detail modal: build item table columns ──────────────────────────────
+    const buildItemColumns = (isVatPayer, isDraft) => {
+        const oneLine = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 };
+        const unitPrice = (row) => (
+            (row.total_price_with_vat != null && row.received_quantity)
+                ? Number(row.total_price_with_vat) / Number(row.received_quantity)
+                : row.price
+        );
+        const lineVat = (row) => {
+            const total = row.total_price_with_vat != null
+                ? Number(row.total_price_with_vat)
+                : Number(row.received_quantity || 0) * Number(row.price || 0);
+            return total > 0 ? total - total / (1 + VAT_RATE) : null;
+        };
+        const baseColsView = [
+            {
+                title: '№', key: 'idx', width: 36, align: 'center',
+                render: (_, __, i) => <Text type="secondary" style={{ fontSize: 12 }}>{i + 1}</Text>,
+            },
+            {
+                title: 'Позиция', key: 'position', width: '30%',
+                render: (_, row) => (
+                    <div style={{ minWidth: 0 }}>
+                        <div style={oneLine}>
+                            <Text strong>{row.oem_number || '—'}</Text>
+                            {row.brand_name && <Tag style={{ margin: '0 0 0 6px', fontSize: 11 }}>{row.brand_name}</Tag>}
+                        </div>
+                        <Tooltip title={row.autopart_name}>
+                            <div style={{ ...oneLine, fontSize: 12, color: '#8c8c8c' }}>{row.autopart_name || '—'}</div>
+                        </Tooltip>
+                    </div>
+                ),
+            },
+            {
+                title: 'Кол', dataIndex: 'received_quantity', key: 'qty',
+                width: 62, align: 'right',
+                render: (v, row) => (
+                    <div style={{ whiteSpace: 'nowrap' }}>
+                        <div>{v}</div>
+                        {markingItemBadge(row)}
+                    </div>
+                ),
+            },
+            {
+                title: 'Цена', key: 'price', width: 96, align: 'right',
+                render: (_, row) => {
+                    const shown = formatMoney(unitPrice(row));
+                    if (!row.price_exceeds_order) return <span style={{ whiteSpace: 'nowrap' }}>{shown}</span>;
+                    return (
+                        <Tooltip title={`Дороже заказа: в заказе ${formatMoney(row.order_price)}`}>
+                            <div style={{ whiteSpace: 'nowrap' }}>
+                                <Text type="danger" strong>{shown}</Text>
+                                <div><Text type="danger" style={{ fontSize: 11 }}>в заказе {formatMoney(row.order_price)}</Text></div>
+                            </div>
+                        </Tooltip>
+                    );
+                },
+                onCell: (row) => (
+                    row.price_exceeds_order ? { style: { background: '#fff1f0' } } : {}
+                ),
+            },
+            ...(isVatPayer ? [{
+                title: 'НДС', key: 'vat', width: 92, align: 'right',
+                render: (_, row) => {
+                    const v = lineVat(row);
+                    return <span style={{ whiteSpace: 'nowrap' }}>{v != null ? formatMoney(v) : '—'}</span>;
+                },
+            }] : []),
+            {
+                title: isVatPayer ? 'Сумма с НДС' : 'Сумма', key: 'sum', width: 108, align: 'right',
+                render: (_, row) => {
+                    const lineTotal = getLineTotalWithVat(row);
+                    return lineTotal == null ? '—' : <Text strong style={{ whiteSpace: 'nowrap' }}>{formatMoney(lineTotal)}</Text>;
+                },
+            },
+            {
+                title: 'ГТД / страна', key: 'gtd', width: '15%',
+                render: (_, row) => (
+                    row.gtd_code || row.country_name || row.country_code ? (
+                        <div style={{ minWidth: 0 }}>
+                            <Tooltip title={row.gtd_code}><div style={{ ...oneLine, fontSize: 12 }}>{row.gtd_code || '—'}</div></Tooltip>
+                            <div style={{ ...oneLine, fontSize: 11, color: '#8c8c8c' }}>{row.country_name || row.country_code || ''}</div>
+                        </div>
+                    ) : <Text type="secondary">—</Text>
+                ),
+            },
+            {
+                title: 'Заказ / склад', key: 'order_info', width: '16%',
+                render: (_, row) => {
+                    const customer = [row.customer_name, row.customer_order_number && `№${row.customer_order_number}`]
+                        .filter(Boolean).join(' / ');
+                    const otherWarehouse = row.warehouse_id && row.warehouse_id !== detailReceipt.warehouse_id
+                        ? (row.warehouse_name || `#${row.warehouse_id}`) : null;
+                    const cd = row.cross_docking_status;
+                    return (
+                        <div style={{ minWidth: 0 }}>
+                            <Tooltip title={customer || row.comment}>
+                                <div style={{ ...oneLine, fontSize: 12 }}>{customer || row.comment || '—'}</div>
+                            </Tooltip>
+                            <div style={{ ...oneLine, fontSize: 11 }}>
+                                {otherWarehouse && <Tag color="blue" style={{ margin: '0 4px 0 0', fontSize: 11 }}>{otherWarehouse}</Tag>}
+                                {cd === 'ready_for_customer' && <Tag color="green" style={{ margin: 0, fontSize: 11 }}>Готово клиенту</Tag>}
+                                {cd === 'label_pending' && <Tag color="gold" style={{ margin: 0, fontSize: 11 }}>Ждёт этикетку</Tag>}
+                                {cd && !['ready_for_customer', 'label_pending'].includes(cd) && <Tag color="blue" style={{ margin: 0, fontSize: 11 }}>Принято</Tag>}
+                            </div>
+                        </div>
+                    );
+                },
+            },
+        ];
+
+        const vatCols = [];
+        const extraCols = [];
+
+        const actionCol = [{
+            title: '',
+            key: 'del',
+            width: isDraft ? 72 : 36,
+            render: (_, row) => (
+                <Space size={0}>
+                    <OpenProductButton autopartId={row.autopart_id} onSaved={() => detailReceipt && openDetail?.(detailReceipt.id)} />
+                    {isDraft && (
+                        <Popconfirm
+                            title="Удалить строку?"
+                            okText="Да" cancelText="Нет"
+                            onConfirm={() => handleDeleteItem(row.id)}
+                        >
+                            <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+                        </Popconfirm>
+                    )}
+                </Space>
+            ),
+        }];
+
+        if (!editMode) {
+            return [...baseColsView, ...vatCols, ...extraCols, ...actionCol];
+        }
+
+        // Edit mode columns
+        const mkInput = (field, itemId, placeholder = '') => (
+            <Input
+                size="small"
+                value={editedItems[itemId]?.[field] ?? ''}
+                placeholder={placeholder}
+                onChange={(e) => setItemField(itemId, field, e.target.value)}
+                style={{ minWidth: 60 }}
+            />
+        );
+        const mkNumber = (field, itemId, min = 0) => (
+            <InputNumber
+                size="small"
+                min={min}
+                value={editedItems[itemId]?.[field] ?? null}
+                onChange={(v) => setItemField(itemId, field, v)}
+                style={{ width: '100%' }}
+            />
+        );
+
+        return [
+            { title: '№', key: 'idx', width: 45, align: 'center', render: (_, __, i) => i + 1 },
+            {
+                title: 'Позиция', key: 'position', width: 260,
+                render: (_, row) => (
+                    <ArticleSearchCell
+                        currentOem={editedItems[row.id]?.oem_number ?? row.oem_number}
+                        currentBrand={editedItems[row.id]?.brand_name ?? row.brand_name}
+                        currentName={editedItems[row.id]?.autopart_name ?? row.autopart_name}
+                        onSelect={(part) => {
+                            setItemField(row.id, 'autopart_id', part.id);
+                            setItemField(row.id, 'oem_number', part.oem_number);
+                            setItemField(row.id, 'brand_name', part.brand);
+                            setItemField(row.id, 'autopart_name', part.name || '');
+                        }}
+                    />
+                ),
+            },
+            {
+                title: 'Кол-во', key: 'qty', width: 90,
+                render: (_, row) => mkNumber('received_quantity', row.id, 0),
+            },
+            {
+                title: 'Цена', key: 'price', width: 100,
+                render: (_, row) => mkNumber('price', row.id, 0),
+            },
+            ...(isVatPayer ? [{
+                title: 'С НДС', key: 'tvat', width: 110,
+                render: (_, row) => mkNumber('total_price_with_vat', row.id, 0),
+            }] : []),
+            {
+                title: 'ГТД', key: 'gtd', width: 120,
+                render: (_, row) => mkInput('gtd_code', row.id, 'ГТД'),
+            },
+            {
+                title: 'Страна', key: 'country', width: 100,
+                render: (_, row) => mkInput('country_name', row.id, 'Страна'),
+            },
+            {
+                title: 'Примечание', key: 'comment', width: 130,
+                render: (_, row) => mkInput('comment', row.id, 'Примечание'),
+            },
+            {
+                title: 'Склад', key: 'item_warehouse', width: 160,
+                render: (_, row) => (
+                    <Select
+                        size="small"
+                        allowClear
+                        placeholder="Как в документе"
+                        style={{ width: '100%' }}
+                        value={editedItems[row.id]?.warehouse_id ?? null}
+                        onChange={(v) => setItemField(row.id, 'warehouse_id', v ?? null)}
+                        options={warehouses.map((wh) => ({ value: wh.id, label: wh.name }))}
+                    />
+                ),
+            },
+            {
+                title: '',
+                key: 'del',
+                width: 40,
+                render: (_, row) => (
+                    <Popconfirm
+                        title="Удалить строку?"
+                        okText="Да" cancelText="Нет"
+                        onConfirm={() => handleDeleteItem(row.id)}
+                    >
+                        <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+                    </Popconfirm>
+                ),
+            },
+        ];
+    };
+
+    // New item row columns (edit mode)
+    const newItemColumns = (isVatPayer) => [
+        { title: '№', key: 'idx', width: 45, align: 'center', render: () => <Text type="secondary">+</Text> },
+        {
+            title: 'Позиция', key: 'position', width: 260,
+            render: (_, row) => (
+                <ArticleSearchCell
+                    currentOem={row.oem_number}
+                    currentBrand={row.brand_name}
+                    currentName={row.autopart_name}
+                    onSelect={(part) => {
+                        updateNewItem(row._key, 'autopart_id', part.id);
+                        updateNewItem(row._key, 'oem_number', part.oem_number);
+                        updateNewItem(row._key, 'brand_name', part.brand);
+                        updateNewItem(row._key, 'autopart_name', part.name || '');
+                    }}
+                />
+            ),
+        },
+        {
+            title: 'Кол-во', key: 'qty', width: 90,
+            render: (_, row) => (
+                <InputNumber size="small" min={0} value={row.received_quantity}
+                    onChange={(v) => updateNewItem(row._key, 'received_quantity', v)}
+                    style={{ width: '100%' }} />
+            ),
+        },
+        {
+            title: 'Цена', key: 'price', width: 100,
+            render: (_, row) => (
+                <InputNumber size="small" min={0} value={row.price}
+                    onChange={(v) => updateNewItem(row._key, 'price', v)}
+                    style={{ width: '100%' }} />
+            ),
+        },
+        ...(isVatPayer ? [{
+            title: 'С НДС', key: 'tvat', width: 110,
+            render: (_, row) => (
+                <InputNumber size="small" min={0} value={row.total_price_with_vat}
+                    onChange={(v) => updateNewItem(row._key, 'total_price_with_vat', v)}
+                    style={{ width: '100%' }} />
+            ),
+        }] : []),
+        {
+            title: 'ГТД', key: 'gtd', width: 120,
+            render: (_, row) => (
+                <Input size="small" value={row.gtd_code}
+                    placeholder="ГТД"
+                    onChange={(e) => updateNewItem(row._key, 'gtd_code', e.target.value)} />
+            ),
+        },
+        {
+            title: 'Страна', key: 'country', width: 100,
+            render: (_, row) => (
+                <Input size="small" value={row.country_name}
+                    placeholder="Страна"
+                    onChange={(e) => updateNewItem(row._key, 'country_name', e.target.value)} />
+            ),
+        },
+        {
+            title: 'Примечание', key: 'comment', width: 130,
+            render: (_, row) => (
+                <Input size="small" value={row.comment}
+                    placeholder="Примечание"
+                    onChange={(e) => updateNewItem(row._key, 'comment', e.target.value)} />
+            ),
+        },
+        {
+            title: 'Склад', key: 'item_warehouse', width: 160,
+            render: (_, row) => (
+                <Select
+                    size="small"
+                    allowClear
+                    placeholder="Как в документе"
+                    style={{ width: '100%' }}
+                    value={row.warehouse_id ?? null}
+                    onChange={(v) => updateNewItem(row._key, 'warehouse_id', v ?? null)}
+                    options={warehouses.map((wh) => ({ value: wh.id, label: wh.name }))}
+                />
+            ),
+        },
+        {
+            title: '', key: 'del', width: 40,
+            render: (_, row) => (
+                <Button size="small" type="text" danger icon={<DeleteOutlined />}
+                    onClick={() => removeNewItem(row._key)} />
+            ),
+        },
+    ];
+
+    // ── totals calculation ──────────────────────────────────────────────────
+    const calcTotals = (items, isVatPayer) => {
+        let qty = 0, sum = 0, vat = 0, total = 0;
+        (items || []).forEach((item) => {
+            const q = Number(item.received_quantity || 0);
+            qty += q;
+            const lineTotal = getLineTotalWithVat(item);
+            if (lineTotal == null) return;
+            const lineBase = lineTotal / (1 + VAT_RATE);
+            sum += lineTotal;
+            if (isVatPayer) {
+                vat += lineTotal - lineBase;
+            }
+            total += lineTotal;
+        });
+        return { qty, sum, vat, total };
+    };
+
+    // ── render ──────────────────────────────────────────────────────────────
+    return (
+        <div className="page-shell">
+            <Card>
+                <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
+                    <Col>
+                        <Title level={3} style={{ margin: 0 }}>Документы: входящие</Title>
+                    </Col>
+                    <Col>
+                        <Button
+                            type="primary"
+                            icon={<PlusOutlined />}
+                            onClick={() => {
+                                createForm.resetFields();
+                                createForm.setFieldsValue({
+                                    warehouse_id: warehouses[0]?.id ?? null,
+                                });
+                                setCreateItems([]);
+                                setCreateVisible(true);
+                            }}
+                        >
+                            Создать документ
+                        </Button>
+                    </Col>
+                </Row>
+
+                <Row gutter={12} style={{ marginBottom: 16 }}>
+                    <Col xs={24} md={8}>
+                        <Select showSearch allowClear placeholder="Поставщик"
+                            style={{ width: '100%' }}
+                            value={filters.providerId}
+                            onChange={(v) => setFilters((p) => ({ ...p, providerId: v || null }))}
+                            options={providers.map((pr) => ({ value: pr.id, label: pr.name }))}
+                        />
+                    </Col>
+                    <Col xs={24} md={8}>
+                        <RangePicker style={{ width: '100%' }} value={filters.dateRange}
+                            format="DD.MM.YY"
+                            onChange={(v) => setFilters((p) => ({
+                                ...p, dateRange: v || getDefaultDateRange(),
+                            }))}
+                        />
+                    </Col>
+                    <Col xs={24} md={4}>
+                        <Select style={{ width: '100%' }} value={filters.status}
+                            onChange={(v) => setFilters((p) => ({ ...p, status: v }))}
+                            options={[
+                                { value: 'all', label: 'Все' },
+                                { value: 'draft', label: "Документы (чернов.)" },
+                                { value: 'posted', label: 'Проведенные' },
+                            ]}
+                        />
+                    </Col>
+                    <Col xs={24} md={4}>
+                        <Button type="primary" block onClick={fetchDocuments} loading={loading}>
+                            Обновить
+                        </Button>
+                    </Col>
+                </Row>
+
+                {!rows.length && !loading ? (
+                    <Empty description="Документы не найдены" />
+                ) : (
+                    <Table
+                        size="small"
+                        loading={loading}
+                        dataSource={rows.map((r) => ({ ...r, key: r.id }))}
+                        columns={columns}
+                        pagination={{ pageSize: 20, showSizeChanger: true }}
+                        scroll={{ x: 1200 }}
+                        onRow={(row) => ({
+                            onClick: (e) => {
+                                if (e.target.closest('button, .ant-select, .ant-popover')) return;
+                                handleOpenDetail(row.id);
+                            },
+                            style: { cursor: 'pointer' },
+                        })}
+                    />
+                )}
+            </Card>
+
+            {/* ─── Detail / Edit modal ─────────────────────────────────────── */}
+            <Modal
+                open={detailVisible}
+                onCancel={() => {
+                    setDetailVisible(false);
+                    cancelEditMode();
+                }}
+                footer={null}
+                width="92%"
+                style={{ maxWidth: 1500, top: 16 }}
+                title={
+                    detailReceipt ? (
+                        <Space>
+                            <span>Документ поступления #{detailReceipt.id}</span>
+                            {detailReceipt.posted_at
+                                ? <Tag color="green">Проведен</Tag>
+                                : <Tag color="gold">Документ</Tag>}
+                        </Space>
+                    ) : 'Документ поступления'
+                }
+                destroyOnClose
+            >
+                {detailLoading && (
+                    <div style={{ textAlign: 'center', padding: 40 }}><Spin size="large" /></div>
+                )}
+
+                {!detailLoading && detailReceipt && (() => {
+                    const isVatPayer = detailReceipt.provider_is_vat_payer;
+                    const isDraft = !detailReceipt.posted_at;
+                    const items = detailReceipt.items || [];
+                    const crossDockingItems = items.filter(
+                        (item) => item.customer_order_item_id
+                    );
+                    const hasDocumentPending = crossDockingItems.some(
+                        (item) => item.document_pending
+                    );
+                    const diadocDoc = diadocByReceiptId[detailReceipt.id];
+                    const { qty, sum, vat, total } = calcTotals(items, isVatPayer);
+                    const itemCols = buildItemColumns(isVatPayer, isDraft);
+                    const colSpanBase = isVatPayer ? 9 : 8;
+
+                    return (
+                        <>
+                            <ReceiptMarkingPanel
+                                receipt={detailReceipt}
+                                onChanged={(data) => {
+                                    setDetailReceipt(data);
+                                    fetchDocuments();
+                                }}
+                            />
+                            {/* Header */}
+                            {!editMode ? (
+                                <Descriptions size="small" bordered
+                                    column={{ xs: 1, sm: 2, md: 3 }}
+                                    style={{ marginBottom: 12 }}>
+                                    <Descriptions.Item label="Поставщик">
+                                        <Text strong>{detailReceipt.provider_name || '—'}</Text>
+                                        {isVatPayer && <Tag color="blue" style={{ marginLeft: 8 }}>Плательщик НДС</Tag>}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="Склад">
+                                        {detailReceipt.warehouse_name || '—'}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="Номер УПД">
+                                        {detailReceipt.document_number || '—'}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="Дата документа">
+                                        {detailReceipt.document_date
+                                            ? dayjs(detailReceipt.document_date).format('DD.MM.YYYY')
+                                            : '—'}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="НДС">
+                                        {isVatPayer ? <Tag color="blue">22%</Tag> : <Tag>Без НДС</Tag>}
+                                    </Descriptions.Item>
+                                    {canUseDiadoc && (
+                                        <Descriptions.Item label="Источник">
+                                            {diadocDoc ? (
+                                                <Space size={[4, 4]} wrap>
+                                                    <Tag color="blue">Диадок</Tag>
+                                                    <Tag color={DIADOC_STATUS_COLORS[diadocDoc.status] || 'default'}>
+                                                        {DIADOC_STATUS_LABELS[diadocDoc.status] || diadocDoc.status}
+                                                    </Tag>
+                                                    <Button
+                                                        type="link"
+                                                        size="small"
+                                                        icon={<LinkOutlined />}
+                                                        onClick={() => navigate(`/documents/diadoc?tab=inbound&incomingId=${diadocDoc.id}`)}
+                                                    >
+                                                        Документ #{diadocDoc.id}
+                                                    </Button>
+                                                </Space>
+                                            ) : (
+                                                <Text type="secondary">Почта / вручную</Text>
+                                            )}
+                                        </Descriptions.Item>
+                                    )}
+                                    <Descriptions.Item label="Создан">
+                                        {dayjs(detailReceipt.created_at).format('DD.MM.YYYY HH:mm')}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="Создал">
+                                        {detailReceipt.created_by_email || '—'}
+                                    </Descriptions.Item>
+                                    {detailReceipt.comment && (
+                                        <Descriptions.Item label="Комментарий" span={3}>
+                                            {detailReceipt.comment}
+                                        </Descriptions.Item>
+                                    )}
+                                </Descriptions>
+                            ) : (
+                                <Form form={headerForm} layout="vertical" style={{ marginBottom: 12 }}>
+                                    <Row gutter={12}>
+                                        <Col span={6}>
+                                            <Form.Item
+                                                name="warehouse_id"
+                                                label="Склад"
+                                                rules={[{ required: true, message: 'Выберите склад' }]}
+                                            >
+                                                <Select
+                                                    placeholder="Выберите склад"
+                                                    options={warehouses.map((warehouse) => ({
+                                                        value: warehouse.id,
+                                                        label: warehouse.name,
+                                                    }))}
+                                                />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col span={6}>
+                                            <Form.Item name="document_number" label="Номер УПД">
+                                                <Input placeholder="Номер документа" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col span={6}>
+                                            <Form.Item name="document_date" label="Дата документа">
+                                                <DatePicker style={{ width: '100%' }} format="DD.MM.YYYY" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col span={6}>
+                                            <Form.Item name="comment" label="Комментарий к документу">
+                                                <TextArea rows={1} placeholder="Комментарий" />
+                                            </Form.Item>
+                                        </Col>
+                                    </Row>
+                                </Form>
+                            )}
+
+                            {items.some((item) => !item.supplier_order_item_id
+                                && Number(item.received_quantity) > 0) && (
+                                <Alert
+                                    type="info"
+                                    showIcon
+                                    message="Есть строки без привязки к заказу поставщику"
+                                    action={(
+                                        <Button
+                                            size="small"
+                                            loading={relinking}
+                                            onClick={() => handleRelink(detailReceipt.id)}
+                                        >
+                                            Перепроверить заказы
+                                        </Button>
+                                    )}
+                                    style={{ marginBottom: 12 }}
+                                />
+                            )}
+
+                            {hasDocumentPending && (
+                                <Alert
+                                    type="warning"
+                                    showIcon
+                                    message="DOC_PENDING · ожидается документ поставщика"
+                                    description="Товар уже принят и может участвовать в сборке клиента. После получения УПД или накладной зарегистрируйте номер и дату."
+                                    action={(
+                                        <Button size="small" onClick={openDocumentPendingModal}>
+                                            Зарегистрировать документ
+                                        </Button>
+                                    )}
+                                    style={{ marginBottom: 12 }}
+                                />
+                            )}
+
+                            {/* Items table */}
+                            <Table
+                                size="small"
+                                dataSource={items.map((item, idx) => ({
+                                    ...item,
+                                    key: item.id ?? idx,
+                                }))}
+                                columns={itemCols}
+                                pagination={false}
+                                scroll={{ x: isVatPayer ? 1600 : 1400 }}
+                                bordered
+                                summary={() => {
+                                    if (editMode) return null;
+                                    return (
+                                        <Table.Summary.Row style={{ fontWeight: 600 }}>
+                                            <Table.Summary.Cell index={0} colSpan={4} align="right">
+                                                Итого:
+                                            </Table.Summary.Cell>
+                                            <Table.Summary.Cell index={4} align="right">{qty}</Table.Summary.Cell>
+                                            <Table.Summary.Cell index={5} />
+                                            <Table.Summary.Cell index={6} align="right">{formatMoney(sum)}</Table.Summary.Cell>
+                                            {isVatPayer && (
+                                                <Table.Summary.Cell index={7} align="right">{formatMoney(vat)}</Table.Summary.Cell>
+                                            )}
+                                            {isVatPayer ? (
+                                                <Table.Summary.Cell index={8} align="right">
+                                                    {formatMoney(total)}
+                                                </Table.Summary.Cell>
+                                            ) : null}
+                                            <Table.Summary.Cell
+                                                index={colSpanBase}
+                                                colSpan={isVatPayer ? 3 : 4}
+                                            />
+                                        </Table.Summary.Row>
+                                    );
+                                }}
+                            />
+
+                            {/* New items in edit mode */}
+                            {editMode && newItems.length > 0 && (
+                                <Table
+                                    size="small"
+                                    dataSource={newItems.map((r) => ({ ...r, key: r._key }))}
+                                    columns={newItemColumns(isVatPayer)}
+                                    pagination={false}
+                                    scroll={{ x: isVatPayer ? 1600 : 1400 }}
+                                    showHeader={false}
+                                    bordered
+                                    style={{ marginTop: 4 }}
+                                />
+                            )}
+
+                            {/* Action buttons */}
+                            <Row justify="space-between" align="middle" style={{ marginTop: 16 }}>
+                                <Col>
+                                    {editMode && (
+                                        <Button icon={<PlusOutlined />} onClick={addNewItemRow}>
+                                            Добавить строку
+                                        </Button>
+                                    )}
+                                </Col>
+                                <Col>
+                                    <Space>
+                                        {!editMode && isDraft && (
+                                            <Button icon={<EditOutlined />} onClick={enterEditMode}>
+                                                Редактировать
+                                            </Button>
+                                        )}
+                                        {editMode && (
+                                            <>
+                                                <Button onClick={cancelEditMode} disabled={saving}>
+                                                    Отмена
+                                                </Button>
+                                                <Button type="primary" icon={<SaveOutlined />}
+                                                    onClick={handleSave} loading={saving}>
+                                                    Сохранить
+                                                </Button>
+                                            </>
+                                        )}
+                                        {!editMode && (
+                                            <Button icon={<PrinterOutlined />}
+                                                onClick={() => setLabelVisible(true)}>
+                                                Этикетки поступления
+                                            </Button>
+                                        )}
+                                        {!editMode && !isDraft && crossDockingItems.length > 0 && (
+                                            <Button
+                                                type="primary"
+                                                icon={<PrinterOutlined />}
+                                                onClick={() => setCrossDockingLabelsVisible(true)}
+                                            >
+                                                Клиентские этикетки
+                                            </Button>
+                                        )}
+                                        {!editMode && (
+                                            <Button
+                                                icon={<FileTextOutlined />}
+                                                onClick={() => handleSendUpdEmail(detailReceipt.id)}
+                                                loading={sendingUpdId === detailReceipt.id}
+                                            >
+                                                УПД на почту
+                                            </Button>
+                                        )}
+                                        {!editMode && !isDraft && (
+                                            <Button
+                                                icon={<RollbackOutlined />}
+                                                onClick={() => navigate(
+                                                    `/warehouse/returns?tab=supplier&create=1&supplierReceiptId=${detailReceipt.id}${
+                                                        detailReceipt.provider_id
+                                                            ? `&providerId=${detailReceipt.provider_id}`
+                                                            : ''
+                                                    }`
+                                                )}
+                                            >
+                                                Возврат поставщику
+                                            </Button>
+                                        )}
+                                        {!editMode && isDraft && detailReceipt.items?.some((line) => line.marking_codes?.length) && (
+                                            <Button onClick={() => navigate(`/warehouse/receiving-scan?receipt=${detailReceipt.id}`)}>
+                                                Сверить коды сканером
+                                            </Button>
+                                        )}
+                                        {!editMode && isDraft && (
+                                            <Button type="primary"
+                                                onClick={() => handlePost(detailReceipt.id)}
+                                                loading={postingId === detailReceipt.id}>
+                                                Провести
+                                            </Button>
+                                        )}
+                                        {!editMode && !isDraft && (
+                                            <Button
+                                                onClick={() => handleUnpost(detailReceipt.id)}
+                                                loading={unpostingId === detailReceipt.id}>
+                                                Распровести
+                                            </Button>
+                                        )}
+                                        {!editMode && isDraft && (
+                                            <Popconfirm
+                                                title="Удалить документ?"
+                                                okText="Удалить" okButtonProps={{ danger: true }}
+                                                cancelText="Отмена"
+                                                onConfirm={() => {
+                                                    setDetailVisible(false);
+                                                    performDelete(detailReceipt.id);
+                                                }}
+                                            >
+                                                <Button danger>Удалить</Button>
+                                            </Popconfirm>
+                                        )}
+                                        <Button onClick={() => {
+                                            setDetailVisible(false);
+                                            cancelEditMode();
+                                        }}>
+                                            Закрыть
+                                        </Button>
+                                    </Space>
+                                </Col>
+                            </Row>
+                        </>
+                    );
+                })()}
+            </Modal>
+
+            {/* ─── Label print modal ──────────────────────────────────────── */}
+            <LabelModal
+                open={labelVisible}
+                receipt={detailReceipt}
+                onClose={() => setLabelVisible(false)}
+            />
+            <CrossDockingLabelsModal
+                receiptId={detailReceipt?.id}
+                open={crossDockingLabelsVisible}
+                onClose={() => setCrossDockingLabelsVisible(false)}
+            />
+            <Modal
+                title="Регистрация входящего документа"
+                open={documentPendingVisible}
+                okText="Сохранить и снять DOC_PENDING"
+                cancelText="Отмена"
+                confirmLoading={documentPendingSaving}
+                okButtonProps={{ disabled: !documentPendingNumber.trim() }}
+                onOk={() => void handleResolveDocumentPending()}
+                onCancel={() => setDocumentPendingVisible(false)}
+            >
+                <Space direction="vertical" style={{ width: '100%' }} size={12}>
+                    <Input
+                        value={documentPendingNumber}
+                        onChange={(event) => setDocumentPendingNumber(event.target.value)}
+                        placeholder="Номер УПД или накладной"
+                    />
+                    <DatePicker
+                        value={documentPendingDate}
+                        onChange={setDocumentPendingDate}
+                        format="DD.MM.YYYY"
+                        style={{ width: '100%' }}
+                    />
+                </Space>
+            </Modal>
+
+            {/* ─── Create document modal ───────────────────────────────────── */}
+            <Modal
+                open={createVisible}
+                onCancel={() => { setCreateVisible(false); setCreateItems([]); }}
+                title="Создать документ поступления"
+                footer={
+                    <Space>
+                        <Button onClick={() => setCreateVisible(false)} disabled={createSaving}>
+                            Отмена
+                        </Button>
+                        <Button type="primary" onClick={handleCreateSubmit} loading={createSaving}
+                            icon={<SaveOutlined />}>
+                            Создать
+                        </Button>
+                    </Space>
+                }
+                width={900}
+                destroyOnClose
+            >
+                <Form form={createForm} layout="vertical">
+                    <Row gutter={12}>
+                        <Col span={8}>
+                            <Form.Item name="provider_id" label="Поставщик"
+                                rules={[{ required: true, message: 'Выберите поставщика' }]}>
+                                <Select showSearch placeholder="Выберите поставщика"
+                                    options={providers.map((pr) => ({
+                                        value: pr.id, label: pr.name,
+                                    }))}
+                                    onChange={(value) => {
+                                        createForm.setFieldValue(
+                                            'warehouse_id',
+                                            getProviderDefaultWarehouseId(value)
+                                                || warehouses[0]?.id
+                                                || null
+                                        );
+                                    }}
+                                    filterOption={(input, opt) =>
+                                        opt.label.toLowerCase().includes(input.toLowerCase())}
+                                />
+                            </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                            <Form.Item
+                                name="warehouse_id"
+                                label="Склад"
+                                rules={[{ required: true, message: 'Выберите склад' }]}
+                            >
+                                <Select
+                                    showSearch
+                                    placeholder="Выберите склад"
+                                    options={warehouses.map((warehouse) => ({
+                                        value: warehouse.id,
+                                        label: warehouse.name,
+                                    }))}
+                                    filterOption={(input, opt) =>
+                                        opt.label.toLowerCase().includes(input.toLowerCase())}
+                                />
+                            </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                            <Form.Item name="document_number" label="Номер УПД">
+                                <Input placeholder="Номер документа" />
+                            </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                            <Form.Item name="document_date" label="Дата документа">
+                                <DatePicker style={{ width: '100%' }} format="DD.MM.YYYY" />
+                            </Form.Item>
+                        </Col>
+                        <Col span={24}>
+                            <Form.Item name="comment" label="Комментарий">
+                                <TextArea rows={2} placeholder="Комментарий к документу" />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+
+                    <Text strong>Позиции:</Text>
+                    {createItems.length > 0 && (
+                        <Table
+                            size="small"
+                            dataSource={createItems.map((r) => ({ ...r, key: r._key }))}
+                            pagination={false}
+                            style={{ marginTop: 8 }}
+                            scroll={{ x: 800 }}
+                            columns={[
+                                {
+                                    title: 'Позиция', key: 'position', width: 260,
+                                    render: (_, row) => (
+                                        <ArticleSearchCell
+                                            currentOem={row.oem_number}
+                                            currentBrand={row.brand_name}
+                                            currentName={row.autopart_name}
+                                            onSelect={(part) => {
+                                                updateCreateItem(row._key, 'autopart_id', part.id);
+                                                updateCreateItem(row._key, 'oem_number', part.oem_number);
+                                                updateCreateItem(row._key, 'brand_name', part.brand);
+                                                updateCreateItem(row._key, 'autopart_name', part.name || '');
+                                            }}
+                                        />
+                                    ),
+                                },
+                                {
+                                    title: 'Кол-во', key: 'qty', width: 90,
+                                    render: (_, row) => (
+                                        <InputNumber size="small" min={0} value={row.received_quantity}
+                                            onChange={(v) => updateCreateItem(row._key, 'received_quantity', v)}
+                                            style={{ width: '100%' }} />
+                                    ),
+                                },
+                                {
+                                    title: 'Цена', key: 'price', width: 100,
+                                    render: (_, row) => (
+                                        <InputNumber size="small" min={0} value={row.price}
+                                            onChange={(v) => updateCreateItem(row._key, 'price', v)}
+                                            style={{ width: '100%' }} />
+                                    ),
+                                },
+                                {
+                                    title: 'Примечание', key: 'comment', width: 150,
+                                    render: (_, row) => (
+                                        <Input size="small" value={row.comment} placeholder="Примечание"
+                                            onChange={(e) => updateCreateItem(row._key, 'comment', e.target.value)} />
+                                    ),
+                                },
+                                {
+                                    title: 'Склад позиции', key: 'item_warehouse', width: 160,
+                                    render: (_, row) => (
+                                        <Select
+                                            size="small"
+                                            allowClear
+                                            placeholder="Как в документе"
+                                            style={{ width: '100%' }}
+                                            value={row.warehouse_id ?? null}
+                                            onChange={(v) => updateCreateItem(row._key, 'warehouse_id', v ?? null)}
+                                            options={warehouses.map((wh) => ({ value: wh.id, label: wh.name }))}
+                                        />
+                                    ),
+                                },
+                                {
+                                    title: '', key: 'del', width: 40,
+                                    render: (_, row) => (
+                                        <Button size="small" type="text" danger
+                                            icon={<DeleteOutlined />}
+                                            onClick={() => removeCreateItem(row._key)} />
+                                    ),
+                                },
+                            ]}
+                        />
+                    )}
+                    <Button
+                        type="dashed"
+                        block
+                        icon={<PlusOutlined />}
+                        onClick={addCreateItem}
+                        style={{ marginTop: 8 }}
+                    >
+                        Добавить позицию
+                    </Button>
+                </Form>
+            </Modal>
+        </div>
+    );
+};
+
+export default IncomingSupplierDocumentsPage;

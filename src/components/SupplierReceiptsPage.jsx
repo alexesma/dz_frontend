@@ -35,6 +35,7 @@ import {
     processSupplierResponses,
 } from '../api/customerOrders';
 import CrossDockingLabelsModal from './CrossDockingLabelsModal';
+import { OpenProductButton } from './AutopartPopup';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -349,7 +350,10 @@ const SupplierReceiptsPage = () => {
             ellipsis: true,
             render: (_, row) => (
                 <div style={{ lineHeight: 1.3 }}>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>{row.oem_number || '—'}</div>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>
+                        {row.oem_number || '—'}
+                        <OpenProductButton autopartId={row.autopart_id} onSaved={fetchRows} />
+                    </div>
                     <div style={{ fontSize: 12, color: '#555' }}>{row.brand_name || '—'}</div>
                     {row.autopart_name && (
                         <Tooltip title={row.autopart_name}>

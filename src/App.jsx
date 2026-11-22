@@ -289,11 +289,16 @@ const AppRoutes = () => (
     </Routes>
 );
 
+const isEmbedded = () => new URLSearchParams(window.location.search).get('embedded') === '1';
+
 const App = () => (
     <AuthProvider>
         <AppErrorBoundary>
             <Router>
                 <ScrollToTop />
+                {isEmbedded() ? (
+                    <div className="app-embedded"><AppRoutes /></div>
+                ) : (
                 <Layout className="app-shell">
                     <Sidebar />
                     <Layout className="app-main-layout">
@@ -305,6 +310,7 @@ const App = () => (
                     </Layout>
                     <NotificationCenter />
                 </Layout>
+                )}
             </Router>
         </AppErrorBoundary>
     </AuthProvider>

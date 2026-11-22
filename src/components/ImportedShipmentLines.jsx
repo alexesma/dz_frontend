@@ -11,6 +11,7 @@ import { Alert, Button, Card, Popover, Select, Space, Table, Tag, Tooltip, Typog
 import { CheckCircleOutlined, QrcodeOutlined, WarningOutlined } from '@ant-design/icons';
 import api from '../api';
 import { searchAutopartsByOem } from '../api/autoparts';
+import { OpenProductButton } from './AutopartPopup';
 
 const { Text } = Typography;
 
@@ -25,7 +26,7 @@ const CodesTag = ({ codes }) => {
             title={`Коды маркировки (${list.length})`}
             content={<div style={{ maxHeight: 260, overflow: 'auto', fontSize: 12 }}>{list.map((c) => <div key={c}>{c}</div>)}</div>}
         >
-            <Tag icon={<QrcodeOutlined />} color="blue" style={{ cursor: 'pointer' }}>{list.length}</Tag>
+            <Tag icon={<QrcodeOutlined />} color="blue" style={{ cursor: 'pointer', margin: 0, whiteSpace: 'nowrap' }}>{list.length}</Tag>
         </Popover>
     );
 };
@@ -77,17 +78,19 @@ const ReviewTable = ({ shipment, onChanged }) => {
                 size="small"
                 rowKey="index"
                 pagination={false}
+                tableLayout="fixed"
+                className="compact-table"
                 dataSource={rows}
                 columns={[
-                    { title: 'Артикул в УПД', dataIndex: 'article', width: 140, render: (v) => <Text strong>{v || '—'}</Text> },
-                    { title: 'Название в УПД', dataIndex: 'name', render: (v) => <Text style={{ fontSize: 12 }}>{v}</Text> },
-                    { title: 'Кол-во', dataIndex: 'quantity', width: 70, align: 'right' },
-                    { title: 'Цена', dataIndex: 'price', width: 100, align: 'right', render: money },
-                    { title: 'ГТД', dataIndex: 'gtd', width: 150, render: (v) => v || <Text type="secondary">—</Text> },
+                    { title: 'Артикул', dataIndex: 'article', width: 120, render: (v) => <Text strong>{v || '—'}</Text> },
+                    { title: 'Название в УПД', dataIndex: 'name', width: '30%', ellipsis: true, render: (v) => <Tooltip title={v}><Text style={{ fontSize: 12 }}>{v}</Text></Tooltip> },
+                    { title: 'Кол', dataIndex: 'quantity', width: 46, align: 'right' },
+                    { title: 'Цена', dataIndex: 'price', width: 84, align: 'right', render: money },
+                    { title: 'ГТД', dataIndex: 'gtd', width: 130, ellipsis: true, render: (v) => v || <Text type="secondary">—</Text> },
                     { title: 'Маркировка', dataIndex: 'marking_codes', width: 110, render: (v) => <CodesTag codes={v} /> },
                     {
                         title: 'Позиция в системе',
-                        width: 380,
+                        width: 330,
                         render: (_, row) => (
                             <Space.Compact style={{ width: '100%' }}>
                                 <Select
@@ -117,59 +120,73 @@ const ImportedShipmentLines = ({ shipment, onChanged }) => {
     const total = items.reduce((sum, it) => sum + Number(it.price || 0) * it.quantity, 0);
     const vatTotal = items.reduce((sum, it) => sum + Number(it.import_vat_amount || 0), 0);
 
+    const one = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 };
     const columns = [
-        { title: '№', width: 44, render: (_, __, i) => i + 1 },
+        { title: '№', width: 34, render: (_, __, i) => <Text type="secondary" style={{ fontSize: 12 }}>{i + 1}</Text> },
         {
             title: 'Позиция в нашей системе',
+            width: '25%',
             render: (_, row) => (
-                <Space direction="vertical" size={0}>
-                    <Space size={6}>
-                        <Text strong>{row.stock_autopart_oem}</Text>
-                        {row.stock_autopart_brand && <Tag style={{ margin: 0 }}>{row.stock_autopart_brand}</Tag>}
+                <div style={{ minWidth: 0 }}>
+                    <div style={one}>
                         <Tooltip title={row.import_match === 'manual' ? 'Сопоставлено вручную' : 'Артикул и название совпали'}>
-                            <CheckCircleOutlined style={{ color: row.import_match === 'manual' ? '#1677ff' : '#52c41a' }} />
+                            <CheckCircleOutlined style={{ color: row.import_match === 'manual' ? '#1677ff' : '#52c41a', marginRight: 6 }} />
                         </Tooltip>
-                    </Space>
-                    <Text type="secondary" style={{ fontSize: 12 }}>{row.stock_autopart_name}</Text>
-                </Space>
+                        <Text strong>{row.stock_autopart_oem}</Text>
+                        {row.stock_autopart_brand && <Tag style={{ margin: '0 0 0 6px', fontSize: 11 }}>{row.stock_autopart_brand}</Tag>}
+                    </div>
+                    <Tooltip title={row.stock_autopart_name}>
+                        <div style={{ ...one, fontSize: 12, color: '#8c8c8c' }}>{row.stock_autopart_name}</div>
+                    </Tooltip>
+                </div>
             ),
         },
         {
             title: 'Как в УПД',
-            width: 260,
+            width: '17%',
             render: (_, row) => (
-                <Space direction="vertical" size={0}>
-                    <Text style={{ fontSize: 12 }}>{row.import_article || row.customer_oem}</Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>{row.customer_name}</Text>
-                </Space>
+                <div style={{ minWidth: 0 }}>
+                    <div style={{ ...one, fontSize: 12 }}>{row.import_article || row.customer_oem}</div>
+                    <Tooltip title={row.customer_name}>
+                        <div style={{ ...one, fontSize: 12, color: '#8c8c8c' }}>{row.customer_name}</div>
+                    </Tooltip>
+                </div>
             ),
         },
-        { title: 'Кол-во', dataIndex: 'quantity', width: 70, align: 'right' },
-        { title: 'Цена с НДС', dataIndex: 'price', width: 100, align: 'right', render: money },
+        { title: 'Кол', dataIndex: 'quantity', width: 46, align: 'right' },
+        { title: 'Цена', dataIndex: 'price', width: 80, align: 'right', render: (v) => <span style={{ whiteSpace: 'nowrap' }}>{money(v)}</span> },
         {
             title: 'НДС',
-            width: 110,
+            width: 82,
             align: 'right',
             render: (_, row) => (
-                <Space direction="vertical" size={0} style={{ textAlign: 'right' }}>
-                    <Text style={{ fontSize: 12 }}>{Number(row.vat_rate)} %</Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>{row.import_vat_amount != null ? money(row.import_vat_amount) : '—'}</Text>
-                </Space>
+                <div style={{ whiteSpace: 'nowrap' }}>
+                    <div style={{ fontSize: 12 }}>{money(row.import_vat_amount)}</div>
+                    <div style={{ fontSize: 11, color: '#8c8c8c' }}>{Number(row.vat_rate)} %</div>
+                </div>
             ),
         },
-        { title: 'Сумма', width: 110, align: 'right', render: (_, row) => money(Number(row.price || 0) * row.quantity) },
+        { title: 'Сумма', width: 92, align: 'right', render: (_, row) => <span style={{ whiteSpace: 'nowrap' }}>{money(Number(row.price || 0) * row.quantity)}</span> },
         {
             title: 'ГТД / страна',
-            width: 190,
+            width: 160,
             render: (_, row) =>
                 row.import_gtd_number || row.import_country_name ? (
-                    <Space direction="vertical" size={0}>
-                        <Text style={{ fontSize: 12 }}>{row.import_gtd_number || '—'}</Text>
-                        <Text type="secondary" style={{ fontSize: 12 }}>{row.import_country_name || row.import_country_code || ''}</Text>
-                    </Space>
+                    <div style={{ minWidth: 0 }}>
+                        <Tooltip title={row.import_gtd_number}>
+                            <div style={{ ...one, fontSize: 12 }}>{row.import_gtd_number || '—'}</div>
+                        </Tooltip>
+                        <div style={{ ...one, fontSize: 11, color: '#8c8c8c' }}>{row.import_country_name || row.import_country_code || ''}</div>
+                    </div>
                 ) : <Text type="secondary">—</Text>,
         },
-        { title: 'Маркировка', dataIndex: 'import_marking_codes', width: 110, render: (v) => <CodesTag codes={v} /> },
+        { title: 'Маркир.', dataIndex: 'import_marking_codes', width: 70, render: (v) => <CodesTag codes={v} /> },
+        {
+            title: '',
+            width: 36,
+            align: 'center',
+            render: (_, row) => <OpenProductButton autopartId={row.autopart_id} onSaved={onChanged} />,
+        },
     ];
 
     return (
@@ -188,7 +205,8 @@ const ImportedShipmentLines = ({ shipment, onChanged }) => {
                 pagination={false}
                 dataSource={items}
                 columns={columns}
-                scroll={{ x: 1000 }}
+                tableLayout="fixed"
+                className="compact-table"
                 summary={() => (
                     <Table.Summary.Row>
                         <Table.Summary.Cell index={0} colSpan={3}><Text strong>Итого</Text></Table.Summary.Cell>
@@ -196,7 +214,7 @@ const ImportedShipmentLines = ({ shipment, onChanged }) => {
                         <Table.Summary.Cell index={2} />
                         <Table.Summary.Cell index={3} align="right"><Text strong>{money(vatTotal)}</Text></Table.Summary.Cell>
                         <Table.Summary.Cell index={4} align="right"><Text strong>{money(total)}</Text></Table.Summary.Cell>
-                        <Table.Summary.Cell index={5} colSpan={2} />
+                        <Table.Summary.Cell index={5} colSpan={3} />
                     </Table.Summary.Row>
                 )}
             />

@@ -226,6 +226,11 @@ const AvailabilityPanel = ({ data, loading, renderStock }) => {
 
 const NomenclaturePage = () => {
     const [searchParams] = useSearchParams();
+    // Встроено в окно поверх другого документа: показываем только карточку и
+    // сообщаем родителю о закрытии.
+    const embedded = searchParams.get('embedded') === '1';
+    const savedRef = useRef(false);
+    const wasOpenRef = useRef(false);
 
     // ── list state ────────────────────────────────────────────────────────────
     const [items, setItems] = useState([]);
@@ -589,6 +594,7 @@ const NomenclaturePage = () => {
                     try {
                         await deleteAutopart(editingId);
                         message.success('Позиция удалена');
+                        savedRef.current = true;
                         setDrawerOpen(false);
                         setEditingId(null);
                         fetchList(
@@ -698,6 +704,18 @@ const NomenclaturePage = () => {
         }
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+    useEffect(() => {
+        if (!embedded) return;
+        if (drawerOpen) {
+            wasOpenRef.current = true;
+        } else if (wasOpenRef.current) {
+            window.parent.postMessage(
+                { type: 'dz-autopart-popup', saved: savedRef.current },
+                window.location.origin,
+            );
+        }
+    }, [embedded, drawerOpen]);
+
     // ── save main form ────────────────────────────────────────────────────────
     const handleSave = async () => {
         let values;
@@ -728,6 +746,7 @@ const NomenclaturePage = () => {
                 });
             }
             message.success(editingId ? 'Сохранено' : 'Позиция создана');
+            savedRef.current = true;
             setDrawerOpen(false);
             fetchList(
                 qOem, qName, qBrand, page, sourceFilter, contentFilter,
@@ -1291,7 +1310,7 @@ const NomenclaturePage = () => {
 
     // ── render ────────────────────────────────────────────────────────────────
     return (
-        <div style={{ padding: 24 }}>
+        <div style={{ padding: 24, display: embedded ? 'none' : undefined }}>
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                 <Typography.Title level={4} style={{ margin: 0 }}>Номенклатура</Typography.Title>
@@ -1591,7 +1610,8 @@ const NomenclaturePage = () => {
                 onCancel={() => setDrawerOpen(false)}
                 title={editingId ? 'Редактирование позиции' : 'Новая позиция'}
                 centered
-                width={1180}
+                mask={!embedded}
+                width={embedded ? 'calc(100vw - 24px)' : 1180}
                 loading={drawerLoading}
                 footer={
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>

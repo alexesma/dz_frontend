@@ -1,3 +1,4 @@
+import { OpenProductButton } from './AutopartPopup';
 import React, {
     useCallback, useEffect, useRef, useState,
 } from 'react';
@@ -991,53 +992,58 @@ const IncomingSupplierDocumentsPage = () => {
 
     // ── detail modal: build item table columns ──────────────────────────────
     const buildItemColumns = (isVatPayer, isDraft) => {
+        const oneLine = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 };
+        const unitPrice = (row) => (
+            (row.total_price_with_vat != null && row.received_quantity)
+                ? Number(row.total_price_with_vat) / Number(row.received_quantity)
+                : row.price
+        );
+        const lineVat = (row) => {
+            const total = row.total_price_with_vat != null
+                ? Number(row.total_price_with_vat)
+                : Number(row.received_quantity || 0) * Number(row.price || 0);
+            return total > 0 ? total - total / (1 + VAT_RATE) : null;
+        };
         const baseColsView = [
             {
-                title: '№', key: 'idx', width: 45, align: 'center',
-                render: (_, __, i) => i + 1,
+                title: '№', key: 'idx', width: 36, align: 'center',
+                render: (_, __, i) => <Text type="secondary" style={{ fontSize: 12 }}>{i + 1}</Text>,
             },
             {
-                title: 'Артикул', dataIndex: 'oem_number', key: 'oem', width: 130,
-                render: (v) => v || '—',
-            },
-            {
-                title: 'Бренд', dataIndex: 'brand_name', key: 'brand', width: 110,
-                render: (v) => v || '—',
-            },
-            {
-                title: 'Наименование', dataIndex: 'autopart_name', key: 'name', ellipsis: true,
-                render: (v) => v || '—',
-            },
-            {
-                title: 'Кол-во', dataIndex: 'received_quantity', key: 'qty',
-                width: 80, align: 'right',
-                render: (v, row) => (
-                    <Space direction="vertical" size={0} align="end">
-                        <span>{v}</span>
-                        {markingItemBadge(row)}
-                    </Space>
+                title: 'Позиция', key: 'position', width: '30%',
+                render: (_, row) => (
+                    <div style={{ minWidth: 0 }}>
+                        <div style={oneLine}>
+                            <Text strong>{row.oem_number || '—'}</Text>
+                            {row.brand_name && <Tag style={{ margin: '0 0 0 6px', fontSize: 11 }}>{row.brand_name}</Tag>}
+                        </div>
+                        <Tooltip title={row.autopart_name}>
+                            <div style={{ ...oneLine, fontSize: 12, color: '#8c8c8c' }}>{row.autopart_name || '—'}</div>
+                        </Tooltip>
+                    </div>
                 ),
             },
             {
-                title: 'Цена', dataIndex: 'price', key: 'price',
-                width: 120, align: 'right',
-                render: (v, row) => {
-                    // All prices in the DB are stored WITH VAT.
-                    // Derive unit price as total_with_vat / qty (no VAT division).
-                    const shown = (row.total_price_with_vat != null && row.received_quantity)
-                        ? formatMoney(
-                            Number(row.total_price_with_vat) / Number(row.received_quantity),
-                        )
-                        : formatMoney(v); // price is already WITH VAT
-                    if (!row.price_exceeds_order) return shown;
+                title: 'Кол', dataIndex: 'received_quantity', key: 'qty',
+                width: 62, align: 'right',
+                render: (v, row) => (
+                    <div style={{ whiteSpace: 'nowrap' }}>
+                        <div>{v}</div>
+                        {markingItemBadge(row)}
+                    </div>
+                ),
+            },
+            {
+                title: 'Цена', key: 'price', width: 96, align: 'right',
+                render: (_, row) => {
+                    const shown = formatMoney(unitPrice(row));
+                    if (!row.price_exceeds_order) return <span style={{ whiteSpace: 'nowrap' }}>{shown}</span>;
                     return (
                         <Tooltip title={`Дороже заказа: в заказе ${formatMoney(row.order_price)}`}>
-                            <Space direction="vertical" size={0}>
+                            <div style={{ whiteSpace: 'nowrap' }}>
                                 <Text type="danger" strong>{shown}</Text>
-                                <Text type="danger" style={{ fontSize: 11 }}>
-                                    в заказе {formatMoney(row.order_price)}
-                                </Text>
-                            </Space>
+                                <div><Text type="danger" style={{ fontSize: 11 }}>в заказе {formatMoney(row.order_price)}</Text></div>
+                            </div>
                         </Tooltip>
                     );
                 },
@@ -1045,109 +1051,78 @@ const IncomingSupplierDocumentsPage = () => {
                     row.price_exceeds_order ? { style: { background: '#fff1f0' } } : {}
                 ),
             },
+            ...(isVatPayer ? [{
+                title: 'НДС', key: 'vat', width: 92, align: 'right',
+                render: (_, row) => {
+                    const v = lineVat(row);
+                    return <span style={{ whiteSpace: 'nowrap' }}>{v != null ? formatMoney(v) : '—'}</span>;
+                },
+            }] : []),
             {
-                title: 'Сумма', key: 'sum', width: 110, align: 'right',
+                title: isVatPayer ? 'Сумма с НДС' : 'Сумма', key: 'sum', width: 108, align: 'right',
                 render: (_, row) => {
                     const lineTotal = getLineTotalWithVat(row);
-                    if (lineTotal == null) return '—';
-                    return formatMoney(lineTotal);
-                },
-            },
-        ];
-
-        const vatCols = isVatPayer ? [
-            {
-                title: 'НДС 22%', key: 'vat', width: 110, align: 'right',
-                render: (_, row) => {
-                    if (row.total_price_with_vat != null) {
-                        const total = Number(row.total_price_with_vat);
-                        return total > 0 ? formatMoney(total - total / (1 + VAT_RATE)) : '—';
-                    }
-                    // price is WITH VAT → VAT amount = total - total/(1+VAT)
-                    const q = Number(row.received_quantity || 0);
-                    const p = Number(row.price || 0);
-                    const lineTotal = q * p;
-                    return lineTotal > 0 ? formatMoney(lineTotal - lineTotal / (1 + VAT_RATE)) : '—';
+                    return lineTotal == null ? '—' : <Text strong style={{ whiteSpace: 'nowrap' }}>{formatMoney(lineTotal)}</Text>;
                 },
             },
             {
-                title: 'С НДС', key: 'total_vat', width: 120, align: 'right',
-                render: (_, row) => {
-                    // price is stored WITH VAT → total = price × qty (no ×1.22)
-                    const val = row.total_price_with_vat != null
-                        ? Number(row.total_price_with_vat)
-                        : (Number(row.received_quantity || 0) * Number(row.price || 0));
-                    return <Text strong>{formatMoney(val)}</Text>;
-                },
+                title: 'ГТД / страна', key: 'gtd', width: '15%',
+                render: (_, row) => (
+                    row.gtd_code || row.country_name || row.country_code ? (
+                        <div style={{ minWidth: 0 }}>
+                            <Tooltip title={row.gtd_code}><div style={{ ...oneLine, fontSize: 12 }}>{row.gtd_code || '—'}</div></Tooltip>
+                            <div style={{ ...oneLine, fontSize: 11, color: '#8c8c8c' }}>{row.country_name || row.country_code || ''}</div>
+                        </div>
+                    ) : <Text type="secondary">—</Text>
+                ),
             },
-        ] : [];
-
-        const extraCols = [
             {
-                title: 'Склад позиции', key: 'item_warehouse', width: 130, ellipsis: true,
+                title: 'Заказ / склад', key: 'order_info', width: '16%',
                 render: (_, row) => {
-                    if (!row.warehouse_id) return null;
-                    // Show only when differs from document warehouse
-                    if (row.warehouse_id === detailReceipt.warehouse_id) return null;
+                    const customer = [row.customer_name, row.customer_order_number && `№${row.customer_order_number}`]
+                        .filter(Boolean).join(' / ');
+                    const otherWarehouse = row.warehouse_id && row.warehouse_id !== detailReceipt.warehouse_id
+                        ? (row.warehouse_name || `#${row.warehouse_id}`) : null;
+                    const cd = row.cross_docking_status;
                     return (
-                        <Tag color="blue" style={{ fontSize: 11 }}>
-                            {row.warehouse_name || `#${row.warehouse_id}`}
-                        </Tag>
+                        <div style={{ minWidth: 0 }}>
+                            <Tooltip title={customer || row.comment}>
+                                <div style={{ ...oneLine, fontSize: 12 }}>{customer || row.comment || '—'}</div>
+                            </Tooltip>
+                            <div style={{ ...oneLine, fontSize: 11 }}>
+                                {otherWarehouse && <Tag color="blue" style={{ margin: '0 4px 0 0', fontSize: 11 }}>{otherWarehouse}</Tag>}
+                                {cd === 'ready_for_customer' && <Tag color="green" style={{ margin: 0, fontSize: 11 }}>Готово клиенту</Tag>}
+                                {cd === 'label_pending' && <Tag color="gold" style={{ margin: 0, fontSize: 11 }}>Ждёт этикетку</Tag>}
+                                {cd && !['ready_for_customer', 'label_pending'].includes(cd) && <Tag color="blue" style={{ margin: 0, fontSize: 11 }}>Принято</Tag>}
+                            </div>
+                        </div>
                     );
                 },
             },
-            {
-                title: 'ГТД', dataIndex: 'gtd_code', key: 'gtd', width: 130,
-                ellipsis: true, render: (v) => v || '—',
-            },
-            {
-                title: 'Страна', dataIndex: 'country_name', key: 'country', width: 100,
-                ellipsis: true, render: (v, row) => v || row.country_code || '—',
-            },
-            {
-                title: 'Заказал', key: 'customer', width: 150, ellipsis: true,
-                render: (_, row) => {
-                    const parts = [];
-                    if (row.customer_name) parts.push(row.customer_name);
-                    if (row.customer_order_number) parts.push(`№${row.customer_order_number}`);
-                    return parts.length ? (
-                        <Tooltip title={parts.join(' / ')}>{parts.join(' / ')}</Tooltip>
-                    ) : '—';
-                },
-            },
-            {
-                title: 'Cross-docking', key: 'cross_docking', width: 150,
-                render: (_, row) => {
-                    if (!row.cross_docking_status) return '—';
-                    if (row.cross_docking_status === 'ready_for_customer') {
-                        return <Tag color="green">Готово клиенту</Tag>;
-                    }
-                    if (row.cross_docking_status === 'label_pending') {
-                        return <Tag color="gold">Ожидает этикетку</Tag>;
-                    }
-                    return <Tag color="blue">Принято</Tag>;
-                },
-            },
-            {
-                title: 'Примечание', dataIndex: 'comment', key: 'comment', width: 140,
-                ellipsis: true, render: (v) => v || '—',
-            },
         ];
 
-        const actionCol = isDraft ? [{
+        const vatCols = [];
+        const extraCols = [];
+
+        const actionCol = [{
             title: '',
             key: 'del',
-            width: 40,
+            width: isDraft ? 72 : 36,
             render: (_, row) => (
-                <Popconfirm
-                    title="Удалить строку?"
-                    okText="Да" cancelText="Нет"
-                    onConfirm={() => handleDeleteItem(row.id)}
-                >
-                    <Button size="small" type="text" danger icon={<DeleteOutlined />} />
-                </Popconfirm>
+                <Space size={0}>
+                    <OpenProductButton autopartId={row.autopart_id} onSaved={() => detailReceipt && reloadDetail(detailReceipt.id)} />
+                    {isDraft && (
+                        <Popconfirm
+                            title="Удалить строку?"
+                            okText="Да" cancelText="Нет"
+                            onConfirm={() => handleDeleteItem(row.id)}
+                        >
+                            <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+                        </Popconfirm>
+                    )}
+                </Space>
             ),
-        }] : [];
+        }];
 
         if (!editMode) {
             return [...baseColsView, ...vatCols, ...extraCols, ...actionCol];
@@ -1176,7 +1151,7 @@ const IncomingSupplierDocumentsPage = () => {
         return [
             { title: '№', key: 'idx', width: 45, align: 'center', render: (_, __, i) => i + 1 },
             {
-                title: 'Позиция', key: 'position', width: 260,
+                title: 'Позиция', key: 'position', width: '26%',
                 render: (_, row) => (
                     <ArticleSearchCell
                         currentOem={editedItems[row.id]?.oem_number ?? row.oem_number}
@@ -1192,15 +1167,15 @@ const IncomingSupplierDocumentsPage = () => {
                 ),
             },
             {
-                title: 'Кол-во', key: 'qty', width: 90,
+                title: 'Кол', key: 'qty', width: 76,
                 render: (_, row) => mkNumber('received_quantity', row.id, 0),
             },
             {
-                title: 'Цена', key: 'price', width: 100,
+                title: 'Цена', key: 'price', width: 92,
                 render: (_, row) => mkNumber('price', row.id, 0),
             },
             ...(isVatPayer ? [{
-                title: 'С НДС', key: 'tvat', width: 110,
+                title: 'С НДС', key: 'tvat', width: 100,
                 render: (_, row) => mkNumber('total_price_with_vat', row.id, 0),
             }] : []),
             {
@@ -1208,15 +1183,15 @@ const IncomingSupplierDocumentsPage = () => {
                 render: (_, row) => mkInput('gtd_code', row.id, 'ГТД'),
             },
             {
-                title: 'Страна', key: 'country', width: 100,
+                title: 'Страна', key: 'country', width: 96,
                 render: (_, row) => mkInput('country_name', row.id, 'Страна'),
             },
             {
-                title: 'Примечание', key: 'comment', width: 130,
+                title: 'Примечание', key: 'comment', width: '12%',
                 render: (_, row) => mkInput('comment', row.id, 'Примечание'),
             },
             {
-                title: 'Склад', key: 'item_warehouse', width: 160,
+                title: 'Склад', key: 'item_warehouse', width: '14%',
                 render: (_, row) => (
                     <Select
                         size="small"
@@ -1474,7 +1449,6 @@ const IncomingSupplierDocumentsPage = () => {
                     const diadocDoc = diadocByReceiptId[detailReceipt.id];
                     const { qty, sum, vat, total } = calcTotals(items, isVatPayer);
                     const itemCols = buildItemColumns(isVatPayer, isDraft);
-                    const colSpanBase = isVatPayer ? 9 : 8;
 
                     return (
                         <>
@@ -1622,30 +1596,25 @@ const IncomingSupplierDocumentsPage = () => {
                                 }))}
                                 columns={itemCols}
                                 pagination={false}
-                                scroll={{ x: isVatPayer ? 1600 : 1400 }}
+                                tableLayout="fixed"
+                                className="compact-table"
                                 bordered
                                 summary={() => {
                                     if (editMode) return null;
                                     return (
                                         <Table.Summary.Row style={{ fontWeight: 600 }}>
-                                            <Table.Summary.Cell index={0} colSpan={4} align="right">
+                                            <Table.Summary.Cell index={0} colSpan={2} align="right">
                                                 Итого:
                                             </Table.Summary.Cell>
-                                            <Table.Summary.Cell index={4} align="right">{qty}</Table.Summary.Cell>
-                                            <Table.Summary.Cell index={5} />
-                                            <Table.Summary.Cell index={6} align="right">{formatMoney(sum)}</Table.Summary.Cell>
+                                            <Table.Summary.Cell index={2} align="right">{qty}</Table.Summary.Cell>
+                                            <Table.Summary.Cell index={3} />
                                             {isVatPayer && (
-                                                <Table.Summary.Cell index={7} align="right">{formatMoney(vat)}</Table.Summary.Cell>
+                                                <Table.Summary.Cell index={4} align="right">{formatMoney(vat)}</Table.Summary.Cell>
                                             )}
-                                            {isVatPayer ? (
-                                                <Table.Summary.Cell index={8} align="right">
-                                                    {formatMoney(total)}
-                                                </Table.Summary.Cell>
-                                            ) : null}
-                                            <Table.Summary.Cell
-                                                index={colSpanBase}
-                                                colSpan={isVatPayer ? 3 : 4}
-                                            />
+                                            <Table.Summary.Cell index={isVatPayer ? 5 : 4} align="right">
+                                                {formatMoney(isVatPayer ? total : sum)}
+                                            </Table.Summary.Cell>
+                                            <Table.Summary.Cell index={isVatPayer ? 6 : 5} colSpan={3} />
                                         </Table.Summary.Row>
                                     );
                                 }}
@@ -1658,7 +1627,7 @@ const IncomingSupplierDocumentsPage = () => {
                                     dataSource={newItems.map((r) => ({ ...r, key: r._key }))}
                                     columns={newItemColumns(isVatPayer)}
                                     pagination={false}
-                                    scroll={{ x: isVatPayer ? 1600 : 1400 }}
+                                    tableLayout="fixed"
                                     showHeader={false}
                                     bordered
                                     style={{ marginTop: 4 }}

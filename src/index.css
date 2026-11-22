@@ -2174,3 +2174,12 @@ body {
 .inbox-subject:hover {
   text-decoration: underline;
 }
+
+/* Страница внутри всплывающего окна (iframe, ?embedded=1) */
+.app-embedded {
+  min-height: 100vh;
+  background: transparent;
+}
+body:has(.app-embedded) {
+  background: transparent;
+}

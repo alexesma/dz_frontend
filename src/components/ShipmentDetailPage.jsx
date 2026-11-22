@@ -57,6 +57,7 @@ import { searchAutopartsByOem } from '../api/autoparts';
 import { getStorageLocations, getWarehouses } from '../api/storage';
 import useAuth from '../context/useAuth';
 import ImportedShipmentLines from './ImportedShipmentLines';
+import { OpenProductButton } from './AutopartPopup';
 import ShipmentBoxes from './ShipmentBoxes';
 import ShipmentMarkingCheck from './ShipmentMarkingCheck';
 import ShipmentMarkingScan from './ShipmentMarkingScan';
@@ -682,88 +683,97 @@ const ShipmentDetailPage = () => {
         }
     }, [id, loadDiadocDocs, signatureFormat, signatureForm]);
 
+    const oneLine = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 };
     const itemColumns = [
         {
             title: '№',
             key: 'idx',
-            width: 50,
-            render: (_, __, i) => i + 1,
+            width: 36,
+            render: (_, __, i) => <Text type="secondary" style={{ fontSize: 12 }}>{i + 1}</Text>,
         },
         {
             title: 'Запчасть',
             dataIndex: 'autopart_oem',
             render: (oem, row) => (
-                <Space direction="vertical" size={0}>
-                    <Text strong>{oem}</Text>
-                    {row.autopart_name && (
-                        <Text type="secondary" style={{ fontSize: 12 }}>{row.autopart_name}</Text>
-                    )}
-                </Space>
+                <div style={{ minWidth: 0 }}>
+                    <div style={oneLine}>
+                        <Text strong>{oem}</Text>
+                        {(row.stock_autopart_brand || row.autopart_brand) && (
+                            <Tag style={{ margin: '0 0 0 6px', fontSize: 11 }}>
+                                {row.stock_autopart_brand || row.autopart_brand}
+                            </Tag>
+                        )}
+                    </div>
+                    <Tooltip title={row.autopart_name}>
+                        <div style={{ ...oneLine, fontSize: 12, color: '#8c8c8c' }}>{row.autopart_name}</div>
+                    </Tooltip>
+                </div>
             ),
         },
         ...(shipment?.assembly_managed ? [{
-            title: 'Заказ клиента',
-            width: 110,
+            title: 'Заказ',
+            width: 80,
             render: (_, row) => row.source_customer_order_id
                 ? <Link to={`/customer-orders/${row.source_customer_order_id}`}>#{row.source_customer_order_id}</Link>
                 : '—',
         }] : []),
         {
-            title: 'Кол-во',
+            title: 'Кол',
             dataIndex: 'quantity',
-            width: 80,
+            width: 56,
             align: 'right',
-            render: (q) => <Tag color="volcano">{q}</Tag>,
+            render: (q) => <Tag color="volcano" style={{ margin: 0 }}>{q}</Tag>,
         },
         {
             title: 'Цена',
             dataIndex: 'price',
-            width: 110,
+            width: 92,
             align: 'right',
-            render: fmtPrice,
+            render: (v) => <span style={{ whiteSpace: 'nowrap' }}>{fmtPrice(v)}</span>,
         },
         {
             title: 'Сумма',
-            width: 120,
+            width: 100,
             align: 'right',
-            render: (_, row) =>
-                row.price != null
-                    ? (Number(row.price) * row.quantity).toLocaleString('ru-RU', { minimumFractionDigits: 2 })
-                    : '—',
+            render: (_, row) => (
+                <span style={{ whiteSpace: 'nowrap' }}>
+                    {row.price != null
+                        ? (Number(row.price) * row.quantity).toLocaleString('ru-RU', { minimumFractionDigits: 2 })
+                        : '—'}
+                </span>
+            ),
         },
         {
-            title: 'Ячейка',
-            dataIndex: 'storage_location_name',
-            width: 150,
-            render: (v) => v || <Text type="secondary">—</Text>,
-        },
-        {
-            title: 'Резерв',
-            dataIndex: 'reserve_id',
-            width: 90,
-            render: (v) =>
-                v ? (
-                    <Tag icon={<LockOutlined />} color="processing">#{v}</Tag>
-                ) : (
-                    <Text type="secondary">—</Text>
-                ),
+            title: 'Ячейка / резерв',
+            width: '18%',
+            render: (_, row) => (
+                <div style={{ minWidth: 0 }}>
+                    <div style={{ ...oneLine, fontSize: 12 }}>{row.storage_location_name || <Text type="secondary">—</Text>}</div>
+                    {row.reserve_id ? (
+                        <Tag icon={<LockOutlined />} color="processing" style={{ margin: 0, fontSize: 11 }}>резерв #{row.reserve_id}</Tag>
+                    ) : null}
+                </div>
+            ),
         },
         {
             title: 'Примечание',
             dataIndex: 'notes',
+            width: '14%',
             ellipsis: true,
         },
-        ...(isDraft
-            ? [
-                {
-                    title: '',
-                    key: 'actions',
-                    width: 90,
-                    render: (_, row) => (
-                        <Space>
-                            <Tooltip title="Редактировать">
+        {
+            title: '',
+            key: 'actions',
+            width: isDraft ? 96 : 40,
+            render: (_, row) => (
+                <Space size={0}>
+                    <OpenProductButton autopartId={row.autopart_id} onSaved={fetchShipment} />
+                    {isDraft && (
+                        <>
+                            <Tooltip title="Редактировать строку">
                                 <Button
                                     size="small"
+                                    type="text"
                                     icon={<EditOutlined />}
                                     onClick={() => { setEditItem(row); setEditOpen(true); }}
                                 />
@@ -774,13 +784,13 @@ const ShipmentDetailPage = () => {
                                 cancelText="Нет"
                                 onConfirm={() => handleDeleteItem(row.id)}
                             >
-                                <Button size="small" danger icon={<DeleteOutlined />} />
+                                <Button size="small" type="text" danger icon={<DeleteOutlined />} />
                             </Popconfirm>
-                        </Space>
-                    ),
-                },
-              ]
-            : []),
+                        </>
+                    )}
+                </Space>
+            ),
+        },
     ];
 
     if (loading) {
@@ -962,7 +972,7 @@ const ShipmentDetailPage = () => {
 
             {/* Info card */}
             <Card style={{ marginBottom: 16 }}>
-                <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} bordered>
+                <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3, xl: 4 }} bordered>
                     <Descriptions.Item label="Номер документа">
                         {shipment.doc_number || <Text type="secondary">—</Text>}
                     </Descriptions.Item>
@@ -972,7 +982,7 @@ const ShipmentDetailPage = () => {
                     <Descriptions.Item label="Статус">
                         <Tag color={STATUS_COLORS[shipment.status]}>{STATUS_LABELS[shipment.status]}</Tag>
                     </Descriptions.Item>
-                    {canUseDiadoc && (
+                    {canUseDiadoc && !isImported && (
                         <Descriptions.Item label="Диадок">
                             {latestDiadocDoc ? (
                                 <Space size={[4, 4]} wrap>
@@ -1018,14 +1028,14 @@ const ShipmentDetailPage = () => {
                         {fmtDate(shipment.created_at)}
                     </Descriptions.Item>
                     {shipment.notes && (
-                        <Descriptions.Item label="Примечание" span={3}>
+                        <Descriptions.Item label="Примечание" span={4}>
                             {shipment.notes}
                         </Descriptions.Item>
                     )}
                 </Descriptions>
             </Card>
 
-            {canUseDiadoc && (
+            {canUseDiadoc && !isImported && (
                 <Card
                     title="Готовность к Диадоку"
                     style={{ marginBottom: 16 }}
@@ -1146,8 +1156,9 @@ const ShipmentDetailPage = () => {
                     columns={itemColumns}
                     dataSource={items}
                     size="small"
+                    className="compact-table"
+                    tableLayout="fixed"
                     pagination={false}
-                    scroll={{ x: 900 }}
                     summary={() =>
                         items.length > 0 ? (
                             <Table.Summary.Row>
@@ -1174,11 +1185,11 @@ const ShipmentDetailPage = () => {
                 )}
             </Card>
 
-            <ShipmentMarkingScan
+            {!isImported && <ShipmentMarkingScan
                 shipmentId={id}
                 status={shipment.status}
                 isAdmin={user?.role === 'admin'}
-            />
+            />}
 
             {shipment.assembly_managed && <ShipmentBoxes shipment={shipment} />}
 
