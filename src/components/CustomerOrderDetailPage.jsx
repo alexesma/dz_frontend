@@ -960,7 +960,7 @@ const CustomerOrderDetailPage = () => {
                     {(isSameAsOrdered(record) || !record.actual_name) && record.match_type === 'dragonzap_cross' && <Tag color="blue">кросс</Tag>}
                     {record.autopart_id && (
                         <div className="customer-order-stock-line">
-                            <Tooltip title={`Свободно на нашем складе (по системе): ${record.stock_free ?? 0} из ${record.stock_physical ?? 0}. Нужно: ${record.requested_qty}`}>
+                            <Tooltip title={`Основной склад (по системе): свободно ${record.stock_free ?? 0} из ${record.stock_physical ?? 0}. Нужно: ${record.requested_qty}.`}>
                                 <span className={`stock-chip ${stockChipClass(record.stock_free, record.requested_qty)}`}>
                                     склад {record.stock_free ?? 0}
                                 </span>
