@@ -965,13 +965,11 @@ const CustomerOrderDetailPage = () => {
                                     склад {record.stock_free ?? 0}
                                 </span>
                             </Tooltip>
-                            {record.supplier_stock_qty != null && (
-                                <Tooltip title={`Наличие в свежем прайсе поставщика: ${record.supplier_stock_qty}. Нужно: ${record.requested_qty}`}>
-                                    <span className={`stock-chip ${stockChipClass(record.supplier_stock_qty, record.requested_qty)}`}>
-                                        прайс {record.supplier_stock_qty}
-                                    </span>
-                                </Tooltip>
-                            )}
+                            <Tooltip title={`Наличие в свежем прайсе назначенного поставщика (без поставщика — 0). Нужно: ${record.requested_qty}`}>
+                                <span className={`stock-chip ${stockChipClass(record.supplier_stock_qty ?? 0, record.requested_qty)}`}>
+                                    прайс {record.supplier_stock_qty ?? 0}
+                                </span>
+                            </Tooltip>
                             {record.honest_sign_category && (
                                 <Tooltip title={`Честный знак: ${record.honest_sign_category}`}>
                                     <span className="stock-chip chz">ЧЗ</span>
