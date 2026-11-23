@@ -336,6 +336,12 @@ const CustomerSupplierOrderDetailPage = () => {
                 <div className="supplier-order-facts">
                     {fact('Поставщику', `${record.quantity} шт.`)}
                     {fact('Цена', `${formatMoney(record.price)} ₽`)}
+                    {Number(record.multiplicity || 0) > 1 && fact(
+                        'Кратность',
+                        <Text type={record.quantity % record.multiplicity ? 'danger' : undefined}>
+                            {record.multiplicity}
+                        </Text>
+                    )}
                     {fact('Клиент заказал', record.requested_qty ?? '—')}
                     {fact('К отгрузке', record.ship_qty ?? '—')}
                     {Number(record.explicit_rejected_quantity || 0) > 0
@@ -494,6 +500,18 @@ const CustomerSupplierOrderDetailPage = () => {
                                         ? `#${order.provider_config_id}`
                                         : 'Общий заказ')}
                             </Descriptions.Item>
+                            {order.provider_stats?.confirm_pct != null && (
+                                <Descriptions.Item label={`Поставщик за ${order.provider_stats.days} дн.`}>
+                                    <Tooltip title={`Подтвердил ${order.provider_stats.confirmed_qty} из ${order.provider_stats.ordered_qty} шт. по ${order.provider_stats.answered_items} строкам с ответом`}>
+                                        <Text type={order.provider_stats.confirm_pct < 70 ? 'danger' : undefined}>
+                                            подтверждает {order.provider_stats.confirm_pct}%
+                                        </Text>
+                                        {order.provider_stats.avg_delivery_day != null && (
+                                            <Text type="secondary"> · срок ~{order.provider_stats.avg_delivery_day} дн.</Text>
+                                        )}
+                                    </Tooltip>
+                                </Descriptions.Item>
+                            )}
                             <Descriptions.Item label="Статус">
                                 <Tag color={SUPPLIER_STATUS_COLORS[order.status] || 'default'}>
                                     {SUPPLIER_STATUS_LABELS[order.status] || order.status}
