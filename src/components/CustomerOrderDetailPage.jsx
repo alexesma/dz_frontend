@@ -551,6 +551,10 @@ const CustomerOrderDetailPage = () => {
         return dayjs(value).format('DD.MM.YYYY HH:mm');
     };
 
+    const isSameAsOrdered = (record) => !!record.actual_oem
+        && displayOem(record.actual_oem) === displayOem(record.oem)
+        && displayBrand(record.actual_brand) === displayBrand(record.brand);
+
     const formatMoney = (value) => {
         if (value === null || value === undefined) return '—';
         const num = Number(value);
@@ -932,16 +936,20 @@ const CustomerOrderDetailPage = () => {
             width: '22%',
             render: (_, record) => (
                 <div className="customer-order-part-cell">
-                    <div title={record.actual_oem ? `${record.actual_brand || ''} ${record.actual_oem}`.trim() : ''}>
-                        {record.actual_oem ? `${displayBrand(record.actual_brand)} ${displayOem(record.actual_oem)}`.trim() : '—'}
-                    </div>
-                    {record.actual_name && (
+                    {isSameAsOrdered(record) ? (
+                        <Text type="secondary">как в заказе</Text>
+                    ) : (
+                        <div title={record.actual_oem ? `${record.actual_brand || ''} ${record.actual_oem}`.trim() : ''}>
+                            {record.actual_oem ? `${displayBrand(record.actual_brand)} ${displayOem(record.actual_oem)}`.trim() : '—'}
+                        </div>
+                    )}
+                    {!isSameAsOrdered(record) && record.actual_name && (
                         <div className="customer-order-line" title={record.actual_name}>
                             <Text type="secondary">{record.actual_name}</Text>
                             {record.match_type === 'dragonzap_cross' && <Tag color="blue" style={{ marginLeft: 4 }}>кросс</Tag>}
                         </div>
                     )}
-                    {!record.actual_name && record.match_type === 'dragonzap_cross' && <Tag color="blue">кросс</Tag>}
+                    {(isSameAsOrdered(record) || !record.actual_name) && record.match_type === 'dragonzap_cross' && <Tag color="blue">кросс</Tag>}
                     {record.source_resolution_status && (
                         <Tooltip title={`Источник: ${record.external_provider_id || 'не указан'}; предложение: ${record.external_offer_id || 'не указано'}`}>
                             <Tag color={record.source_resolution_status === 'api_order_error' ? 'red' : 'geekblue'}>
@@ -983,7 +991,34 @@ const CustomerOrderDetailPage = () => {
                 </div>
             ),
         },
-        { title: 'Цена', dataIndex: 'requested_price', key: 'requested_price', width: 90, align: 'right', render: formatMoney },
+        {
+            title: 'Цена',
+            dataIndex: 'requested_price',
+            key: 'requested_price',
+            width: 90,
+            align: 'right',
+            render: (value, record) => {
+                const sale = Number(value);
+                const cost = Number(record.matched_price);
+                const hasMargin = record.supplier_id && value != null && record.matched_price != null
+                    && sale > 0 && !Number.isNaN(cost);
+                const margin = hasMargin ? ((sale - cost) / sale) * 100 : null;
+                return (
+                    <div className="customer-order-number-cell">
+                        <div>{formatMoney(value)}</div>
+                        {hasMargin && (
+                            <Text
+                                type={margin < 0 ? 'danger' : 'secondary'}
+                                style={{ fontSize: 11 }}
+                                title="Маржа: (цена − закупка) / цена"
+                            >
+                                маржа {margin.toFixed(0)}%
+                            </Text>
+                        )}
+                    </div>
+                );
+            },
+        },
         {
             title: 'Статус',
             dataIndex: 'status',
@@ -1023,6 +1058,7 @@ const CustomerOrderDetailPage = () => {
             render: (value, record) => (
                 <div className="customer-order-supplier-cell">
                     <Select
+                        size="small"
                         showSearch
                         allowClear
                         placeholder="Поставщик"
