@@ -22,6 +22,8 @@ import {
 } from 'antd';
 import {
     BarChartOutlined,
+    CaretDownOutlined,
+    CaretUpOutlined,
     CheckCircleOutlined,
     CloseCircleOutlined,
     SearchOutlined,
@@ -990,22 +992,53 @@ const CustomerOrderDetailPage = () => {
             render: (value) => <Tag color={ITEM_STATUS_COLORS[value] || 'default'}>{ITEM_STATUS_LABELS[value] || value || '—'}</Tag>,
         },
         {
-            title: 'Поставщик',
+            title: (
+                <span className="customer-order-supplier-title">
+                    Поставщик
+                    <span className="customer-order-sort-arrows">
+                        {['asc', 'desc'].map((direction) => {
+                            const active = itemView.sortBy === 'supplier'
+                                && itemView.sortDirection === direction;
+                            const Icon = direction === 'asc' ? CaretUpOutlined : CaretDownOutlined;
+                            return (
+                                <Tooltip
+                                    key={direction}
+                                    title={direction === 'asc' ? 'А → Я' : 'Я → А'}
+                                >
+                                    <Icon
+                                        className={active ? 'active' : ''}
+                                        onClick={() => setItemView((prev) => (active
+                                            ? { ...prev, sortBy: 'original', sortDirection: 'asc' }
+                                            : { ...prev, sortBy: 'supplier', sortDirection: direction }))}
+                                    />
+                                </Tooltip>
+                            );
+                        })}
+                    </span>
+                </span>
+            ),
             dataIndex: 'supplier_id',
             key: 'supplier_id',
             width: '16%',
             render: (value, record) => (
-                <Select
-                    showSearch
-                    allowClear
-                    placeholder="Поставщик"
-                    options={providerOptions}
-                    value={value || undefined}
-                    onChange={(val) => handleSetSupplier(record, val)}
-                    optionFilterProp="label"
-                    loading={!!updatingItems[record.id]}
-                    style={{ width: '100%', minWidth: 110 }}
-                />
+                <div className="customer-order-supplier-cell">
+                    <Select
+                        showSearch
+                        allowClear
+                        placeholder="Поставщик"
+                        options={providerOptions}
+                        value={value || undefined}
+                        onChange={(val) => handleSetSupplier(record, val)}
+                        optionFilterProp="label"
+                        loading={!!updatingItems[record.id]}
+                        style={{ width: '100%', minWidth: 110 }}
+                    />
+                    {value && record.matched_price != null && (
+                        <Text type="secondary" className="customer-order-supplier-price">
+                            закупка {formatMoney(record.matched_price)}
+                        </Text>
+                    )}
+                </div>
             ),
         },
         {

@@ -2192,3 +2192,44 @@ body:has(.app-embedded) {
 .embedded-autopart-modal .ant-modal-content {
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
 }
+
+.customer-order-supplier-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+
+.customer-order-sort-arrows {
+    display: inline-flex;
+    flex-direction: column;
+    line-height: 0;
+    font-size: 10px;
+    color: #bfbfbf;
+}
+
+.customer-order-sort-arrows .anticon {
+    cursor: pointer;
+    height: 8px;
+    display: flex;
+    align-items: center;
+}
+
+.customer-order-sort-arrows .anticon:hover,
+.customer-order-sort-arrows .anticon.active {
+    color: #1677ff;
+}
+
+.customer-order-supplier-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.customer-order-supplier-price {
+    font-size: 11px;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
