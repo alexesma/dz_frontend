@@ -2233,3 +2233,16 @@ body:has(.app-embedded) {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+.customer-order-stock-line {
+    display: flex;
+    gap: 6px;
+    white-space: nowrap;
+    font-size: 11px;
+    line-height: 1.2;
+}
+
+.stock-chip.ok { color: #389e0d; }
+.stock-chip.partial { color: #d48806; }
+.stock-chip.none { color: #cf1322; }
+.stock-chip.chz { color: #1677ff; font-weight: 600; }

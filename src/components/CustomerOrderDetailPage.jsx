@@ -551,6 +551,14 @@ const CustomerOrderDetailPage = () => {
         return dayjs(value).format('DD.MM.YYYY HH:mm');
     };
 
+    const stockChipClass = (available, needed) => {
+        const have = Number(available ?? 0);
+        const need = Number(needed ?? 0);
+        if (have >= need && need > 0) return 'ok';
+        if (have > 0) return 'partial';
+        return 'none';
+    };
+
     const isSameAsOrdered = (record) => !!record.actual_oem
         && displayOem(record.actual_oem) === displayOem(record.oem)
         && displayBrand(record.actual_brand) === displayBrand(record.brand);
@@ -950,6 +958,27 @@ const CustomerOrderDetailPage = () => {
                         </div>
                     )}
                     {(isSameAsOrdered(record) || !record.actual_name) && record.match_type === 'dragonzap_cross' && <Tag color="blue">кросс</Tag>}
+                    {record.autopart_id && (
+                        <div className="customer-order-stock-line">
+                            <Tooltip title={`Свободно на нашем складе (по системе): ${record.stock_free ?? 0} из ${record.stock_physical ?? 0}. Нужно: ${record.requested_qty}`}>
+                                <span className={`stock-chip ${stockChipClass(record.stock_free, record.requested_qty)}`}>
+                                    склад {record.stock_free ?? 0}
+                                </span>
+                            </Tooltip>
+                            {record.supplier_stock_qty != null && (
+                                <Tooltip title={`Наличие в свежем прайсе поставщика: ${record.supplier_stock_qty}. Нужно: ${record.requested_qty}`}>
+                                    <span className={`stock-chip ${stockChipClass(record.supplier_stock_qty, record.requested_qty)}`}>
+                                        прайс {record.supplier_stock_qty}
+                                    </span>
+                                </Tooltip>
+                            )}
+                            {record.honest_sign_category && (
+                                <Tooltip title={`Честный знак: ${record.honest_sign_category}`}>
+                                    <span className="stock-chip chz">ЧЗ</span>
+                                </Tooltip>
+                            )}
+                        </div>
+                    )}
                     {record.source_resolution_status && (
                         <Tooltip title={`Источник: ${record.external_provider_id || 'не указан'}; предложение: ${record.external_offer_id || 'не указано'}`}>
                             <Tag color={record.source_resolution_status === 'api_order_error' ? 'red' : 'geekblue'}>
