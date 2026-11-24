@@ -268,6 +268,11 @@ const CustomerSupplierOrderDetailPage = () => {
         setSending(true);
         try {
             const { data: result } = await sendSupplierOrders([order.id]);
+            if (Number(result?.skipped_empty || 0) > 0) {
+                message.warning('В заказе нет позиций: письмо не отправлено, пустой заказ удалён');
+                navigate('/customer-orders/suppliers');
+                return;
+            }
             if (Number(result?.sent || 0) < 1) {
                 message.error('Письмо не отправлено: проверьте адрес поставщика и настройки почты');
             } else {
