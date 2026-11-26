@@ -50,6 +50,7 @@ import CustomerOrderDetailPage from './components/CustomerOrderDetailPage';
 import CustomerSupplierOrdersPage from './components/CustomerSupplierOrdersPage';
 import CustomerSupplierOrderDetailPage from './components/CustomerSupplierOrderDetailPage';
 import EmailAccountsPage from './components/EmailAccountsPage';
+import EmailLogPage from './components/EmailLogPage';
 import SettingsPage from './components/SettingsPage';
 import PrintFormsPage from './components/PrintFormsPage';
 import PrinterSettingsPage from './components/PrinterSettingsPage';
@@ -271,6 +272,7 @@ const AppRoutes = () => (
         {/* Admin */}
         <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
         <Route path="/admin/email-accounts" element={<RequireAdmin><EmailAccountsPage /></RequireAdmin>} />
+        <Route path="/admin/email-log" element={<RequireAdmin><EmailLogPage /></RequireAdmin>} />
         <Route path="/admin/settings" element={<RequireAdmin><SettingsPage /></RequireAdmin>} />
         <Route path="/admin/monitor" element={<RequireAdmin><AdminMonitoringPage /></RequireAdmin>} />
         <Route path="/admin/price-control" element={<RequireAdmin><PriceControlPage /></RequireAdmin>} />

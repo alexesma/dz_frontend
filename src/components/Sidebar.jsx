@@ -98,6 +98,7 @@ const NAVIGATION_SEARCH_ITEMS = [
     { path: '/process-architecture', title: 'Карта процессов', section: 'Система', keywords: 'схема интеграции архитектура обмен' },
     { path: '/admin/users', title: 'Пользователи', section: 'Админ', keywords: 'сотрудники роли доступ', roles: ['admin'] },
     { path: '/admin/email-accounts', title: 'Почты', section: 'Админ', keywords: 'email smtp imap relay аккаунты', roles: ['admin'] },
+    { path: '/admin/email-log', title: 'Журнал писем', section: 'Админ', keywords: 'письма отправка ошибки повтор почта журнал', roles: ['admin'] },
     { path: '/admin/settings', title: 'Настройки', section: 'Админ', keywords: 'параметры система интеграции', roles: ['admin'] },
     { path: '/admin/print-forms', title: 'Печатные формы', section: 'Админ', keywords: 'этикетки шаблоны макеты', roles: ['admin'] },
     { path: '/admin/printers', title: 'Принтеры', section: 'Админ', keywords: 'печать windows relay сотрудники', roles: ['admin'] },
@@ -196,6 +197,7 @@ const Sidebar = () => {
         if (path.startsWith('/watchlist')) return 'watchlist';
         if (path.startsWith('/autoparts/price-history')) return 'autopart-price-history';
         if (path.startsWith('/admin/users')) return 'admin-users';
+        if (path.startsWith('/admin/email-log')) return 'admin-email-log';
         if (path.startsWith('/admin/email-accounts')) return 'admin-emails';
         if (path.startsWith('/admin/settings')) return 'admin-settings';
         if (path.startsWith('/admin/print-forms')) return 'admin-print-forms';
@@ -458,6 +460,9 @@ const Sidebar = () => {
                     </Menu.Item>
                     <Menu.Item key="admin-emails" icon={<UserOutlined />}>
                         <Link to="/admin/email-accounts">Почты</Link>
+                    </Menu.Item>
+                    <Menu.Item key="admin-email-log" icon={<UserOutlined />}>
+                        <Link to="/admin/email-log">Журнал писем</Link>
                     </Menu.Item>
                     <Menu.Item key="admin-settings" icon={<SettingOutlined />}>
                         <Link to="/admin/settings">Настройки</Link>
