@@ -534,6 +534,11 @@ const CustomerSupplierOrderDetailPage = () => {
                             <Descriptions.Item label="Последняя попытка отправки">
                                 {formatDateTime(order.last_send_attempt_at)}
                             </Descriptions.Item>
+                            {Number(order.send_attempts || 0) > 0 && (
+                                <Descriptions.Item label="Попыток отправки">
+                                    {order.send_attempts}
+                                </Descriptions.Item>
+                            )}
                             {order.last_send_error && (
                                 <Descriptions.Item label="Ошибка отправки" span={2}>
                                     <Typography.Text type="danger">{order.last_send_error}</Typography.Text>
