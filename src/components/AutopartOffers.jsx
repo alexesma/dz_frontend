@@ -1015,6 +1015,7 @@ const AutopartOffers = () => {
     const [searchParams] = useSearchParams();
     const lookupRequestIdRef = useRef(0);
     const autoSearchKeyRef = useRef('');
+    const enterSearchAtRef = useRef(0);
     const brandCatalogRef = useRef(null);
     const previousRestrictCrossBrandRef = useRef(false);
     const previousShowCrossesRef = useRef(false);
@@ -4094,6 +4095,7 @@ const AutopartOffers = () => {
                                 item.multiplicity
                             ),
                             price: Number(item.price),
+                            provider_config_id: item.provider_config_id ?? null,
                             min_delivery_day: item.min_delivery_day,
                             max_delivery_day: item.max_delivery_day,
                         })),
@@ -5343,6 +5345,7 @@ const AutopartOffers = () => {
                             onChange={(value) => setOemInput(value)}
                             onSelect={(value) => {
                                 const normalized = String(value || '').trim();
+                            enterSearchAtRef.current = Date.now();
                             form.setFieldsValue({ oem: normalized });
                             setOemInput(normalized);
                             setPartialSearch(false);
@@ -5360,7 +5363,27 @@ const AutopartOffers = () => {
                                     .includes(inputValue.toLowerCase())
                             }
                         >
-                            <Input />
+                            <Input
+                                onKeyDown={(event) => {
+                                    if (event.key !== 'Enter') {
+                                        return;
+                                    }
+                                    // Enter/Return запускает поиск; если Enter выбрал
+                                    // подсказку, onSelect уже запустил его — дубль гасим.
+                                    const typed = String(
+                                        event.currentTarget.value || ''
+                                    ).trim();
+                                    if (!typed) {
+                                        return;
+                                    }
+                                    const now = Date.now();
+                                    if (now - enterSearchAtRef.current < 400) {
+                                        return;
+                                    }
+                                    enterSearchAtRef.current = now;
+                                    setTimeout(() => form.submit(), 0);
+                                }}
+                            />
                         </AutoComplete>
                     </Form.Item>
                     <Form.Item style={{ marginRight: 0 }}>
